@@ -1,0 +1,19 @@
+meta {
+  name: Symptoms
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{base_url}}/diseases/:disease/symptoms
+  body: none
+  auth: inherit
+}
+
+params:path {
+  disease: Common Cold
+}
+
+settings {
+  encodeUrl: true
+}

@@ -1,0 +1,26 @@
+meta {
+  name: Entity Search
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/icd/entity/search?q=Common Cold
+  body: none
+  auth: inherit
+}
+
+params:query {
+  q: Common Cold
+  ~chapterFilter: 21
+}
+
+headers {
+  API-Version: v2
+  Accept-Language: en
+  Accept: application/json
+}
+
+settings {
+  encodeUrl: true
+}

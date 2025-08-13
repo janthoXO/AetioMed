@@ -1,0 +1,16 @@
+meta {
+  name: Concept
+  type: http
+  seq: 7
+}
+
+get {
+  url: {{base_url}}/content/current/CUI/C0010200/atoms?apiKey={{api_key}}&sabs=MTH
+  body: none
+  auth: inherit
+}
+
+params:query {
+  apiKey: {{api_key}}
+  sabs: MTH
+}

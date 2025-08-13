@@ -1,0 +1,15 @@
+meta {
+  name: Atom
+  type: http
+  seq: 6
+}
+
+get {
+  url: https://uts-ws.nlm.nih.gov/rest/content/2025AA/AUI/A21144142?apiKey={{api_key}}
+  body: none
+  auth: inherit
+}
+
+params:query {
+  apiKey: {{api_key}}
+}

@@ -1,0 +1,59 @@
+services:
+  disease-api-go:
+    build:
+      context: ./go-api
+      dockerfile: Dockerfile
+    ports:
+      - "3030:3030"
+    environment:
+      - SERVER_PORT=3030
+      - UMLS_URL=${UMLS_URL}
+      - UMLS_KEY=${UMLS_KEY}
+      - ICD_URL=${ICD_URL}
+      - ICD_TOKEN_URL=${ICD_TOKEN_URL}
+      - ICD_CLIENT_ID=${ICD_CLIENT_ID}
+      - ICD_CLIENT_SECRET=${ICD_CLIENT_SECRET}
+      - CACHE_URL=${CACHE_URL}
+      - CACHE_PASSWORD=${CACHE_PASSWORD}
+      - CACHE_TTL_SEC=${CACHE_TTL_SEC:-86400} # 1 day
+      - DEBUG=${DEBUG}
+    depends_on:
+      - cache
+    restart: unless-stopped
+  
+  disease-api-python:
+    build:
+      context: ./python-api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S}
+      - OLLAMA_TEMPERATURE=${OLLAMA_TEMPERATURE:-0.3}
+      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-60}
+      - LOG_LEVEL=${LOG_LEVEL}
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  cache:
+    image: redis:8.0.1
+    command: redis-server --requirepass ${CACHE_PASSWORD}
+    ports:
+      - "6379:6379"
+    volumes:
+      - cache_data:/data
+    environment:
+      - REDIS_PASSWORD=${CACHE_PASSWORD}
+    restart: unless-stopped
+
+volumes:
+  cache_data:
+  ollama_data:

@@ -1,0 +1,29 @@
+meta {
+  name: Placeholder copy
+  type: http
+  seq: 5
+}
+
+get {
+  url: http://id.who.int/icd/entity/:id?include=diagnosticCriteria
+  body: none
+  auth: inherit
+}
+
+params:query {
+  include: diagnosticCriteria
+}
+
+params:path {
+  id: 1501144241
+}
+
+headers {
+  API-Version: v2
+  Accept-Language: en
+  Accept: application/json
+}
+
+settings {
+  encodeUrl: true
+}

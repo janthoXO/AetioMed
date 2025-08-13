@@ -1,0 +1,24 @@
+meta {
+  name: LLM Prompt
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{llm_url}}/api/generate
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+   "model": "hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S",
+    "prompt": "What are the symptoms of a common cold",
+    "stream": false,
+    "options": {"temperature": 0.3}
+  }
+}
+
+settings {
+  encodeUrl: true
+}

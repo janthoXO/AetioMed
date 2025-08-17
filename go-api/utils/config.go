@@ -11,14 +11,17 @@ type Configuration struct {
 		Port int `env:"SERVER_PORT" envDefault:"3030"`
 	}
 	UmlsApi struct {
-		Url    string `env:"UMLS_URL,notEmpty"`
+		Url    string `env:"UMLS_URL" envDefault:"https://uts-ws.nlm.nih.gov/rest"`
 		ApiKey string `env:"UMLS_KEY,notEmpty"`
 	}
 	IcdApi struct {
-		Url    string `env:"ICD_URL,notEmpty"`
-		TokenUrl string `env:"ICD_TOKEN_URL,notEmpty"`
+		Url    string `env:"ICD_URL" envDefault:"https://icd.who.int"`
+		TokenUrl string `env:"ICD_TOKEN_URL" envDefault:"https://icdaccessmanagement.who.int/connect/token"`
 		ClientId string `env:"ICD_CLIENT_ID,notEmpty"`
 		ClientSecret string `env:"ICD_CLIENT_SECRET,notEmpty"`
+	}
+	MeshApi struct {
+		Url string `env:"MESH_URL" envDefault:"https://id.nlm.nih.gov/mesh/sparql"`
 	}
 	Cache struct {
 		Url      string `env:"CACHE_URL,notEmpty"`

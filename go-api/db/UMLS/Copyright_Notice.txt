@@ -1,0 +1,166 @@
+May 2025
+
+Some material in the UMLS (R) Metathesaurus (R) is from copyrighted 
+sources of the respective copyright claimants. Users of the UMLS 
+Metathesaurus are solely responsible for compliance with any copyright
+restrictions and are referred to the copyright notices appearing in 
+the original sources, all of which are hereby incorporated by 
+reference.
+
+The License Agreement for Use of the UMLS Metathesaurus and its Appendices 1 and 2 describe the specific level of restriction applicable to
+each source vocabulary (https://uts.nlm.nih.gov/uts/assets/LicenseAgreement.pdf).
+
+Additional Copyright Restrictions 
+---------------------------------
+2025AA UMLS Metathesaurus:
+
+
+
+For CDT only: 
+
+Copyright 2025, American Dental Association. All rights reserved. Included in the HCPCS Version of Current Dental Terminology (HCDT).
+
+
+
+For CPT (C) (Physicians' Current Procedural Terminology) only:
+
+CPT copyright 2025 American Medical Association.  All rights reserved.
+
+Fee schedules, relative value units, conversion factors and/or related components are not assigned by the AMA, are not part of CPT, and the AMA is not recommending their use.  The AMA does not directly or indirectly practice medicine or dispense medical services.  The AMA assumes no liability for data contained or not contained herein.
+
+CPT is a registered trademark of the American Medical Association.
+
+
+
+For LNC. The Regenstrief Institute, Inc. Logical Observation Identifier Names and Codes only:
+
+
+"This product includes all, or a portion of, or is derived from content from LOINC that is subject to a license from Regenstrief Institute, Inc. 
+
+Your use of LOINC content also is subject to this license, a copy of which is available https://loinc.org/license/. The current complete LOINC distribution is available for download at http://loinc.org.
+
+"Group 1 Artifacts" - LOINC codes, LOINC Table (regardless of format), LOINC Table Core, and LOINC Changes File.
+
+"Group 3 Artifacts" - LOINC Panels and Forms File, LOINC Answer File, LOINC Part File, LOINC Group File, LOINC Document Ontology File, LOINC Document Ontology OWL File, LOINC Hierarchies, LOINC Linguistic Variants Files, LOINC/RSNA Radiology Playbook, LOINC/IEEE Medical Device Code Mapping Table, LOINC Consumer Name File, LOINC Change Snapshot File, LOINC Imaging Document Codes File, LOINC Common UCUM Codes File, and the Universal Lab Order Codes Value Set File.
+
+The Group 1 Artifacts and Group 1 Documents are copyright (C) Regenstrief Institute, Inc. and the Logical Observation Identifiers Names and Codes (LOINC) Committee. All rights reserved.The Group 2 Artifacts, Group 2 Documents, Group 3 Artifacts, and Group 3 Documents are copyright (C) Regenstrief Institute, Inc. All rights reserved.
+
+THE LICENSED MATERIALS AND ALL OTHER MATERIALS OBTAINED FROM REGENSTRIEF INSTITUTE, INC. AND/OR THE LOINC COMMITTEE ARE PROVIDED "AS IS",ARE PROVIDED "AS IS." ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE. 
+
+LOINC(R) is a registered United States trademark of Regenstrief Institute, Inc. 
+
+Notice of Third-Party Content and Copyright Terms:
+A small portion of the content of the Licensed Material consists of content subject to copyright protection by third parties. This third-party content is either used with permission or under the applicable terms of use. In all such cases, we have included the copyright notice. The copyright of the LOINC codes per se remains owned by Regenstrief Institute, Inc. and the LOINC Committee and subject to the LOINC Copyright Notice and License.
+
+- E. The LOINC/RSNA Radiology Playbook and the LOINC Part File contain content from RadLex(R) (http://www.radlex.org), copyright (C) 2005-2020, The Radiological Society of North America, Inc., available at no cost under the license at https://www.rsna.org/uploadedFiles/RSNA/Content/Informatics/RadLex_License_Agreement_and_Terms_of_Use_V2_Final.pdf.
+- F. The LOINC/IEEE Medical Device Code Mapping Table contains content from IEEE (http://ieee.org), copyright (C) 2019 IEEE.
+- G. This product includes all or a portion of the UCUM table, UCUM codes, and UCUM definitions or is derived from it, subject to a license from Regenstrief Institute, Inc. Your use of the UCUM table, UCUM codes, UCUM definitions also is subject to this license, a copy of which is available at http://unitsofmeasure.org. The current complete UCUM table, UCUM Specification are available for download at http://unitsofmeasure.org. The UCUM table and UCUM codes are copyright (C) 1995-2024, Regenstrief Institute, Inc. and the Unified Codes for Units of Measures (UCUM) Organization. All rights reserved. THE UCUM TABLE (IN ALL FORMATS), UCUM DEFINITIONS, AND SPECIFICATION ARE PROVIDED "AS IS". ANY EXPRESS OR IMPLIED WARRANTIES ARE DISCLAIMED, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE.
+
+LOINC license URL: https://loinc.org/kb/license/
+
+
+
+For SCTSPA. SNOMED International. SNOMED CT Spanish Edition, 
+only: 
+
+Users are required to display the SNOMED copyright and trademark notice 
+below if SNOMED information is used in their product(s):
+
+"This material includes SNOMED Clinical Terms(R) (SNOMED CT(R)) which is used by permission of the International Health Terminology Standards Development Organisation (IHTSDO). All rights reserved. SNOMED CT(R), was originally created by The College of American Pathologists. "SNOMED" and "SNOMED CT" are registered trademarks of the IHTSDO."
+
+Contact: UMLS Support, National Library of Medicine; e-mail: NLM SNOMED CT Support (https://support.nlm.nih.gov/support/create-case/) 
+
+NLM is a Charter Member of the IHTSDO on behalf of the U.S.
+
+
+
+For SNM2.  Cote, Roger A., editor. Systematized Nomenclature of Medicine. 
+2nd ed.
+
+Users are required to display the SNOMED copyright and trademark notice 
+below if SNOMED information is used in their product(s): 
+
+"This material includes SNOMED Clinical Terms(R) (SNOMED CT(R)) which is used by permission of the International Health Terminology Standards Development Organisation (IHTSDO). All rights reserved. SNOMED CT(R), was originally created by The College of American Pathologists. "SNOMED" and "SNOMED CT" are registered trademarks of the IHTSDO."
+
+Contact: UMLS Support, National Library of Medicine; e-mail: NLM SNOMED CT Support (https://support.nlm.nih.gov/support/create-case/) 
+
+NLM is a Charter Member of the IHTSDO on behalf of the U.S. 
+
+
+
+For SNMI98. Cote, Roger A., editor. Systematized Nomenclature of Human 
+and Veterinary Medicine: SNOMED International, Version 3.5. 
+
+Users are required to display the SNOMED copyright and trademark notice 
+below if SNOMED information is used in their product(s):  
+
+"This material includes SNOMED Clinical Terms(R) (SNOMED CT(R)) which is used by permission of the International Health Terminology Standards Development Organisation (IHTSDO). All rights reserved. SNOMED CT(R), was originally created by The College of American Pathologists. "SNOMED" and "SNOMED CT" are registered trademarks of the IHTSDO."
+
+Contact: UMLS Support, National Library of Medicine; e-mail: NLM SNOMED CT Support (https://support.nlm.nih.gov/support/create-case/) 
+
+NLM is a Charter Member of the IHTSDO on behalf of the U.S.
+
+
+
+For SNOMEDCT_US.  SNOMED International, only: 
+
+Users are required to display the SNOMED copyright and trademark notice 
+below if SNOMED information is used in their product(s):
+
+"This material includes SNOMED Clinical Terms(R) (SNOMED CT(R)) which is used by permission of the International Health Terminology Standards Development Organisation (IHTSDO). All rights reserved. SNOMED CT(R), was originally created by The College of American Pathologists. "SNOMED" and "SNOMED CT" are registered trademarks of the IHTSDO."
+
+Contact: UMLS Support, National Library of Medicine; e-mail: NLM SNOMED CT Support (https://support.nlm.nih.gov/support/create-case/) 
+
+NLM is a Charter Member of the IHTSDO on behalf of the U.S.
+
+
+
+For SNOMEDCT_VET.  SNOMED International, only:
+
+Users are required to display the SNOMED copyright and trademark notice 
+below if SNOMED information is used in their product(s):
+
+"This material includes SNOMED Clinical Terms(R) (SNOMED CT(R)) which is used by permission of the International Health Terminology Standards Development Organisation (IHTSDO). All rights reserved. SNOMED CT(R), was originally created by The College of American Pathologists. "SNOMED" and "SNOMED CT" are registered trademarks of the IHTSDO."
+
+Contact: UMLS Support, National Library of Medicine; e-mail: NLM SNOMED CT Support (https://support.nlm.nih.gov/support/create-case/) 
+
+NLM is a Charter Member of the IHTSDO on behalf of the U.S.
+
+
+
+For Multum: 
+
+You may copy and distribute verbatim copies of Multum Lexicon 
+as you receive it, in any medium, provided that you conspicuously and 
+appropriately publish on each copy an appropriate copyright notice and 
+disclaimer of warranty; keep intact all the notices that refer to this 
+License and to the absence of any warranty; and give any other recipients
+of the Multum Lexicon a copy of this License (the readme.txt file) along 
+with the Multum Lexicon and anything else that is part of the package, 
+which should be identified.
+
+
+For MTHMST2001, MTHMSTFRE, MTHMSTITA: 
+
+Copyright 1995 European Society of Gastrointestinal Endoscopy  (ESGE). All
+rights reserved.  This legend should be displayed on every copy of the MST,
+on all manuals and other materials used in connection with the MST, including
+electronic media (disks, CD ROMs, etc.) and should be apparent in text files
+loaded on these disks or onto the Internet. Permission is hereby granted, 
+without written agreement and without license or royalty fees, to use, copy,
+or distribute the Minimal Standard Terminology (MST) for any purpose, so 
+long as this copyright notice appears on any copies of the MST and that the
+following conditions are met.  
+
+The purpose of the MST is not to define database implementation but to 
+provide a terminology standard for use by the endoscopic community in 
+creating endoscopic reports.  Users of the MST agree to the following 
+conditions: 
+
+They will include notice of copyright and terms of use in any copies of 
+the MST database that they distribute. They will not change any contents
+in the defined MST Fields. Users may add their own new fields to the 
+database if they want to attach additional information to the existing MST. 
+If new records are added to the MST to deal with local requirements, these
+records must be identified as being separate from the MST. This identification mechanism facilitates the exchange of information without the creation of redundant terms. ESGE and the members of the ESGE Committee on Minimal Standards do not accept liability for any omissions or errors in the MST and all EXPRESS AND IMPLIED WARRANTIES, INCLUDING THOSE RELATING TO MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE, ARE DISCLAIMED.
+

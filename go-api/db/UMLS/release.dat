@@ -1,0 +1,11 @@
+# Release Metadata 
+#Mon Apr 28 16:49:24 EDT 2025
+umls.release.description=Base Release for Spring 2025
+umls.release.name=2025AA
+nlm.build.date=2025_04_28_13_33_05
+mmsys.build.date=2025_03_07_14_03_22
+umls.release.date=20250505
+umls.lvg.version=2025
+umls.medline.date=20130401
+umls.medline.file=medline13n0717.xml
+mmsys.version=MMSYS-2025AA-20250307

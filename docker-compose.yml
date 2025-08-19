@@ -54,6 +54,23 @@ services:
       - REDIS_PASSWORD=${CACHE_PASSWORD}
     restart: unless-stopped
 
+  my-sql:
+    image: mysql:8.0
+    environment:
+      - MYSQL_ROOT_PASSWORD=test
+      - MYSQL_DATABASE=umls
+      - MYSQL_USER=test
+      - MYSQL_PASSWORD=test
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./go-api/db/UMLS/DATA:/umls_data  # Mount the db folder
+    command: 
+      - --local-infile=1
+    restart: unless-stopped
+
 volumes:
   cache_data:
   ollama_data:
+  mysql_data:

@@ -1,15 +1,15 @@
 package main
 
 import (
-	"net/http"
 	"disease-middleware/service"
+	"net/http"
 
 	"github.com/gin-gonic/gin"
 
 	log "github.com/sirupsen/logrus"
 )
 
-var symptomService = service.IcdService{}
+var symptomService = service.UmlsDbService{}
 
 func FetchSymptoms(c *gin.Context) {
 	icd := c.Param("icd")

@@ -2,9 +2,13 @@ module disease-middleware
 
 go 1.24.6
 
-require github.com/sirupsen/logrus v1.9.3
+require (
+	github.com/go-sql-driver/mysql v1.9.3
+	github.com/sirupsen/logrus v1.9.3
+)
 
 require (
+	filippo.io/edwards25519 v1.1.0 // indirect
 	github.com/bytedance/sonic v1.11.6 // indirect
 	github.com/bytedance/sonic/loader v0.1.1 // indirect
 	github.com/cespare/xxhash/v2 v2.1.2 // indirect

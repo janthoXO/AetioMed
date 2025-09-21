@@ -23,6 +23,12 @@ type Configuration struct {
 	MeshApi struct {
 		Url string `env:"MESH_URL" envDefault:"https://id.nlm.nih.gov/mesh/sparql"`
 	}
+	Db struct {
+		Url      string `env:"DB_URL,notEmpty"`
+		Name     string `env:"DB_NAME,notEmpty"`
+		User     string `env:"DB_USER,notEmpty"`
+		Password string `env:"DB_PASSWORD,notEmpty"`
+	}
 	Cache struct {
 		Url      string `env:"CACHE_URL,notEmpty"`
 		Password string `env:"CACHE_PASSWORD,notEmpty"`

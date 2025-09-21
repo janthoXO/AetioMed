@@ -13,14 +13,19 @@ services:
       - ICD_TOKEN_URL=${ICD_TOKEN_URL}
       - ICD_CLIENT_ID=${ICD_CLIENT_ID}
       - ICD_CLIENT_SECRET=${ICD_CLIENT_SECRET}
+      - DB_URL=my-sql:3306
+      - DB_NAME=umls
+      - DB_USER=test
+      - DB_PASSWORD=test
       - CACHE_URL=${CACHE_URL}
       - CACHE_PASSWORD=${CACHE_PASSWORD}
       - CACHE_TTL_SEC=${CACHE_TTL_SEC:-86400} # 1 day
       - DEBUG=${DEBUG}
     depends_on:
       - cache
+      - my-sql
     restart: unless-stopped
-  
+
   disease-api-python:
     build:
       context: ./python-api
@@ -55,7 +60,7 @@ services:
     restart: unless-stopped
 
   my-sql:
-    image: mysql:8.0
+    image: mysql:9.4.0
     environment:
       - MYSQL_ROOT_PASSWORD=test
       - MYSQL_DATABASE=umls
@@ -65,9 +70,11 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./go-api/db/UMLS/DATA:/umls_data  # Mount the db folder
-    command: 
-      - --local-infile=1
+      - ./go-api/db/UMLS/DATA:/umls_data
+      - ./go-api/db/UMLS/init_db.sh:/docker-entrypoint-initdb.d/init_db.sh:ro
+      - ./go-api/db/UMLS/healthcheck.sh:/healthcheck.sh:ro
+    command:
+      - --secure-file-priv=umls_data
     restart: unless-stopped
 
 volumes:

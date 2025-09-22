@@ -1,7 +1,7 @@
 services:
-  disease-api-go:
+  disease-api:
     build:
-      context: ./go-api
+      context: .
       dockerfile: Dockerfile
     ports:
       - "3030:3030"
@@ -26,27 +26,15 @@ services:
       - my-sql
     restart: unless-stopped
 
-  disease-api-python:
-    build:
-      context: ./python-api
-      dockerfile: Dockerfile
-    ports:
-      - "8000:8000"
-    environment:
-      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
-      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S}
-      - OLLAMA_TEMPERATURE=${OLLAMA_TEMPERATURE:-0.3}
-      - OLLAMA_TIMEOUT=${OLLAMA_TIMEOUT:-60}
-      - LOG_LEVEL=${LOG_LEVEL}
-    restart: unless-stopped
-
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.12.0
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
+      - ./pull-medical-llm.sh:/entrypoint.sh
     restart: unless-stopped
+    entrypoint: ["/usr/bin/bash", "/entrypoint.sh"]
 
   cache:
     image: redis:8.0.1

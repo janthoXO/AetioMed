@@ -10,10 +10,16 @@ import (
 
 type UmlsDbService struct{}
 
-// Ensure UmlsDbService implements SymptomService interface
-var _ SymptomService = (*UmlsDbService)(nil)
+func (s *UmlsDbService) ServiceName() string {
+	return "UMLS Database Service"
+}
 
 func (s *UmlsDbService) FetchSymptoms(ctx context.Context, icd string) ([]any, error) {
+	if db.DB == nil {
+		log.Error("Database not connected")
+		return nil, nil
+	}
+
 	// SQL query to find symptoms related to a disease by ICD code
 	query := `
 	WITH
@@ -82,7 +88,10 @@ func (s *UmlsDbService) FetchSymptoms(ctx context.Context, icd string) ([]any, e
 
 		symptom := models.Symptom{
 			Name:        str,
+			MedicalName: str,
 			Description: "",
+			Severity:    nil,
+			Frequency:   models.FrequencyCommon, // Default frequency
 		}
 
 		// Set description if definition exists

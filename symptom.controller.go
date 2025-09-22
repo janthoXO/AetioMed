@@ -9,9 +9,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-var symptomService = service.UmlsDbService{}
-
-func FetchSymptoms(c *gin.Context) {
+func FetchSymptoms(c *gin.Context, symptomService service.SymptomService) {
 	icd := c.Param("icd")
 
 	symptoms, err := symptomService.FetchSymptoms(c.Request.Context(), icd)

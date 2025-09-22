@@ -13,6 +13,10 @@ import (
 
 type MeshService struct{}
 
+func (s *MeshService) ServiceName() string {
+	return "MeSH API Service"
+}
+
 func (s *MeshService) FetchSymptoms(ctx context.Context, diseaseName string) ([]any, error) {
 	// The SPARQL query template.
 	queryTemplate := `

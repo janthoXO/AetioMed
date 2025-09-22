@@ -19,7 +19,7 @@ func main() {
 
 	// Initialize MySQL database
 	if err := db.InitDB(); err != nil {
-		log.WithError(err).Fatal("Failed to initialize database")
+		log.WithError(err).Warn("Failed to initialize database")
 	}
 	defer db.CloseDB()
 

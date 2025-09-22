@@ -15,6 +15,10 @@ import (
 
 type UmlsService struct{}
 
+func (s *UmlsService) ServiceName() string {
+	return "UMLS API Service"
+}
+
 func (s *UmlsService) FetchSymptoms(ctx context.Context, icd string) ([]any, error) {
 	// Query Disease by name
 	disease, err := queryDiseaseByName(ctx, icd)

@@ -17,6 +17,10 @@ import (
 
 type IcdService struct{}
 
+func (s *IcdService) ServiceName() string {
+	return "ICD API Service"
+}
+
 func (s *IcdService) FetchSymptoms(ctx context.Context, icd string) ([]any, error) {
 	access_token, err := getOAuthToken(ctx)
 	if err != nil {

@@ -23,6 +23,10 @@ type Configuration struct {
 	MeshApi struct {
 		Url string `env:"MESH_URL" envDefault:"https://id.nlm.nih.gov/mesh/sparql"`
 	}
+	OllamaApi struct {
+		Url   string `env:"OLLAMA_URL" envDefault:"http://localhost:11434"`
+		Model string `env:"OLLAMA_MODEL_NAME" envDefault:"hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S"`
+	}
 	Db struct {
 		Url      string `env:"DB_URL,notEmpty"`
 		Name     string `env:"DB_NAME,notEmpty"`

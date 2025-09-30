@@ -1,0 +1,15 @@
+meta {
+  name: Placeholder
+  type: http
+  seq: 5
+}
+
+get {
+  url: https://uts-ws.nlm.nih.gov/rest/crosswalk/current/source/ICD10CM/J00?apiKey={{umls_api_key}}
+  body: none
+  auth: inherit
+}
+
+params:query {
+  apiKey: {{umls_api_key}}
+}

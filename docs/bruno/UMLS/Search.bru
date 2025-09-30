@@ -5,13 +5,13 @@ meta {
 }
 
 get {
-  url: {{base_url}}/search/current?string=Coughing&apiKey={{api_key}}
+  url: {{umls_url}}/search/current?string=Coughing&apiKey={{umls_api_key}}
   body: none
   auth: inherit
 }
 
 params:query {
   string: Coughing
-  apiKey: {{api_key}}
+  apiKey: {{umls_api_key}}
   ~sabs: ICD10CM
 }

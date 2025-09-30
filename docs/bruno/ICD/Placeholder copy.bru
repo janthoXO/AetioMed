@@ -1,18 +1,21 @@
 meta {
-  name: Entity Search
+  name: Placeholder copy
   type: http
-  seq: 8
+  seq: 3
 }
 
 get {
-  url: {{base_url}}/icd/entity/search?q=Common Cold
+  url: http://id.who.int/icd/entity/:id?include=diagnosticCriteria
   body: none
   auth: inherit
 }
 
 params:query {
-  q: Common Cold
-  ~chapterFilter: 21
+  include: diagnosticCriteria
+}
+
+params:path {
+  id: 1501144241
 }
 
 headers {

@@ -5,13 +5,13 @@ meta {
 }
 
 get {
-  url: {{base_url}}/content/current/CUI/:cui/relations?apiKey={{api_key}}&pageSize=10000
+  url: {{umls_url}}/content/current/CUI/:cui/relations?apiKey={{umls_api_key}}&pageSize=10000
   body: none
   auth: inherit
 }
 
 params:query {
-  apiKey: {{api_key}}
+  apiKey: {{umls_api_key}}
   pageSize: 10000
   ~sabs: MTH
   ~includeAdditionalRelationLabels: has_sign_or_symptom

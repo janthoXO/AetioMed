@@ -15,9 +15,9 @@ type Configuration struct {
 		ApiKey string `env:"UMLS_KEY,notEmpty"`
 	}
 	IcdApi struct {
-		Url    string `env:"ICD_URL" envDefault:"https://icd.who.int"`
-		TokenUrl string `env:"ICD_TOKEN_URL" envDefault:"https://icdaccessmanagement.who.int/connect/token"`
-		ClientId string `env:"ICD_CLIENT_ID,notEmpty"`
+		Url          string `env:"ICD_URL" envDefault:"https://icd.who.int"`
+		TokenUrl     string `env:"ICD_TOKEN_URL" envDefault:"https://icdaccessmanagement.who.int/connect/token"`
+		ClientId     string `env:"ICD_CLIENT_ID,notEmpty"`
 		ClientSecret string `env:"ICD_CLIENT_SECRET,notEmpty"`
 	}
 	MeshApi struct {
@@ -28,14 +28,14 @@ type Configuration struct {
 		Model string `env:"OLLAMA_MODEL_NAME" envDefault:"hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S"`
 	}
 	Db struct {
-		Url      string `env:"DB_URL,notEmpty"`
-		Name     string `env:"DB_NAME,notEmpty"`
-		User     string `env:"DB_USER,notEmpty"`
-		Password string `env:"DB_PASSWORD,notEmpty"`
+		Url      string `env:"DB_URL" envDefault:"localhost:3306"`
+		Name     string `env:"DB_NAME" envDefault:"umls"`
+		User     string `env:"DB_USER" envDefault:"test"`
+		Password string `env:"DB_PASSWORD" envDefault:"test"`
 	}
 	Cache struct {
-		Url      string `env:"CACHE_URL,notEmpty"`
-		Password string `env:"CACHE_PASSWORD,notEmpty"`
+		Url      string `env:"CACHE_URL" envDefault:"localhost:6379"`
+		Password string `env:"CACHE_PASSWORD" envDefault:"test"`
 		TTL_SEC  int    `env:"CACHE_TTL_SEC" envDefault:"86400"` // 1 day
 	}
 	Debug bool `env:"DEBUG" envDefault:"false"`

@@ -1,0 +1,84 @@
+services:
+  case-generator:
+    build:
+      context: ./case-generator
+      dockerfile: Dockerfile
+    ports:
+      - "3030:3030"
+    environment:
+      - SERVER_PORT=3030
+      - DISEASE_MIDDLEWARE_URL=${DISEASE_MIDDLEWARE_URL:-http://disease-middleware:3030}
+      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
+      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S}
+      - DEBUG=${DEBUG:-true}
+    depends_on:
+      - disease-middleware
+      - ollama
+    restart: unless-stopped
+  disease-middleware:
+    build:
+      context: ./disease-middleware
+      dockerfile: Dockerfile
+    ports:
+      - "3031:3030"
+    environment:
+      - SERVER_PORT=3030
+      - UMLS_URL=${UMLS_URL:-https://uts-ws.nlm.nih.gov/rest}
+      - UMLS_KEY=${UMLS_KEY}
+      - ICD_URL=${ICD_URL:-https://icd.who.int}
+      - ICD_TOKEN_URL=${ICD_TOKEN_URL:-https://icdaccessmanagement.who.int/connect/token}
+      - ICD_CLIENT_ID=${ICD_CLIENT_ID}
+      - ICD_CLIENT_SECRET=${ICD_CLIENT_SECRET}
+      - DB_URL=my-sql:3306
+      - DB_NAME=umls
+      - DB_USER=test
+      - DB_PASSWORD=test
+      - CACHE_URL=http://cache:6379
+      - CACHE_PASSWORD=${CACHE_PASSWORD:-test}
+      - CACHE_TTL_SEC=${CACHE_TTL_SEC:-86400} # 1 day
+      - DEBUG=${DEBUG:-true}
+    depends_on:
+      - umls-db
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:0.12.0
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+      - ./pull-medical-llm.sh:/entrypoint.sh
+    restart: unless-stopped
+    entrypoint: ["/usr/bin/bash", "/entrypoint.sh"]
+
+  cache:
+    image: redis:8.0.1
+    command: redis-server --requirepass ${CACHE_PASSWORD:-test}
+    ports:
+      - "6379:6379"
+    volumes:
+      - cache_data:/data
+    environment:
+      - REDIS_PASSWORD=${CACHE_PASSWORD:-test}
+    restart: unless-stopped
+    profiles:
+      - cache
+
+  umls-db:
+    build:
+      context: ./UMLS
+      dockerfile: Dockerfile
+    environment:
+      - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-test}
+      - MYSQL_USER=${MYSQL_USER:-test}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD:-test}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    restart: unless-stopped
+
+volumes:
+  cache_data:
+  ollama_data:
+  mysql_data:

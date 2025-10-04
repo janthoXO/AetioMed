@@ -14,7 +14,7 @@ func (s *UmlsDbService) ServiceName() string {
 	return "UMLS Database Service"
 }
 
-func (s *UmlsDbService) FetchSymptoms(ctx context.Context, icd string) ([]any, error) {
+func (s *UmlsDbService) FetchSymptoms(ctx context.Context, icd string) ([]models.Symptom, error) {
 	if db.DB == nil {
 		log.Error("Database not connected")
 		return nil, nil
@@ -67,7 +67,8 @@ func (s *UmlsDbService) FetchSymptoms(ctx context.Context, icd string) ([]any, e
 	SELECT DISTINCT symptoms.CUI, ANY_VALUE(symptoms.STR) AS STR, ANY_VALUE(def.DEF) AS DEF
 	FROM symptoms
 	LEFT JOIN MRDEF def ON symptoms.CUI = def.CUI
-	GROUP BY symptoms.CUI`
+    WHERE def.SAB = 'MSH'
+    GROUP BY symptoms.CUI`
 
 	rows, err := db.DB.QueryContext(ctx, query, icd)
 	if err != nil {
@@ -76,7 +77,7 @@ func (s *UmlsDbService) FetchSymptoms(ctx context.Context, icd string) ([]any, e
 	}
 	defer rows.Close()
 
-	var results []any
+	var results []models.Symptom
 	for rows.Next() {
 		var cui, str string
 		var def *string // Use pointer for nullable field
@@ -87,6 +88,7 @@ func (s *UmlsDbService) FetchSymptoms(ctx context.Context, icd string) ([]any, e
 		}
 
 		symptom := models.Symptom{
+			ID:          cui,
 			Name:        str,
 			MedicalName: str,
 			Description: "",

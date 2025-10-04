@@ -9,7 +9,7 @@ import (
 )
 
 var llmService = service.NewLLMService()
-var symptomService = service.NewAiService(llmService)
+var symptomService = &service.UmlsDbService{}
 
 func SetupRouter() *gin.Engine {
 	r := gin.New()

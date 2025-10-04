@@ -23,6 +23,7 @@ const (
 )
 
 type Symptom struct {
+	ID          string         `json:"id"`
 	Name        string         `json:"name"`
 	MedicalName string         `json:"medical_name"`
 	Description string        `json:"description,omitempty"`

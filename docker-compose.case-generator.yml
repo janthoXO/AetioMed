@@ -78,7 +78,30 @@ services:
       - mysql_data:/var/lib/mysql
     restart: unless-stopped
 
+  neo4j:
+    image: neo4j:5.26.12
+    ports:
+      - "7474:7474"  # HTTP
+      - "7687:7687"  # Bolt
+    environment:
+      - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/password}
+    volumes:
+      - neo4j_data:/data
+      - neo4j_logs:/logs
+      - ./Monarch/monarch-kg.neo4j.dump:/backups/neo4j.dump:ro
+    command: >
+      bash -c "
+      echo 'Loading database dump...';
+      neo4j-admin database load neo4j --from-path=/backups;
+      neo4j-admin database migrate neo4j;
+      echo 'Database loaded successfully';
+      exec /startup/docker-entrypoint.sh neo4j
+      "
+    restart: unless-stopped
+
 volumes:
   cache_data:
   ollama_data:
   mysql_data:
+  neo4j_data:
+  neo4j_logs:

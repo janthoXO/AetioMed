@@ -3,19 +3,34 @@ package service
 import (
 	"case-generator/models"
 	"context"
-	"fmt"
 )
 
 type ProcedureService struct {
-	llmService *LLMService
 }
 
 func NewProcedureService() *ProcedureService {
-	return &ProcedureService{
-		llmService: GetLLMService(),
-	}
+	return &ProcedureService{}
 }
 
-func (s *ProcedureService) GetProcedure(ctx context.Context, diseaseName string, symptoms []models.Symptom) ([]models.Procedure, error) {
-	return nil, fmt.Errorf("not implemented")
+func (s *ProcedureService) MatchProcedures(ctx context.Context, diseaseProcedures []models.Procedure, symptomProcedures []models.Procedure) (result []models.Procedure, err error) {
+	// Procedures which are in both lists are mandatory
+	// Procedures which are only in the symptom list are supporting but not mandatory
+
+	// create map to faster lookup
+	diseaseProcedureMap := make(map[string]models.Procedure)
+	for _, diseaseProcedure := range diseaseProcedures {
+		diseaseProcedureMap[diseaseProcedure.ID] = diseaseProcedure
+	}
+
+	for _, symptomProcedure := range symptomProcedures {
+		if _, exists := diseaseProcedureMap[symptomProcedure.ID]; exists {
+			symptomProcedure.Type = models.Mandatory
+			result = append(result, symptomProcedure)
+		} else {
+			symptomProcedure.Type = models.Supporting
+			result = append(result, symptomProcedure)
+		}
+	}
+
+	return result, nil
 }

@@ -1,8 +1,16 @@
 package models
 
+type Type string
+
+const (
+	Mandatory     Type = "mandatory"
+	Supporting Type = "supporting"
+	Misleading   Type = "misleading"
+)
+
 type Procedure struct {
 	Name string `json:"name"`
-	ID int `json:"id"`
+	ID string `json:"id"`
 	Domain string `json:"domain"`
 	Category string `json:"category"`
 	Title string `json:"title"`
@@ -11,4 +19,5 @@ type Procedure struct {
 	TimeCost int `json:"timeCost"`
 	MoneyCost int `json:"moneyCost"`
 	IsDefault bool `json:"isDefault"`
+	Type Type `json:"type"`
 }

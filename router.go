@@ -13,9 +13,11 @@ func SetupRouter() *gin.Engine {
 
 	patientPresentationController := controller.NewPatientPresentationController()
 	anamnesisController := controller.NewAnamnesisController()
+	procedureController := controller.NewProcedureController()
 
 	r.POST("/disease/:diseaseName/anamnesis", anamnesisController.GenerateAnamnesis)
 	r.POST("/disease/:diseaseName/patientPresentation", patientPresentationController.GeneratePatientPresentation)
+	r.POST("/disease/:diseaseName/procedures", procedureController.GenerateProcedures)
 
 	return r
 }

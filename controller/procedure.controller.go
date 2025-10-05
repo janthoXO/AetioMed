@@ -20,19 +20,22 @@ func NewProcedureController() *ProcedureController {
 	}
 }
 
-func (controller *ProcedureController) GenerateProcedures(c *gin.Context) {
-	diseaseName := c.Param("diseaseName")
+type ProcedureRequestDTO struct {
+	DiseaseProcedures []models.Procedure `json:"diseaseProcedures"`
+	SymptomProcedures []models.Procedure `json:"symptomProcedures"`
+}
 
-	var symptoms []models.Symptom
-	err := c.ShouldBindJSON(&symptoms)
+func (controller *ProcedureController) GenerateProcedures(c *gin.Context) {
+	var proceduresRequestDTO ProcedureRequestDTO
+	err := c.ShouldBindJSON(&proceduresRequestDTO)
 	if err != nil {
 		log.Errorf("Failed to bind JSON: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 		return
 	}
 
-	// Call the service to generate the anamnesis
-	procedures, err := controller.ProcedureService.GetProcedure(c, diseaseName, symptoms)
+	// Call the service to match the procedures
+	procedures, err := controller.ProcedureService.MatchProcedures(c, proceduresRequestDTO.DiseaseProcedures, proceduresRequestDTO.SymptomProcedures)
 	if err != nil {
 		log.Errorf("Failed to generate procedures: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate procedures"})

@@ -27,7 +27,7 @@ func (s *UmlsService) FetchSymptoms(ctx context.Context, icd string) ([]any, err
 		return nil, fmt.Errorf("Failed to find disease for %s", icd)
 	}
 
-	log.Infof("Disease %s %s\n", disease["ui"].(string), disease["name"].(string))
+	log.Debugf("Disease %s %s\n", disease["ui"].(string), disease["name"].(string))
 
 	errChannel := make(chan error, 1)
 	go func() {

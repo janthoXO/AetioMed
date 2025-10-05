@@ -1,11 +1,11 @@
 meta {
-  name: SymptomMiddleware
+  name: Symptoms
   type: http
   seq: 9
 }
 
 get {
-  url: {{base_url}}/disease/:icd
+  url: {{base_url}}/disease/:icd/symptoms
   body: none
   auth: inherit
 }

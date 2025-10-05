@@ -37,9 +37,8 @@ func NewLLMService() *LLMService {
 }
 
 func (s *LLMService) Generate(ctx context.Context, prompt string) (string, error) {
-	log.Info("Requesting generation")
-	log.Infof("Using Ollama at: %s", utils.Cfg.OllamaApi.Url)
-	log.Infof("Using model: %s", utils.Cfg.OllamaApi.Model)
+	log.Debugf("Using Ollama at: %s", utils.Cfg.OllamaApi.Url)
+	log.Debugf("Using model: %s", utils.Cfg.OllamaApi.Model)
 
 	payload := OllamaRequest{
 		Model:  utils.Cfg.OllamaApi.Model,

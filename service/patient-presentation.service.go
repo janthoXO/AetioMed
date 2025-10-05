@@ -56,8 +56,6 @@ func (s *PatientPresentationService) GeneratePatientPresentation(ctx context.Con
 		return presentation, fmt.Errorf("failed to generate patient presentation: %w", err)
 	}
 
-	log.Infof("LLM patient presentation response: %+v", symptomData)
-
 	presentation.FromDict(symptomData["presentation"].(map[string]any))
 	if presentation.TreatmentReason == "" {
 		return presentation, fmt.Errorf("no patient presentation found in response")

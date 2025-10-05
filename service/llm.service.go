@@ -35,9 +35,8 @@ func GetLLMService() *LLMService {
 }
 
 func (s *LLMService) Generate(ctx context.Context, prompt string) (string, error) {
-	log.Info("Requesting generation")
-	log.Infof("Using Ollama at: %s", utils.Cfg.OllamaApi.Url)
-	log.Infof("Using model: %s", utils.Cfg.OllamaApi.Model)
+	log.Debugf("Using Ollama at: %s", utils.Cfg.OllamaApi.Url)
+	log.Debugf("Using model: %s", utils.Cfg.OllamaApi.Model)
 
 	payload := OllamaRequest{
 		Model:  utils.Cfg.OllamaApi.Model,
@@ -94,7 +93,7 @@ func (s *LLMService) GenerateJSON(ctx context.Context, prompt string) (map[strin
 		return nil, err
 	}
 
-	log.Infof("LLM response: %s", llmResponse)
+	log.Debugf("LLM response: %s", llmResponse)
 
 	// Try to extract JSON from the response using regex (from first "{" to last "}")
 	re := regexp.MustCompile(`(?s)\{.*\}`)
@@ -119,7 +118,7 @@ func (s *LLMService) GenerateJSON(ctx context.Context, prompt string) (map[strin
 
 func (s *LLMService) HealthCheck(ctx context.Context) bool {
 	url := fmt.Sprintf("%s/api/tags", utils.Cfg.OllamaApi.Url)
-	log.Infof("Performing health check on Ollama at: %s", url)
+	log.Debugf("Performing health check on Ollama at: %s", url)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return false

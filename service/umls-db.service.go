@@ -214,12 +214,12 @@ GROUP BY
 		procedure := models.Procedure{
 			ID:          cui,
 			Name:        str,
-			Description: "",
+			Text: "",
 		}
 
 		// Set description if definition exists
 		if def != nil {
-			procedure.Description = *def
+			procedure.Text = *def
 		}
 
 		results = append(results, procedure)
@@ -324,12 +324,12 @@ GROUP BY
 		procedure := models.Procedure{
 			ID:          cui,
 			Name:        str,
-			Description: "",
+			Text: "",
 		}
 
 		// Set description if definition exists
 		if def != nil {
-			procedure.Description = *def
+			procedure.Text = *def
 		}
 
 		results = append(results, procedure)

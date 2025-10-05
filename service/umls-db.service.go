@@ -23,52 +23,55 @@ func (s *UmlsDbService) FetchSymptoms(ctx context.Context, icd string) ([]models
 	// SQL query to find symptoms related to a disease by ICD code
 	query := `
 	WITH
-		disease AS (
-			SELECT *
-			FROM MRCONSO
-			WHERE
-				CODE = ?
-				AND SAB IN (
-					'ICD10CM',
-					'ICD10',
-					'ICD10WHO'
-				)
-				AND LAT = 'ENG'
-		),
-		related AS (
-			SELECT rel.*
-			FROM disease
-				JOIN MRREL rel ON disease.CUI = rel.CUI1
-			UNION
-			SELECT rel.*
-			FROM disease
-				JOIN MRREL rel ON disease.CUI = rel.CUI2
-		),
-		symptoms AS (
-			SELECT DISTINCT
-				sym.*
-			FROM (
-					SELECT s.*
-					FROM related
-						JOIN MRCONSO s ON related.CUI2 = s.CUI
-					WHERE
-						s.LAT = 'ENG'
-					UNION
-					SELECT s.*
-					FROM related
-						JOIN MRCONSO s ON related.CUI1 = s.CUI
-					WHERE
-						s.LAT = 'ENG'
-				) sym
-				JOIN MRSTY semtype ON sym.CUI = semtype.CUI
-			WHERE
-				semtype.TUI = 'T184'
-		)
-	SELECT DISTINCT symptoms.CUI, ANY_VALUE(symptoms.STR) AS STR, ANY_VALUE(def.DEF) AS DEF
-	FROM symptoms
-	LEFT JOIN MRDEF def ON symptoms.CUI = def.CUI
-    WHERE def.SAB = 'MSH'
-    GROUP BY symptoms.CUI`
+    disease AS (
+        SELECT *
+        FROM MRCONSO
+        WHERE
+            CODE = ?
+            AND SAB IN (
+                'ICD10CM',
+                'ICD10',
+                'ICD10WHO'
+            )
+            AND LAT = 'ENG'
+    ),
+    relatedCUIs AS (
+        SELECT DISTINCT
+            rel.CUI2 AS cui
+        FROM disease
+            JOIN MRREL rel ON disease.CUI = rel.CUI1
+        UNION
+        SELECT DISTINCT
+            rel.CUI1 AS cui
+        FROM disease
+            JOIN MRREL rel ON disease.CUI = rel.CUI2
+    ),
+    symptomCUIs AS (
+        SELECT relatedCUIs.*
+        FROM relatedCUIs
+            JOIN MRSTY semtype ON relatedCUIs.CUI = semtype.CUI
+        WHERE
+            semtype.TUI = 'T184'
+    ),
+    symptoms AS (
+        SELECT DISTINCT MRCONSO.CUI, ANY_VALUE(MRCONSO.STR) AS STR
+        FROM MRCONSO
+            JOIN symptomCUIs ON MRCONSO.CUI = symptomCUIs.CUI
+        WHERE
+            MRCONSO.LAT = 'ENG'
+        GROUP BY MRCONSO.CUI
+    )
+SELECT DISTINCT
+    symptoms.CUI,
+    ANY_VALUE(symptoms.STR) AS STR,
+    ANY_VALUE(def.DEF) AS DEF
+FROM symptoms
+    LEFT JOIN MRDEF def ON symptoms.CUI = def.CUI
+WHERE
+    def.SAB = 'MSH'
+GROUP BY
+    symptoms.CUI
+	`
 
 	rows, err := db.DB.QueryContext(ctx, query, icd)
 	if err != nil {

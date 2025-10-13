@@ -11,10 +11,12 @@ func SetupRouter() *gin.Engine {
 	r.Use(gin.ErrorLogger())
 	r.Use(gin.Recovery())
 
+	caseController := controller.NewCaseController()
 	patientPresentationController := controller.NewPatientPresentationController()
 	anamnesisController := controller.NewAnamnesisController()
 	procedureController := controller.NewProcedureController()
 
+	r.POST("/disease/:diseaseName/case", caseController.GenerateWholeCase)
 	r.POST("/disease/:diseaseName/anamnesis", anamnesisController.GenerateAnamnesis)
 	r.POST("/disease/:diseaseName/patientPresentation", patientPresentationController.GeneratePatientPresentation)
 	r.POST("/disease/:diseaseName/procedures", procedureController.GenerateProcedures)

@@ -2,6 +2,7 @@ package service
 
 import (
 	"case-generator/models"
+	"case-generator/utils"
 	"context"
 	"fmt"
 
@@ -50,18 +51,23 @@ func (s *PatientPresentationService) GeneratePatientPresentation(ctx context.Con
 		return presentation, fmt.Errorf("LLM service is not available. Please ensure Ollama is running")
 	}
 
-	symptomData, err := s.llmService.GenerateJSON(ctx, s.createPatientPresentationPrompt(diseaseName, symptoms))
+	response, err := s.llmService.Generate(ctx, s.createPatientPresentationPrompt(diseaseName, symptoms))
 	if err != nil {
 		log.Errorf("Failed to generate patient presentation: %v", err)
 		return presentation, fmt.Errorf("failed to generate patient presentation: %w", err)
 	}
+	jsonObject, err := utils.ExtractJsonObject(response)
+	if err != nil {
+		log.Errorf("Failed to parse patient presentation: %v", err)
+		return presentation, fmt.Errorf("failed to parse patient presentation: %w", err)
+	}
 
-	presentation.FromDict(symptomData["presentation"].(map[string]any))
+	presentation.FromDict(jsonObject["presentation"].(map[string]any))
 	if presentation.TreatmentReason == "" {
 		return presentation, fmt.Errorf("no patient presentation found in response")
 	}
 
-	symptomIds, ok := symptomData["symptoms"].([]any)
+	symptomIds, ok := jsonObject["symptoms"].([]any)
 	if !ok {
 		return presentation, fmt.Errorf("no symptoms found in response")
 	}

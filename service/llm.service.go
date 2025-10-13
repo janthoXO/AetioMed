@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -85,35 +84,6 @@ func (s *LLMService) Generate(ctx context.Context, prompt string) (string, error
 
 	log.Debugf("LLM raw response: %s", result.Response)
 	return result.Response, nil
-}
-
-func (s *LLMService) GenerateJSON(ctx context.Context, prompt string) (map[string]any, error) {
-	llmResponse, err := s.Generate(ctx, prompt)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Debugf("LLM response: %s", llmResponse)
-
-	// Try to extract JSON from the response using regex (from first "{" to last "}")
-	re := regexp.MustCompile(`(?s)\{.*\}`)
-	match := re.FindString(llmResponse)
-
-	var jsonStr string
-	if match != "" {
-		jsonStr = match
-	} else {
-		// Fallback: try to parse the entire response as JSON
-		jsonStr = llmResponse
-	}
-
-	var jsonData map[string]any
-	if err := json.Unmarshal([]byte(jsonStr), &jsonData); err != nil {
-		log.Errorf("Failed to parse LLM JSON response: %v", err)
-		return nil, fmt.Errorf("failed to parse LLM JSON response: %w", err)
-	}
-
-	return jsonData, nil
 }
 
 func (s *LLMService) HealthCheck(ctx context.Context) bool {

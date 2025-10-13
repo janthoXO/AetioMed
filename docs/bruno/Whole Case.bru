@@ -1,11 +1,11 @@
 meta {
-  name: Patient Presentation
+  name: Whole Case
   type: http
-  seq: 3
+  seq: 2
 }
 
 post {
-  url: {{base_url}}/disease/:diseaseName/patientPresentation
+  url: {{base_url}}/disease/:diseaseName/case
   body: json
   auth: inherit
 }
@@ -15,7 +15,8 @@ params:path {
 }
 
 body:json {
-  [
+  {
+    "symptoms": [
     {
       "id": "C0010200",
       "name": "Cough",
@@ -59,6 +60,7 @@ body:json {
       "frequency": "common"
     }
   ]
+  }  
 }
 
 settings {

@@ -2,6 +2,7 @@ package service
 
 import (
 	"case-generator/models"
+	"case-generator/utils"
 	"context"
 	"fmt"
 
@@ -36,17 +37,15 @@ The anamnesis should contain the categories:
 - Kardiovaskuläre Risikofaktoren
 - Sozial-/Berufsanamnese
 Please respond with a JSON object containing the anamnesis.
-{
-    "anamnesis": [
-	 	// array of anamnesis categories
-		{
-			"category":      string // the category of the anamnesis question
-			"answer":        string // the answer to the question
-			"timeCost":      float64 // time needed to ask the question in minutes
-		}, ...
-	]
+ [
+	// array of anamnesis categories
+	{
+		"category":      string // the category of the anamnesis question
+		"answer":        string // the answer to the question
+		"timeCost":      float64 // time needed to ask the question in minutes
+	}, ...
+]
 
-}
 
 Requirements:
 - Be medically accurate
@@ -61,23 +60,21 @@ func (s *AnamnesisService) GenerateAnamnesis(ctx context.Context, diseaseName st
 		return nil, fmt.Errorf("LLM service is not available. Please ensure Ollama is running")
 	}
 
-	symptomData, err := s.llmService.GenerateJSON(ctx, s.createAnamnesisPrompt(diseaseName, symptoms, patientPresentation.TreatmentReason))
+	response, err := s.llmService.Generate(ctx, s.createAnamnesisPrompt(diseaseName, symptoms, patientPresentation.TreatmentReason))
 	if err != nil {
 		log.Errorf("Failed to generate anamnesis: %v", err)
 		return nil, fmt.Errorf("failed to generate anamnesis: %w", err)
 	}
 
-	anamnesisArray, ok := symptomData["anamnesis"].([]any)
-	if !ok {
-		return nil, fmt.Errorf("no anamnesis found in response")
+	anamnesisArray, err := utils.ExtractJsonArray(response)
+	if err != nil {
+		return nil, fmt.Errorf("no anamnesis found in response: %w", err)
 	}
 
 	for _, item := range anamnesisArray {
-		if dict, ok := item.(map[string]any); ok {
-			var a models.Anamnesis
-			a.FromDict(dict)
-			anamnesis = append(anamnesis, a)
-		}
+		var a models.Anamnesis
+		a.FromDict(item)
+		anamnesis = append(anamnesis, a)
 	}
 
 	return anamnesis, nil

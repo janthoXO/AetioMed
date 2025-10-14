@@ -65,9 +65,7 @@ services:
       - cache
 
   umls-db:
-    build:
-      context: ./UMLS
-      dockerfile: Dockerfile
+    image: gitlab.lrz.de:5005/ilvi/umls/umls:latest
     environment:
       - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD:-test}
       - MYSQL_USER=${MYSQL_USER:-test}

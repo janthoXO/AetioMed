@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -23,11 +24,25 @@ type OllamaResponse struct {
 	Response string `json:"response"`
 }
 
-type LLMService struct {
-	client *http.Client
+const HEALTH_CHECK_INTERVAL = time.Duration(120 * time.Second)
+
+type HealthCheck struct {
+	lastChecked time.Time
+	healthy     bool
 }
 
-var llmService = LLMService{client: &http.Client{}}
+type LLMService struct {
+	client      *http.Client
+	healthCheck HealthCheck
+}
+
+var llmService = LLMService{
+	client: &http.Client{},
+	healthCheck: HealthCheck{
+		lastChecked: time.Time{}, // init with zero time
+		healthy:     false,
+	},
+}
 
 func GetLLMService() *LLMService {
 	return &llmService
@@ -87,6 +102,10 @@ func (s *LLMService) Generate(ctx context.Context, prompt string) (string, error
 }
 
 func (s *LLMService) HealthCheck(ctx context.Context) bool {
+	if s.healthCheck.healthy && s.healthCheck.lastChecked.Add(HEALTH_CHECK_INTERVAL).After(time.Now()) {
+		return true
+	}
+
 	url := fmt.Sprintf("%s/api/tags", utils.Cfg.OllamaApi.Url)
 	log.Debugf("Performing health check on Ollama at: %s", url)
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
@@ -100,5 +119,7 @@ func (s *LLMService) HealthCheck(ctx context.Context) bool {
 	}
 	defer resp.Body.Close()
 
-	return resp.StatusCode == http.StatusOK
+	s.healthCheck.healthy = resp.StatusCode == http.StatusOK
+	s.healthCheck.lastChecked = time.Now()
+	return s.healthCheck.healthy
 }

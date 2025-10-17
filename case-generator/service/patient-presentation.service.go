@@ -5,6 +5,7 @@ import (
 	"case-generator/utils"
 	"context"
 	"fmt"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -19,39 +20,33 @@ func NewPatientPresentationService() *PatientPresentationService {
 	}
 }
 
-func (s *PatientPresentationService) createPatientPresentationPrompt(diseaseName string, symptoms []models.Symptom) string {
-	return fmt.Sprintf(`You are a medical expert AI. Given a disease name and a set of symptoms, provide an patient presentation picking a subset of the symptoms.
+func (s *PatientPresentationService) createPatientPresentationPrompt(diseaseName string, symptoms []models.Symptom, anamnesis []models.Anamnesis, procedures []models.Procedure, additionalPrompt ...string) string {
+	return fmt.Sprintf(`You are a medical expert AI. Generate a realistic chief complaint (treatment reason) for a patient with %s.
 
-Disease: %s
+%s
 
-Symptoms: %v
-
-Please respond with a JSON object containing the patient presentation and the picked symptoms.
-{
-    "presentation": {
-		"treatmentReason": "string", // A brief reason why the patient seeks medical attention
-	},
-	"symptoms": [ 
-		// A list of the symptoms ids
-	]
-}
+Return ONLY a JSON object: 
+{"treatmentReason": "the patient's complaint in their own words"}
 
 Requirements:
 - Be medically accurate
 - The treatment reason should be concise and relevant to the disease
-- Pick symptoms that are commonly associated with the disease
 - Ensure the JSON is properly formatted
 - Only include the JSON response, no additional text
-`, diseaseName, symptoms)
+
+%s
+`, diseaseName, utils.ContextLine(symptoms, models.PatientPresentation{}, anamnesis, procedures), strings.Join(additionalPrompt, "\n"))
 }
 
-func (s *PatientPresentationService) GeneratePatientPresentation(ctx context.Context, diseaseName string, symptoms []models.Symptom) (presentation models.PatientPresentation, err error) {
+func (s *PatientPresentationService) GeneratePatientPresentation(ctx context.Context, diseaseName string, symptoms []models.Symptom, anamnesis []models.Anamnesis, procedures []models.Procedure, additionalPrompt ...string) (presentation models.PatientPresentation, err error) {
 	// Check if service is available
 	if !s.llmService.HealthCheck(ctx) {
 		return presentation, fmt.Errorf("LLM service is not available. Please ensure Ollama is running")
 	}
 
-	response, err := s.llmService.Generate(ctx, s.createPatientPresentationPrompt(diseaseName, symptoms))
+	prompt := s.createPatientPresentationPrompt(diseaseName, symptoms, anamnesis, procedures, additionalPrompt...)
+	log.Debugf("Presentation Prompt: %s\n", prompt)
+	response, err := s.llmService.Generate(ctx, prompt)
 	if err != nil {
 		log.Errorf("Failed to generate patient presentation: %v", err)
 		return presentation, fmt.Errorf("failed to generate patient presentation: %w", err)
@@ -62,26 +57,9 @@ func (s *PatientPresentationService) GeneratePatientPresentation(ctx context.Con
 		return presentation, fmt.Errorf("failed to parse patient presentation: %w", err)
 	}
 
-	presentation.FromDict(jsonObject["presentation"].(map[string]any))
+	presentation.FromDict(jsonObject)
 	if presentation.TreatmentReason == "" {
 		return presentation, fmt.Errorf("no patient presentation found in response")
-	}
-
-	symptomIds, ok := jsonObject["symptoms"].([]any)
-	if !ok {
-		return presentation, fmt.Errorf("no symptoms found in response")
-	}
-
-	// Filter the symptoms to only include the picked ones
-	symptomMap := make(map[string]models.Symptom)
-	for _, symptom := range symptoms {
-		symptomMap[symptom.ID] = symptom
-	}
-
-	for _, id := range symptomIds {
-		if symptom, exists := symptomMap[id.(string)]; exists {
-			presentation.Symptoms = append(presentation.Symptoms, symptom)
-		}
 	}
 
 	return presentation, nil

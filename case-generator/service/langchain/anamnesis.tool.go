@@ -1,8 +1,9 @@
-package service
+package langchain
 
 import (
 	"case-generator/models"
 	"case-generator/utils"
+	"case-generator/service"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,11 +13,11 @@ import (
 
 // GenerateAnamnesisTool generates anamnesis items
 type GenerateAnamnesisTool struct {
-	ctx        *CaseContext
-	llmService *LLMService
+	ctx        *service.CaseContext
+	llmService *service.LLMService
 }
 
-func NewGenerateAnamnesisTool(ctx *CaseContext, llmService *LLMService) *GenerateAnamnesisTool {
+func NewGenerateAnamnesisTool(ctx *service.CaseContext, llmService *service.LLMService) *GenerateAnamnesisTool {
 	return &GenerateAnamnesisTool{ctx: ctx, llmService: llmService}
 }
 
@@ -32,7 +33,8 @@ func (t *GenerateAnamnesisTool) Call(ctx context.Context, input string) (string,
 	log.Debugf("GenerateAnamnesisTool called with %+v\n %s", t.ctx, input)
 
 	prompt := fmt.Sprintf(`Generate realistic anamnesis (medical history) for a patient with %s.
-Context symptoms: %+v
+Context 
+symptoms: %+v
 Treatment reason: %s
 
 Generate items covering: personal history, family history, social history, medications, allergies, review of systems.
@@ -46,7 +48,7 @@ Return ONLY a JSON array:
   }
 ]
 
-TimeCost is in minutes (1-5).`, t.ctx.DiseaseName, t.ctx.ContextSymptoms, t.ctx.PatientPresentation.TreatmentReason)
+TimeCost is in minutes (1-5).`, t.ctx.DiseaseName, t.ctx.Symptoms, t.ctx.PatientPresentation.TreatmentReason)
 
 	response, err := t.llmService.Generate(ctx, prompt)
 	if err != nil {

@@ -3,6 +3,7 @@ package controller
 import (
 	"case-generator/models"
 	"case-generator/service"
+	"case-generator/service/loop"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -11,12 +12,12 @@ import (
 )
 
 type CaseController struct {
-	CaseService *service.CaseService
+	CaseService service.CaseService
 }
 
 func NewCaseController() *CaseController {
 	return &CaseController{
-		CaseService: service.NewCaseService(),
+		CaseService: loop.NewLoopCaseService(),
 	}
 }
 
@@ -24,6 +25,7 @@ type CaseRequestDTO struct {
 	Symptoms            []models.Symptom           `json:"symptoms"`
 	PatientPresentation models.PatientPresentation `json:"patientPresentation"`
 	Anamnesis           []models.Anamnesis         `json:"anamnesis"`
+	Procedures          []models.Procedure         `json:"procedures"`
 }
 
 func (controller *CaseController) GenerateWholeCase(c *gin.Context) {
@@ -32,10 +34,10 @@ func (controller *CaseController) GenerateWholeCase(c *gin.Context) {
 	// add flags which fields should be generated based on query parameters
 	var bitMask byte
 	if v, ok := c.GetQuery("patientPresentation"); ok && v == "true" {
-		bitMask = bitMask | models.PatientPresentationFlag
+		bitMask = bitMask | byte(models.PatientPresentationFlag)
 	}
 	if v, ok := c.GetQuery("anamnesis"); ok && v == "true" {
-		bitMask = bitMask | models.AnamnesisFlag
+		bitMask = bitMask | byte(models.AnamnesisFlag)
 	}
 	// if no fields are specified, generate all fields
 	if bitMask == 0 {
@@ -50,8 +52,10 @@ func (controller *CaseController) GenerateWholeCase(c *gin.Context) {
 		return
 	}
 
+	log.Debugf("Generating case for disease: %s with bitmask: %08b", diseaseName, bitMask)
+
 	// Call the service to generate the case
-	presentation, anamnesis, err := controller.CaseService.GenerateWholeCase(c, diseaseName, bitMask, requestDTO.Symptoms, requestDTO.PatientPresentation, requestDTO.Anamnesis)
+	presentation, anamnesis, err := controller.CaseService.GenerateWholeCase(c, diseaseName, bitMask, requestDTO.Symptoms, requestDTO.PatientPresentation, requestDTO.Anamnesis, requestDTO.Procedures)
 	if err != nil {
 		log.Errorf("Failed to generate case: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate case"})

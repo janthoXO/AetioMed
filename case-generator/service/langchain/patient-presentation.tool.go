@@ -1,7 +1,8 @@
-package service
+package langchain
 
 import (
 	"case-generator/utils"
+	"case-generator/service"
 	"context"
 	"fmt"
 
@@ -10,11 +11,11 @@ import (
 
 // GenerateTreatmentReasonTool generates the patient's chief complaint
 type GenerateTreatmentReasonTool struct {
-	ctx        *CaseContext
-	llmService *LLMService
+	ctx        *service.CaseContext
+	llmService *service.LLMService
 }
 
-func NewGenerateTreatmentReasonTool(ctx *CaseContext, llmService *LLMService) *GenerateTreatmentReasonTool {
+func NewGenerateTreatmentReasonTool(ctx *service.CaseContext, llmService *service.LLMService) *GenerateTreatmentReasonTool {
 	return &GenerateTreatmentReasonTool{ctx: ctx, llmService: llmService}
 }
 
@@ -34,7 +35,7 @@ Context symptoms: %+v
 Anamnesis: %+v
 
 Return ONLY a JSON object: {"treatmentReason": "the patient's complaint in their own words"}`,
-		t.ctx.DiseaseName, t.ctx.ContextSymptoms, t.ctx.Anamnesis)
+		t.ctx.DiseaseName, t.ctx.Symptoms, t.ctx.Anamnesis)
 
 	response, err := t.llmService.Generate(ctx, prompt)
 	if err != nil {

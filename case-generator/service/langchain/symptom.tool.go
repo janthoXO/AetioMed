@@ -1,8 +1,9 @@
-package service
+package langchain
 
 import (
 	"case-generator/models"
 	"case-generator/utils"
+	"case-generator/service"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -12,11 +13,11 @@ import (
 
 // GenerateSymptomsTool generates symptoms for the patient
 type GenerateSymptomsTool struct {
-	ctx        *CaseContext
-	llmService *LLMService
+	ctx        *service.CaseContext
+	llmService *service.LLMService
 }
 
-func NewGenerateSymptomsTool(ctx *CaseContext, llmService *LLMService) *GenerateSymptomsTool {
+func NewGenerateSymptomsTool(ctx *service.CaseContext, llmService *service.LLMService) *GenerateSymptomsTool {
 	return &GenerateSymptomsTool{ctx: ctx, llmService: llmService}
 }
 
@@ -46,7 +47,7 @@ Return ONLY a JSON object:
 		"frequency": "rare|uncommon|common|very_common"
 	}
 ]
-`, t.ctx.DiseaseName, t.ctx.ContextSymptoms, t.ctx.PatientPresentation.TreatmentReason)
+`, t.ctx.DiseaseName, t.ctx.Symptoms, t.ctx.PatientPresentation.TreatmentReason)
 
 	response, err := t.llmService.Generate(ctx, prompt)
 	if err != nil {

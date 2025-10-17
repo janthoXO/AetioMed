@@ -1,6 +1,7 @@
-package service
+package langchain
 
 import (
+	"case-generator/service"
 	"context"
 	"fmt"
 
@@ -9,11 +10,11 @@ import (
 
 // CheckConsistencyTool validates consistency across all fields
 type CheckConsistencyTool struct {
-	ctx        *CaseContext
-	llmService *LLMService
+	ctx        *service.CaseContext
+	llmService *service.LLMService
 }
 
-func NewCheckConsistencyTool(ctx *CaseContext, llmService *LLMService) *CheckConsistencyTool {
+func NewCheckConsistencyTool(ctx *service.CaseContext, llmService *service.LLMService) *CheckConsistencyTool {
 	return &CheckConsistencyTool{ctx: ctx, llmService: llmService}
 }
 
@@ -44,7 +45,7 @@ Return ONLY a JSON object:
   "isConsistent": true/false,
   "issues": ["list of issues found, empty if consistent"],
   "recommendations": ["what should be regenerated if inconsistent"]
-}`, t.ctx.DiseaseName, t.ctx.ContextSymptoms, t.ctx.PatientPresentation.TreatmentReason, t.ctx.Anamnesis)
+}`, t.ctx.DiseaseName, t.ctx.Symptoms, t.ctx.PatientPresentation.TreatmentReason, t.ctx.Anamnesis)
 
 	response, err := t.llmService.Generate(ctx, prompt)
 	if err != nil {

@@ -20,18 +20,24 @@ func NewPatientPresentationController() *PatientPresentationController {
 	}
 }
 
+type PresentationRequestDTO struct {
+	Symptoms   []models.Symptom   `json:"symptoms"`
+	Anamnesis  []models.Anamnesis `json:"anamnesis"`
+	Procedures []models.Procedure `json:"procedures"`
+}
+
 func (controller *PatientPresentationController) GeneratePatientPresentation(c *gin.Context) {
 	diseaseName := c.Param("diseaseName")
 
-	var symptoms []models.Symptom
-	err := c.ShouldBindJSON(&symptoms)
+	var requestDTO PresentationRequestDTO
+	err := c.ShouldBindJSON(&requestDTO)
 	if err != nil {
 		log.Errorf("Failed to bind JSON: %v", err)
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON"})
 		return
 	}
 
-	presentation, err := controller.PatientPresentationServie.GeneratePatientPresentation(c, diseaseName, symptoms)
+	presentation, err := controller.PatientPresentationServie.GeneratePatientPresentation(c, diseaseName, requestDTO.Symptoms, requestDTO.Anamnesis, requestDTO.Procedures)
 	if err != nil {
 		log.Errorf("Failed to generate patient presentation: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate patient presentation"})

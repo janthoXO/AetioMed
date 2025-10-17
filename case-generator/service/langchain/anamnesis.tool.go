@@ -2,8 +2,8 @@ package langchain
 
 import (
 	"case-generator/models"
-	"case-generator/utils"
 	"case-generator/service"
+	"case-generator/utils"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,10 +14,10 @@ import (
 // GenerateAnamnesisTool generates anamnesis items
 type GenerateAnamnesisTool struct {
 	ctx        *service.CaseContext
-	llmService *service.LLMService
+	llmService service.LLMService
 }
 
-func NewGenerateAnamnesisTool(ctx *service.CaseContext, llmService *service.LLMService) *GenerateAnamnesisTool {
+func NewGenerateAnamnesisTool(ctx *service.CaseContext, llmService service.LLMService) *GenerateAnamnesisTool {
 	return &GenerateAnamnesisTool{ctx: ctx, llmService: llmService}
 }
 

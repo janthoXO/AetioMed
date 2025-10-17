@@ -15,6 +15,10 @@ type Inconsistency struct {
 }
 
 func (c *Inconsistency) FromDict(data map[string]any) {
+	if fieldStr, ok := data["field"].(string); ok {
+		c.Field = fieldStr
+	}
+
 	if issueStr, ok := data["issue"].(string); ok {
 		c.Issue = issueStr
 	}
@@ -22,7 +26,6 @@ func (c *Inconsistency) FromDict(data map[string]any) {
 	if recStr, ok := data["recommendation"].(string); ok {
 		c.Recommendation = recStr
 	}
-
 }
 
 func (c *Inconsistency) PromptLine() string {

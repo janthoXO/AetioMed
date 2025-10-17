@@ -11,7 +11,7 @@ import (
 )
 
 type AnamnesisService struct {
-	llmService *LLMService
+	llmService LLMService
 }
 
 func NewAnamnesisService() *AnamnesisService {

@@ -1,8 +1,8 @@
 package langchain
 
 import (
-	"case-generator/utils"
 	"case-generator/service"
+	"case-generator/utils"
 	"context"
 	"fmt"
 
@@ -12,10 +12,10 @@ import (
 // GenerateTreatmentReasonTool generates the patient's chief complaint
 type GenerateTreatmentReasonTool struct {
 	ctx        *service.CaseContext
-	llmService *service.LLMService
+	llmService service.LLMService
 }
 
-func NewGenerateTreatmentReasonTool(ctx *service.CaseContext, llmService *service.LLMService) *GenerateTreatmentReasonTool {
+func NewGenerateTreatmentReasonTool(ctx *service.CaseContext, llmService service.LLMService) *GenerateTreatmentReasonTool {
 	return &GenerateTreatmentReasonTool{ctx: ctx, llmService: llmService}
 }
 

@@ -17,7 +17,7 @@ import (
 )
 
 type LangchainCaseService struct {
-	llmService *service.LLMService
+	llmService service.LLMService
 }
 
 func NewLangchainCaseService() *LangchainCaseService {

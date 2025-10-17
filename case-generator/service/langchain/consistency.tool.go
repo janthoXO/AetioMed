@@ -11,10 +11,10 @@ import (
 // CheckConsistencyTool validates consistency across all fields
 type CheckConsistencyTool struct {
 	ctx        *service.CaseContext
-	llmService *service.LLMService
+	llmService service.LLMService
 }
 
-func NewCheckConsistencyTool(ctx *service.CaseContext, llmService *service.LLMService) *CheckConsistencyTool {
+func NewCheckConsistencyTool(ctx *service.CaseContext, llmService service.LLMService) *CheckConsistencyTool {
 	return &CheckConsistencyTool{ctx: ctx, llmService: llmService}
 }
 

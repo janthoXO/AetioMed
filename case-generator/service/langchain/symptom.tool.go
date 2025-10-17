@@ -2,8 +2,8 @@ package langchain
 
 import (
 	"case-generator/models"
-	"case-generator/utils"
 	"case-generator/service"
+	"case-generator/utils"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -14,10 +14,10 @@ import (
 // GenerateSymptomsTool generates symptoms for the patient
 type GenerateSymptomsTool struct {
 	ctx        *service.CaseContext
-	llmService *service.LLMService
+	llmService service.LLMService
 }
 
-func NewGenerateSymptomsTool(ctx *service.CaseContext, llmService *service.LLMService) *GenerateSymptomsTool {
+func NewGenerateSymptomsTool(ctx *service.CaseContext, llmService service.LLMService) *GenerateSymptomsTool {
 	return &GenerateSymptomsTool{ctx: ctx, llmService: llmService}
 }
 

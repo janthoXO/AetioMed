@@ -11,7 +11,7 @@ import (
 )
 
 type ConsistencyService struct {
-	llmService *LLMService
+	llmService LLMService
 }
 
 func NewConsistencyService() *ConsistencyService {
@@ -31,12 +31,18 @@ Check for:
 2. Consistency between symptoms, treatment reason, and anamnesis
 3. Logical coherence
 
-Return ONLY a JSON object:
-{
-  "Field": %s,
-  "issue": string,
-  "recommendation": string
-}
+Return ONLY a JSON Array:
+[
+	{
+	"field": %s,
+	"issue": string,
+	"recommendation": string
+	}, ...
+]
+
+Requirements:
+- Be medically accurate
+- Only include the JSON response, no additional text
 `, diseaseName, utils.ContextLine(symptoms, patientPresentation, anamnesis, procedures), strings.Join(models.AllFlagNames(), "|"))
 }
 

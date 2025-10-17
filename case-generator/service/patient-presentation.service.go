@@ -11,7 +11,7 @@ import (
 )
 
 type PatientPresentationService struct {
-	llmService *LLMService
+	llmService LLMService
 }
 
 func NewPatientPresentationService() *PatientPresentationService {

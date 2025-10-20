@@ -9,14 +9,14 @@ package models
 import "fmt"
 
 type Inconsistency struct {
-	Field          string
+	Field          FieldFlag
 	Issue          string
 	Recommendation string
 }
 
 func (c *Inconsistency) FromDict(data map[string]any) {
 	if fieldStr, ok := data["field"].(string); ok {
-		c.Field = fieldStr
+		c.Field, _ = StringToFieldFlag(fieldStr)
 	}
 
 	if issueStr, ok := data["issue"].(string); ok {

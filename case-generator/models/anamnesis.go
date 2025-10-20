@@ -1,9 +1,9 @@
 package models
 
 type Anamnesis struct {
-	Category      string `json:"category"`
-	Answer        string `json:"answer"`
-	TimeCost      float64 `json:"timeCost"`
+	Category string  `json:"category"`
+	Answer   string  `json:"answer"`
+	TimeCost float64 `json:"timeCost"`
 }
 
 func (a *Anamnesis) FromDict(dict map[string]interface{}) {
@@ -17,3 +17,20 @@ func (a *Anamnesis) FromDict(dict map[string]interface{}) {
 		a.TimeCost = val
 	}
 }
+
+const AnamnesisExampleJSON = `
+[
+	{
+		"category": "category name",
+		"answer": "patient's answer",
+		"timeCost": int (time cost in minutes)
+	}
+] // containing the categories:
+	// - Krankheitsverlauf
+	// - Vorerkrankungen
+	// - Medikamente
+	// - Allergien
+	// - Familienanamnese
+	// - Kardiovaskuläre Risikofaktoren
+	// - Sozial-/Berufsanamnese
+`

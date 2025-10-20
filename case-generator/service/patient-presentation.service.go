@@ -26,7 +26,7 @@ func (s *PatientPresentationService) createPatientPresentationPrompt(diseaseName
 %s
 
 Return ONLY a JSON object: 
-{"treatmentReason": "the patient's complaint in their own words"}
+%s
 
 Requirements:
 - Be medically accurate
@@ -35,7 +35,10 @@ Requirements:
 - Only include the JSON response, no additional text
 
 %s
-`, diseaseName, utils.ContextLine(symptoms, models.PatientPresentation{}, anamnesis, procedures), strings.Join(additionalPrompt, "\n"))
+`, diseaseName,
+		utils.ContextLine(symptoms, models.PatientPresentation{}, anamnesis, procedures),
+		models.PatientPresentationExampleJSON,
+		strings.Join(additionalPrompt, "\n"))
 }
 
 func (s *PatientPresentationService) GeneratePatientPresentation(ctx context.Context, diseaseName string, symptoms []models.Symptom, anamnesis []models.Anamnesis, procedures []models.Procedure, additionalPrompt ...string) (presentation models.PatientPresentation, err error) {

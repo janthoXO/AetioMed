@@ -25,3 +25,5 @@ func (pp *PatientPresentation) FromDict(data map[string]any) {
 		pp.Symptoms = append(pp.Symptoms, symptom)
 	}
 }
+
+const PatientPresentationExampleJSON = `{"treatmentReason": "the patient's complaint in their own words"}`

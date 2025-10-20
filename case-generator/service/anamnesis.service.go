@@ -25,23 +25,8 @@ func (s *AnamnesisService) createAnamnesisPrompt(diseaseName string, symptoms []
 
 %s
 
-The anamnesis should contain the categories:
-- Krankheitsverlauf
-- Vorerkrankungen
-- Medikamente
-- Allergien
-- Familienanamnese
-- Kardiovaskuläre Risikofaktoren
-- Sozial-/Berufsanamnese
-
 Return ONLY a JSON array:
-[
-  {
-    "category": "category name",
-    "answer": "patient's answer",
-    "timeCost": int (time cost in minutes)
-  }
-]
+%s
 
 Requirements:
 - Be medically accurate
@@ -49,7 +34,10 @@ Requirements:
 - Only include the JSON response, no additional text
 
 %s
-`, diseaseName, utils.ContextLine(symptoms, patientPresentation, nil, procedures), strings.Join(additionalPrompt, "\n"))
+`, diseaseName, 
+utils.ContextLine(symptoms, patientPresentation, nil, procedures), 
+models.AnamnesisExampleJSON,
+strings.Join(additionalPrompt, "\n"))
 }
 
 func (s *AnamnesisService) GenerateAnamnesis(ctx context.Context, diseaseName string, symptoms []models.Symptom, patientPresentation models.PatientPresentation, procedures []models.Procedure, additionalPrompt ...string) (anamnesis []models.Anamnesis, err error) {

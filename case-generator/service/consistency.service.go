@@ -20,9 +20,9 @@ func NewConsistencyService() *ConsistencyService {
 	}
 }
 
-func (s *ConsistencyService) createConsistencyPrompt(diseaseName string, symptoms []models.Symptom, patientPresentation models.PatientPresentation, anamnesis []models.Anamnesis, procedures []models.Procedure, additionalPrompt ...string) string {
+func (s *ConsistencyService) createConsistencyPrompt(diseaseName string, fieldsToCheck byte, symptoms []models.Symptom, patientPresentation models.PatientPresentation, anamnesis []models.Anamnesis, procedures []models.Procedure) string {
 	return fmt.Sprintf(`
-	Review this clinical case for %s for consistency:
+	Review this clinical case of a patient with %s for consistency. It should be for student learning and the disease should not be directly spoiled.
 
 %s
 
@@ -34,7 +34,7 @@ Check for:
 Return ONLY a JSON Array:
 [
 	{
-	"field": %s,
+	"field": "%s",
 	"issue": string,
 	"recommendation": string
 	}, ...
@@ -43,11 +43,18 @@ Return ONLY a JSON Array:
 Requirements:
 - Be medically accurate
 - Only include the JSON response, no additional text
-`, diseaseName, utils.ContextLine(symptoms, patientPresentation, anamnesis, procedures), strings.Join(models.AllFlagNames(), "|"))
+`, diseaseName, utils.ContextLine(symptoms, patientPresentation, anamnesis, procedures),
+		strings.Join(
+			utils.MapSlice(
+				models.BitmaskToFlagArr(fieldsToCheck),
+				func(f models.FieldFlag) string {
+					return f.String()
+				}),
+			"|"))
 }
 
-func (s *ConsistencyService) CheckConsistency(ctx context.Context, diseaseName string, symptoms []models.Symptom, patientPresentation models.PatientPresentation, anamnesis []models.Anamnesis, procedures []models.Procedure) (consistencies []models.Inconsistency, err error) {
-	prompt := s.createConsistencyPrompt(diseaseName, symptoms, patientPresentation, anamnesis, procedures)
+func (s *ConsistencyService) CheckConsistency(ctx context.Context, diseaseName string, fieldsToCheck byte, symptoms []models.Symptom, patientPresentation models.PatientPresentation, anamnesis []models.Anamnesis, procedures []models.Procedure) (consistencies []models.Inconsistency, err error) {
+	prompt := s.createConsistencyPrompt(diseaseName, fieldsToCheck, symptoms, patientPresentation, anamnesis, procedures)
 	log.Debugf("Consistency prompt: %s\n", prompt)
 
 	response, err := s.llmService.Generate(ctx, prompt)

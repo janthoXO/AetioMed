@@ -7,7 +7,7 @@ import (
 
 func ContextLine(symptoms []models.Symptom, presentation models.PatientPresentation, anamnesis []models.Anamnesis, procedures []models.Procedure) string {
 	s := ""
-	if symptoms != nil {
+	if symptoms != nil && len(symptoms) > 0 {
 		s = fmt.Sprintf("%s symptoms: %+v\n", s, symptoms)
 	}
 
@@ -15,12 +15,12 @@ func ContextLine(symptoms []models.Symptom, presentation models.PatientPresentat
 		s = fmt.Sprintf("%streatment reason: %s\n", s, presentation.TreatmentReason)
 	}
 
-	if anamnesis != nil {
+	if anamnesis != nil && len(anamnesis) > 0 {
 		s = fmt.Sprintf("%sanamnesis: %+v\n", s, anamnesis)
 	}
 
 	// TODO only add procedures names
-	if procedures != nil {
+	if procedures != nil && len(procedures) > 0 {
 		s = fmt.Sprintf("%sprocedures: %+v\n", s, procedures)
 	}
 

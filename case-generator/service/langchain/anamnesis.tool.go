@@ -50,7 +50,7 @@ Return ONLY a JSON array:
 
 TimeCost is in minutes (1-5).`, t.ctx.DiseaseName, t.ctx.Symptoms, t.ctx.PatientPresentation.TreatmentReason)
 
-	response, err := t.llmService.Generate(ctx, prompt)
+	response, err := t.llmService.Generate(ctx, prompt, "")
 	if err != nil {
 		return "", fmt.Errorf("failed to generate anamnesis: %w", err)
 	}

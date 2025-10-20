@@ -43,3 +43,22 @@ func ExtractJsonArray(input string) ([]map[string]any, error) {
 
 	return jsonData, nil
 }
+
+func WrapArrStructuredOutput(s string) string {
+	return fmt.Sprintf("{\"type\":\"object\",\"properties\":{\"arr\":%s}}", s)
+}
+
+func UnwrapStructuredOutputArrResponse(s string) string {
+	re := regexp.MustCompile(`(?s)\{\"arr\":(\[.*\])\}`)
+	matches := re.FindStringSubmatch(s)
+
+	if len(matches) < 2 {
+		return ""
+	}
+
+	return matches[1]
+}
+
+func WrapExampleJSONInArrObject(exampleJSON string) string {
+	return fmt.Sprintf("{\"arr\": %s}", exampleJSON)
+}

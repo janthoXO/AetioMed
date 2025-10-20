@@ -47,7 +47,7 @@ Return ONLY a JSON object:
   "recommendations": ["what should be regenerated if inconsistent"]
 }`, t.ctx.DiseaseName, t.ctx.Symptoms, t.ctx.PatientPresentation.TreatmentReason, t.ctx.Anamnesis)
 
-	response, err := t.llmService.Generate(ctx, prompt)
+	response, err := t.llmService.Generate(ctx, prompt, "")
 	if err != nil {
 		return "", fmt.Errorf("failed to check consistency: %w", err)
 	}

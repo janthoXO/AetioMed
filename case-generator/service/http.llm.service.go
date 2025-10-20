@@ -17,6 +17,7 @@ type OllamaRequest struct {
 	Model   string                 `json:"model"`
 	Prompt  string                 `json:"prompt"`
 	Stream  bool                   `json:"stream"`
+	Format  string                 `json:"format"`
 	Options map[string]interface{} `json:"options"`
 }
 
@@ -41,14 +42,18 @@ func GetHttpLLMService() *HttpLLMService {
 	return &httpLLMService
 }
 
-func (s *HttpLLMService) Generate(ctx context.Context, prompt string) (string, error) {
-	log.Debugf("Using Http Ollama at: %s", utils.Cfg.OllamaApi.Url)
-	log.Debugf("Using model: %s", utils.Cfg.OllamaApi.Model)
+func (s *HttpLLMService) Generate(ctx context.Context, prompt string, structuredOutput string) (string, error) {
+	if structuredOutput == "" {
+		structuredOutput = "json"
+	}
+	// TODO remove
+	structuredOutput = "json"
 
 	payload := OllamaRequest{
 		Model:  utils.Cfg.OllamaApi.Model,
 		Prompt: prompt,
 		Stream: false,
+		Format: structuredOutput,
 	}
 
 	jsonData, err := json.Marshal(payload)
@@ -56,6 +61,8 @@ func (s *HttpLLMService) Generate(ctx context.Context, prompt string) (string, e
 		log.Errorf("Error marshaling request: %v", err)
 		return "", fmt.Errorf("failed to marshal request: %w", err)
 	}
+
+	log.Debugf("Using Http Ollama: %s", jsonData)
 
 	url := fmt.Sprintf("%s/api/generate", utils.Cfg.OllamaApi.Url)
 	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewBuffer(jsonData))

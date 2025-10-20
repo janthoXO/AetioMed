@@ -49,7 +49,7 @@ Return ONLY a JSON object:
 ]
 `, t.ctx.DiseaseName, t.ctx.Symptoms, t.ctx.PatientPresentation.TreatmentReason)
 
-	response, err := t.llmService.Generate(ctx, prompt)
+	response, err := t.llmService.Generate(ctx, prompt, "")
 	if err != nil {
 		return "", fmt.Errorf("failed to generate symptoms: %w", err)
 	}

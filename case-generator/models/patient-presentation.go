@@ -6,24 +6,32 @@ type PatientPresentation struct {
 }
 
 func (pp *PatientPresentation) FromDict(data map[string]any) {
-	pp.TreatmentReason = data["treatmentReason"].(string)
-
-	symptoms, ok := data["symptoms"].([]any)
-	if !ok {
-		return
+	if treatmentReason, ok := data["treatmentReason"].(string); ok {
+		pp.TreatmentReason = treatmentReason
 	}
 
-	for _, s := range symptoms {
-		symptomMap, ok := s.(map[string]any)
-		if !ok {
-			continue
+	if symptoms, ok := data["symptoms"].([]any); ok {
+		for _, s := range symptoms {
+			symptomMap, ok := s.(map[string]any)
+			if !ok {
+				continue
+			}
+			var symptom Symptom
+			if err := symptom.FromDict(symptomMap); err != nil {
+				continue
+			}
+			pp.Symptoms = append(pp.Symptoms, symptom)
 		}
-		var symptom Symptom
-		if err := symptom.FromDict(symptomMap); err != nil {
-			continue
-		}
-		pp.Symptoms = append(pp.Symptoms, symptom)
 	}
 }
 
 const PatientPresentationExampleJSON = `{"treatmentReason": "the patient's complaint in their own words"}`
+
+const PatientPresentationStructuredOutput = `{
+"type": "object",
+"properties": {
+	"treatmentReason": {
+		"type": "string"
+	}
+}
+}`

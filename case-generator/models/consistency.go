@@ -6,7 +6,10 @@
 
 package models
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 type Inconsistency struct {
 	Field          FieldFlag
@@ -30,4 +33,36 @@ func (c *Inconsistency) FromDict(data map[string]any) {
 
 func (c *Inconsistency) PromptLine() string {
 	return fmt.Sprintf("Inconsistency: %s\nRecommendation: %s\n", c.Issue, c.Recommendation)
+}
+
+func ConsistencyExampleJSON(fields []string) string {
+	return fmt.Sprintf(`{
+		"field": "%s",
+		"issue": string,
+		"recommendation": string
+		}`, strings.Join(fields, "|"),
+	)
+}
+
+func ConsistencyStructuredOutput(fields []string) string {
+	return fmt.Sprintf(`{
+"type": "object",
+"properties": {
+	"field": {
+		"type": "%s"
+	},
+	"issue": {
+		"type": "string"
+	},
+	"recommendation": {
+		"type": "string"
+	}
+}
+}`,
+		strings.Join(fields, "|"),
+	)
+}
+
+func ConsistencyStructuredOutputArray(fields []string) string {
+	return fmt.Sprintf("{\"type\":\"array\",\"items\":%s}", ConsistencyStructuredOutput(fields))
 }

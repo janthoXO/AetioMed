@@ -13,7 +13,7 @@ const (
 )
 
 var flagNames = map[FieldFlag]string{
-	PatientPresentationFlag: "treatment reason",
+	PatientPresentationFlag: "chiefComplaint",
 	AnamnesisFlag:           "anamnesis",
 }
 

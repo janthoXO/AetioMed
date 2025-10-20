@@ -13,7 +13,7 @@ type HealthCheck struct {
 }
 
 type LLMService interface {
-	Generate(ctx context.Context, prompt string) (string, error)
+	Generate(ctx context.Context, prompt string, structuredOutput string) (string, error)
 	HealthCheck(ctx context.Context) bool
 }
 

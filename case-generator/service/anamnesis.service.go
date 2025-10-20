@@ -25,8 +25,9 @@ func (s *AnamnesisService) createAnamnesisPrompt(diseaseName string, symptoms []
 
 %s
 
-Return ONLY a JSON array:
-%s
+Return ONLY a JSON object:{
+	"arr": %s
+}
 
 Requirements:
 - Be medically accurate
@@ -34,10 +35,10 @@ Requirements:
 - Only include the JSON response, no additional text
 
 %s
-`, diseaseName, 
-utils.ContextLine(symptoms, patientPresentation, nil, procedures), 
-models.AnamnesisExampleJSON,
-strings.Join(additionalPrompt, "\n"))
+`, diseaseName,
+		utils.ContextLine(symptoms, patientPresentation, nil, procedures),
+		models.AnamnesisExampleJSONArr,
+		strings.Join(additionalPrompt, "\n"))
 }
 
 func (s *AnamnesisService) GenerateAnamnesis(ctx context.Context, diseaseName string, symptoms []models.Symptom, patientPresentation models.PatientPresentation, procedures []models.Procedure, additionalPrompt ...string) (anamnesis []models.Anamnesis, err error) {
@@ -47,19 +48,18 @@ func (s *AnamnesisService) GenerateAnamnesis(ctx context.Context, diseaseName st
 	}
 
 	prompt := s.createAnamnesisPrompt(diseaseName, symptoms, patientPresentation, procedures, additionalPrompt...)
-	log.Debugf("Anamnesis Prompt: %s\n", prompt)
-	response, err := s.llmService.Generate(ctx, prompt)
+	response, err := s.llmService.Generate(ctx, prompt, utils.WrapArrStructuredOutput(models.AnamnesisStructuredOutputArray))
 	if err != nil {
 		log.Errorf("Failed to generate anamnesis: %v", err)
 		return nil, fmt.Errorf("failed to generate anamnesis: %w", err)
 	}
 
-	anamnesisArray, err := utils.ExtractJsonArray(response)
+	anamnesisArr, err := utils.ExtractJsonArray(utils.UnwrapStructuredOutputArrResponse(response))
 	if err != nil {
 		return nil, fmt.Errorf("no anamnesis found in response: %w", err)
 	}
 
-	for _, item := range anamnesisArray {
+	for _, item := range anamnesisArr {
 		var a models.Anamnesis
 		a.FromDict(item)
 		anamnesis = append(anamnesis, a)

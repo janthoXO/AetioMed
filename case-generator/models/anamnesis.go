@@ -18,8 +18,7 @@ func (a *Anamnesis) FromDict(dict map[string]interface{}) {
 	}
 }
 
-const AnamnesisExampleJSON = `
-[
+const AnamnesisExampleJSONArr = `[
 	{
 		"category": "category name",
 		"answer": "patient's answer",
@@ -32,5 +31,23 @@ const AnamnesisExampleJSON = `
 	// - Allergien
 	// - Familienanamnese
 	// - Kardiovaskuläre Risikofaktoren
-	// - Sozial-/Berufsanamnese
-`
+	// - Sozial-/Berufsanamnese`
+	
+
+const AnamnesisStructuredOutput = `{
+"type": "object",
+"properties": {
+	"category": {
+		"type": "string"
+	},
+	"answer": {
+		"type": "string"
+	},
+	"timeCost": {
+		"type": "string"
+	}
+}
+}`
+
+const AnamnesisStructuredOutputArray = "{\"type\":\"array\",\"items\":" + AnamnesisStructuredOutput + "}"
+

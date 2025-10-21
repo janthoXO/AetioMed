@@ -1,0 +1,66 @@
+meta {
+  name: Patient Presentation
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{base_url}}/disease/:diseaseName/patientPresentation
+  body: json
+  auth: inherit
+}
+
+params:path {
+  diseaseName: diabetes type 1
+}
+
+body:json {
+  [
+    {
+      "id": "C0010200",
+      "name": "Cough",
+      "medical_name": "Cough",
+      "description": "A sudden, audible expulsion of air from the lungs through a partially closed glottis, preceded by inhalation. It is a protective response that serves to clear the trachea, bronchi, and/or lungs of irritants and secretions, or to prevent aspiration of foreign materials into the lungs.",
+      "frequency": "common"
+    },
+    {
+      "id": "C0015967",
+      "name": "Body temperature, increased",
+      "medical_name": "Body temperature, increased",
+      "description": "An abnormal elevation of body temperature, usually as a result of a pathologic process.",
+      "frequency": "common"
+    },
+    {
+      "id": "C0036572",
+      "name": "Seizure",
+      "medical_name": "Seizure",
+      "description": "Clinical or subclinical disturbances of cortical function due to a sudden, abnormal, excessive, and disorganized discharge of brain cells. Clinical manifestations include abnormal motor, sensory and psychic phenomena. Recurrent seizures are usually referred to as EPILEPSY or seizure disorder.",
+      "frequency": "common"
+    },
+    {
+      "id": "C0000737",
+      "name": "Abdominal Pain",
+      "medical_name": "Abdominal Pain",
+      "description": "Sensation of discomfort, distress, or agony in the abdominal region.",
+      "frequency": "common"
+    },
+    {
+      "id": "C0032617",
+      "name": "Urine volume, increased",
+      "medical_name": "Urine volume, increased",
+      "description": "Urination of a large volume of urine with an increase in urinary frequency, commonly seen in diabetes (DIABETES MELLITUS; DIABETES INSIPIDUS).",
+      "frequency": "common"
+    },
+    {
+      "id": "C0085602",
+      "name": "Polydipsia",
+      "medical_name": "Polydipsia",
+      "description": "Excessive thirst manifested by excessive fluid intake. It is characteristic of many diseases such as DIABETES MELLITUS; DIABETES INSIPIDUS; and NEPHROGENIC DIABETES INSIPIDUS. The condition may be psychogenic in origin.",
+      "frequency": "common"
+    }
+  ]
+}
+
+settings {
+  encodeUrl: true
+}

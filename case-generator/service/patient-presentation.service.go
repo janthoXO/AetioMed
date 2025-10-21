@@ -48,7 +48,7 @@ func (s *PatientPresentationService) GeneratePatientPresentation(ctx context.Con
 	}
 
 	prompt := s.createPatientPresentationPrompt(diseaseName, symptoms, anamnesis, procedures, additionalPrompt...)
-	response, err := s.llmService.Generate(ctx, prompt, models.PatientPresentationStructuredOutput)
+	response, err := s.llmService.Generate(ctx, prompt)
 	if err != nil {
 		log.Errorf("Failed to generate patient presentation: %v", err)
 		return presentation, fmt.Errorf("failed to generate patient presentation: %w", err)

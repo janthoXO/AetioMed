@@ -37,7 +37,7 @@ Anamnesis: %+v
 Return ONLY a JSON object: {"treatmentReason": "the patient's complaint in their own words"}`,
 		t.ctx.DiseaseName, t.ctx.Symptoms, t.ctx.Anamnesis)
 
-	response, err := t.llmService.Generate(ctx, prompt, "")
+	response, err := t.llmService.Generate(ctx, prompt)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate treatment reason: %w", err)
 	}

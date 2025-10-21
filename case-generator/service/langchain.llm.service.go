@@ -29,7 +29,7 @@ func GetLangchainLLMService() *LangchainLLMService {
 	return &langchainLLMService
 }
 
-func (s *LangchainLLMService) Generate(ctx context.Context, prompt string, structuredOutput string) (string, error) {
+func (s *LangchainLLMService) Generate(ctx context.Context, prompt string) (string, error) {
 	log.Debugf("Using Langchain Ollama at: %s", utils.Cfg.OllamaApi.Url)
 	log.Debugf("Using model: %s", utils.Cfg.OllamaApi.Model)
 

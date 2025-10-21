@@ -44,25 +44,6 @@ func ConsistencyExampleJSON(fields []string) string {
 	)
 }
 
-func ConsistencyStructuredOutput(fields []string) string {
-	return fmt.Sprintf(`{
-"type": "object",
-"properties": {
-	"field": {
-		"type": "%s"
-	},
-	"issue": {
-		"type": "string"
-	},
-	"recommendation": {
-		"type": "string"
-	}
-}
-}`,
-		strings.Join(fields, "|"),
-	)
-}
-
-func ConsistencyStructuredOutputArray(fields []string) string {
-	return fmt.Sprintf("{\"type\":\"array\",\"items\":%s}", ConsistencyStructuredOutput(fields))
+func ConsistencyExampleJSONArr(fields []string) string {
+	return fmt.Sprintf("[%s]", ConsistencyExampleJSON(fields))
 }

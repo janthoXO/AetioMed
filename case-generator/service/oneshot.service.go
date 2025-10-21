@@ -41,7 +41,7 @@ Requirements:
 				func(f models.FieldFlag) string {
 					return f.String()
 				}),
-			","),
+			", "),
 		utils.ContextLine(symptoms, patientPresentation, anamnesis, procedures),
 		func() string {
 			var fields []string
@@ -64,7 +64,7 @@ func (s *OneshotService) GenerateOneShotCase(ctx context.Context, diseaseName st
 	}
 
 	prompt := s.createOneShotPrompt(diseaseName, fieldsToGenerate, symptoms, patientPresentation, anamnesis, procedures)
-	response, err := s.llmService.Generate(ctx, prompt, "json")
+	response, err := s.llmService.Generate(ctx, prompt)
 	if err != nil {
 		log.Errorf("Failed to generate one shot case: %v", err)
 		return patientPresentation, anamnesis, fmt.Errorf("failed to generate one shot case: %w", err)

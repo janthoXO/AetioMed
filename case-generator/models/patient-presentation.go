@@ -26,12 +26,3 @@ func (pp *PatientPresentation) FromDict(data map[string]any) {
 }
 
 const PatientPresentationExampleJSON = `{"treatmentReason": "the patient's complaint in their own words"}`
-
-const PatientPresentationStructuredOutput = `{
-"type": "object",
-"properties": {
-	"treatmentReason": {
-		"type": "string"
-	}
-}
-}`

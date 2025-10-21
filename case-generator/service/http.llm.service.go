@@ -42,18 +42,12 @@ func GetHttpLLMService() *HttpLLMService {
 	return &httpLLMService
 }
 
-func (s *HttpLLMService) Generate(ctx context.Context, prompt string, structuredOutput string) (string, error) {
-	if structuredOutput == "" {
-		structuredOutput = "json"
-	}
-	// TODO remove
-	structuredOutput = "json"
-
+func (s *HttpLLMService) Generate(ctx context.Context, prompt string) (string, error) {
 	payload := OllamaRequest{
 		Model:  utils.Cfg.OllamaApi.Model,
 		Prompt: prompt,
 		Stream: false,
-		Format: structuredOutput,
+		Format: "json",
 	}
 
 	jsonData, err := json.Marshal(payload)

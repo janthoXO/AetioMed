@@ -32,22 +32,3 @@ const AnamnesisExampleJSONArr = `[
 	// - Familienanamnese
 	// - Kardiovaskuläre Risikofaktoren
 	// - Sozial-/Berufsanamnese`
-	
-
-const AnamnesisStructuredOutput = `{
-"type": "object",
-"properties": {
-	"category": {
-		"type": "string"
-	},
-	"answer": {
-		"type": "string"
-	},
-	"timeCost": {
-		"type": "string"
-	}
-}
-}`
-
-const AnamnesisStructuredOutputArray = "{\"type\":\"array\",\"items\":" + AnamnesisStructuredOutput + "}"
-

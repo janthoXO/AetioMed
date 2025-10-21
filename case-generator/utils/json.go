@@ -44,12 +44,9 @@ func ExtractJsonArray(input string) ([]map[string]any, error) {
 	return jsonData, nil
 }
 
-func WrapArrStructuredOutput(s string) string {
-	return fmt.Sprintf("{\"type\":\"object\",\"properties\":{\"arr\":%s}}", s)
-}
-
-func UnwrapStructuredOutputArrResponse(s string) string {
-	re := regexp.MustCompile(`(?s)\{\"arr\":(\[.*\])\}`)
+// UnwrapJSONArr extracts a JSON array from a wrapped JSON structure like {"arr": [ ... ]}
+func UnwrapJSONArr(s string) string {
+	re := regexp.MustCompile(`(?s)\{\s*\"arr\":\s*(\[.*\])\s*\}`)
 	matches := re.FindStringSubmatch(s)
 
 	if len(matches) < 2 {
@@ -57,8 +54,4 @@ func UnwrapStructuredOutputArrResponse(s string) string {
 	}
 
 	return matches[1]
-}
-
-func WrapExampleJSONInArrObject(exampleJSON string) string {
-	return fmt.Sprintf("{\"arr\": %s}", exampleJSON)
 }

@@ -48,13 +48,13 @@ func (s *AnamnesisService) GenerateAnamnesis(ctx context.Context, diseaseName st
 	}
 
 	prompt := s.createAnamnesisPrompt(diseaseName, symptoms, patientPresentation, procedures, additionalPrompt...)
-	response, err := s.llmService.Generate(ctx, prompt, utils.WrapArrStructuredOutput(models.AnamnesisStructuredOutputArray))
+	response, err := s.llmService.Generate(ctx, prompt)
 	if err != nil {
 		log.Errorf("Failed to generate anamnesis: %v", err)
 		return nil, fmt.Errorf("failed to generate anamnesis: %w", err)
 	}
 
-	anamnesisArr, err := utils.ExtractJsonArray(utils.UnwrapStructuredOutputArrResponse(response))
+	anamnesisArr, err := utils.ExtractJsonArray(utils.UnwrapJSONArr(response))
 	if err != nil {
 		return nil, fmt.Errorf("no anamnesis found in response: %w", err)
 	}

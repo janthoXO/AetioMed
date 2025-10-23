@@ -20,8 +20,7 @@ func NewConsistencyService() *ConsistencyService {
 }
 
 func (s *ConsistencyService) createConsistencyPrompt(diseaseName string, fieldsToCheck []string, symptoms []models.Symptom, patientPresentation models.PatientPresentation, anamnesis []models.Anamnesis, procedures []models.Procedure) string {
-	return fmt.Sprintf(`
-	Review this clinical case of a patient with %s for consistency. It should be for student learning and the disease should not be directly spoiled. Do not check for consistency with the disease but rather between the fields provided.
+	return fmt.Sprintf(`Review this clinical case of a patient with %s for consistency. It should be for student learning and the disease should not be directly spoiled. Do not check for consistency with the disease but rather between the fields provided.
 
 %s
 
@@ -36,8 +35,8 @@ Return ONLY a JSON object: {
 
 Requirements:
 - Be medically accurate
-- Only include the JSON response, no additional text
-`, diseaseName, utils.ContextLine(symptoms, patientPresentation, anamnesis, procedures),
+- Only include the JSON response, no additional text`,
+		diseaseName, utils.ContextLine(symptoms, patientPresentation, anamnesis, procedures),
 		models.ConsistencyExampleJSONArr(fieldsToCheck))
 }
 

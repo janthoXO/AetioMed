@@ -33,7 +33,8 @@ Requirements:
 - Be medically accurate
 - Use standard medical terminology
 - Only include the JSON response, no additional text
-- Guarantee consistency between all fields`,
+- Guarantee consistency between all fields
+- Answer in German`,
 		diseaseName,
 		strings.Join(
 			utils.MapSlice(

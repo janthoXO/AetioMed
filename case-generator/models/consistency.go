@@ -37,10 +37,10 @@ func (c *Inconsistency) PromptLine() string {
 
 func ConsistencyExampleJSON(fields []string) string {
 	return fmt.Sprintf(`{
-		"field": "%s",
+		"field": "%s", // enum
 		"issue": string,
 		"recommendation": string
-		}`, strings.Join(fields, "|"),
+		}`, strings.Join(fields, "\" | \""),
 	)
 }
 

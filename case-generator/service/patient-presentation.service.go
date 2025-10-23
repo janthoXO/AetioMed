@@ -33,9 +33,10 @@ Requirements:
 - The treatment reason should be concise and relevant to the disease
 - Ensure the JSON is properly formatted
 - Only include the JSON response, no additional text
+- Answer in German
 
-%s
-`, diseaseName,
+%s`,
+		diseaseName,
 		utils.ContextLine(symptoms, models.PatientPresentation{}, anamnesis, procedures),
 		models.PatientPresentationExampleJSON,
 		strings.Join(additionalPrompt, "\n"))

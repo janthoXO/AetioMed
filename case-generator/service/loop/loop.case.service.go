@@ -8,7 +8,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const ITERATIONS = 3
+const ITERATIONS = 6
 
 type LoopCaseService struct {
 	anamnesisService    *service.AnamnesisService
@@ -50,6 +50,7 @@ func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName str
 		}
 
 		log.Debugf("Inconsistencies: %+v\n", inconsistencies)
+		inconsistencyPrompts = make(map[models.FieldFlag][]string)
 		for _, inconsistency := range inconsistencies {
 			inconsistencyPrompts[inconsistency.Field] = append(inconsistencyPrompts[inconsistency.Field], inconsistency.PromptLine())
 		}
@@ -83,6 +84,8 @@ func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName str
 		// increase iteration
 		i++
 	}
+
+	log.Debugf("Needed %d iterations", i)
 
 	// Return the final state
 	return patientPresentation, anamnesis, nil

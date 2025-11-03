@@ -17,6 +17,11 @@ type Configuration struct {
 		Url   string `env:"OLLAMA_URL" envDefault:"http://localhost:11434"`
 		Model string `env:"OLLAMA_MODEL_NAME" envDefault:"hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S"`
 	}
+	Nats struct {
+		Url      string `env:"NATS_URL" envDefault:"nats://localhost:4222"`
+		User     string `env:"NATS_USER" envDefault:"nats"`
+		Password string `env:"NATS_PASSWORD" envDefault:"nats"`
+	}
 	Debug bool `env:"DEBUG" envDefault:"false"`
 }
 

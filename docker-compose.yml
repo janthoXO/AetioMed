@@ -10,10 +10,14 @@ services:
       - DISEASE_MIDDLEWARE_URL=${DISEASE_MIDDLEWARE_URL:-http://disease-middleware:3030}
       - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
       - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S}
+      - NATS_URL=${NATS_URL:-nats://nats:4222}
+      - NATS_USER=${NATS_USER:-nats}
+      - NATS_PASSWORD=${NATS_PASSWORD:-nats}
       - DEBUG=${DEBUG:-true}
     depends_on:
       - disease-middleware
       - ollama
+      - nats
     restart: unless-stopped
   disease-middleware:
     build:
@@ -96,6 +100,19 @@ services:
       exec /startup/docker-entrypoint.sh neo4j
       "
     restart: unless-stopped
+  
+  nats:
+    image: nats:2.12.1
+    ports:
+      - "4222:4222"   # client connections
+      - "8222:8222"   # monitoring http (server stats)
+    # Enable JetStream and persist its store to a Docker volume. Credentials are optional.
+    command: >
+      --js --store_dir /data/jetstream
+      --user ${NATS_USER:-nats} --pass ${NATS_PASSWORD:-nats}
+    volumes:
+      - nats_data:/data
+    restart: unless-stopped
 
 volumes:
   cache_data:
@@ -103,3 +120,4 @@ volumes:
   mysql_data:
   neo4j_data:
   neo4j_logs:
+  nats_data:

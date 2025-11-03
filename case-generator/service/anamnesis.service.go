@@ -33,9 +33,9 @@ Requirements:
 - Be medically accurate
 - Use standard medical terminology
 - Only include the JSON response, no additional text
+- Answer in German
 
-%s
-`, diseaseName,
+%s`, diseaseName,
 		utils.ContextLine(symptoms, patientPresentation, nil, procedures),
 		models.AnamnesisExampleJSONArr,
 		strings.Join(additionalPrompt, "\n"))

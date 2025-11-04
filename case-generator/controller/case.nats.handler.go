@@ -2,31 +2,40 @@ package controller
 
 import (
 	"case-generator/models"
-	"case-generator/nats"
+	natsservice "case-generator/nats"
 	"case-generator/service"
 	"case-generator/service/loop"
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
+
+	"github.com/nats-io/nats.go"
 
 	log "github.com/sirupsen/logrus"
 	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 )
 
-type NatsHandlers struct {
+type CaseNatsHandler struct {
 	caseService service.CaseService
 }
 
-func NewNatsHandlers() *NatsHandlers {
-	return &NatsHandlers{
+func NewCaseNatsHandler() *CaseNatsHandler {
+	return &CaseNatsHandler{
 		caseService: loop.NewLoopCaseService(),
 	}
 }
 
-// RegisterHandlers registers all NATS message handlers
-func (h *NatsHandlers) RegisterHandlers() error {
+// RegisterHandler registers all NATS message handlers
+func (h *CaseNatsHandler) RegisterHandler() error {
 	// Register whole case handler
-	err := nats.NatsServiceInstance.SubscribeToSubject("cases", "generate", h.handleGenerateWholeCase)
+	err := natsservice.NatsServiceInstance.SubscribeToSubject(
+		"cases.generate",
+		h.handleGenerateWholeCase,
+		nats.Durable(fmt.Sprintf("%s-%s-consumer", "cases", "generate")),
+		nats.AckExplicit(),
+		nats.AckWait(10*time.Minute),
+	)
 	if err != nil {
 		return fmt.Errorf("failed to register case handler: %w", err)
 	}
@@ -50,9 +59,9 @@ type CaseNatsResponse struct {
 	Procedures      []models.Procedure     `json:"procedures"`
 }
 
-func (h *NatsHandlers) handleGenerateWholeCase(data []byte) {
+func (h *CaseNatsHandler) handleGenerateWholeCase(msg *nats.Msg) {
 	var request CaseNatsRequest
-	if err := json.Unmarshal(data, &request); err != nil {
+	if err := json.Unmarshal(msg.Data, &request); err != nil {
 		log.Errorf("Failed to unmarshal case request: %v", err)
 		return
 	}
@@ -98,5 +107,10 @@ func (h *NatsHandlers) handleGenerateWholeCase(data []byte) {
 		log.Errorf("Failed to marshal case response: %v", err)
 		return
 	}
-	nats.NatsServiceInstance.PublishMessage("cases", "generated", responseData)
+
+	err = natsservice.NatsServiceInstance.PublishMessage("cases.generated", responseData)
+	if err != nil {
+		log.Errorf("Failed to publish response: %v", err)
+		return
+	}
 }

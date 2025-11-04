@@ -78,7 +78,11 @@ func subscribeToSubject(js nats.JetStreamContext, subject string) error {
 }
 
 func publishRequest(js nats.JetStreamContext, subject string, data []byte) {
-	_, err := js.Publish(subject, data, nats.AckWait(1000*time.Second))
+	_, err := js.PublishMsg(&nats.Msg{
+		Subject: subject,
+		Data:    data,
+		Reply: "cases.generated",
+	})
 	if err != nil {
 		log.Errorf("Failed to publish to %s: %v", subject, err)
 		return

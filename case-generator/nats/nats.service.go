@@ -3,16 +3,14 @@ package nats
 import (
 	"case-generator/utils"
 	"fmt"
-	"time"
 
 	"github.com/nats-io/nats.go"
 	log "github.com/sirupsen/logrus"
 )
 
 type NatsService struct {
-	conn           *nats.Conn
-	js             nats.JetStreamContext
-	subjectHandler map[string][]func(data []byte)
+	conn *nats.Conn
+	js   nats.JetStreamContext
 }
 
 var NatsServiceInstance *NatsService
@@ -34,23 +32,22 @@ func NewNatsService() (*NatsService, error) {
 	}
 
 	service := &NatsService{
-		conn:           nc,
-		js:             js,
-		subjectHandler: make(map[string][]func([]byte)),
+		conn: nc,
+		js:   js,
 	}
 
 	log.Info("NATS service initialized successfully")
 	return service, nil
 }
 
-func (s *NatsService) InitializeStream(streamName string) error {
+func (s *NatsService) InitializeStream(streamName string, opts ...nats.JSOpt) error {
 	// Create request stream
 	_, err := s.js.AddStream(&nats.StreamConfig{
 		Name:      streamName,
 		Subjects:  []string{streamName + ".>"},
 		Retention: nats.WorkQueuePolicy, // one-consumer-only
 		Storage:   nats.FileStorage,
-	})
+	}, opts...)
 	if err != nil && err != nats.ErrStreamNameAlreadyInUse {
 		return fmt.Errorf("failed to create %s stream: %w", streamName, err)
 	}
@@ -60,44 +57,29 @@ func (s *NatsService) InitializeStream(streamName string) error {
 }
 
 // PublishMessage publishes a message to NATS
-func (s *NatsService) PublishMessage(streamName string, subject string, data []byte) (err error) {
+func (s *NatsService) PublishMessage(subject string, data []byte, opts ...nats.PubOpt) (err error) {
 	// TODO check if stream exists, otherwise init
 
-	_, err = s.js.Publish(fmt.Sprintf("%s.%s", streamName, subject), data)
+	_, err = s.js.Publish(subject, data, opts...)
 	if err != nil {
-		return fmt.Errorf("failed to publish request to %s.%s: %w", streamName, subject, err)
+		return fmt.Errorf("failed to publish request to %s: %w", subject, err)
 	}
 
-	log.Debugf("Published request to %s.%s", streamName, subject)
+	log.Debugf("Published request to %s", subject)
 	return nil
 }
 
 // SubscribeToRequests subscribes to request messages and processes them with the provided handler
-func (s *NatsService) SubscribeToSubject(streamName string, subject string, handler func(data []byte)) error {
-	fullSubject := fmt.Sprintf("%s.%s", streamName, subject)
-	handlers, exists := s.subjectHandler[fullSubject]
-	s.subjectHandler[fullSubject] = append(handlers, handler)
-
-	if !exists {
-		_, err := s.js.Subscribe(fullSubject, func(msg *nats.Msg) {
-			log.Debug("Received message on %s", fullSubject)
-
-			handlers := s.subjectHandler[fullSubject]
-			for _, handler := range handlers {
-				handler(msg.Data)
-			}
-
-			msg.Ack()
-		},
-			nats.Durable(fmt.Sprintf("%s-%s-consumer", streamName, subject)),
-			nats.AckExplicit(),
-			nats.AckWait(10*time.Minute),
-		)
-		if err != nil {
-			return fmt.Errorf("failed to subscribe to %s: %w", fullSubject, err)
-		}
-		log.Infof("Subscribed to %s", fullSubject)
+func (s *NatsService) SubscribeToSubject(subject string, handler func(msg *nats.Msg), opts ...nats.SubOpt) error {
+	_, err := s.js.Subscribe(subject, func(msg *nats.Msg) {
+		log.Debug("Received message on %s", subject)
+		handler(msg)
+		msg.Ack()
+	}, opts...)
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to %s: %w", subject, err)
 	}
+	log.Infof("Subscribed to %s", subject)
 
 	return nil
 }

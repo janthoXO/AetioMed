@@ -2,7 +2,7 @@ package main
 
 import (
 	"case-generator/controller"
-	"case-generator/nats"
+	natsservice "case-generator/nats"
 	"case-generator/service"
 	"case-generator/utils"
 	"context"
@@ -24,17 +24,22 @@ func main() {
 
 	// Initialize NATS service
 	var err error
-	nats.NatsServiceInstance, err = nats.NewNatsService()
+	natsservice.NatsServiceInstance, err = natsservice.NewNatsService()
 	if err != nil {
 		log.Fatalf("Failed to initialize NATS service: %v", err)
 	}
-	defer nats.NatsServiceInstance.Close()
-	nats.NatsServiceInstance.InitializeStream("cases")
+	defer natsservice.NatsServiceInstance.Close()
+	natsservice.NatsServiceInstance.InitializeStream("cases")
 
 	// Register NATS handlers
-	natsHandlers := controller.NewNatsHandlers()
-	if err := natsHandlers.RegisterHandlers(); err != nil {
-		log.Fatalf("Failed to register NATS handlers: %v", err)
+	natsHandlers := []controller.NatsHandler{
+		controller.NewCaseNatsHandler(),
+	}
+	for _, natsHandler := range natsHandlers {
+		err := natsHandler.RegisterHandler()
+		if err != nil {
+			log.Fatalf("Failed to register NATS handler: %v", err)
+		}
 	}
 
 	log.Infof("Starting Case Generator on port %d", cfg.Server.Port)

@@ -1,5 +1,13 @@
 package models
 
+import(
+	"gitlab.lrz.de/ILVI/ilvi/ilvi-api/controller/dto"
+)
+
+type Anamnesis struct {
+	dto.AnamnesisPayload
+}
+
 const AnamnesisExampleJSONArr = `[
 	{
 		"category": "category name",

@@ -13,7 +13,6 @@ import (
 	"github.com/nats-io/nats.go"
 
 	log "github.com/sirupsen/logrus"
-	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 )
 
 type CaseNatsHandler struct {
@@ -49,13 +48,13 @@ type CaseNatsRequest struct {
 	GenerationFlags []string               `json:"generationFlags"`
 	Symptoms        []models.Symptom       `json:"symptoms"`
 	TreatmentReason string                 `json:"treatmentReason"`
-	Anamnesis       []ilvimodels.Anamnesis `json:"anamnesis"`
+	Anamnesis       []models.Anamnesis `json:"anamnesis"`
 	Procedures      []models.Procedure     `json:"procedures"`
 }
 
 type CaseNatsResponse struct {
 	TreatmentReason string                 `json:"treatmentReason"`
-	Anamnesis       []ilvimodels.Anamnesis `json:"anamnesis"`
+	Anamnesis       []models.Anamnesis `json:"anamnesis"`
 	Procedures      []models.Procedure     `json:"procedures"`
 }
 

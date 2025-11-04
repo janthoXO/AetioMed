@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strings"
 
-	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -44,7 +43,7 @@ Requirements:
 		strings.Join(additionalPrompt, "\n"))
 }
 
-func (s *AnamnesisService) GenerateAnamnesis(ctx context.Context, diseaseName string, symptoms []models.Symptom, treatmentReason string, procedures []models.Procedure, additionalPrompt ...string) (anamnesis []ilvimodels.Anamnesis, err error) {
+func (s *AnamnesisService) GenerateAnamnesis(ctx context.Context, diseaseName string, symptoms []models.Symptom, treatmentReason string, procedures []models.Procedure, additionalPrompt ...string) (anamnesis []models.Anamnesis, err error) {
 	// Check if service is available
 	if !s.llmService.HealthCheck(ctx) {
 		return nil, fmt.Errorf("LLM service is not available. Please ensure Ollama is running")
@@ -63,7 +62,7 @@ func (s *AnamnesisService) GenerateAnamnesis(ctx context.Context, diseaseName st
 	}
 
 	for _, item := range anamnesisStringArr {
-		var a ilvimodels.Anamnesis
+		var a models.Anamnesis
 		err := json.Unmarshal([]byte(item), &a)
 		if err != nil {
 			continue

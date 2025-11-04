@@ -8,7 +8,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	log "github.com/sirupsen/logrus"
-	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 )
 
 type TreatmentReasonController struct {
@@ -23,7 +22,7 @@ func NewTreatmentReasonController() *TreatmentReasonController {
 
 type TreatmentReasonRequestDTO struct {
 	Symptoms   []models.Symptom       `json:"symptoms"`
-	Anamnesis  []ilvimodels.Anamnesis `json:"anamnesis"`
+	Anamnesis  []models.Anamnesis `json:"anamnesis"`
 	Procedures []models.Procedure     `json:"procedures"`
 }
 

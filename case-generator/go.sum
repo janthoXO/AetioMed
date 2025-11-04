@@ -81,6 +81,8 @@ github.com/twitchyliquid64/golang-asm v0.15.1 h1:SU5vSMR7hnwNxj24w34ZyCi/FmDZTkS
 github.com/twitchyliquid64/golang-asm v0.15.1/go.mod h1:a1lVb/DtPvCB8fslRZhAngC2+aY1QWCk3Cedj/Gdt08=
 github.com/ugorji/go/codec v1.3.0 h1:Qd2W2sQawAfG8XSvzwhBeoGq71zXOC/Q1E9y/wUcsUA=
 github.com/ugorji/go/codec v1.3.0/go.mod h1:pRBVtBSKl77K30Bv8R2P+cLSGaTtex6fsA2Wjqmfxj4=
+gitlab.lrz.de/ILVI/ilvi/ilvi-api/controller/dto v0.0.0 h1:EC1jRmgC0yqKZ/9AiqVjBDCvfu1nA2t3EF9yj3bhBac=
+gitlab.lrz.de/ILVI/ilvi/ilvi-api/controller/dto v0.0.0/go.mod h1:hBKmcSFPCKrp4AEV4XR4x23dHjV3TmFLhh1nhABUi2c=
 gitlab.lrz.de/ILVI/ilvi/ilvi-api/model v0.0.0 h1:id3K4HiZQlRjFCyRmjtgMypsUBjsZefGOauHOwi/mB8=
 gitlab.lrz.de/ILVI/ilvi/ilvi-api/model v0.0.0/go.mod h1:yavPsEQDuc8N2RL5Xc2nWJfulqxWhBrnQ1i5uhKtAdY=
 go.uber.org/mock v0.5.0 h1:KAMbZvZPyBPWgD14IrIQ38QCyjwpvVVV6K/bHl1IwQU=

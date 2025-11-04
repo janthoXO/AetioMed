@@ -3,11 +3,9 @@ package utils
 import (
 	"case-generator/models"
 	"fmt"
-
-	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 )
 
-func ContextLine(symptoms []models.Symptom, treatmentReason string, anamnesis []ilvimodels.Anamnesis, procedures []models.Procedure) string {
+func ContextLine(symptoms []models.Symptom, treatmentReason string, anamnesis []models.Anamnesis, procedures []models.Procedure) string {
 	s := ""
 	if symptoms != nil && len(symptoms) > 0 {
 		s = fmt.Sprintf("%s symptoms: %+v\n", s, symptoms)

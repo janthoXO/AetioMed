@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	log "github.com/sirupsen/logrus"
-	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 )
 
 type TreatmentReasonService struct {
@@ -21,7 +20,7 @@ func NewTreatmentReasonService() *TreatmentReasonService {
 	}
 }
 
-func (s *TreatmentReasonService) createTreatmentReasonPrompt(diseaseName string, symptoms []models.Symptom, anamnesis []ilvimodels.Anamnesis, procedures []models.Procedure, additionalPrompt ...string) string {
+func (s *TreatmentReasonService) createTreatmentReasonPrompt(diseaseName string, symptoms []models.Symptom, anamnesis []models.Anamnesis, procedures []models.Procedure, additionalPrompt ...string) string {
 	return fmt.Sprintf(`You are a medical expert AI. Generate a realistic chief complaint (treatment reason) for a patient with %s.
 
 %s
@@ -44,7 +43,7 @@ Requirements:
 		strings.Join(additionalPrompt, "\n"))
 }
 
-func (s *TreatmentReasonService) GenerateTreatmentReason(ctx context.Context, diseaseName string, symptoms []models.Symptom, anamnesis []ilvimodels.Anamnesis, procedures []models.Procedure, additionalPrompt ...string) (treatmentReason string, err error) {
+func (s *TreatmentReasonService) GenerateTreatmentReason(ctx context.Context, diseaseName string, symptoms []models.Symptom, anamnesis []models.Anamnesis, procedures []models.Procedure, additionalPrompt ...string) (treatmentReason string, err error) {
 	// Check if service is available
 	if !s.llmService.HealthCheck(ctx) {
 		return treatmentReason, fmt.Errorf("LLM service is not available. Please ensure Ollama is running")

@@ -9,7 +9,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	log "github.com/sirupsen/logrus"
-	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 )
 
 type CaseController struct {
@@ -23,10 +22,10 @@ func NewCaseController() *CaseController {
 }
 
 type CaseRequestDTO struct {
-	Symptoms        []models.Symptom       `json:"symptoms"`
-	TreatmentReason string                 `json:"treatmentReason"`
-	Anamnesis       []ilvimodels.Anamnesis `json:"anamnesis"`
-	Procedures      []models.Procedure     `json:"procedures"`
+	Symptoms        []models.Symptom   `json:"symptoms"`
+	TreatmentReason string             `json:"treatmentReason"`
+	Anamnesis       []models.Anamnesis `json:"anamnesis"`
+	Procedures      []models.Procedure `json:"procedures"`
 }
 
 func (controller *CaseController) GenerateWholeCase(c *gin.Context) {
@@ -65,6 +64,6 @@ func (controller *CaseController) GenerateWholeCase(c *gin.Context) {
 
 	c.JSON(http.StatusOK, map[string]any{
 		"treatmentReason": treatmentReason,
-		"anamnesis":           anamnesis,
+		"anamnesis":       anamnesis,
 	})
 }

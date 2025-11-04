@@ -9,7 +9,6 @@ import (
 	"strings"
 
 	log "github.com/sirupsen/logrus"
-	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 )
 
 type OneshotService struct {
@@ -21,7 +20,7 @@ func NewOneshotService() *OneshotService {
 		llmService: GetLLMService(),
 	}
 }
-func (s *OneshotService) createOneShotPrompt(diseaseName string, fieldsToGenerate byte, symptoms []models.Symptom, treatmentReason string, anamnesis []ilvimodels.Anamnesis, procedures []models.Procedure) string {
+func (s *OneshotService) createOneShotPrompt(diseaseName string, fieldsToGenerate byte, symptoms []models.Symptom, treatmentReason string, anamnesis []models.Anamnesis, procedures []models.Procedure) string {
 	return fmt.Sprintf(`You are a medical expert AI. Generate a medical case for a patient with %s. Do not directly mention the disease name in the case. The case should be for student learning and contain %s. 
 
 %s
@@ -60,7 +59,7 @@ Requirements:
 	)
 }
 
-func (s *OneshotService) GenerateOneShotCase(ctx context.Context, diseaseName string, fieldsToGenerate byte, symptoms []models.Symptom, treatmentReason string, anamnesis []ilvimodels.Anamnesis, procedures []models.Procedure) (string, []ilvimodels.Anamnesis, error) {
+func (s *OneshotService) GenerateOneShotCase(ctx context.Context, diseaseName string, fieldsToGenerate byte, symptoms []models.Symptom, treatmentReason string, anamnesis []models.Anamnesis, procedures []models.Procedure) (string, []models.Anamnesis, error) {
 	// Check if service is available
 	if !s.llmService.HealthCheck(ctx) {
 		return treatmentReason, anamnesis, fmt.Errorf("LLM service is not available. Please ensure Ollama is running")
@@ -84,7 +83,7 @@ func (s *OneshotService) GenerateOneShotCase(ctx context.Context, diseaseName st
 
 	if models.AnamnesisFlag.IsInBitMask(fieldsToGenerate) {
 		for _, item := range jsonObject["anamnesis"].([]any) {
-			var a ilvimodels.Anamnesis 
+			var a models.Anamnesis 
 			b, _ := json.Marshal(item)
 			err := json.Unmarshal(b, &a)
 			if err != nil {

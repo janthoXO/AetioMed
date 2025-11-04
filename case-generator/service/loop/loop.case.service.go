@@ -6,7 +6,6 @@ import (
 	"context"
 
 	log "github.com/sirupsen/logrus"
-	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 )
 
 const ITERATIONS = 6
@@ -27,7 +26,7 @@ func NewLoopCaseService() *LoopCaseService {
 	}
 }
 
-func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName string, bitMask byte, symptoms []models.Symptom, treatmentReason string, anamnesis []ilvimodels.Anamnesis, procedures []models.Procedure) (string, []ilvimodels.Anamnesis, error) {
+func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName string, bitMask byte, symptoms []models.Symptom, treatmentReason string, anamnesis []models.Anamnesis, procedures []models.Procedure) (string, []models.Anamnesis, error) {
 
 	// generate everything one shot once
 	treatmentReason, anamnesis, err := s.oneshotService.GenerateOneShotCase(ctx, diseaseName, bitMask, symptoms, treatmentReason, anamnesis, procedures)

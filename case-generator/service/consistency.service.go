@@ -7,7 +7,6 @@ import (
 	"fmt"
 
 	log "github.com/sirupsen/logrus"
-	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 )
 
 type ConsistencyService struct {
@@ -20,7 +19,7 @@ func NewConsistencyService() *ConsistencyService {
 	}
 }
 
-func (s *ConsistencyService) createConsistencyPrompt(diseaseName string, fieldsToCheck []string, symptoms []models.Symptom, treatmentReason string, anamnesis []ilvimodels.Anamnesis, procedures []models.Procedure) string {
+func (s *ConsistencyService) createConsistencyPrompt(diseaseName string, fieldsToCheck []string, symptoms []models.Symptom, treatmentReason string, anamnesis []models.Anamnesis, procedures []models.Procedure) string {
 	return fmt.Sprintf(`Review this clinical case of a patient with %s for consistency. It should be for student learning and the disease should not be directly spoiled. Do not check for consistency with the disease but rather between the fields provided.
 
 %s
@@ -41,7 +40,7 @@ Requirements:
 		models.ConsistencyExampleJSONArr(fieldsToCheck))
 }
 
-func (s *ConsistencyService) CheckConsistency(ctx context.Context, diseaseName string, fieldsToCheck byte, symptoms []models.Symptom, treatmentReason string, anamnesis []ilvimodels.Anamnesis, procedures []models.Procedure) (consistencies []models.Inconsistency, err error) {
+func (s *ConsistencyService) CheckConsistency(ctx context.Context, diseaseName string, fieldsToCheck byte, symptoms []models.Symptom, treatmentReason string, anamnesis []models.Anamnesis, procedures []models.Procedure) (consistencies []models.Inconsistency, err error) {
 	flagStrings := utils.MapSlice(models.BitmaskToFlagArr(fieldsToCheck), func(f models.FieldFlag) string {
 		return f.String()
 	})

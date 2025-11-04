@@ -8,13 +8,13 @@ import (
 type FieldFlag byte
 
 const (
-	PatientPresentationFlag FieldFlag = 1 << iota
+	TreatmentReasonFlag FieldFlag = 1 << iota
 	AnamnesisFlag
 )
 
 var flagNames = map[FieldFlag]string{
-	PatientPresentationFlag: "treatmentReason",
-	AnamnesisFlag:           "anamnesis",
+	TreatmentReasonFlag: "treatmentReason",
+	AnamnesisFlag:       "anamnesis",
 }
 
 func (flag FieldFlag) String() string {

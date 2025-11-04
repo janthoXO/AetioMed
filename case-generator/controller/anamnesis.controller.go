@@ -22,7 +22,7 @@ func NewAnamnesisController() *AnamnesisController {
 
 type AnamnesisRequestDTO struct {
 	Symptoms            []models.Symptom           `json:"symptoms"`
-	PatientPresentation models.PatientPresentation `json:"patientPresentation"`
+	TreatmentReason     string                      `json:"treatmentReason"`
 	Procedures          []models.Procedure         `json:"procedures"`
 }
 
@@ -38,7 +38,7 @@ func (controller *AnamnesisController) GenerateAnamnesis(c *gin.Context) {
 	}
 
 	// Call the service to generate the anamnesis
-	anamnesis, err := controller.AnamnesisService.GenerateAnamnesis(c, diseaseName, requestDTO.Symptoms, requestDTO.PatientPresentation, requestDTO.Procedures)
+	anamnesis, err := controller.AnamnesisService.GenerateAnamnesis(c, diseaseName, requestDTO.Symptoms, requestDTO.TreatmentReason, requestDTO.Procedures)
 	if err != nil {
 		log.Errorf("Failed to generate anamnesis: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate anamnesis"})

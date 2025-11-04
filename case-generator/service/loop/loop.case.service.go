@@ -6,13 +6,14 @@ import (
 	"context"
 
 	log "github.com/sirupsen/logrus"
+	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 )
 
 const ITERATIONS = 6
 
 type LoopCaseService struct {
 	anamnesisService    *service.AnamnesisService
-	presentationService *service.PatientPresentationService
+	treatmentReasonService *service.TreatmentReasonService
 	consistencyService  *service.ConsistencyService
 	oneshotService      *service.OneshotService
 }
@@ -20,18 +21,18 @@ type LoopCaseService struct {
 func NewLoopCaseService() *LoopCaseService {
 	return &LoopCaseService{
 		anamnesisService:    service.NewAnamnesisService(),
-		presentationService: service.NewPatientPresentationService(),
+		treatmentReasonService: service.NewTreatmentReasonService(),
 		consistencyService:  service.NewConsistencyService(),
 		oneshotService:      service.NewOneshotService(),
 	}
 }
 
-func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName string, bitMask byte, symptoms []models.Symptom, patientPresentation models.PatientPresentation, anamnesis []models.Anamnesis, procedures []models.Procedure) (models.PatientPresentation, []models.Anamnesis, error) {
+func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName string, bitMask byte, symptoms []models.Symptom, treatmentReason string, anamnesis []ilvimodels.Anamnesis, procedures []models.Procedure) (string, []ilvimodels.Anamnesis, error) {
 
 	// generate everything one shot once
-	patientPresentation, anamnesis, err := s.oneshotService.GenerateOneShotCase(ctx, diseaseName, bitMask, symptoms, patientPresentation, anamnesis, procedures)
+	treatmentReason, anamnesis, err := s.oneshotService.GenerateOneShotCase(ctx, diseaseName, bitMask, symptoms, treatmentReason, anamnesis, procedures)
 	if err != nil {
-		return patientPresentation, anamnesis, err
+		return treatmentReason, anamnesis, err
 	}
 
 	i := 0
@@ -39,9 +40,9 @@ func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName str
 	inconsistencyPrompts := make(map[models.FieldFlag][]string)
 	for i < ITERATIONS {
 		// Check for inconsistencies
-		inconsistencies, err := s.consistencyService.CheckConsistency(ctx, diseaseName, bitMask, symptoms, patientPresentation, anamnesis, procedures)
+		inconsistencies, err := s.consistencyService.CheckConsistency(ctx, diseaseName, bitMask, symptoms, treatmentReason, anamnesis, procedures)
 		if err != nil {
-			return patientPresentation, anamnesis, err
+			return treatmentReason, anamnesis, err
 		}
 		// If no inconsistencies break
 		if len(inconsistencies) == 0 {
@@ -60,15 +61,15 @@ func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName str
 			if prompts, ok := inconsistencyPrompts[field]; ok {
 				log.Debugf("Regenerating field: %s\n", field)
 				switch field {
-				case models.PatientPresentationFlag:
-					patientPresentation, err = s.presentationService.GeneratePatientPresentation(ctx, diseaseName, symptoms, anamnesis, procedures, prompts...)
+				case models.TreatmentReasonFlag:
+					treatmentReason, err = s.treatmentReasonService.GenerateTreatmentReason(ctx, diseaseName, symptoms, anamnesis, procedures, prompts...)
 					if err != nil {
-						return patientPresentation, anamnesis, err
+						return treatmentReason, anamnesis, err
 					}
 				case models.AnamnesisFlag:
-					anamnesis, err = s.anamnesisService.GenerateAnamnesis(ctx, diseaseName, symptoms, patientPresentation, procedures, prompts...)
+					anamnesis, err = s.anamnesisService.GenerateAnamnesis(ctx, diseaseName, symptoms, treatmentReason, procedures, prompts...)
 					if err != nil {
-						return patientPresentation, anamnesis, err
+						return treatmentReason, anamnesis, err
 					}
 				}
 				// inconsistency prompts will be regenerated in next iteration
@@ -88,7 +89,7 @@ func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName str
 	log.Debugf("Needed %d iterations", i)
 
 	// Return the final state
-	return patientPresentation, anamnesis, nil
+	return treatmentReason, anamnesis, nil
 }
 
 func (s *LoopCaseService) createPriorityQueue(bitMask byte) []models.FieldFlag {

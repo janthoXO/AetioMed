@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+	"strings"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -42,6 +43,16 @@ func ExtractJsonArray(input string) ([]map[string]any, error) {
 	}
 
 	return jsonData, nil
+}
+
+func ExtractArrayStrings(input string) ([]string, error) {
+	re := regexp.MustCompile(`(?s)\[.*\]`)
+	match := re.FindString(input)
+
+	if match == "" {
+		return nil, fmt.Errorf("no JSON array found in input")
+	}
+	return MapSlice[string](strings.Split(match, ","), strings.TrimSpace), nil
 }
 
 // UnwrapJSONArr extracts a JSON array from a wrapped JSON structure like {"arr": [ ... ]}

@@ -4,8 +4,11 @@ import (
 	"case-generator/models"
 	"case-generator/utils"
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
+
+	ilvimodels "gitlab.lrz.de/ILVI/ilvi/ilvi-api/model"
 
 	log "github.com/sirupsen/logrus"
 )
@@ -20,7 +23,7 @@ func NewAnamnesisService() *AnamnesisService {
 	}
 }
 
-func (s *AnamnesisService) createAnamnesisPrompt(diseaseName string, symptoms []models.Symptom, patientPresentation models.PatientPresentation, procedures []models.Procedure, additionalPrompt ...string) string {
+func (s *AnamnesisService) createAnamnesisPrompt(diseaseName string, symptoms []models.Symptom, treatmentReason string, procedures []models.Procedure, additionalPrompt ...string) string {
 	return fmt.Sprintf(`You are a medical expert AI. Generate realistic anamnesis (medical history) for a patient with %s.
 
 %s
@@ -36,32 +39,35 @@ Requirements:
 - Answer in German
 
 %s`, diseaseName,
-		utils.ContextLine(symptoms, patientPresentation, nil, procedures),
+		utils.ContextLine(symptoms, treatmentReason, nil, procedures),
 		models.AnamnesisExampleJSONArr,
 		strings.Join(additionalPrompt, "\n"))
 }
 
-func (s *AnamnesisService) GenerateAnamnesis(ctx context.Context, diseaseName string, symptoms []models.Symptom, patientPresentation models.PatientPresentation, procedures []models.Procedure, additionalPrompt ...string) (anamnesis []models.Anamnesis, err error) {
+func (s *AnamnesisService) GenerateAnamnesis(ctx context.Context, diseaseName string, symptoms []models.Symptom, treatmentReason string, procedures []models.Procedure, additionalPrompt ...string) (anamnesis []ilvimodels.Anamnesis, err error) {
 	// Check if service is available
 	if !s.llmService.HealthCheck(ctx) {
 		return nil, fmt.Errorf("LLM service is not available. Please ensure Ollama is running")
 	}
 
-	prompt := s.createAnamnesisPrompt(diseaseName, symptoms, patientPresentation, procedures, additionalPrompt...)
+	prompt := s.createAnamnesisPrompt(diseaseName, symptoms, treatmentReason, procedures, additionalPrompt...)
 	response, err := s.llmService.Generate(ctx, prompt)
 	if err != nil {
 		log.Errorf("Failed to generate anamnesis: %v", err)
 		return nil, fmt.Errorf("failed to generate anamnesis: %w", err)
 	}
 
-	anamnesisArr, err := utils.ExtractJsonArray(utils.UnwrapJSONArr(response))
+	anamnesisStringArr, err := utils.ExtractArrayStrings(utils.UnwrapJSONArr(response))
 	if err != nil {
 		return nil, fmt.Errorf("no anamnesis found in response: %w", err)
 	}
 
-	for _, item := range anamnesisArr {
-		var a models.Anamnesis
-		a.FromDict(item)
+	for _, item := range anamnesisStringArr {
+		var a ilvimodels.Anamnesis
+		err := json.Unmarshal([]byte(item), &a)
+		if err != nil {
+			continue
+		}
 		anamnesis = append(anamnesis, a)
 	}
 

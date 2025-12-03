@@ -26,10 +26,10 @@ func NewLoopCaseService() *LoopCaseService {
 	}
 }
 
-func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName string, bitMask byte, symptoms []models.Symptom, treatmentReason string, anamnesis []models.Anamnesis, procedures []models.Procedure) (string, []models.Anamnesis, error) {
+func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName string, bitMask byte, symptoms []models.Symptom, treatmentReason string, anamnesis []models.Anamnesis, procedures []models.Procedure) (retTreatmentReason string, retAnamnesis []models.Anamnesis, err error) {
 
 	// generate everything one shot once
-	treatmentReason, anamnesis, err := s.oneshotService.GenerateOneShotCase(ctx, diseaseName, bitMask, symptoms, treatmentReason, anamnesis, procedures)
+	treatmentReason, anamnesis, err = s.oneshotService.GenerateOneShotCase(ctx, diseaseName, bitMask, symptoms, treatmentReason, anamnesis, procedures)
 	if err != nil {
 		return treatmentReason, anamnesis, err
 	}
@@ -87,8 +87,15 @@ func (s *LoopCaseService) GenerateWholeCase(ctx context.Context, diseaseName str
 
 	log.Debugf("Needed %d iterations", i)
 
+	if bitMask&byte(models.TreatmentReasonFlag) != 0 {
+		retTreatmentReason = treatmentReason
+	}
+	if bitMask&byte(models.AnamnesisFlag) != 0 {
+		retAnamnesis = anamnesis
+	}
+
 	// Return the final state
-	return treatmentReason, anamnesis, nil
+	return retTreatmentReason, retAnamnesis, nil
 }
 
 func (s *LoopCaseService) createPriorityQueue(bitMask byte) []models.FieldFlag {

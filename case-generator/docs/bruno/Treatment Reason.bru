@@ -1,11 +1,11 @@
 meta {
-  name: Patient Presentation
+  name: Treatment Reason
   type: http
   seq: 3
 }
 
 post {
-  url: {{base_url}}/disease/:diseaseName/patientPresentation
+  url: {{base_url}}/disease/:diseaseName/treatmentReason
   body: json
   auth: inherit
 }
@@ -63,4 +63,5 @@ body:json {
 
 settings {
   encodeUrl: true
+  timeout: 0
 }

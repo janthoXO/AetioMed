@@ -5,14 +5,14 @@ import (
 	"fmt"
 )
 
-func ContextLine(symptoms []models.Symptom, presentation models.PatientPresentation, anamnesis []models.Anamnesis, procedures []models.Procedure) string {
+func ContextLine(symptoms []models.Symptom, treatmentReason string, anamnesis []models.Anamnesis, procedures []models.Procedure) string {
 	s := ""
 	if symptoms != nil && len(symptoms) > 0 {
 		s = fmt.Sprintf("%s symptoms: %+v\n", s, symptoms)
 	}
 
-	if presentation.TreatmentReason != "" {
-		s = fmt.Sprintf("%streatment reason: %s\n", s, presentation.TreatmentReason)
+	if treatmentReason != "" {
+		s = fmt.Sprintf("%streatment reason: %s\n", s, treatmentReason)
 	}
 
 	if anamnesis != nil && len(anamnesis) > 0 {

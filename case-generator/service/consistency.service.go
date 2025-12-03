@@ -19,7 +19,7 @@ func NewConsistencyService() *ConsistencyService {
 	}
 }
 
-func (s *ConsistencyService) createConsistencyPrompt(diseaseName string, fieldsToCheck []string, symptoms []models.Symptom, patientPresentation models.PatientPresentation, anamnesis []models.Anamnesis, procedures []models.Procedure) string {
+func (s *ConsistencyService) createConsistencyPrompt(diseaseName string, fieldsToCheck []string, symptoms []models.Symptom, treatmentReason string, anamnesis []models.Anamnesis, procedures []models.Procedure) string {
 	return fmt.Sprintf(`Review this clinical case of a patient with %s for consistency. It should be for student learning and the disease should not be directly spoiled. Do not check for consistency with the disease but rather between the fields provided.
 
 %s
@@ -36,16 +36,16 @@ Return ONLY a JSON object: {
 Requirements:
 - Be medically accurate
 - Only include the JSON response, no additional text`,
-		diseaseName, utils.ContextLine(symptoms, patientPresentation, anamnesis, procedures),
+		diseaseName, utils.ContextLine(symptoms, treatmentReason, anamnesis, procedures),
 		models.ConsistencyExampleJSONArr(fieldsToCheck))
 }
 
-func (s *ConsistencyService) CheckConsistency(ctx context.Context, diseaseName string, fieldsToCheck byte, symptoms []models.Symptom, patientPresentation models.PatientPresentation, anamnesis []models.Anamnesis, procedures []models.Procedure) (consistencies []models.Inconsistency, err error) {
+func (s *ConsistencyService) CheckConsistency(ctx context.Context, diseaseName string, fieldsToCheck byte, symptoms []models.Symptom, treatmentReason string, anamnesis []models.Anamnesis, procedures []models.Procedure) (consistencies []models.Inconsistency, err error) {
 	flagStrings := utils.MapSlice(models.BitmaskToFlagArr(fieldsToCheck), func(f models.FieldFlag) string {
 		return f.String()
 	})
 
-	prompt := s.createConsistencyPrompt(diseaseName, flagStrings, symptoms, patientPresentation, anamnesis, procedures)
+	prompt := s.createConsistencyPrompt(diseaseName, flagStrings, symptoms, treatmentReason, anamnesis, procedures)
 	response, err := s.llmService.Generate(ctx, prompt)
 	if err != nil {
 		log.Errorf("Failed to generate consistency check: %v", err)

@@ -1,28 +1,17 @@
 package models
 
-type Anamnesis struct {
-	Category string  `json:"category"`
-	Answer   string  `json:"answer"`
-	TimeCost float64 `json:"timeCost"`
-}
+import(
+	"gitlab.lrz.de/ILVI/ilvi/ilvi-api/controller/dto"
+)
 
-func (a *Anamnesis) FromDict(dict map[string]interface{}) {
-	if val, ok := dict["category"].(string); ok {
-		a.Category = val
-	}
-	if val, ok := dict["answer"].(string); ok {
-		a.Answer = val
-	}
-	if val, ok := dict["timeCost"].(float64); ok {
-		a.TimeCost = val
-	}
+type Anamnesis struct {
+	dto.AnamnesisPayload
 }
 
 const AnamnesisExampleJSONArr = `[
 	{
 		"category": "category name",
-		"answer": "patient's answer",
-		"timeCost": int (time cost in minutes)
+		"answer": "patient's answer"
 	}
 ] // containing the categories:
 	// - Krankheitsverlauf

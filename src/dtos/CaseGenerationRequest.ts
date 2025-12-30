@@ -1,5 +1,5 @@
 import { z } from "zod/v4";
-import { GenerationFlagKeys } from "../domain-models/GenerationFlags.js";
+import { GenerationFlagKeys } from "@/domain-models/GenerationFlags.js";
 
 export const CaseGenerationRequestSchema = z.object({
   diagnosis: z.string(),

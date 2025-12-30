@@ -13,8 +13,6 @@
       "description": "Cases endpoints"
     }
   ],
-  "schemes": [
-    "http"
-  ],
+  "schemes": ["http"],
   "paths": {}
 }

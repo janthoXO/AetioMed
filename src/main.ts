@@ -1,6 +1,5 @@
-import dotenv from "dotenv";
 import { initRouter } from "./rest/router.js";
+import { config } from "./utils/config.js";
 
-dotenv.config();
+console.log("Environment variables loaded.", config);
 initRouter();
-

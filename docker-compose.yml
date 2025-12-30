@@ -83,8 +83,8 @@ services:
   neo4j:
     image: neo4j:5.26.12
     ports:
-      - "7474:7474"  # HTTP
-      - "7687:7687"  # Bolt
+      - "7474:7474" # HTTP
+      - "7687:7687" # Bolt
     environment:
       - NEO4J_AUTH=${NEO4J_AUTH:-neo4j/password}
     volumes:
@@ -100,12 +100,12 @@ services:
       exec /startup/docker-entrypoint.sh neo4j
       "
     restart: unless-stopped
-  
+
   nats:
     image: nats:2.12.1
     ports:
-      - "4222:4222"   # client connections
-      - "8222:8222"   # monitoring http (server stats)
+      - "4222:4222" # client connections
+      - "8222:8222" # monitoring http (server stats)
     # Enable JetStream and persist its store to a Docker volume. Credentials are optional.
     command: >
       --js --store_dir /data/jetstream

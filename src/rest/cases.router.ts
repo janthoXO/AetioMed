@@ -11,10 +11,6 @@ router.use((_req, _res, next) => {
   next();
 });
 
-router.get("/hello", async (_req, res) => {
-  res.status(200).json({ msg: "Hello World" });
-});
-
 router.post("/", async (req, res) => {
   // take Case Generation Request from body
   const bodyResult = CaseGenerationRequestSchema.safeParse(req.body);

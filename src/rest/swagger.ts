@@ -10,7 +10,7 @@ const doc = {
     {
       name: "Cases",
       description: "Cases endpoints",
-    }
+    },
   ],
 };
 

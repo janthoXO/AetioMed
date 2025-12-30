@@ -1,8 +1,8 @@
 export enum GenerationFlags {
-  TreatmentReason = 1 << 0, // 1
+  ChiefComplaint = 1 << 0, // 1
   Anamnesis = 1 << 1, // 2
 
-  All = TreatmentReason | Anamnesis,
+  All = ChiefComplaint | Anamnesis,
 }
 
 export const GenerationFlagKeys = Object.keys(GenerationFlags).filter((k) =>
@@ -10,6 +10,13 @@ export const GenerationFlagKeys = Object.keys(GenerationFlags).filter((k) =>
 ) as [keyof typeof GenerationFlags, ...(keyof typeof GenerationFlags)[]];
 
 export type GenerationFlagString = keyof typeof GenerationFlags;
+
+/**
+ * Check if a specific flag is set in the bitmap
+ */
+export function hasFlag(bitmap: number, flag: GenerationFlags): boolean {
+  return (bitmap & flag) !== 0;
+}
 
 /**
  * Convert an array of flag names to a bitmap
@@ -23,8 +30,19 @@ export function flagStringsToBitmap(flags: GenerationFlagString[]): number {
 }
 
 /**
- * Check if a specific flag is set in the bitmap
+ * Convert a bitmap to an array of flag names
  */
-export function hasFlag(bitmap: number, flag: GenerationFlags): boolean {
-  return (bitmap & flag) !== 0;
+export function bitmapToFlagStrings(bitmap: number): GenerationFlagString[] {
+  const flags: GenerationFlagString[] = [];
+  for (const flag of Object.values(GenerationFlags)) {
+    if (typeof flag !== typeof "number") {
+      continue;
+    }
+    if (!hasFlag(bitmap, flag as GenerationFlags)) {
+      continue;
+    }
+
+    flags.push(flag as GenerationFlagString);
+  }
+  return flags;
 }

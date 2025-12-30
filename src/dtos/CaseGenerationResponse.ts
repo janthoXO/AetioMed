@@ -1,16 +1,5 @@
-import { z } from "zod/v4";
-import { AnamnesisCategory } from "../domain-models/Anamnesis.js";
+import { CaseSchema, type Case } from "../domain-models/Case.js";
 
-const AnamnesisFieldSchema = z.object({
-  category: z.enum(AnamnesisCategory),
-  answer: z.string(),
-});
+export const CaseGenerationResponseSchema = CaseSchema;
 
-export const CaseGenerationResponseSchema = z.object({
-  treatmentReason: z.string().optional(),
-  anamnesis: z.array(AnamnesisFieldSchema).optional(),
-});
-
-export type CaseGenerationResponse = z.infer<
-  typeof CaseGenerationResponseSchema
->;
+export type CaseGenerationResponse = Case;

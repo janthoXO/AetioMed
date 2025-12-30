@@ -1,5 +1,8 @@
-import { encode } from "@toon-format/toon";
+import { z } from "zod/v4";
 
+/**
+ * Anamnesis categories for medical history
+ */
 export enum AnamnesisCategory {
   HPI = "History of Present Illness",
   PMH = "Past Medical History",
@@ -10,7 +13,10 @@ export enum AnamnesisCategory {
   SH = "Social and Occupational History",
 }
 
-enum AnamnesisCategoryGER {
+/**
+ * German translations for anamnesis categories
+ */
+export enum AnamnesisCategoryGER {
   Krankheitsverlauf = "Krankheitsverlauf",
   Vorerkrankungen = "Vorerkrankungen",
   Medikamente = "Medikamente",
@@ -20,22 +26,36 @@ enum AnamnesisCategoryGER {
   SozialBerufsanamnese = "Sozial-/Berufsanamnese",
 }
 
-export interface AnamnesisField {
-  category: AnamnesisCategory;
-  answer: string;
+/**
+ * Zod schema for an anamnesis field
+ */
+export const AnamnesisFieldSchema = z.object({
+  category: z.enum(AnamnesisCategory).describe("Category of anamnesis"),
+  answer: z.string().describe("Patient's response or clinical finding"),
+});
+
+export type AnamnesisField = z.infer<typeof AnamnesisFieldSchema>;
+
+/**
+ * Zod schema for the complete anamnesis array
+ */
+export const AnamnesisSchema = z
+  .array(AnamnesisFieldSchema)
+  .describe("Medical history collected from patient");
+
+export type Anamnesis = z.infer<typeof AnamnesisSchema>;
+
+export function AnamnesisDescriptionPrompt(): string {
+  return "Anamnesis: Medical history with multiple categories";
 }
 
 export function AnamnesisToonFormat(): string {
-  // Generate an example structure for the LLM to follow
-  const example: AnamnesisField[] = [
-    {
-      category: AnamnesisCategory.HPI,
-      answer: "Patient reports...",
-    },
-  ];
-  return `${encode(example)}\nthe following categories are allowed: ${Object.values(
-    AnamnesisCategory
+  const categories = Object.values(AnamnesisCategory);
+  return `anamnesis[7]{category,answer}:
+${categories
+  .map(
+    (category, idx) =>
+      `  ${category},${idx === 0 ? `"The patient reports..."` : `"..."`}`
   )
-    .map((category) => `"${category}"`)
-    .join("|")}`;
+  .join("\n")}`;
 }

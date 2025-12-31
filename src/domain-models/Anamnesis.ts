@@ -49,6 +49,27 @@ export function AnamnesisDescriptionPrompt(): string {
   return "Anamnesis: Medical history with multiple categories";
 }
 
+/**
+ *
+ * @returns a zod representing {anamnesis: Anamnesis[]}
+ */
+export function AnamnesisJsonFormatZod(): z.ZodObject {
+  return z.object({ anamnesis: AnamnesisSchema });
+}
+
+/**
+ *
+ * @returns a JSON format string representing {anamnesis: Anamnesis[]}
+ */
+export function AnamnesisJsonFormat(): string {
+  return JSON.stringify(z.toJSONSchema(AnamnesisJsonFormatZod()));
+}
+
+/**
+ * 
+ * @returns a TOON format string representing {anamnesis: Anamnesis[]}
+
+ */
 export function AnamnesisToonFormat(): string {
   const categories = Object.values(AnamnesisCategory);
   return `anamnesis[7]{category,answer}:

@@ -9,6 +9,8 @@ import {
 } from "@/utils/llmHelper.js";
 import { CaseSchema } from "@/domain-models/Case.js";
 import { saveTransformToon } from "@/utils/toonHelper.js";
+import { formatPromptDraftJsonZod } from "@/utils/jsonHelper.js";
+import { config } from "@/utils/config.js";
 
 /**
  * FAN-OUT
@@ -63,7 +65,11 @@ Requirements:
 
   // Initialize cases to empty in case of failure
   try {
-    const response = await getCreativeLLM().invoke(prompt);
+    const response = await getCreativeLLM(
+      config.LLM_FORMAT === "JSON"
+        ? formatPromptDraftJsonZod(state.generationFlags)
+        : undefined
+    ).invoke(prompt);
     const text = response.content.toString();
     console.debug(
       `[GenerateDraft #${state.draftIndex}] LLM raw Response:\n${text}`

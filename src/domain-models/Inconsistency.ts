@@ -1,5 +1,5 @@
 import z from "zod";
-import { GenerationFlags } from "./GenerationFlags.js";
+import { GenerationFlagKeys, GenerationFlags } from "./GenerationFlags.js";
 import { encode } from "@toon-format/toon";
 
 export enum InconsistencySeverity {
@@ -12,7 +12,7 @@ export enum InconsistencySeverity {
  * Schema for consistency errors
  */
 export const InconsistencySchema = z.object({
-  field: z.enum(GenerationFlags),
+  field: z.enum(GenerationFlagKeys).describe("Field with inconsistency"),
   description: z.string().describe("Description of the inconsistency"),
   suggestion: z
     .string()
@@ -22,6 +22,24 @@ export const InconsistencySchema = z.object({
 
 export type Inconsistency = z.infer<typeof InconsistencySchema>;
 
+/**
+ *
+ * @returns a zod representing {inconsistencies: Inconsistency[]}
+ */
+export function InconsistencyJsonFormatZod(): z.ZodObject {
+  return z.object({ inconsistencies: z.array(InconsistencySchema) });
+}
+
+/**
+ * @returns a JSON format string representing {inconsistencies: Inconsistency[]}
+ */
+export function InconsistencyJsonFormat(): string {
+  return JSON.stringify(z.toJSONSchema(InconsistencyJsonFormatZod()));
+}
+
+/**
+ * @returns a TOON format string representing {inconsistencies: Inconsistency[]}
+ */
 export function InconsistencyToonFormat(): string {
   return `inconsistencies[N]{field,description,suggestion,severity}:
   ${Object.values(GenerationFlags)

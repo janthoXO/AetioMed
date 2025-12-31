@@ -1,5 +1,6 @@
 import { ChatOllama } from "@langchain/ollama";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { InteropZodType } from "@langchain/core/utils/types";
 
 export interface LLMConfig {
   provider: "ollama";
@@ -26,34 +27,49 @@ export function configureLLM(config: Partial<LLMConfig>): void {
  * Get an LLM instance based on current configuration.
  * Easily extendable to support cloud providers.
  */
-export function getLLM(temperatureOverride?: number): BaseChatModel {
+export function getLLM(
+  temperatureOverride?: number,
+  structuredOutput?: InteropZodType
+): BaseChatModel {
   const temperature = temperatureOverride ?? currentConfig.temperature;
 
+  let chat: BaseChatModel;
   switch (currentConfig.provider) {
     case "ollama":
-      return new ChatOllama({
+      chat = new ChatOllama({
         model: currentConfig.model,
         temperature,
       });
-
+      break;
     default:
-      return new ChatOllama({
+      chat = new ChatOllama({
         model: currentConfig.model,
         temperature,
       });
+      break;
   }
+
+  if (structuredOutput) {
+    chat.withStructuredOutput(structuredOutput);
+  }
+
+  return chat;
 }
 
 /**
  * Get a low-temperature LLM for deterministic tasks (consistency checks, etc.)
  */
-export function getDeterministicLLM(): BaseChatModel {
-  return getLLM(0.1);
+export function getDeterministicLLM(
+  structuredOutput?: InteropZodType
+): BaseChatModel {
+  return getLLM(0.1, structuredOutput);
 }
 
 /**
  * Get a creative LLM for generation tasks
  */
-export function getCreativeLLM(): BaseChatModel {
-  return getLLM(0.8);
+export function getCreativeLLM(
+  structuredOutput?: InteropZodType
+): BaseChatModel {
+  return getLLM(0.8, structuredOutput);
 }

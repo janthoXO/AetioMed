@@ -1,11 +1,15 @@
 import type { AgentStateType } from "./state.js";
 import { getDeterministicLLM } from "./llm.js";
-import { type Inconsistency } from "@/domain-models/Inconsistency.js";
+import {
+  InconsistencyJsonFormatZod,
+  type Inconsistency,
+} from "@/domain-models/Inconsistency.js";
 import {
   decodeLLMResponse,
   encodeLLMRequest,
   formatPromptInconsistencies,
 } from "@/utils/llmHelper.js";
+import { config } from "@/utils/config.js";
 
 export async function generateInconsistencies(
   state: AgentStateType
@@ -33,7 +37,9 @@ Requirements:
   console.debug(`[CheckConsistency] Prompt:\n${prompt}`);
 
   try {
-    const response = await getDeterministicLLM().invoke(prompt);
+    const response = await getDeterministicLLM(
+      config.LLM_FORMAT === "JSON" ? InconsistencyJsonFormatZod() : undefined
+    ).invoke(prompt);
     const text = response.content.toString();
     console.debug(`[CheckConsistency] LLM Response:\n${text}`);
     const inconsistencies = (
@@ -64,7 +70,7 @@ export function decreaseConsistencyIteration(state: AgentStateType): {
   console.debug(
     `[DecreaseConsistencyIteration] Remaining iterations: ${state.consistencyIteration}`
   );
-  return { consistencyIteration: state.consistencyIteration };
+  return { consistencyIteration: state.consistencyIteration - 1 };
 }
 
 export function checkConsistency(state: AgentStateType): "refine" | "end" {

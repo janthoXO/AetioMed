@@ -45,6 +45,10 @@ export function formatPromptDraft(generationFlags: number): string {
   }
 }
 
+/**
+ *
+ * @returns a format string representing the object {inconsistenies: Inconsistency[]}
+ */
 export function formatPromptInconsistencies(): string {
   switch (config.LLM_FORMAT) {
     case "TOON":

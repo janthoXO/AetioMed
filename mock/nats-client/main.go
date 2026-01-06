@@ -41,8 +41,8 @@ func main() {
 	// Example: Generate Whole Case
 
 	caseRequest := map[string]any{
-		"diseaseName":     "Diabetes Mellitus",
-		"generationFlags": []string{"treatmentReason"},
+		"diagnosis":     "Diabetes Mellitus",
+		"generationFlags": []string{"chiefComplaint"},
 	}
 	caseRequestBytes, _ := json.Marshal(caseRequest)
 
@@ -55,7 +55,7 @@ func main() {
 
 func subscribeToSubject(js nats.JetStreamContext, subject string) error {
 	// Subscribe to all responses
-	_, err := js.Subscribe("cases.generated", func(msg *nats.Msg) {
+	_, err := js.Subscribe(subject, func(msg *nats.Msg) {
 		log.Infof("Received message on subject: %s", msg.Subject)
 
 		var response map[string]any

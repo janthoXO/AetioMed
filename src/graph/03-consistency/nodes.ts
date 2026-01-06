@@ -9,15 +9,9 @@ import {
   formatPromptInconsistencies,
 } from "@/utils/llmHelper.js";
 import { config } from "@/utils/config.js";
-import { ConsistencyStateSchema, type ConsistencyState } from "./state.js";
-import type z from "zod";
+import { type ConsistencyState } from "./state.js";
 
-const GenerateInconsistenciesOutputSchema = ConsistencyStateSchema.pick({
-  inconsistencies: true,
-});
-type GenerateInconsistenciesOutput = z.infer<
-  typeof GenerateInconsistenciesOutputSchema
->;
+type GenerateInconsistenciesOutput = Pick<ConsistencyState, "inconsistencies">;
 /**
  * Generates inconsistencies for the given case draft.
  */
@@ -72,11 +66,9 @@ Requirements:
   }
 }
 
-const DecreaseConsistencyIterationOutputSchema = ConsistencyStateSchema.pick({
-  inconsistencyIterationsRemaining: true,
-});
-type DecreaseConsistencyIterationOutput = z.infer<
-  typeof DecreaseConsistencyIterationOutputSchema
+type DecreaseConsistencyIterationOutput = Pick<
+  ConsistencyState,
+  "inconsistencyIterationsRemaining"
 >;
 /**
  * Decreases the remaining inconsistency iterations by one.

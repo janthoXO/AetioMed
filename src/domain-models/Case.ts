@@ -6,8 +6,8 @@ import { ChiefComplaintSchema } from "./ChiefComplaint.js";
  * Zod schema for a complete medical case
  */
 export const CaseSchema = z.object({
-  chiefComplaint: ChiefComplaintSchema,
-  anamnesis: AnamnesisSchema,
+  chiefComplaint: ChiefComplaintSchema.optional(),
+  anamnesis: AnamnesisSchema.optional(),
 });
 
 export type Case = z.infer<typeof CaseSchema>;

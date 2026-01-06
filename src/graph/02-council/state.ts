@@ -1,6 +1,4 @@
-import {
-  GenerationFlags,
-} from "@/domain-models/GenerationFlags.js";
+import { GenerationFlags } from "@/domain-models/GenerationFlags.js";
 import { registry } from "@langchain/langgraph/zod";
 import z from "zod";
 import { CaseWithDraftIndexSchema } from "../models.js";

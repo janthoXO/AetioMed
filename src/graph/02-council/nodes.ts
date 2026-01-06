@@ -1,8 +1,7 @@
 import { Send } from "@langchain/langgraph";
 import { getDeterministicLLM } from "../llm.js";
-import { CouncilStateSchema, type CouncilState } from "./state.js";
+import { type CouncilState } from "./state.js";
 import { encodeObject } from "@/utils/llmHelper.js";
-import type z from "zod";
 
 /**
  * Check if generated drafts > 1 and councilSize > 1
@@ -32,8 +31,7 @@ export function fanOutCouncil(state: CouncilState): Send[] {
   return sends;
 }
 
-const VoteDraftOutputSchema = CouncilStateSchema.pick({ votes: true });
-type VoteDraftOutput = z.infer<typeof VoteDraftOutputSchema>;
+type VoteDraftOutput = Pick<CouncilState, "votes">;
 /**
  *
  * Votes for a specific draft among the council of generated cases.
@@ -69,7 +67,7 @@ Return a singular number (the draftIndex of the best case) as response, nothing 
 /**
  * Fan in council
  */
-export function fanInCouncil(state: CouncilState): {} {
+export function fanInCouncil(state: CouncilState): Partial<CouncilState> {
   console.debug(
     "[Council: FanInCouncil] Merging votes from council members",
     state.votes
@@ -78,10 +76,7 @@ export function fanInCouncil(state: CouncilState): {} {
   return {};
 }
 
-const ChooseVotedDraftOutputSchema = CouncilStateSchema.pick({
-  case: true,
-});
-type ChooseVotedDraftOutput = z.infer<typeof ChooseVotedDraftOutputSchema>;
+type ChooseVotedDraftOutput = Pick<CouncilState, "case">;
 /**
  * return draft with most votes or first draft in case of tie
  */

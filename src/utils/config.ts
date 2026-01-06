@@ -7,6 +7,11 @@ const ConfigSchema = z.object({
   PORT: z.coerce.number().default(3030),
   DEBUG: z.coerce.boolean().default(false),
   LLM_FORMAT: z.enum(["TOON", "JSON"]).default("JSON"),
+
+  // NATS
+  NATS_URL: z.string().default("nats://localhost:4222"),
+  NATS_USER: z.string().default("nats"),
+  NATS_PASSWORD: z.string().default("nats"),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

@@ -1,5 +1,9 @@
 import { START, StateGraph, END } from "@langchain/langgraph";
-import { checkConsistency, decreaseConsistencyIteration, generateInconsistencies } from "./nodes.js";
+import {
+  checkConsistency,
+  decreaseConsistencyIteration,
+  generateInconsistencies,
+} from "./nodes.js";
 import { ConsistencyStateSchema } from "./state.js";
 
 export const consistencyGraph = new StateGraph(ConsistencyStateSchema)

@@ -26,7 +26,7 @@ export function initRouter(): Promise<void> {
 
   app.use("/api", apiRouter);
   app.listen(config.PORT, () => {
-    console.log(`Server is running on port ${config.PORT}`);
+    console.log(`[REST] Server is running on port ${config.PORT}`);
   });
 
   return Promise.resolve();

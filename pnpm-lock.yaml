@@ -17,6 +17,15 @@ importers:
       '@langchain/ollama':
         specifier: ^1.0.3
         version: 1.0.3(@langchain/core@1.1.4)
+      '@nats-io/jetstream':
+        specifier: ^3.3.0
+        version: 3.3.0
+      '@nats-io/nats-core':
+        specifier: ^3.3.0
+        version: 3.3.0
+      '@nats-io/transport-node':
+        specifier: ^3.3.0
+        version: 3.3.0
       '@toon-format/toon':
         specifier: ^2.1.0
         version: 2.1.0
@@ -351,6 +360,24 @@ packages:
     engines: {node: '>=20'}
     peerDependencies:
       '@langchain/core': ^1.0.0
+
+  '@nats-io/jetstream@3.3.0':
+    resolution: {integrity: sha512-SK6lSr+Wf9nd6mffV4gdd1yDZxlhILEUJg74bAaU9yjQ2kBOPIJDHlYc2yMzcuZnQxIUcTVI3L7ow2d4qEDslQ==}
+
+  '@nats-io/nats-core@3.3.0':
+    resolution: {integrity: sha512-+ImSYab7NvOMvFFBSBbWl03a4s/OUXCpFFauZ4iRx8pp+5ptsaBQNpacyPXeg8jbjAMeEAWn2Zuyl7oJCUffJA==}
+
+  '@nats-io/nkeys@2.0.3':
+    resolution: {integrity: sha512-JVt56GuE6Z89KUkI4TXUbSI9fmIfAmk6PMPknijmuL72GcD+UgIomTcRWiNvvJKxA01sBbmIPStqJs5cMRBC3A==}
+    engines: {node: '>=18.0.0'}
+
+  '@nats-io/nuid@2.0.3':
+    resolution: {integrity: sha512-TpA3HEBna/qMVudy+3HZr5M3mo/L1JPofpVT4t0HkFGkz2Cn9wrlrQC8tvR8Md5Oa9//GtGG26eN0qEWF5Vqew==}
+    engines: {node: '>= 18.x'}
+
+  '@nats-io/transport-node@3.3.0':
+    resolution: {integrity: sha512-A59+E0uL2FCzkvEbnhOPA4bKd4p1Ca6o5GwhVwVHzBPILjjGaSpgwgccaxnjwdsP+FBcMRrgXJ1wn6i1pf6nHQ==}
+    engines: {node: '>= 18.0.0'}
 
   '@scarf/scarf@1.4.0':
     resolution: {integrity: sha512-xxeapPiUXdZAE3che6f3xogoJPeZgig6omHEy1rIY5WVsB3H2BHNnZH+gHG6x91SCWyQCzWGsuL2Hh3ClO5/qQ==}
@@ -1214,6 +1241,9 @@ packages:
     engines: {node: '>=18.0.0'}
     hasBin: true
 
+  tweetnacl@1.0.3:
+    resolution: {integrity: sha512-6rt+RN7aOi1nGMyC4Xa5DdYiukl2UWCbcJft7YhxReBGQD7OAM8Pbxw6YMo4r2diNEA8FEmu32YOn9rhaiE5yw==}
+
   type-check@0.4.0:
     resolution: {integrity: sha512-XleUoc9uwGXqjWwXaUTZAmzMcFZ5858QA2vvx1Ur5xIcixXIP+8LnFDgRplU30us6teqdlskFfu+ae4K79Ooew==}
     engines: {node: '>= 0.8.0'}
@@ -1488,6 +1518,27 @@ snapshots:
       '@langchain/core': 1.1.4
       ollama: 0.6.3
       uuid: 10.0.0
+
+  '@nats-io/jetstream@3.3.0':
+    dependencies:
+      '@nats-io/nats-core': 3.3.0
+
+  '@nats-io/nats-core@3.3.0':
+    dependencies:
+      '@nats-io/nkeys': 2.0.3
+      '@nats-io/nuid': 2.0.3
+
+  '@nats-io/nkeys@2.0.3':
+    dependencies:
+      tweetnacl: 1.0.3
+
+  '@nats-io/nuid@2.0.3': {}
+
+  '@nats-io/transport-node@3.3.0':
+    dependencies:
+      '@nats-io/nats-core': 3.3.0
+      '@nats-io/nkeys': 2.0.3
+      '@nats-io/nuid': 2.0.3
 
   '@scarf/scarf@1.4.0': {}
 
@@ -2418,6 +2469,8 @@ snapshots:
       get-tsconfig: 4.13.0
     optionalDependencies:
       fsevents: 2.3.3
+
+  tweetnacl@1.0.3: {}
 
   type-check@0.4.0:
     dependencies:

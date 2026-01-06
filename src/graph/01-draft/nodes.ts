@@ -9,8 +9,7 @@ import {
 import { CaseSchema } from "@/domain-models/Case.js";
 import { formatPromptDraftJsonZod } from "@/utils/jsonHelper.js";
 import { config } from "@/utils/config.js";
-import { type DraftState, DraftStateSchema } from "./state.js";
-import type z from "zod";
+import { type DraftState } from "./state.js";
 
 /**
  * FAN-OUT
@@ -31,8 +30,7 @@ export function fanOutDrafts(state: DraftState): Send[] {
   return sends;
 }
 
-const GenerateDraftOutputSchema = DraftStateSchema.pick({ drafts: true });
-type GenerateDraftOutput = z.infer<typeof GenerateDraftOutputSchema>;
+type GenerateDraftOutput = Pick<DraftState, "drafts">;
 /**
  * Generates a complete medical case draft for the given diagnosis.
  * This node runs in parallel with other instances via the Send API.
@@ -53,7 +51,7 @@ ${descriptionPromptDraft(state.generationFlags)}
 
 ${formatPromptDraft(state.generationFlags)}
 ${
-  !!state.case
+  state.case
     ? `\nPrevious case generated:\n${encodeObject(state.case)}
 with inconsistencies:\n${encodeObject(Object.values(state.inconsistencies).flat())}
 `
@@ -115,7 +113,7 @@ Requirements:
  * LangGraph handles the implicit fan-in, but this node marks the transition
  * from generation phase to critique phase.
  */
-export function fanInDrafts(state: DraftState): {} {
+export function fanInDrafts(state: DraftState): Partial<DraftState> {
   console.log(
     `[Draft: FanInDrafts] Received ${state.drafts.length} case drafts`
   );

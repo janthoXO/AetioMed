@@ -1,9 +1,5 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
-import {
-  GlobalStateSchema,
-  GraphInputSchema,
-  type GlobalState,
-} from "./state.js";
+import { GlobalStateSchema, GraphInputSchema } from "./state.js";
 import { draftGraph } from "./01-draft/index.js";
 import { councilGraph } from "./02-council/index.js";
 import { checkConsistency, consistencyGraph } from "./03-consistency/index.js";
@@ -25,7 +21,7 @@ export function buildCaseGeneratorGraph() {
   graph.addNode("council_phase", councilGraph);
   graph.addEdge("draft_phase", "council_phase");
 
-  graph.addNode("consistency_reset", (state: GlobalState) => {
+  graph.addNode("consistency_reset", () => {
     // Reset inconsistencies for new consistency check
     return {
       inconsistencies: [],
@@ -35,7 +31,7 @@ export function buildCaseGeneratorGraph() {
   graph.addEdge("council_phase", "consistency_reset");
   graph.addEdge("consistency_reset", "consistency_phase");
 
-  graph.addNode("draft_reset", (state: GlobalState) => {
+  graph.addNode("draft_reset", () => {
     // Reset drafts for new generation cycle
     return {
       drafts: [],

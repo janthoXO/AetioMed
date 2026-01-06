@@ -1,16 +1,16 @@
 import { Send } from "@langchain/langgraph";
-import type { AgentStateType, CaseWithDraftIndex } from "./state.js";
-import { getCreativeLLM } from "./llm.js";
+import { getCreativeLLM } from "../llm.js";
 import {
-  decodeLLMResponse,
+  decodeObject,
   descriptionPromptDraft,
-  encodeLLMRequest,
+  encodeObject,
   formatPromptDraft,
 } from "@/utils/llmHelper.js";
 import { CaseSchema } from "@/domain-models/Case.js";
-import { saveTransformToon } from "@/utils/toonHelper.js";
 import { formatPromptDraftJsonZod } from "@/utils/jsonHelper.js";
 import { config } from "@/utils/config.js";
+import { type DraftState, DraftStateSchema } from "./state.js";
+import type z from "zod";
 
 /**
  * FAN-OUT
@@ -18,7 +18,7 @@ import { config } from "@/utils/config.js";
  * Reads state.draftCount and returns an array of Send objects
  * to spawn N parallel draft_generation nodes.
  */
-export function fanOutDrafts(state: AgentStateType): Send[] {
+export function fanOutDrafts(state: DraftState): Send[] {
   const sends: Send[] = [];
 
   for (let i = 0; i < state.draftCount; i++) {
@@ -26,19 +26,23 @@ export function fanOutDrafts(state: AgentStateType): Send[] {
   }
 
   console.debug(
-    `[FanOutDrafts] Spawned ${sends.length} parallel draft generators`
+    `[Draft: FanOutDrafts] Spawned ${sends.length} parallel generators`
   );
   return sends;
 }
 
+const GenerateDraftOutputSchema = DraftStateSchema.pick({ drafts: true });
+type GenerateDraftOutput = z.infer<typeof GenerateDraftOutputSchema>;
 /**
  * Generates a complete medical case draft for the given diagnosis.
  * This node runs in parallel with other instances via the Send API.
  */
 export async function generateDraft(
-  state: AgentStateType & { draftIndex: number }
-): Promise<{ cases: CaseWithDraftIndex[] }> {
-  console.debug(`[GenerateDraft #${state.draftIndex}] Generating case draft`);
+  state: DraftState & { draftIndex: number }
+): Promise<GenerateDraftOutput> {
+  console.debug(
+    `[Draft: GenerateDraft #${state.draftIndex}] Starting generation`
+  );
 
   const prompt = `You are a medical education expert creating realistic patient cases for medical students.
 
@@ -49,11 +53,11 @@ ${descriptionPromptDraft(state.generationFlags)}
 
 ${formatPromptDraft(state.generationFlags)}
 ${
-  state.cases.length === 0
-    ? ``
-    : `\nPrevious case generated:\n${encodeLLMRequest(state.cases[0]!)} 
-with inconsistencies:\n${encodeLLMRequest(Object.values(state.inconsistencies).flat())}
+  !!state.case
+    ? `\nPrevious case generated:\n${encodeObject(state.case)}
+with inconsistencies:\n${encodeObject(Object.values(state.inconsistencies).flat())}
 `
+    : ``
 }
 Requirements:
 - Be medically accurate and realistic
@@ -61,7 +65,9 @@ Requirements:
 - Use standard medical terminology
 - Return ONLY the format content, no additional text`;
 
-  console.debug(`[GenerateDraft #${state.draftIndex}] Prompt:\n${prompt}`);
+  console.debug(
+    `[Draft: GenerateDraft #${state.draftIndex}] Prompt:\n${prompt}`
+  );
 
   // Initialize cases to empty in case of failure
   try {
@@ -72,16 +78,11 @@ Requirements:
     ).invoke(prompt);
     const text = response.content.toString();
     console.debug(
-      `[GenerateDraft #${state.draftIndex}] LLM raw Response:\n${text}`
-    );
-
-    console.debug(
-      `[GenerateDraft #${state.draftIndex}] SaveTransform TOON\n`,
-      saveTransformToon(text)
+      `[Draft: GenerateDraft #${state.draftIndex}] LLM raw Response:\n${text}`
     );
 
     // Try to parse the TOON response
-    const parsed = decodeLLMResponse(text);
+    const parsed = decodeObject(text);
 
     // Validate with Zod
     const caseResult = CaseSchema.safeParse(parsed);
@@ -90,12 +91,19 @@ Requirements:
     }
 
     console.debug(
-      `[GenerateDraft #${state.draftIndex}] Successfully generated case ${caseResult.data}`
+      `[Draft: GenerateDraft #${state.draftIndex}] Successfully generated case ${caseResult.data}`
     );
 
-    return { cases: [{ ...caseResult.data, draftIndex: state.draftIndex }] };
+    return {
+      drafts: [
+        {
+          ...caseResult.data,
+          draftIndex: state.draftIndex,
+        },
+      ],
+    };
   } catch (error) {
-    console.error(`[GenerateDraft #${state.draftIndex}] Error:`, error);
+    console.error(`[Draft: GenerateDraft #${state.draftIndex}] Error:`, error);
     throw error;
   }
 }
@@ -107,7 +115,10 @@ Requirements:
  * LangGraph handles the implicit fan-in, but this node marks the transition
  * from generation phase to critique phase.
  */
-export function fanInDrafts(state: AgentStateType): AgentStateType {
-  console.log(`[FanInDrafts] Received ${state.cases.length} case drafts`);
-  return state;
+export function fanInDrafts(state: DraftState): {} {
+  console.log(
+    `[Draft: FanInDrafts] Received ${state.drafts.length} case drafts`
+  );
+  // Return empty update to avoid duplicating appended fields via reducer
+  return {};
 }

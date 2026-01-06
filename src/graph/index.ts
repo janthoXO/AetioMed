@@ -1,68 +1,53 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
-import { AgentState, GraphInput, type AgentStateType } from "./state.js";
-import { fanInDrafts, fanOutDrafts, generateDraft } from "./01-draft.js";
 import {
-  checkSkipCouncil,
-  chooseVotedDraft,
-  fanInCouncil,
-  fanOutCouncil,
-  voteDraft,
-} from "./02-council.js";
-import {
-  checkConsistency,
-  decreaseConsistencyIteration,
-  generateInconsistencies,
-} from "./03-consistency.js";
+  GlobalStateSchema,
+  GraphInputSchema,
+  type GlobalState,
+} from "./state.js";
+import { draftGraph } from "./01-draft/index.js";
+import { councilGraph } from "./02-council/index.js";
+import { checkConsistency, consistencyGraph } from "./03-consistency/index.js";
 import type { Case } from "@/domain-models/Case.js";
-
-export function passthrough(state: AgentStateType): AgentStateType {
-  return state;
-}
+import type { GenerationFlags } from "@/domain-models/GenerationFlags.js";
 
 /**
  * Build and compile the Council-Consistency-Refinement graph
  */
 export function buildCaseGeneratorGraph() {
   // Create the state graph with our annotation schema
-  const graph = new StateGraph(AgentState, {
-    input: GraphInput,
+  const graph = new StateGraph(GlobalStateSchema, {
+    input: GraphInputSchema,
   });
 
-  // Phase one generate case drafts in parallel
-  graph.addNode("init", passthrough);
-  graph.addEdge(START, "init");
+  graph.addNode("draft_phase", draftGraph);
+  graph.addEdge(START, "draft_phase");
 
-  graph.addNode("draft_generation", generateDraft);
-  graph.addConditionalEdges("init", fanOutDrafts, ["draft_generation"]);
-  graph.addNode("draft_fan_in", fanInDrafts);
-  graph.addEdge("draft_generation", "draft_fan_in");
+  graph.addNode("council_phase", councilGraph);
+  graph.addEdge("draft_phase", "council_phase");
 
-  graph.addNode("council_init", passthrough);
-  graph.addConditionalEdges("draft_fan_in", checkSkipCouncil, {
-    true: "consistency_generation",
-    false: "council_init",
+  graph.addNode("consistency_reset", (state: GlobalState) => {
+    // Reset inconsistencies for new consistency check
+    return {
+      inconsistencies: [],
+    };
   });
-  graph.addNode("draft_vote", voteDraft);
-  graph.addConditionalEdges("council_init", fanOutCouncil, ["draft_vote"]);
-  graph.addNode("council_fan_in", fanInCouncil);
-  graph.addEdge("draft_vote", "council_fan_in");
-  graph.addNode("draft_selection", chooseVotedDraft);
-  graph.addEdge("council_fan_in", "draft_selection");
+  graph.addNode("consistency_phase", consistencyGraph);
+  graph.addEdge("council_phase", "consistency_reset");
+  graph.addEdge("consistency_reset", "consistency_phase");
 
-  graph.addNode("consistency_generation", generateInconsistencies);
-  graph.addEdge("draft_selection", "consistency_generation");
-  graph.addNode("consistency_iteration_decrease", decreaseConsistencyIteration);
-  graph.addEdge("consistency_generation", "consistency_iteration_decrease");
-
+  graph.addNode("draft_reset", (state: GlobalState) => {
+    // Reset drafts for new generation cycle
+    return {
+      drafts: [],
+    };
+  });
   // Conditionally route back to start if inconsistencies found
-  graph.addConditionalEdges(
-    "consistency_iteration_decrease",
-    checkConsistency,
-    {
-      refine: "init",
-      end: END,
-    }
-  );
+  graph.addConditionalEdges("consistency_phase", checkConsistency, {
+    refine: "draft_reset",
+    end: END,
+  });
+  graph.addEdge("draft_reset", "draft_phase");
+
   const compiledGraph = graph.compile();
 
   console.log("[GraphBuilder] Council-Consistency-Refinement graph compiled");
@@ -75,8 +60,8 @@ export function buildCaseGeneratorGraph() {
  */
 export async function generateCase(
   diagnosis: string,
-  generationFlags: number,
-  context: string
+  context: string,
+  generationFlags: GenerationFlags[]
 ): Promise<Case> {
   const graph = buildCaseGeneratorGraph();
 
@@ -90,9 +75,5 @@ export async function generateCase(
 
   console.log("[CaseGenerator] Generation complete", result);
 
-  if (result.cases.length === 0) {
-    throw new Error("No case generated");
-  }
-
-  return result.cases[0]!;
+  return result.case;
 }

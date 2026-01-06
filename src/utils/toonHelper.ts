@@ -1,5 +1,5 @@
 import { ChiefComplaintToonFormat } from "../domain-models/ChiefComplaint.js";
-import { GenerationFlags, hasFlag } from "../domain-models/GenerationFlags.js";
+import { GenerationFlags } from "../domain-models/GenerationFlags.js";
 import { AnamnesisToonFormat } from "../domain-models/Anamnesis.js";
 import {
   InconsistencyEmptyToonFormat,
@@ -25,27 +25,19 @@ export function saveTransformToon(input: string): string {
   );
 }
 
-export function formatPromptDraftToon(generationFlags: number): string {
+export function formatPromptDraftToon(
+  generationFlags: GenerationFlags[]
+): string {
   return `Return your response in ${toonFormatExplanationPrompt()}:
-${Object.values(GenerationFlags)
+${generationFlags
   .map((flag) => {
-    if (typeof flag !== "number") {
-      return "";
-    }
-    if (!hasFlag(generationFlags, flag as GenerationFlags)) {
-      return "";
-    }
-
     switch (flag) {
       case GenerationFlags.ChiefComplaint:
         return ChiefComplaintToonFormat();
       case GenerationFlags.Anamnesis:
         return AnamnesisToonFormat();
-      default:
-        return "";
     }
   })
-  .filter((s) => s !== "")
   .join("\n")}`;
 }
 

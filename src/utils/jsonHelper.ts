@@ -1,16 +1,18 @@
-import { GenerationFlags, hasFlag } from "../domain-models/GenerationFlags.js";
+import {
+  AllGenerationFlags,
+  GenerationFlags,
+} from "../domain-models/GenerationFlags.js";
 import { InconsistencyJsonFormat } from "@/domain-models/Inconsistency.js";
 import { CaseSchema } from "@/domain-models/Case.js";
 import z, { type ZodObject } from "zod";
 
-export function formatPromptDraftJsonZod(generationFlags: number): ZodObject {
+export function formatPromptDraftJsonZod(
+  generationFlags: GenerationFlags[]
+): ZodObject {
   let zodCase = CaseSchema as ZodObject;
 
-  Object.values(GenerationFlags).forEach((flag) => {
-    if (typeof flag !== "number") {
-      return;
-    }
-    if (hasFlag(generationFlags, flag as GenerationFlags)) {
+  AllGenerationFlags.forEach((flag) => {
+    if (generationFlags.some((f) => f === flag)) {
       return;
     }
 
@@ -30,7 +32,9 @@ export function formatPromptDraftJsonZod(generationFlags: number): ZodObject {
   return zodCase;
 }
 
-export function formatPromptDraftJson(generationFlags: number): string {
+export function formatPromptDraftJson(
+  generationFlags: GenerationFlags[]
+): string {
   return JSON.stringify(
     z.toJSONSchema(formatPromptDraftJsonZod(generationFlags))
   );

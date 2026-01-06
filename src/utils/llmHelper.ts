@@ -1,5 +1,5 @@
 import { ChiefComplaintDescriptionPrompt } from "../domain-models/ChiefComplaint.js";
-import { GenerationFlags, hasFlag } from "../domain-models/GenerationFlags.js";
+import { GenerationFlags } from "../domain-models/GenerationFlags.js";
 import { AnamnesisDescriptionPrompt } from "../domain-models/Anamnesis.js";
 import { config } from "./config.js";
 import {
@@ -13,30 +13,22 @@ import {
 } from "./jsonHelper.js";
 import { decode, encode } from "@toon-format/toon";
 
-export function descriptionPromptDraft(generationFlags: number): string {
-  return Object.values(GenerationFlags)
+export function descriptionPromptDraft(
+  generationFlags: GenerationFlags[]
+): string {
+  return generationFlags
     .map((flag) => {
-      if (typeof flag !== "number") {
-        return "";
-      }
-      if (!hasFlag(generationFlags, flag as GenerationFlags)) {
-        return "";
-      }
-
       switch (flag) {
         case GenerationFlags.ChiefComplaint:
           return ChiefComplaintDescriptionPrompt();
         case GenerationFlags.Anamnesis:
           return AnamnesisDescriptionPrompt();
-        default:
-          return "";
       }
     })
-    .filter((s) => s !== "")
     .join("\n");
 }
 
-export function formatPromptDraft(generationFlags: number): string {
+export function formatPromptDraft(generationFlags: GenerationFlags[]): string {
   switch (config.LLM_FORMAT) {
     case "TOON":
       return formatPromptDraftToon(generationFlags);
@@ -58,7 +50,12 @@ export function formatPromptInconsistencies(): string {
   }
 }
 
-export function encodeLLMRequest(input: object): string {
+/**
+ * Encodes an object into a string based on the configured LLM format.
+ * @param input
+ * @returns
+ */
+export function encodeObject(input: object): string {
   switch (config.LLM_FORMAT) {
     case "TOON":
       return encode(input);
@@ -67,8 +64,13 @@ export function encodeLLMRequest(input: object): string {
   }
 }
 
+/**
+ * Decodes a string into an object based on the configured LLM format.
+ * @param input
+ * @returns
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function decodeLLMResponse(input: string): Record<string, any> {
+export function decodeObject(input: string): Record<string, any> {
   switch (config.LLM_FORMAT) {
     case "TOON":
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

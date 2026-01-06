@@ -2,7 +2,6 @@ import express from "express";
 import { generateCase } from "../services/cases.service.js";
 import { CaseGenerationRequestSchema } from "../dtos/CaseGenerationRequest.js";
 import { CaseGenerationResponseSchema } from "../dtos/CaseGenerationResponse.js";
-import { flagStringsToBitmap } from "../domain-models/GenerationFlags.js";
 
 const router = express.Router();
 
@@ -24,10 +23,9 @@ router.post("/", async (req, res) => {
   }
 
   const { diagnosis, context, generationFlags } = bodyResult.data;
-  const flagsBitmap = flagStringsToBitmap(generationFlags);
 
   try {
-    const caseData = await generateCase(flagsBitmap, diagnosis, context);
+    const caseData = await generateCase(diagnosis, context, generationFlags);
     const response = CaseGenerationResponseSchema.parse(caseData);
     res.status(200).json(response);
   } catch (error) {

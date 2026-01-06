@@ -1,10 +1,11 @@
 import type { Case } from "@/domain-models/Case.js";
+import type { GenerationFlags } from "@/domain-models/GenerationFlags.js";
 import { generateCase as graphGenerateCase } from "@/graph/index.js";
 
 export async function generateCase(
-  generationFlags: number,
   diagnosis: string,
-  context?: string
+  context: string,
+  generationFlags: GenerationFlags[]
 ): Promise<Case> {
-  return graphGenerateCase(diagnosis, generationFlags, context || "");
+  return graphGenerateCase(diagnosis, context, generationFlags);
 }

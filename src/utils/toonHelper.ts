@@ -1,10 +1,10 @@
 import { ChiefComplaintToonFormat } from "../domain-models/ChiefComplaint.js";
-import { GenerationFlags } from "../domain-models/GenerationFlags.js";
 import { AnamnesisToonFormat } from "../domain-models/Anamnesis.js";
 import {
   InconsistencyEmptyToonFormat,
   InconsistencyToonFormat,
 } from "@/domain-models/Inconsistency.js";
+import type { GenerationFlags } from "@/domain-models/GenerationFlags.js";
 
 export function toonFormatExplanationPrompt(): string {
   return "TOON format (object like YAML, arrays like CSV, header show [length] and {fields}, each entry on newline with 2-space indent)";
@@ -32,9 +32,9 @@ export function formatPromptDraftToon(
 ${generationFlags
   .map((flag) => {
     switch (flag) {
-      case GenerationFlags.ChiefComplaint:
+      case "chiefComplaint":
         return ChiefComplaintToonFormat();
-      case GenerationFlags.Anamnesis:
+      case "anamnesis":
         return AnamnesisToonFormat();
     }
   })

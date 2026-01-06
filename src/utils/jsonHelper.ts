@@ -1,6 +1,6 @@
 import {
   AllGenerationFlags,
-  GenerationFlags,
+  type GenerationFlags,
 } from "../domain-models/GenerationFlags.js";
 import { InconsistencyJsonFormat } from "@/domain-models/Inconsistency.js";
 import { CaseSchema } from "@/domain-models/Case.js";
@@ -18,10 +18,10 @@ export function formatPromptDraftJsonZod(
 
     // flag which is not in the generationFlags - remove from zodCase
     switch (flag) {
-      case GenerationFlags.ChiefComplaint:
+      case "chiefComplaint":
         zodCase = zodCase.omit({ chiefComplaint: true });
         break;
-      case GenerationFlags.Anamnesis:
+      case "anamnesis":
         zodCase = zodCase.omit({ anamnesis: true });
         break;
       default:

@@ -1,8 +1,8 @@
 import {
   AllGenerationFlags,
-  GenerationFlags,
-} from "../domain-models/GenerationFlags.js";
-import { InconsistencySchema } from "../domain-models/Inconsistency.js";
+  GenerationFlagsSchema,
+} from "../../domain-models/GenerationFlags.js";
+import { InconsistencySchema } from "../../domain-models/Inconsistency.js";
 import z from "zod";
 import { CaseWithDraftIndexSchema } from "./models.js";
 import { CaseSchema } from "@/domain-models/Case.js";
@@ -10,7 +10,7 @@ import { CaseSchema } from "@/domain-models/Case.js";
 export const GraphInputSchema = z.object({
   diagnosis: z.string(),
   context: z.string(),
-  generationFlags: z.array(z.enum(GenerationFlags)).default(AllGenerationFlags),
+  generationFlags: z.array(GenerationFlagsSchema).default(AllGenerationFlags),
 });
 
 export type GraphInput = z.infer<typeof GraphInputSchema>;
@@ -27,7 +27,7 @@ export const GlobalStateSchema = z.object({
   /**
    * Generation flags to control case generation behavior
    */
-  generationFlags: z.array(z.enum(GenerationFlags)),
+  generationFlags: z.array(GenerationFlagsSchema),
 
   /**
    * Generated cases.

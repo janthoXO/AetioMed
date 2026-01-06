@@ -1,8 +1,8 @@
-import { GenerationFlags } from "@/domain-models/GenerationFlags.js";
 import { registry } from "@langchain/langgraph/zod";
 import z from "zod";
 import { CaseWithDraftIndexSchema } from "../models.js";
 import { CaseSchema } from "@/domain-models/Case.js";
+import { GenerationFlagsSchema } from "@/domain-models/GenerationFlags.js";
 
 export const CouncilStateSchema = z.object({
   case: CaseSchema.optional(),
@@ -24,7 +24,7 @@ export const CouncilStateSchema = z.object({
   }),
   diagnosis: z.string(),
   context: z.string(),
-  generationFlags: z.array(z.enum(GenerationFlags)),
+  generationFlags: z.array(GenerationFlagsSchema),
 });
 
 export type CouncilState = z.infer<typeof CouncilStateSchema>;

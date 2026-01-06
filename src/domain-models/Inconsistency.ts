@@ -1,6 +1,6 @@
 import z from "zod";
-import { GenerationFlags } from "./GenerationFlags.js";
 import { encode } from "@toon-format/toon";
+import { GenerationFlagsSchema } from "./GenerationFlags.js";
 
 export enum InconsistencySeverity {
   Low = "low",
@@ -12,7 +12,7 @@ export enum InconsistencySeverity {
  * Schema for consistency errors
  */
 export const InconsistencySchema = z.object({
-  field: z.enum(GenerationFlags).describe("Field with inconsistency"),
+  field: GenerationFlagsSchema.describe("Field with inconsistency"),
   description: z.string().describe("Description of the inconsistency"),
   suggestion: z
     .string()

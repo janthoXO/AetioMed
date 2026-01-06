@@ -1,5 +1,5 @@
 import { ChiefComplaintDescriptionPrompt } from "../domain-models/ChiefComplaint.js";
-import { GenerationFlags } from "../domain-models/GenerationFlags.js";
+import { type GenerationFlags } from "../domain-models/GenerationFlags.js";
 import { AnamnesisDescriptionPrompt } from "../domain-models/Anamnesis.js";
 import { config } from "./config.js";
 import {
@@ -19,9 +19,9 @@ export function descriptionPromptDraft(
   return generationFlags
     .map((flag) => {
       switch (flag) {
-        case GenerationFlags.ChiefComplaint:
+        case "chiefComplaint":
           return ChiefComplaintDescriptionPrompt();
-        case GenerationFlags.Anamnesis:
+        case "anamnesis":
           return AnamnesisDescriptionPrompt();
       }
     })

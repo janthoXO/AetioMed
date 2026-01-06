@@ -1,5 +1,4 @@
 import { Send } from "@langchain/langgraph";
-import { getCreativeLLM } from "../llm.js";
 import {
   decodeObject,
   descriptionPromptDraft,
@@ -10,6 +9,7 @@ import { CaseSchema } from "@/domain-models/Case.js";
 import { formatPromptDraftJsonZod } from "@/utils/jsonHelper.js";
 import { config } from "@/utils/config.js";
 import { type DraftState } from "./state.js";
+import { getCreativeLLM } from "@/graph/llm.js";
 
 /**
  * FAN-OUT

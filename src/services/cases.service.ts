@@ -1,6 +1,6 @@
 import type { Case } from "@/domain-models/Case.js";
 import type { GenerationFlags } from "@/domain-models/GenerationFlags.js";
-import { generateCase as graphGenerateCase } from "@/graph/index.js";
+import { generateCase as graphGenerateCase } from "@/graph/case-generation/index.js";
 
 export async function generateCase(
   diagnosis: string,

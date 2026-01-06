@@ -1,4 +1,4 @@
-import { GenerationFlags } from "@/domain-models/GenerationFlags.js";
+import { GenerationFlagsSchema } from "@/domain-models/GenerationFlags.js";
 import { InconsistencySchema } from "@/domain-models/Inconsistency.js";
 import { registry } from "@langchain/langgraph/zod";
 import z from "zod";
@@ -17,7 +17,7 @@ export const DraftStateSchema = z.object({
   draftCount: z.number().default(1),
   diagnosis: z.string(),
   context: z.string(),
-  generationFlags: z.array(z.enum(GenerationFlags)),
+  generationFlags: z.array(GenerationFlagsSchema),
   inconsistencies: z.array(InconsistencySchema),
 });
 

@@ -1,6 +1,8 @@
-export enum GenerationFlags {
-  ChiefComplaint = "chiefComplaint",
-  Anamnesis = "anamnesis",
-}
+import z from "zod";
 
-export const AllGenerationFlags = Object.values(GenerationFlags);
+export const GenerationFlagsSchema = z.enum(["chiefComplaint", "anamnesis"]);
+
+export type GenerationFlags = z.infer<typeof GenerationFlagsSchema>;
+
+export const AllGenerationFlags: GenerationFlags[] =
+  GenerationFlagsSchema.options;

@@ -1,4 +1,4 @@
-import { getDeterministicLLM } from "../llm.js";
+import { getDeterministicLLM } from "@/graph/llm.js";
 import {
   InconsistencyJsonFormatZod,
   type Inconsistency,

@@ -1,5 +1,5 @@
 import { Send } from "@langchain/langgraph";
-import { getDeterministicLLM } from "../llm.js";
+import { getDeterministicLLM } from "@/graph/llm.js";
 import { type CouncilState } from "./state.js";
 import { encodeObject } from "@/utils/llmHelper.js";
 

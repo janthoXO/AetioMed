@@ -1,4 +1,4 @@
-import { GenerationFlags } from "@/domain-models/GenerationFlags.js";
+import { GenerationFlagsSchema } from "@/domain-models/GenerationFlags.js";
 import { InconsistencySchema } from "@/domain-models/Inconsistency.js";
 import z from "zod";
 import { CaseSchema } from "@/domain-models/Case.js";
@@ -11,7 +11,7 @@ export const ConsistencyStateSchema = z.object({
   inconsistencyIterationsRemaining: z.number(),
   diagnosis: z.string(),
   context: z.string(),
-  generationFlags: z.array(z.enum(GenerationFlags)),
+  generationFlags: z.array(GenerationFlagsSchema),
 });
 
 export type ConsistencyState = z.infer<typeof ConsistencyStateSchema>;

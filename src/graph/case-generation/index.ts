@@ -46,7 +46,7 @@ export function buildCaseGeneratorGraph() {
 
   const compiledGraph = graph.compile();
 
-  console.log("[GraphBuilder] Council-Consistency-Refinement graph compiled");
+  console.log("[GraphBuilder] Case generation graph compiled");
 
   return compiledGraph;
 }
@@ -70,6 +70,10 @@ export async function generateCase(
   });
 
   console.log("[CaseGenerator] Generation complete", result);
+
+  if (!result.case) {
+    throw new Error("Case generation failed: No case generated");
+  }
 
   return result.case;
 }

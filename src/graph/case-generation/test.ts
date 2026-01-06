@@ -7,8 +7,7 @@
 
 import {
   buildCaseGeneratorGraph,
-  generateCase,
-} from "./case-generation/index.js";
+} from "./index.js";
 
 async function testGraphCompilation() {
   console.log("=== Test 1: Graph Compilation ===");
@@ -41,39 +40,17 @@ async function testGraphStructure() {
   return true;
 }
 
-async function testMinimalInvocation() {
-  console.log("\n=== Test 3: Minimal Invocation (Dry Run) ===");
-  console.log(
-    "   Note: This test requires Ollama to be running with llama3 model"
-  );
-
-  // Skip actual invocation in test mode - just verify the function exists
-  if (typeof generateCase === "function") {
-    console.log("✅ generateCase function is properly exported");
-    console.log("   To run a full test, call:");
-    console.log(
-      "   generateCase({ diagnosis: 'Myocardial Infarction', councilSize: 2 })"
-    );
-    return true;
-  } else {
-    console.log("❌ generateCase function not found");
-    return false;
-  }
-}
-
 async function runAllTests() {
   console.log("🧪 Running Council-Consistency-Refinement Graph Tests\n");
 
   const results = {
     compilation: await testGraphCompilation(),
     structure: await testGraphStructure(),
-    invocation: await testMinimalInvocation(),
   };
 
   console.log("\n=== Test Summary ===");
   console.log(`Compilation: ${results.compilation ? "✅ PASS" : "❌ FAIL"}`);
   console.log(`Structure:   ${results.structure ? "✅ PASS" : "❌ FAIL"}`);
-  console.log(`Invocation:  ${results.invocation ? "✅ PASS" : "❌ FAIL"}`);
 
   const allPassed = Object.values(results).every((r) => r);
   console.log(

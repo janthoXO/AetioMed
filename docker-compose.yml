@@ -1,24 +1,4 @@
 services:
-  case-generator:
-    build:
-      context: ./case-generator
-      dockerfile: Dockerfile
-    ports:
-      - "3030:3030"
-    environment:
-      - SERVER_PORT=3030
-      - DISEASE_MIDDLEWARE_URL=${DISEASE_MIDDLEWARE_URL:-http://disease-middleware:3030}
-      - OLLAMA_URL=${OLLAMA_URL:-http://ollama:11434}
-      - OLLAMA_MODEL_NAME=${OLLAMA_MODEL_NAME:-hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S}
-      - NATS_URL=${NATS_URL:-nats://nats:4222}
-      - NATS_USER=${NATS_USER:-nats}
-      - NATS_PASSWORD=${NATS_PASSWORD:-nats}
-      - DEBUG=${DEBUG:-true}
-    depends_on:
-      - ollama
-      - nats
-    restart: unless-stopped
-
   ollama:
     image: ollama/ollama:0.12.0
     ports:

@@ -33,6 +33,9 @@ jobs:
           node-version: 24
           cache: "pnpm"
           cache-dependency-path: pnpm-lock.yaml
+          
+      - name: Install dependencies
+        run: pnpm install
 
       - name: Change version
         if: ${{ inputs.version }}

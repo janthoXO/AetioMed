@@ -1,12 +1,15 @@
 import z from "zod";
 import { encode } from "@toon-format/toon";
-import { GenerationFlagsSchema } from "./GenerationFlags.js";
+import {
+  AllGenerationFlags,
+  GenerationFlagsSchema,
+} from "./GenerationFlags.js";
 
-export enum InconsistencySeverity {
-  Low = "low",
-  Medium = "medium",
-  High = "high",
-}
+const InconsistencySeveritySchema = z.enum(["low", "medium", "high"]);
+
+export type InconsistencySeverity = z.infer<typeof InconsistencySeveritySchema>;
+
+const AllInconsistencySeverity = InconsistencySeveritySchema.options;
 
 /**
  * Schema for consistency errors
@@ -17,7 +20,9 @@ export const InconsistencySchema = z.object({
   suggestion: z
     .string()
     .describe("Suggested fix or improvement for the inconsistency"),
-  severity: z.enum(InconsistencySeverity),
+  severity: InconsistencySeveritySchema.describe(
+    "Severity of the inconsistency"
+  ),
 });
 
 export type Inconsistency = z.infer<typeof InconsistencySchema>;
@@ -42,15 +47,11 @@ export function InconsistencyJsonFormat(): string {
  */
 export function InconsistencyToonFormat(): string {
   return `inconsistencies[N]{field,description,suggestion,severity}:
-  ${Object.values(GenerationFlags)
-    .filter((flag) => typeof flag === "string")
-    .join(
-      "|"
-    )},"Description of the inconsistency","Suggested fix or improvement for the inconsistency",${Object.values(
-    InconsistencySeverity
-  )
-    .filter((flag) => typeof flag === "string")
-    .join("|")}`;
+  ${AllGenerationFlags.filter((flag) => typeof flag === "string").join(
+    "|"
+  )},"Description of the inconsistency","Suggested fix or improvement for the inconsistency",${AllInconsistencySeverity.filter(
+    (flag) => typeof flag === "string"
+  ).join("|")}`;
 }
 
 export function InconsistencyEmptyToonFormat(): string {

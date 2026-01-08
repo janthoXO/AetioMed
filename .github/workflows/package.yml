@@ -1,0 +1,55 @@
+name: Package
+
+on:
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "src/**"
+  workflow_call:
+    inputs:
+      version:
+        description: "Version to build"
+        default: "0.0.0"
+        required: false
+        type: string
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: "pnpm"
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Change version
+        if: ${{ inputs.version }}
+        run: pnpm version ${{ inputs.version }} --no-git-tag-version
+
+      - name: Build Docker Image
+        run: docker build -t aetiomed:${{ inputs.version || 'latest' }} .
+
+      - name: Save Docker Image
+        run: docker save aetiomed:${{ inputs.version || 'latest' }} -o aetiomed-${{ inputs.version || 'latest' }}.tar
+
+      - name: Upload Docker Image
+        uses: actions/upload-artifact@v4
+        with:
+          name: docker-image-${{ inputs.version || 'latest' }}
+          path: aetiomed-${{ inputs.version || 'latest' }}.tar
+          if-no-files-found: error

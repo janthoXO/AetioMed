@@ -5,9 +5,7 @@
  * Run with: pnpm tsx src/graph/test.ts
  */
 
-import {
-  buildCaseGeneratorGraph,
-} from "./index.js";
+import { buildCaseGeneratorGraph } from "./index.js";
 
 async function testGraphCompilation() {
   console.log("=== Test 1: Graph Compilation ===");

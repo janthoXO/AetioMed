@@ -85,14 +85,3 @@ export function decreaseConsistencyIteration(
       state.inconsistencyIterationsRemaining - 1,
   };
 }
-
-export function checkConsistency(state: ConsistencyState): "refine" | "end" {
-  console.debug(
-    `[Consistency: CheckConsistency] Inconsistencies found: ${state.inconsistencies.length}, Remaining iterations: ${state.inconsistencyIterationsRemaining}`
-  );
-
-  return Object.keys(state.inconsistencies).length === 0 ||
-    state.inconsistencyIterationsRemaining === 0
-    ? "end"
-    : "refine";
-}

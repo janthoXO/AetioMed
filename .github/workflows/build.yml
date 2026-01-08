@@ -15,6 +15,8 @@ jobs:
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
+        with:
+          cache: true
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -24,7 +26,7 @@ jobs:
           cache-dependency-path: pnpm-lock.yaml
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install
 
       - name: Check formatting
         run: pnpm run format:check

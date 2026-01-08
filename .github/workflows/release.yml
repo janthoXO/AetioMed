@@ -64,13 +64,13 @@ jobs:
           # Change all uppercase to lowercase
           IMAGE_ID=$(echo $IMAGE_ID | tr '[A-Z]' '[a-z]')
           VERSION=${{ needs.versioning.outputs.version }}
-          
+
           echo IMAGE_ID=$IMAGE_ID
           echo VERSION=$VERSION
-          
+
           docker tag aetiomed:$VERSION $IMAGE_ID:$VERSION
           docker tag aetiomed:$VERSION $IMAGE_ID:latest
-          
+
           docker push $IMAGE_ID:$VERSION
           docker push $IMAGE_ID:latest
 

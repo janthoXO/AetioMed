@@ -39,22 +39,24 @@ type VoteDraftOutput = Pick<CouncilState, "votes">;
 export async function voteDraft(state: CouncilState): Promise<VoteDraftOutput> {
   console.debug("[Council: VoteDraft] Voting for the best draft case");
 
-  const prompt = `You are a senior medical educator picking the best case draft among several options.
-
-The diagnosis to create a case for was: ${state.diagnosis}
-${state.context ? `\nWith the additional given context: ${state.context}` : ""}
-
-Here are the draft cases:
-${encodeObject(state.drafts)}
-
+  const systemPrompt = `You are a senior medical educator picking the best case draft among several options for a provided diagnosis with additional context.
 Your task:
 Select the BEST case. Ensure everything is appropriate, complete and consistent forming a coherent case
-
 Return a singular number (the draftIndex of the best case) as response, nothing more.`;
-  console.debug(`[Council: VoteDraft] Prompt:\n${prompt}`);
+
+  const userPrompt = `Diagnosis the cases were created for: ${state.diagnosis}
+${state.context ? `\nAdditional context that was provided: ${state.context}` : ""}
+
+Drafts to choose from:
+${encodeObject(state.drafts)}`;
+
+  console.debug(`[Council: VoteDraft] Prompt:\n${systemPrompt}\n${userPrompt}`);
 
   try {
-    const response = await getDeterministicLLM().invoke(prompt);
+    const response = await getDeterministicLLM().invoke([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
     const draftIndex = parseInt(response.content.toString());
     console.debug(`[Council: VoteDraft] Voted for draft index: ${draftIndex}`);
 

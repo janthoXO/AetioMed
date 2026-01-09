@@ -35,9 +35,8 @@ export function formatPromptDraftJsonZod(
 export function formatPromptDraftJson(
   generationFlags: GenerationFlags[]
 ): string {
-  return JSON.stringify(
-    z.toJSONSchema(formatPromptDraftJsonZod(generationFlags))
-  );
+  return `Return your response in JSON:
+${JSON.stringify(z.toJSONSchema(formatPromptDraftJsonZod(generationFlags)))}`;
 }
 
 export function formatPromptInconsistenciesJson(): string {

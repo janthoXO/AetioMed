@@ -28,6 +28,11 @@ export function descriptionPromptDraft(
     .join("\n");
 }
 
+/**
+ * Specifies the format description + the structure of the expected output
+ * @param generationFlags
+ * @returns
+ */
 export function formatPromptDraft(generationFlags: GenerationFlags[]): string {
   switch (config.LLM_FORMAT) {
     case "TOON":

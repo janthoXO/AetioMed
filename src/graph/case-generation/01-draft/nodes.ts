@@ -42,10 +42,7 @@ export async function generateDraft(
     `[Draft: GenerateDraft #${state.draftIndex}] Starting generation`
   );
 
-  const prompt = `You are a medical education expert creating realistic patient cases for medical students.
-
-Generate a complete patient case for a patient with: ${state.diagnosis}
-${state.context ? `\nAdditional context: ${state.context}` : ""}
+  const systemPrompt = `You are a medical education expert creating realistic patient cases for medical students for a provided diagnosis with additional context.
 The case should include:
 ${descriptionPromptDraft(state.generationFlags)}
 
@@ -63,8 +60,11 @@ Requirements:
 - Use standard medical terminology
 - Return ONLY the format content, no additional text`;
 
+  const userPrompt = `Provided Diagnosis for patient case: ${state.diagnosis}
+${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
+
   console.debug(
-    `[Draft: GenerateDraft #${state.draftIndex}] Prompt:\n${prompt}`
+    `[Draft: GenerateDraft #${state.draftIndex}] Prompt:\n${systemPrompt}\n${userPrompt}`
   );
 
   // Initialize cases to empty in case of failure
@@ -73,7 +73,10 @@ Requirements:
       config.LLM_FORMAT === "JSON"
         ? formatPromptDraftJsonZod(state.generationFlags)
         : undefined
-    ).invoke(prompt);
+    ).invoke([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
     const text = response.content.toString();
     console.debug(
       `[Draft: GenerateDraft #${state.draftIndex}] LLM raw Response:\n${text}`

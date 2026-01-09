@@ -22,10 +22,7 @@ export async function generateInconsistencies(
     "[Consistency: GenerateInconsistencies] Generating inconsistencies for case"
   );
 
-  const prompt = `You are a medical quality assurance expert validating a patient case for educational use.
-
-Target Diagnosis: ${state.diagnosis}
-${state.context ? `\nAdditional context given: ${state.context}` : ""}
+  const systemPrompt = `You are a medical quality assurance expert validating a patient case for educational use with a provided diagnosis and additional context.
 
 Case to validate:
 ${encodeObject(state.case)}
@@ -41,12 +38,21 @@ Requirements:
 - Only flag genuine medical/logical inconsistencies
 - Don't be overly pedantic
 - Return ONLY the format content`;
-  console.debug(`[Consistency: GenerateInconsistencies] Prompt:\n${prompt}`);
+
+  const userPrompt = `Provided Diagnosis: ${state.diagnosis}
+${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
+
+  console.debug(
+    `[Consistency: GenerateInconsistencies] Prompt:\n${systemPrompt}\n${userPrompt}`
+  );
 
   try {
     const response = await getDeterministicLLM(
       config.LLM_FORMAT === "JSON" ? InconsistencyJsonFormatZod() : undefined
-    ).invoke(prompt);
+    ).invoke([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ]);
     const text = response.content.toString();
     const inconsistencies = (
       decodeObject(text) as { inconsistencies: Inconsistency[] }

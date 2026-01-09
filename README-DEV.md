@@ -35,14 +35,14 @@ pnpm install
 
 The application relies on several environment variables. You can set these in a `.env` file in the root directory or let them default (see `docker-compose.yml` for defaults).
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `PORT` | `3030` | The port the REST server listens on. |
-| `DEBUG` | `true` | Enables verbose logging (Morgan). |
-| `LLM_FORMAT` | `JSON` | Format for LLM responses. |
-| `NATS_URL` | `nats://nats:4222` | URL for the NATS server. |
-| `NATS_USER` | `nats` | NATS username. |
-| `NATS_PASSWORD` | `nats` | NATS password. |
+| Variable        | Default            | Description                          |
+| --------------- | ------------------ | ------------------------------------ |
+| `PORT`          | `3030`             | The port the REST server listens on. |
+| `DEBUG`         | `true`             | Enables verbose logging (Morgan).    |
+| `LLM_FORMAT`    | `JSON`             | Format for LLM responses.            |
+| `NATS_URL`      | `nats://nats:4222` | URL for the NATS server.             |
+| `NATS_USER`     | `nats`             | NATS username.                       |
+| `NATS_PASSWORD` | `nats`             | NATS password.                       |
 
 ### 3. Running the Application
 
@@ -55,6 +55,7 @@ docker compose up --build
 ```
 
 This will:
+
 1. Start a NATS server.
 2. Start an Ollama instance and automatically pull the required medical LLM (`JSL-MedQwen-14b-reasoning`).
 3. Build and start the AetioMed server.
@@ -66,10 +67,12 @@ The server will be available at `http://localhost:3030`.
 If you want to run the Node.js server locally for development while keeping infrastructure in Docker:
 
 1. **Start Infrastructure (NATS & Ollama):**
+
    ```bash
    docker compose up -d nats ollama
    ```
-   *Note: On the first run, the Ollama container might take a while to pull the large medical model (approx. 8-10GB).*
+
+   _Note: On the first run, the Ollama container might take a while to pull the large medical model (approx. 8-10GB)._
 
 2. **Run Server:**
    ```bash

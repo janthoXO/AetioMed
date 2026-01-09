@@ -25,6 +25,7 @@ export async function generateInconsistencies(
   const prompt = `You are a medical quality assurance expert validating a patient case for educational use.
 
 Target Diagnosis: ${state.diagnosis}
+${state.context ? `\nAdditional context given: ${state.context}` : ""}
 
 Case to validate:
 ${encodeObject(state.case)}

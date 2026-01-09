@@ -42,6 +42,7 @@ export async function voteDraft(state: CouncilState): Promise<VoteDraftOutput> {
   const prompt = `You are a senior medical educator picking the best case draft among several options.
 
 The diagnosis to create a case for was: ${state.diagnosis}
+${state.context ? `\nWith the additional given context: ${state.context}` : ""}
 
 Here are the draft cases:
 ${encodeObject(state.drafts)}

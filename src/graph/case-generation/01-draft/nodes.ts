@@ -5,11 +5,18 @@ import {
   encodeObject,
   formatPromptDraft,
 } from "@/utils/llmHelper.js";
-import { CaseSchema } from "@/domain-models/Case.js";
-import { formatPromptDraftJsonZod } from "@/utils/jsonHelper.js";
+import {
+  CaseJsonFormatZod,
+  CaseSchema,
+  type Case,
+} from "@/domain-models/Case.js";
 import { config } from "@/utils/config.js";
 import { type DraftState } from "./state.js";
 import { getCreativeLLM } from "@/graph/llm.js";
+import { symptomsToolForICD } from "@/graph/tools/symptoms.tool.js";
+import { invokeWithTools, type AgentConfig } from "@/graph/invokeWithTool.js";
+import { HumanMessage, toolCallLimitMiddleware } from "langchain";
+import { retry } from "@/utils/retry.js";
 
 /**
  * FAN-OUT
@@ -58,9 +65,11 @@ Requirements:
 - Be medically accurate and realistic
 - Do NOT directly reveal the diagnosis
 - Use standard medical terminology
-- Return ONLY the format content, no additional text`;
+- If you need symptom information, call the get_symptoms_for_icd tool ONCE, then immediately proceed to generate the case
+- After receiving symptom information (or if you don't need it), generate the complete case immediately
+- Return ONLY ${config.LLM_FORMAT} format content, no additional text`;
 
-  const userPrompt = `Provided Diagnosis for patient case: ${state.diagnosis}
+  const userPrompt = `Provided Diagnosis for patient case: ${state.diagnosis} ICD ${state.icdCode}
 ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
 
   console.debug(
@@ -69,36 +78,48 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
 
   // Initialize cases to empty in case of failure
   try {
-    const response = await getCreativeLLM(
-      config.LLM_FORMAT === "JSON"
-        ? formatPromptDraftJsonZod(state.generationFlags)
-        : undefined
-    ).invoke([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ]);
-    const text = response.content.toString();
-    console.debug(
-      `[Draft: GenerateDraft #${state.draftIndex}] LLM raw Response:\n${text}`
-    );
-
-    // Try to parse the TOON response
-    const parsed = decodeObject(text);
-
-    // Validate with Zod
-    const caseResult = CaseSchema.safeParse(parsed);
-    if (!caseResult.success) {
-      throw new Error(`Case schema validation failed`);
+    const agentConfig: AgentConfig = {
+      model: getCreativeLLM(),
+      tools: [symptomsToolForICD(state.icdCode)],
+      systemPrompt: systemPrompt,
+      middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
+    };
+    if (config.LLM_FORMAT === "JSON") {
+      agentConfig.responseFormat = CaseJsonFormatZod(state.generationFlags);
     }
 
+    const parsedCase: Case = await retry(
+      async () => {
+        const text = await invokeWithTools(agentConfig, [
+          new HumanMessage(userPrompt),
+        ]);
+        console.debug(
+          `[Draft: GenerateDraft #${state.draftIndex}] LLM raw Response:\n${text}`
+        );
+
+        // Try to parse the TOON response
+        const parsed = await decodeObject(text);
+
+        // Validate with Zod
+        const caseResult = CaseSchema.safeParse(parsed);
+        if (!caseResult.success) {
+          throw new Error(`Case schema validation failed`);
+        }
+
+        return caseResult.data;
+      },
+      2,
+      0
+    );
+
     console.debug(
-      `[Draft: GenerateDraft #${state.draftIndex}] Successfully generated case ${caseResult.data}`
+      `[Draft: GenerateDraft #${state.draftIndex}] Successfully generated case ${parsedCase}`
     );
 
     return {
       drafts: [
         {
-          ...caseResult.data,
+          ...parsedCase,
           draftIndex: state.draftIndex,
         },
       ],

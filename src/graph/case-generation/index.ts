@@ -68,16 +68,30 @@ export function buildCaseGeneratorGraph() {
  * Execute the case generator graph
  */
 export async function generateCase(
-  diagnosis: string,
+  icdCode: string,
+  diseaseName: string,
   context: string,
   generationFlags: GenerationFlags[]
 ): Promise<Case> {
   const graph = buildCaseGeneratorGraph();
 
-  console.log(`[CaseGenerator] Starting case generation for: ${diagnosis}`);
+  console.log(
+    `[CaseGenerator] Starting case generation for:\n`,
+    JSON.stringify(
+      {
+        icdCode,
+        diseaseName,
+        context,
+        generationFlags,
+      },
+      null,
+      2
+    )
+  );
 
   const result = await graph.invoke({
-    diagnosis: diagnosis,
+    icdCode: icdCode,
+    diagnosis: diseaseName,
     context: context,
     generationFlags: generationFlags,
   });

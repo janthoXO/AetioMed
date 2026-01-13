@@ -1,17 +1,25 @@
-import { ChiefComplaintDescriptionPrompt } from "../domain-models/ChiefComplaint.js";
+import {
+  ChiefComplaintDescriptionPrompt,
+  ChiefComplaintToonFormat,
+} from "../domain-models/ChiefComplaint.js";
 import { type GenerationFlags } from "../domain-models/GenerationFlags.js";
-import { AnamnesisDescriptionPrompt } from "../domain-models/Anamnesis.js";
+import {
+  AnamnesisDescriptionPrompt,
+  AnamnesisToonFormat,
+} from "../domain-models/Anamnesis.js";
 import { config } from "./config.js";
 import {
-  formatPromptDraftToon,
-  formatPromptInconsistenciesToon,
   saveTransformToon,
+  toonFormatExplanationPrompt,
 } from "./toonHelper.js";
-import {
-  formatPromptDraftJson,
-  formatPromptInconsistenciesJson,
-} from "./jsonHelper.js";
 import { decode, encode } from "@toon-format/toon";
+import { CaseJsonExampleString } from "@/domain-models/Case.js";
+import {
+  InconsistencyEmptyToonFormat,
+  InconsistencyJsonExample,
+  InconsistencyArrayToonFormat,
+} from "@/domain-models/Inconsistency.js";
+import { JsonOutputParser } from "@langchain/core/output_parsers";
 
 export function descriptionPromptDraft(
   generationFlags: GenerationFlags[]
@@ -36,9 +44,19 @@ export function descriptionPromptDraft(
 export function formatPromptDraft(generationFlags: GenerationFlags[]): string {
   switch (config.LLM_FORMAT) {
     case "TOON":
-      return formatPromptDraftToon(generationFlags);
+      return `Return your response in ${toonFormatExplanationPrompt()}:
+${generationFlags
+  .map((flag) => {
+    switch (flag) {
+      case "chiefComplaint":
+        return ChiefComplaintToonFormat();
+      case "anamnesis":
+        return AnamnesisToonFormat();
+    }
+  })
+  .join("\n")}`;
     case "JSON":
-      return formatPromptDraftJson(generationFlags);
+      return `Return your response in JSON:\n${CaseJsonExampleString(generationFlags)}`;
   }
 }
 
@@ -49,9 +67,13 @@ export function formatPromptDraft(generationFlags: GenerationFlags[]): string {
 export function formatPromptInconsistencies(): string {
   switch (config.LLM_FORMAT) {
     case "TOON":
-      return formatPromptInconsistenciesToon();
+      return `If you find inconsistencies, return them in ${toonFormatExplanationPrompt()}:
+${InconsistencyArrayToonFormat()}
+
+If everything is consistent, return:
+${InconsistencyEmptyToonFormat()}`;
     case "JSON":
-      return formatPromptInconsistenciesJson();
+      return `Return your response in JSON:\n${JSON.stringify({ inconsistencies: [InconsistencyJsonExample()] })}`;
   }
 }
 
@@ -74,14 +96,13 @@ export function encodeObject(input: object): string {
  * @param input
  * @returns
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function decodeObject(input: string): Record<string, any> {
+export async function decodeObject(input: string): Promise<object> {
   switch (config.LLM_FORMAT) {
     case "TOON":
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return decode(saveTransformToon(input)) as Record<string, any>;
-    case "JSON":
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return JSON.parse(input) as Record<string, any>;
+      return decode(saveTransformToon(input)) as object;
+    case "JSON": {
+      const parser = new JsonOutputParser();
+      return parser.parse(input);
+    }
   }
 }

@@ -13,7 +13,10 @@ import {
 import { config } from "@/utils/config.js";
 import { type DraftState } from "./state.js";
 import { getCreativeLLM } from "@/graph/llm.js";
-import { symptomsToolForICD } from "@/graph/tools/symptoms.tool.js";
+import {
+  symptomsTool,
+  symptomsToolForICD,
+} from "@/graph/tools/symptoms.tool.js";
 import { invokeWithTools, type AgentConfig } from "@/graph/invokeWithTool.js";
 import { HumanMessage, toolCallLimitMiddleware } from "langchain";
 import { retry } from "@/utils/retry.js";
@@ -69,7 +72,7 @@ Requirements:
 - After receiving symptom information (or if you don't need it), generate the complete case immediately
 - Return ONLY ${config.LLM_FORMAT} format content, no additional text`;
 
-  const userPrompt = `Provided Diagnosis for patient case: ${state.diagnosis} ICD ${state.icdCode}
+  const userPrompt = `Provided Diagnosis for patient case: ${state.diagnosis} ${state.icdCode ?? ""}
 ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
 
   console.debug(
@@ -80,7 +83,7 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
   try {
     const agentConfig: AgentConfig = {
       model: getCreativeLLM(),
-      tools: [symptomsToolForICD(state.icdCode)],
+      tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
       systemPrompt: systemPrompt,
       middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
     };

@@ -68,7 +68,7 @@ export function buildCaseGeneratorGraph() {
  * Execute the case generator graph
  */
 export async function generateCase(
-  icdCode: string,
+  icdCode: string | undefined,
   diseaseName: string,
   context: string,
   generationFlags: GenerationFlags[]

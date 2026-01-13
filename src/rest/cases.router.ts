@@ -2,10 +2,7 @@ import express from "express";
 import { generateCase } from "../services/cases.service.js";
 import { CaseGenerationRequestSchema } from "../dtos/CaseGenerationRequest.js";
 import { CaseGenerationResponseSchema } from "../dtos/CaseGenerationResponse.js";
-import {
-  DiseaseNameToIcd,
-  IcdToDiseaseName,
-} from "@/services/diseases.service.js";
+import { IcdToDiseaseName } from "@/services/diseases.service.js";
 
 const router = express.Router();
 
@@ -26,8 +23,8 @@ router.post("/", async (req, res) => {
     return;
   }
 
-  let { icd, diagnosis } = bodyResult.data;
-  const { context, generationFlags } = bodyResult.data;
+  let { diagnosis } = bodyResult.data;
+  const { icd, context, generationFlags } = bodyResult.data;
 
   // fill diagnosis and icdCode - zod makes sure that at least one is filled
   if (!diagnosis) {
@@ -36,14 +33,6 @@ router.post("/", async (req, res) => {
     // verify that is set now, otherwise return error
     if (!diagnosis) {
       res.status(400).json({ message: "No diagnosis found for icd" });
-      return;
-    }
-  }
-  if (!icd) {
-    // if icd is missing, diagnosis is provided
-    icd = await DiseaseNameToIcd(diagnosis!);
-    if (!icd) {
-      res.status(400).json({ message: "No icd found for diagnosis" });
       return;
     }
   }

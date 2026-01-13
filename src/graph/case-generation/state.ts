@@ -9,7 +9,7 @@ import { CaseSchema } from "@/domain-models/Case.js";
 import { ICDCodeSchema } from "@/domain-models/ICD.js";
 
 export const GraphInputSchema = z.object({
-  icdCode: z.string(),
+  icdCode: z.string().optional(),
   diagnosis: z.string(),
   context: z.string(),
   generationFlags: z.array(GenerationFlagsSchema).default(AllGenerationFlags),

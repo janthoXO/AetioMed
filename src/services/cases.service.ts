@@ -3,7 +3,7 @@ import type { GenerationFlags } from "@/domain-models/GenerationFlags.js";
 import { generateCase as graphGenerateCase } from "@/graph/case-generation/index.js";
 
 export async function generateCase(
-  icdCode: string,
+  icdCode: string | undefined,
   diseaseName: string,
   context: string,
   generationFlags: GenerationFlags[]

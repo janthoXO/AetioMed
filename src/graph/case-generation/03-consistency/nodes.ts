@@ -10,7 +10,10 @@ import {
 } from "@/utils/llmHelper.js";
 import { config } from "@/utils/config.js";
 import { type ConsistencyState } from "./state.js";
-import { symptomsToolForICD } from "@/graph/tools/symptoms.tool.js";
+import {
+  symptomsTool,
+  symptomsToolForICD,
+} from "@/graph/tools/symptoms.tool.js";
 import { invokeWithTools, type AgentConfig } from "@/graph/invokeWithTool.js";
 import { HumanMessage, toolCallLimitMiddleware } from "langchain";
 import { retry } from "@/utils/retry.js";
@@ -44,7 +47,7 @@ Requirements:
 - Don't be overly pedantic
 - Return ONLY ${config.LLM_FORMAT} format content`;
 
-  const userPrompt = `Provided Diagnosis: ${state.diagnosis} ICD ${state.icdCode}
+  const userPrompt = `Provided Diagnosis: ${state.diagnosis} ${state.icdCode ?? ""}
 ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
 
   console.debug(
@@ -54,7 +57,7 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
   try {
     const agentConfig: AgentConfig = {
       model: getDeterministicLLM(),
-      tools: [symptomsToolForICD(state.icdCode)],
+      tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
       systemPrompt: systemPrompt,
       middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
     };

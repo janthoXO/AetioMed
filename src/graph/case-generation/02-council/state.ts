@@ -23,7 +23,7 @@ export const CouncilStateSchema = z.object({
     },
     default: () => ({}) as Record<string, number>,
   }),
-  icdCode: ICDCodeSchema,
+  icdCode: ICDCodeSchema.optional(),
   diagnosis: z.string(),
   context: z.string(),
   generationFlags: z.array(GenerationFlagsSchema),

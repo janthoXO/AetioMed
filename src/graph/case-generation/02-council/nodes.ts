@@ -2,7 +2,10 @@ import { Send } from "@langchain/langgraph";
 import { getDeterministicLLM } from "@/graph/llm.js";
 import { type CouncilState } from "./state.js";
 import { encodeObject } from "@/utils/llmHelper.js";
-import { symptomsToolForICD } from "@/graph/tools/symptoms.tool.js";
+import {
+  symptomsTool,
+  symptomsToolForICD,
+} from "@/graph/tools/symptoms.tool.js";
 import { invokeWithTools, type AgentConfig } from "@/graph/invokeWithTool.js";
 import { HumanMessage, toolCallLimitMiddleware } from "langchain";
 
@@ -47,7 +50,7 @@ Your task:
 Select the BEST case. Ensure everything is appropriate, complete and consistent forming a coherent case
 Return a singular number (the draftIndex of the best case) as response, nothing more.`;
 
-  const userPrompt = `Diagnosis the cases were created for: ${state.diagnosis} ICD ${state.icdCode}
+  const userPrompt = `Diagnosis the cases were created for: ${state.diagnosis} ${state.icdCode ?? ""}
 ${state.context ? `\nAdditional context that was provided: ${state.context}` : ""}
 
 Drafts to choose from:
@@ -58,7 +61,7 @@ ${encodeObject(state.drafts)}`;
   try {
     const agentConfig: AgentConfig = {
       model: getDeterministicLLM(),
-      tools: [symptomsToolForICD(state.icdCode)],
+      tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
       systemPrompt: systemPrompt,
       middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
     };

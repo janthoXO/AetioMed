@@ -2,6 +2,9 @@ import { Send } from "@langchain/langgraph";
 import { getDeterministicLLM } from "@/graph/llm.js";
 import { type CouncilState } from "./state.js";
 import { encodeObject } from "@/utils/llmHelper.js";
+import { symptomsToolForICD } from "@/graph/tools/symptoms.tool.js";
+import { invokeWithTools, type AgentConfig } from "@/graph/invokeWithTool.js";
+import { HumanMessage, toolCallLimitMiddleware } from "langchain";
 
 /**
  * Check if generated drafts > 1 and councilSize > 1
@@ -44,7 +47,7 @@ Your task:
 Select the BEST case. Ensure everything is appropriate, complete and consistent forming a coherent case
 Return a singular number (the draftIndex of the best case) as response, nothing more.`;
 
-  const userPrompt = `Diagnosis the cases were created for: ${state.diagnosis}
+  const userPrompt = `Diagnosis the cases were created for: ${state.diagnosis} ICD ${state.icdCode}
 ${state.context ? `\nAdditional context that was provided: ${state.context}` : ""}
 
 Drafts to choose from:
@@ -53,11 +56,17 @@ ${encodeObject(state.drafts)}`;
   console.debug(`[Council: VoteDraft] Prompt:\n${systemPrompt}\n${userPrompt}`);
 
   try {
-    const response = await getDeterministicLLM().invoke([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
+    const agentConfig: AgentConfig = {
+      model: getDeterministicLLM(),
+      tools: [symptomsToolForICD(state.icdCode)],
+      systemPrompt: systemPrompt,
+      middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
+    };
+
+    const text = await invokeWithTools(agentConfig, [
+      new HumanMessage(userPrompt),
     ]);
-    const draftIndex = parseInt(response.content.toString());
+    const draftIndex = parseInt(text);
     console.debug(`[Council: VoteDraft] Voted for draft index: ${draftIndex}`);
 
     return { votes: { [draftIndex]: 1 } };
@@ -97,6 +106,7 @@ export function chooseVotedDraft(state: CouncilState): ChooseVotedDraftOutput {
   console.debug(
     `[Council: ChooseVotedDraft] Selected best draft index: ${bestDraftIndex}`
   );
+  console.debug("[Council: ChooseVotedDraft] All drafts:", state.drafts);
 
   const bestDraft = state.drafts.find((d) => d.draftIndex === bestDraftIndex);
   if (!bestDraft) {

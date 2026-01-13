@@ -1,6 +1,6 @@
 import { getDeterministicLLM } from "@/graph/llm.js";
 import {
-  InconsistencyJsonFormatZod,
+  InconsistencyArrayJsonFormatZod,
   type Inconsistency,
 } from "@/domain-models/Inconsistency.js";
 import {
@@ -10,6 +10,10 @@ import {
 } from "@/utils/llmHelper.js";
 import { config } from "@/utils/config.js";
 import { type ConsistencyState } from "./state.js";
+import { symptomsToolForICD } from "@/graph/tools/symptoms.tool.js";
+import { invokeWithTools, type AgentConfig } from "@/graph/invokeWithTool.js";
+import { HumanMessage, toolCallLimitMiddleware } from "langchain";
+import { retry } from "@/utils/retry.js";
 
 type GenerateInconsistenciesOutput = Pick<ConsistencyState, "inconsistencies">;
 /**
@@ -35,11 +39,12 @@ ${formatPromptInconsistencies()}
 
 Requirements:
 - Be thorough but fair
+- If you need symptom information, call the get_symptoms_for_icd tool ONCE, then immediately proceed to generate the inconsistencies
 - Only flag genuine medical/logical inconsistencies
 - Don't be overly pedantic
-- Return ONLY the format content`;
+- Return ONLY ${config.LLM_FORMAT} format content`;
 
-  const userPrompt = `Provided Diagnosis: ${state.diagnosis}
+  const userPrompt = `Provided Diagnosis: ${state.diagnosis} ICD ${state.icdCode}
 ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
 
   console.debug(
@@ -47,23 +52,47 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
   );
 
   try {
-    const response = await getDeterministicLLM(
-      config.LLM_FORMAT === "JSON" ? InconsistencyJsonFormatZod() : undefined
-    ).invoke([
-      { role: "system", content: systemPrompt },
-      { role: "user", content: userPrompt },
-    ]);
-    const text = response.content.toString();
-    const inconsistencies = (
-      decodeObject(text) as { inconsistencies: Inconsistency[] }
-    ).inconsistencies;
+    const agentConfig: AgentConfig = {
+      model: getDeterministicLLM(),
+      tools: [symptomsToolForICD(state.icdCode)],
+      systemPrompt: systemPrompt,
+      middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
+    };
+    if (config.LLM_FORMAT === "JSON") {
+      agentConfig.responseFormat = InconsistencyArrayJsonFormatZod();
+    }
+
+    const parsedInconsistencies: Inconsistency[] = await retry(
+      async () => {
+        const text = await invokeWithTools(agentConfig, [
+          new HumanMessage(userPrompt),
+        ]);
+        console.debug(
+          "[Consistency: GenerateInconsistencies] LLM Response:",
+          text
+        );
+
+        const parsed = await decodeObject(text);
+
+        const inconsistencyResult =
+          InconsistencyArrayJsonFormatZod().safeParse(parsed);
+        if (!inconsistencyResult.success) {
+          throw new Error(`Inconsistency schema validation failed`);
+        }
+
+        return inconsistencyResult.data.inconsistencies;
+      },
+      2,
+      0
+    );
+
     console.debug(
       "[Consistency: GenerateInconsistencies] Parsed Inconsistencies:",
-      inconsistencies
+      parsedInconsistencies
     );
 
     return {
-      inconsistencies: inconsistencies.sort((a, b) =>
+      inconsistencies: parsedInconsistencies.sort((a, b) =>
         a.field > b.field ? 1 : -1
       ),
     };

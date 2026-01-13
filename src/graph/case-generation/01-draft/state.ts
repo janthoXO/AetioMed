@@ -4,6 +4,7 @@ import { registry } from "@langchain/langgraph/zod";
 import z from "zod";
 import { CaseWithDraftIndexSchema } from "../models.js";
 import { CaseSchema } from "@/domain-models/Case.js";
+import { ICDCodeSchema } from "@/domain-models/ICD.js";
 
 export const DraftStateSchema = z.object({
   case: CaseSchema.optional(),
@@ -14,7 +15,8 @@ export const DraftStateSchema = z.object({
     },
     default: () => [],
   }),
-  draftCount: z.number().default(1),
+  draftCount: z.number().default(2),
+  icdCode: ICDCodeSchema,
   diagnosis: z.string(),
   context: z.string(),
   generationFlags: z.array(GenerationFlagsSchema),

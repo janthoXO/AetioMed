@@ -10,6 +10,8 @@ import { consistencyGraph } from "./03-consistency/index.js";
 import type { Case } from "@/domain-models/Case.js";
 import type { GenerationFlags } from "@/domain-models/GenerationFlags.js";
 
+import { CaseGenerationError } from "@/errors/AppError.js";
+
 export function checkConsistency(state: GlobalState): "refine" | "end" {
   console.debug(
     `[Consistency: CheckConsistency] Inconsistencies found: ${state.inconsistencies.length}, Remaining iterations: ${state.inconsistencyIterationsRemaining}`
@@ -99,7 +101,7 @@ export async function generateCase(
   console.log("[CaseGenerator] Generation complete", result);
 
   if (!result.case) {
-    throw new Error("Case generation failed: No case generated");
+    throw new CaseGenerationError("Case generation failed: No case generated");
   }
 
   return result.case;

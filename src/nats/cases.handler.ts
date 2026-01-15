@@ -3,6 +3,8 @@ import { getJetStreamClient, getNatsConnection } from "./client.js";
 import { AckPolicy, jetstreamManager, type JsMsg } from "@nats-io/jetstream";
 import { generateCase } from "@/services/cases.service.js";
 import { publishCaseGenerationResponse } from "./cases.publisher.js";
+import { IcdToDiseaseName } from "@/services/diseases.service.js";
+import { AppError } from "@/errors/AppError.js";
 
 const STREAM_NAME = "cases";
 const SUBJECT = "cases.generate";
@@ -12,21 +14,59 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
   try {
     console.debug(`[NATS] Received message on ${SUBJECT}:`, msg.json());
     const data = CaseGenerationRequestSchema.parse(msg.json());
+    const { icd, context, generationFlags } = data;
+    let { diagnosis } = data;
 
-    console.log(`[NATS] Generating case for ${data.diagnosis}`);
+    // fill diagnosis and icdCode - zod makes sure that at least one is filled
+    if (!diagnosis) {
+      // if diagnosis is missing, icd is provided
+      diagnosis = await IcdToDiseaseName(icd!);
+      // verify that is set now, otherwise return error
+      if (!diagnosis) {
+        throw new Error("No diagnosis found for icd");
+        return;
+      }
+    }
+
+    console.log(`[NATS] Generating case for ${diagnosis}`);
     const generatedCase = await generateCase(
-      data.diagnosis,
-      data.context,
-      data.generationFlags
+      icd,
+      diagnosis,
+      context,
+      generationFlags
     );
 
     await publishCaseGenerationResponse(msg.headers, generatedCase);
     msg.ack();
   } catch (err) {
     console.error(`[NATS] Error processing message:`, err);
-    // Decide if we should nak or just term?
-    // msg.nak(); // Retry later
-    msg.term(); // Give up (avoids infinite loops on bad input)
+
+    let errorResponse;
+    if (err instanceof AppError) {
+      errorResponse = {
+        error: {
+          code: err.code,
+          message: err.message,
+          details: err.details,
+        },
+      };
+    } else {
+      errorResponse = {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "An unexpected error occurred",
+          details: err instanceof Error ? err.message : String(err),
+        },
+      };
+    }
+
+    try {
+      await publishCaseGenerationResponse(msg.headers, errorResponse);
+      msg.ack(); // Ack even on error because we processed it by sending an error response
+    } catch (pubErr) {
+      console.error("[NATS] Failed to publish error response:", pubErr);
+      msg.nak(); // Retry if we couldn't publish the error
+    }
   }
 }
 

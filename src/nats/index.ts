@@ -8,10 +8,10 @@ export async function initNats() {
     // Actually startCaseGenerationConsumer has a 'for await' loop so it blocks!
     // We should run it in background.
     startCaseGenerationConsumer().catch((err) => {
-      console.error("[NATS] Consumer failed:", err);
+      console.error("[NATS] Failed to start case generation consumer");
     });
   } catch (err) {
-    console.error("[NATS] Initialization failed:", err);
+    console.error("[NATS] Connection failed");
   }
 }
 

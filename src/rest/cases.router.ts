@@ -3,6 +3,7 @@ import { generateCase } from "../services/cases.service.js";
 import { CaseGenerationRequestSchema } from "../dtos/CaseGenerationRequest.js";
 import { CaseGenerationResponseSchema } from "../dtos/CaseGenerationResponse.js";
 import { IcdToDiseaseName } from "@/services/diseases.service.js";
+import { AppError } from "@/errors/AppError.js";
 
 const router = express.Router();
 
@@ -48,7 +49,23 @@ router.post("/", async (req, res) => {
     res.status(200).json(response);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Internal server error" });
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({
+        error: {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+        },
+      });
+      return;
+    }
+
+    res.status(500).json({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Internal server error",
+      },
+    });
   }
 });
 

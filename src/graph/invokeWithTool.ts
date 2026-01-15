@@ -9,7 +9,8 @@ export async function invokeWithTools(
   const result = await agent.invoke({ messages: userMessages });
 
   if (agentConfig.responseFormat) {
-    return JSON.stringify(result.structuredResponse);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return JSON.stringify((result as any).structuredResponse);
   }
   return result.messages[result.messages.length - 1]!.content as string;
 }

@@ -5,7 +5,7 @@ import { CaseSchema } from "@/domain-models/Case.js";
 import { ICDCodeSchema } from "@/domain-models/ICD.js";
 
 export const ConsistencyStateSchema = z.object({
-  case: CaseSchema,
+  case: CaseSchema.optional(),
   // overwrite old inconsistencies on new update
   inconsistencies: z.array(InconsistencySchema),
   // reduce on each iteration until 0 is reached

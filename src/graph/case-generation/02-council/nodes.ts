@@ -1,13 +1,17 @@
 import { Send } from "@langchain/langgraph";
 import { getDeterministicLLM } from "@/graph/llm.js";
 import { type CouncilState } from "./state.js";
-import { encodeObject } from "@/utils/llmHelper.js";
+import { encodeObject, handleLangchainError } from "@/utils/llmHelper.js";
 import {
   symptomsTool,
   symptomsToolForICD,
 } from "@/graph/tools/symptoms.tool.js";
-import { invokeWithTools, type AgentConfig } from "@/graph/invokeWithTool.js";
-import { HumanMessage, toolCallLimitMiddleware } from "langchain";
+import { invokeWithTools } from "@/graph/invokeWithTool.js";
+import {
+  HumanMessage,
+  toolCallLimitMiddleware,
+  type CreateAgentParams,
+} from "langchain";
 
 /**
  * Check if generated drafts > 1 and councilSize > 1
@@ -59,7 +63,7 @@ ${encodeObject(state.drafts)}`;
   console.debug(`[Council: VoteDraft] Prompt:\n${systemPrompt}\n${userPrompt}`);
 
   try {
-    const agentConfig: AgentConfig = {
+    const agentConfig: CreateAgentParams = {
       model: getDeterministicLLM(),
       tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
       systemPrompt: systemPrompt,
@@ -68,7 +72,10 @@ ${encodeObject(state.drafts)}`;
 
     const text = await invokeWithTools(agentConfig, [
       new HumanMessage(userPrompt),
-    ]);
+    ]).catch((error) => {
+      handleLangchainError(error);
+    });
+
     const draftIndex = parseInt(text);
     console.debug(`[Council: VoteDraft] Voted for draft index: ${draftIndex}`);
 

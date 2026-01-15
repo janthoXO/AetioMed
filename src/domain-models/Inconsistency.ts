@@ -28,12 +28,11 @@ export const InconsistencySchema = z.object({
 export type Inconsistency = z.infer<typeof InconsistencySchema>;
 
 /**
- *
- * @returns a zod representing {inconsistencies: Inconsistency[]}
+ * a zod representing {inconsistencies: Inconsistency[]}
  */
-export function InconsistencyArrayJsonFormatZod(): z.ZodObject {
-  return z.object({ inconsistencies: z.array(InconsistencySchema) });
-}
+export const InconsistencyArrayJsonFormatZod = z.object({
+  inconsistencies: z.array(InconsistencySchema),
+});
 
 export function InconsistencyJsonExample(): Inconsistency {
   return {

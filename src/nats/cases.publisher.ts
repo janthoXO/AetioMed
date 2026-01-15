@@ -10,7 +10,10 @@ export async function publishCaseGenerationResponse(
 ) {
   const js = getJetStreamClient();
 
-  console.log(`[NATS] Publishing response ${msgHeader} case:`, generatedCaseResponse);
+  console.log(
+    `[NATS] Publishing response ${msgHeader} case:`,
+    generatedCaseResponse
+  );
 
   if (msgHeader) {
     await js.publish(SUBJECT, JSON.stringify(generatedCaseResponse), {

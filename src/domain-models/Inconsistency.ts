@@ -28,24 +28,26 @@ export const InconsistencySchema = z.object({
 export type Inconsistency = z.infer<typeof InconsistencySchema>;
 
 /**
- *
- * @returns a zod representing {inconsistencies: Inconsistency[]}
+ * a zod representing {inconsistencies: Inconsistency[]}
  */
-export function InconsistencyJsonFormatZod(): z.ZodObject {
-  return z.object({ inconsistencies: z.array(InconsistencySchema) });
-}
+export const InconsistencyArrayJsonFormatZod = z.object({
+  inconsistencies: z.array(InconsistencySchema),
+});
 
-/**
- * @returns a JSON format string representing {inconsistencies: Inconsistency[]}
- */
-export function InconsistencyJsonFormat(): string {
-  return JSON.stringify(z.toJSONSchema(InconsistencyJsonFormatZod()));
+export function InconsistencyJsonExample(): Inconsistency {
+  return {
+    field: "anamnesis",
+    description: "The anamnesis contradicts the chief complaint.",
+    suggestion:
+      "Review the anamnesis and ensure it aligns with the chief complaint.",
+    severity: "high",
+  };
 }
 
 /**
  * @returns a TOON format string representing {inconsistencies: Inconsistency[]}
  */
-export function InconsistencyToonFormat(): string {
+export function InconsistencyArrayToonFormat(): string {
   return `inconsistencies[N]{field,description,suggestion,severity}:
   ${AllGenerationFlags.filter((flag) => typeof flag === "string").join(
     "|"

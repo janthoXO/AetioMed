@@ -20,6 +20,7 @@ import {
   InconsistencyArrayToonFormat,
 } from "@/domain-models/Inconsistency.js";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
+import { ModelUnreachableError } from "@/errors/AppError.js";
 
 export function descriptionPromptDraft(
   generationFlags: GenerationFlags[]
@@ -105,4 +106,20 @@ export async function decodeObject(input: string): Promise<object> {
       return parser.parse(input);
     }
   }
+}
+
+export function handleLangchainError(error: Error): never {
+  if (error instanceof Error) {
+    if (
+      error.message.includes("fetch failed") ||
+      error.message.includes("ECONNREFUSED")
+    ) {
+      throw new ModelUnreachableError(
+        "Ollama service is unreachable. Is it running?",
+        error.message
+      );
+    }
+  }
+
+  throw error;
 }

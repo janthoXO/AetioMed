@@ -2,6 +2,6 @@
 applyTo: "src/**/*.ts,.github/workflows/**/*.yml"
 ---
 
-use pnpm as the package manager for this node express typescript server
+use node express typescript server structure
 use zod for dtos
-always pnpm run lint and pnpm run dev to verify working code
+use pnpm as the package manager and always `pnpm run lint` and `pnpm run build` to verify working code

@@ -7,6 +7,7 @@ import {
   decodeObject,
   encodeObject,
   formatPromptInconsistencies,
+  handleLangchainError,
 } from "@/utils/llmHelper.js";
 import { config } from "@/utils/config.js";
 import { type ConsistencyState } from "./state.js";
@@ -14,9 +15,15 @@ import {
   symptomsTool,
   symptomsToolForICD,
 } from "@/graph/tools/symptoms.tool.js";
-import { invokeWithTools, type AgentConfig } from "@/graph/invokeWithTool.js";
-import { HumanMessage, toolCallLimitMiddleware } from "langchain";
+import { invokeWithTools } from "@/graph/invokeWithTool.js";
+import {
+  HumanMessage,
+  providerStrategy,
+  toolCallLimitMiddleware,
+  type CreateAgentParams,
+} from "langchain";
 import { retry } from "@/utils/retry.js";
+import { CaseGenerationError } from "@/errors/AppError.js";
 
 type GenerateInconsistenciesOutput = Pick<ConsistencyState, "inconsistencies">;
 /**
@@ -55,35 +62,40 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
   );
 
   try {
-    const agentConfig: AgentConfig = {
+    const agentConfig: CreateAgentParams = {
       model: getDeterministicLLM(),
       tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
       systemPrompt: systemPrompt,
       middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
     };
     if (config.LLM_FORMAT === "JSON") {
-      agentConfig.responseFormat = InconsistencyArrayJsonFormatZod();
+      agentConfig.responseFormat = providerStrategy(
+        InconsistencyArrayJsonFormatZod
+      );
     }
 
     const parsedInconsistencies: Inconsistency[] = await retry(
       async () => {
         const text = await invokeWithTools(agentConfig, [
           new HumanMessage(userPrompt),
-        ]);
+        ]).catch((error) => {
+          handleLangchainError(error);
+        });
         console.debug(
           "[Consistency: GenerateInconsistencies] LLM Response:",
           text
         );
 
-        const parsed = await decodeObject(text);
-
-        const inconsistencyResult =
-          InconsistencyArrayJsonFormatZod().safeParse(parsed);
-        if (!inconsistencyResult.success) {
-          throw new Error(`Inconsistency schema validation failed`);
-        }
-
-        return inconsistencyResult.data.inconsistencies;
+        return await decodeObject(text)
+          .then(
+            (object) =>
+              InconsistencyArrayJsonFormatZod.parse(object).inconsistencies
+          )
+          .catch(() => {
+            throw new CaseGenerationError(
+              `Failed to parse LLM response in ${config.LLM_FORMAT} format`
+            );
+          });
       },
       2,
       0

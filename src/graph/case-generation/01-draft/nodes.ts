@@ -4,6 +4,7 @@ import {
   descriptionPromptDraft,
   encodeObject,
   formatPromptDraft,
+  handleLangchainError,
 } from "@/utils/llmHelper.js";
 import {
   CaseJsonFormatZod,
@@ -17,9 +18,15 @@ import {
   symptomsTool,
   symptomsToolForICD,
 } from "@/graph/tools/symptoms.tool.js";
-import { invokeWithTools, type AgentConfig } from "@/graph/invokeWithTool.js";
-import { HumanMessage, toolCallLimitMiddleware } from "langchain";
+import { invokeWithTools } from "@/graph/invokeWithTool.js";
+import {
+  HumanMessage,
+  providerStrategy,
+  toolCallLimitMiddleware,
+  type CreateAgentParams,
+} from "langchain";
 import { retry } from "@/utils/retry.js";
+import { CaseGenerationError } from "@/errors/AppError.js";
 
 /**
  * FAN-OUT
@@ -81,35 +88,38 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
 
   // Initialize cases to empty in case of failure
   try {
-    const agentConfig: AgentConfig = {
+    const agentConfig: CreateAgentParams = {
       model: getCreativeLLM(),
       tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
       systemPrompt: systemPrompt,
       middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
     };
+
     if (config.LLM_FORMAT === "JSON") {
-      agentConfig.responseFormat = CaseJsonFormatZod(state.generationFlags);
+      agentConfig.responseFormat = providerStrategy(
+        CaseJsonFormatZod(state.generationFlags)
+      );
     }
 
     const parsedCase: Case = await retry(
       async () => {
         const text = await invokeWithTools(agentConfig, [
           new HumanMessage(userPrompt),
-        ]);
+        ]).catch((error) => {
+          handleLangchainError(error);
+        });
         console.debug(
           `[Draft: GenerateDraft #${state.draftIndex}] LLM raw Response:\n${text}`
         );
 
         // Try to parse the TOON response
-        const parsed = await decodeObject(text);
-
-        // Validate with Zod
-        const caseResult = CaseSchema.safeParse(parsed);
-        if (!caseResult.success) {
-          throw new Error(`Case schema validation failed`);
-        }
-
-        return caseResult.data;
+        return await decodeObject(text)
+          .then((object) => CaseSchema.parse(object))
+          .catch(() => {
+            throw new CaseGenerationError(
+              `Failed to parse LLM response in ${config.LLM_FORMAT} format`
+            );
+          });
       },
       2,
       0

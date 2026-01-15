@@ -7,7 +7,7 @@ export class AppError extends Error {
     message: string,
     code: string,
     statusCode: number = 500,
-    details?: string,
+    details?: string
   ) {
     super(message);
     this.code = code;

@@ -1,5 +1,12 @@
-import { CaseSchema, type Case } from "../domain-models/Case.js";
+import { z } from "zod";
+import { CaseSchema } from "../domain-models/Case.js";
+import { ErrorResponseSchema } from "./ErrorResponse.js";
 
-export const CaseGenerationResponseSchema = CaseSchema;
+export const CaseGenerationResponseSchema = z.union([
+  CaseSchema,
+  ErrorResponseSchema,
+]);
 
-export type CaseGenerationResponse = Case;
+export type CaseGenerationResponse = z.infer<
+  typeof CaseGenerationResponseSchema
+>;

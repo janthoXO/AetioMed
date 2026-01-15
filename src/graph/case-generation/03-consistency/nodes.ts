@@ -36,6 +36,10 @@ export async function generateInconsistencies(
     "[Consistency: GenerateInconsistencies] Generating inconsistencies for case"
   );
 
+  if (!state.case) {
+    throw new CaseGenerationError("Case is missing for consistency check");
+  }
+
   const systemPrompt = `You are a medical quality assurance expert validating a patient case for educational use with a provided diagnosis and additional context.
 
 Case to validate:

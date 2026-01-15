@@ -21,7 +21,7 @@ export const GlobalStateSchema = z.object({
   /**
    * The ICD code for the diagnosis
    */
-  icdCode: ICDCodeSchema,
+  icdCode: ICDCodeSchema.optional(),
   /**
    * The medical diagnosis to generate a case for
    */

@@ -1,56 +1,32 @@
-import { ChatOllama } from "@langchain/ollama";
+import { ChatOllama, type ChatOllamaInput } from "@langchain/ollama";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { InteropZodType } from "@langchain/core/utils/types";
-
-export interface LLMConfig {
-  provider: "ollama";
-  model: string;
-  temperature: number;
-}
-
-const defaultConfig: LLMConfig = {
-  provider: "ollama",
-  model: "hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S",
-  temperature: 0.7,
-};
-
-let currentConfig: LLMConfig = { ...defaultConfig };
-
-/**
- * Configure the LLM provider globally
- */
-export function configureLLM(config: Partial<LLMConfig>): void {
-  currentConfig = { ...currentConfig, ...config };
-}
+import { config } from "@/utils/config.js";
 
 /**
  * Get an LLM instance based on current configuration.
  * Easily extendable to support cloud providers.
  */
-export function getLLM(
-  temperatureOverride?: number,
-  structuredOutput?: InteropZodType
-): BaseChatModel {
-  const temperature = temperatureOverride ?? currentConfig.temperature;
+export function getLLM(temperatureOverride?: number): BaseChatModel {
+  const temperature = temperatureOverride ?? config.LLM_TEMPERATURE;
 
   let chat: BaseChatModel;
-  switch (currentConfig.provider) {
-    case "ollama":
-      chat = new ChatOllama({
-        model: currentConfig.model,
+  switch (config.LLM_PROVIDER) {
+    case "ollama": {
+      const ollamaConfig: ChatOllamaInput = {
+        model: config.LLM_MODEL,
         temperature,
-      });
-      break;
-    default:
-      chat = new ChatOllama({
-        model: currentConfig.model,
-        temperature,
-      });
-      break;
-  }
+      };
 
-  if (structuredOutput) {
-    chat.withStructuredOutput(structuredOutput);
+      if (config.LLM_FORMAT === "JSON") {
+        console.debug("Setting Ollama format to JSON");
+        ollamaConfig.format = "json";
+      }
+
+      chat = new ChatOllama(ollamaConfig);
+      break;
+    }
+    default:
+      throw new Error(`Unsupported LLM Provider: ${config.LLM_PROVIDER}`);
   }
 
   return chat;
@@ -59,17 +35,13 @@ export function getLLM(
 /**
  * Get a low-temperature LLM for deterministic tasks (consistency checks, etc.)
  */
-export function getDeterministicLLM(
-  structuredOutput?: InteropZodType
-): BaseChatModel {
-  return getLLM(0.1, structuredOutput);
+export function getDeterministicLLM(): BaseChatModel {
+  return getLLM(0.1);
 }
 
 /**
  * Get a creative LLM for generation tasks
  */
-export function getCreativeLLM(
-  structuredOutput?: InteropZodType
-): BaseChatModel {
-  return getLLM(0.8, structuredOutput);
+export function getCreativeLLM(): BaseChatModel {
+  return getLLM(0.8);
 }

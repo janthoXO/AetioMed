@@ -49,20 +49,13 @@ export function AnamnesisDescriptionPrompt(): string {
   return "Anamnesis: Medical history with multiple categories";
 }
 
-/**
- *
- * @returns a zod representing {anamnesis: Anamnesis[]}
- */
-export function AnamnesisJsonFormatZod(): z.ZodObject {
-  return z.object({ anamnesis: AnamnesisSchema });
-}
+export function AnamnesisJsonExample(): Anamnesis {
+  const exampleAnamnesis = Object.values(AnamnesisCategory).map((category) => ({
+    category: category,
+    answer: "The patient's response or clinical finding",
+  }));
 
-/**
- *
- * @returns a JSON format string representing {anamnesis: Anamnesis[]}
- */
-export function AnamnesisJsonFormat(): string {
-  return JSON.stringify(z.toJSONSchema(AnamnesisJsonFormatZod()));
+  return exampleAnamnesis;
 }
 
 /**

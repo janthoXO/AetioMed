@@ -6,8 +6,10 @@ import { InconsistencySchema } from "../../domain-models/Inconsistency.js";
 import z from "zod";
 import { CaseWithDraftIndexSchema } from "./models.js";
 import { CaseSchema } from "@/domain-models/Case.js";
+import { ICDCodeSchema } from "@/domain-models/ICD.js";
 
 export const GraphInputSchema = z.object({
+  icdCode: z.string().optional(),
   diagnosis: z.string(),
   context: z.string(),
   generationFlags: z.array(GenerationFlagsSchema).default(AllGenerationFlags),
@@ -16,6 +18,10 @@ export const GraphInputSchema = z.object({
 export type GraphInput = z.infer<typeof GraphInputSchema>;
 
 export const GlobalStateSchema = z.object({
+  /**
+   * The ICD code for the diagnosis
+   */
+  icdCode: ICDCodeSchema.optional(),
   /**
    * The medical diagnosis to generate a case for
    */

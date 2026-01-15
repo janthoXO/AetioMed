@@ -1,7 +1,17 @@
 import { Send } from "@langchain/langgraph";
 import { getDeterministicLLM } from "@/graph/llm.js";
 import { type CouncilState } from "./state.js";
-import { encodeObject } from "@/utils/llmHelper.js";
+import { encodeObject, handleLangchainError } from "@/utils/llmHelper.js";
+import {
+  symptomsTool,
+  symptomsToolForICD,
+} from "@/graph/tools/symptoms.tool.js";
+import { invokeWithTools } from "@/graph/invokeWithTool.js";
+import {
+  HumanMessage,
+  toolCallLimitMiddleware,
+  type CreateAgentParams,
+} from "langchain";
 
 /**
  * Check if generated drafts > 1 and councilSize > 1
@@ -39,22 +49,34 @@ type VoteDraftOutput = Pick<CouncilState, "votes">;
 export async function voteDraft(state: CouncilState): Promise<VoteDraftOutput> {
   console.debug("[Council: VoteDraft] Voting for the best draft case");
 
-  const prompt = `You are a senior medical educator picking the best case draft among several options.
-
-The diagnosis to create a case for was: ${state.diagnosis}
-
-Here are the draft cases:
-${encodeObject(state.drafts)}
-
+  const systemPrompt = `You are a senior medical educator picking the best case draft among several options for a provided diagnosis with additional context.
 Your task:
 Select the BEST case. Ensure everything is appropriate, complete and consistent forming a coherent case
-
 Return a singular number (the draftIndex of the best case) as response, nothing more.`;
-  console.debug(`[Council: VoteDraft] Prompt:\n${prompt}`);
+
+  const userPrompt = `Diagnosis the cases were created for: ${state.diagnosis} ${state.icdCode ?? ""}
+${state.context ? `\nAdditional context that was provided: ${state.context}` : ""}
+
+Drafts to choose from:
+${encodeObject(state.drafts)}`;
+
+  console.debug(`[Council: VoteDraft] Prompt:\n${systemPrompt}\n${userPrompt}`);
 
   try {
-    const response = await getDeterministicLLM().invoke(prompt);
-    const draftIndex = parseInt(response.content.toString());
+    const agentConfig: CreateAgentParams = {
+      model: getDeterministicLLM(),
+      tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
+      systemPrompt: systemPrompt,
+      middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
+    };
+
+    const text = await invokeWithTools(agentConfig, [
+      new HumanMessage(userPrompt),
+    ]).catch((error) => {
+      handleLangchainError(error);
+    });
+
+    const draftIndex = parseInt(text);
     console.debug(`[Council: VoteDraft] Voted for draft index: ${draftIndex}`);
 
     return { votes: { [draftIndex]: 1 } };
@@ -94,6 +116,7 @@ export function chooseVotedDraft(state: CouncilState): ChooseVotedDraftOutput {
   console.debug(
     `[Council: ChooseVotedDraft] Selected best draft index: ${bestDraftIndex}`
   );
+  console.debug("[Council: ChooseVotedDraft] All drafts:", state.drafts);
 
   const bestDraft = state.drafts.find((d) => d.draftIndex === bestDraftIndex);
   if (!bestDraft) {

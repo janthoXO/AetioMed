@@ -4,12 +4,29 @@ import {
   descriptionPromptDraft,
   encodeObject,
   formatPromptDraft,
+  handleLangchainError,
 } from "@/utils/llmHelper.js";
-import { CaseSchema } from "@/domain-models/Case.js";
-import { formatPromptDraftJsonZod } from "@/utils/jsonHelper.js";
+import {
+  CaseJsonFormatZod,
+  CaseSchema,
+  type Case,
+} from "@/domain-models/Case.js";
 import { config } from "@/utils/config.js";
 import { type DraftState } from "./state.js";
 import { getCreativeLLM } from "@/graph/llm.js";
+import {
+  symptomsTool,
+  symptomsToolForICD,
+} from "@/graph/tools/symptoms.tool.js";
+import { invokeWithTools } from "@/graph/invokeWithTool.js";
+import {
+  HumanMessage,
+  providerStrategy,
+  toolCallLimitMiddleware,
+  type CreateAgentParams,
+} from "langchain";
+import { retry } from "@/utils/retry.js";
+import { CaseGenerationError } from "@/errors/AppError.js";
 
 /**
  * FAN-OUT
@@ -42,10 +59,7 @@ export async function generateDraft(
     `[Draft: GenerateDraft #${state.draftIndex}] Starting generation`
   );
 
-  const prompt = `You are a medical education expert creating realistic patient cases for medical students.
-
-Generate a complete patient case for a patient with: ${state.diagnosis}
-${state.context ? `\nAdditional context: ${state.context}` : ""}
+  const systemPrompt = `You are a medical education expert creating realistic patient cases for medical students for a provided diagnosis with additional context.
 The case should include:
 ${descriptionPromptDraft(state.generationFlags)}
 
@@ -61,41 +75,64 @@ Requirements:
 - Be medically accurate and realistic
 - Do NOT directly reveal the diagnosis
 - Use standard medical terminology
-- Return ONLY the format content, no additional text`;
+- If you need symptom information, call the get_symptoms_for_icd tool ONCE, then immediately proceed to generate the case
+- After receiving symptom information (or if you don't need it), generate the complete case immediately
+- Return ONLY ${config.LLM_FORMAT} format content, no additional text`;
+
+  const userPrompt = `Provided Diagnosis for patient case: ${state.diagnosis} ${state.icdCode ?? ""}
+${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
 
   console.debug(
-    `[Draft: GenerateDraft #${state.draftIndex}] Prompt:\n${prompt}`
+    `[Draft: GenerateDraft #${state.draftIndex}] Prompt:\n${systemPrompt}\n${userPrompt}`
   );
 
   // Initialize cases to empty in case of failure
   try {
-    const response = await getCreativeLLM(
-      config.LLM_FORMAT === "JSON"
-        ? formatPromptDraftJsonZod(state.generationFlags)
-        : undefined
-    ).invoke(prompt);
-    const text = response.content.toString();
-    console.debug(
-      `[Draft: GenerateDraft #${state.draftIndex}] LLM raw Response:\n${text}`
-    );
+    const agentConfig: CreateAgentParams = {
+      model: getCreativeLLM(),
+      tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
+      systemPrompt: systemPrompt,
+      middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
+    };
 
-    // Try to parse the TOON response
-    const parsed = decodeObject(text);
-
-    // Validate with Zod
-    const caseResult = CaseSchema.safeParse(parsed);
-    if (!caseResult.success) {
-      throw new Error(`Case schema validation failed`);
+    if (config.LLM_FORMAT === "JSON") {
+      agentConfig.responseFormat = providerStrategy(
+        CaseJsonFormatZod(state.generationFlags)
+      );
     }
 
+    const parsedCase: Case = await retry(
+      async () => {
+        const text = await invokeWithTools(agentConfig, [
+          new HumanMessage(userPrompt),
+        ]).catch((error) => {
+          handleLangchainError(error);
+        });
+        console.debug(
+          `[Draft: GenerateDraft #${state.draftIndex}] LLM raw Response:\n${text}`
+        );
+
+        // Try to parse the TOON response
+        return await decodeObject(text)
+          .then((object) => CaseSchema.parse(object))
+          .catch(() => {
+            throw new CaseGenerationError(
+              `Failed to parse LLM response in ${config.LLM_FORMAT} format`
+            );
+          });
+      },
+      2,
+      0
+    );
+
     console.debug(
-      `[Draft: GenerateDraft #${state.draftIndex}] Successfully generated case ${caseResult.data}`
+      `[Draft: GenerateDraft #${state.draftIndex}] Successfully generated case ${parsedCase}`
     );
 
     return {
       drafts: [
         {
-          ...caseResult.data,
+          ...parsedCase,
           draftIndex: state.draftIndex,
         },
       ],

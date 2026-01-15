@@ -2,6 +2,8 @@ import express from "express";
 import { generateCase } from "../services/cases.service.js";
 import { CaseGenerationRequestSchema } from "../dtos/CaseGenerationRequest.js";
 import { CaseGenerationResponseSchema } from "../dtos/CaseGenerationResponse.js";
+import { IcdToDiseaseName } from "@/services/diseases.service.js";
+import { AppError } from "@/errors/AppError.js";
 
 const router = express.Router();
 
@@ -22,15 +24,48 @@ router.post("/", async (req, res) => {
     return;
   }
 
-  const { diagnosis, context, generationFlags } = bodyResult.data;
+  let { diagnosis } = bodyResult.data;
+  const { icd, context, generationFlags } = bodyResult.data;
+
+  // fill diagnosis and icdCode - zod makes sure that at least one is filled
+  if (!diagnosis) {
+    // if diagnosis is missing, icd is provided
+    diagnosis = await IcdToDiseaseName(icd!);
+    // verify that is set now, otherwise return error
+    if (!diagnosis) {
+      res.status(400).json({ message: "No diagnosis found for icd" });
+      return;
+    }
+  }
 
   try {
-    const caseData = await generateCase(diagnosis, context, generationFlags);
+    const caseData = await generateCase(
+      icd,
+      diagnosis,
+      context,
+      generationFlags
+    );
     const response = CaseGenerationResponseSchema.parse(caseData);
     res.status(200).json(response);
   } catch (error) {
     console.error(error);
-    res.status(500).json({ message: "Internal server error" });
+    if (error instanceof AppError) {
+      res.status(error.statusCode).json({
+        error: {
+          code: error.code,
+          message: error.message,
+          details: error.details,
+        },
+      });
+      return;
+    }
+
+    res.status(500).json({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: "Internal server error",
+      },
+    });
   }
 });
 

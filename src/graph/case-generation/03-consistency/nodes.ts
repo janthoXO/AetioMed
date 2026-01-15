@@ -1,15 +1,29 @@
 import { getDeterministicLLM } from "@/graph/llm.js";
 import {
-  InconsistencyJsonFormatZod,
+  InconsistencyArrayJsonFormatZod,
   type Inconsistency,
 } from "@/domain-models/Inconsistency.js";
 import {
   decodeObject,
   encodeObject,
   formatPromptInconsistencies,
+  handleLangchainError,
 } from "@/utils/llmHelper.js";
 import { config } from "@/utils/config.js";
 import { type ConsistencyState } from "./state.js";
+import {
+  symptomsTool,
+  symptomsToolForICD,
+} from "@/graph/tools/symptoms.tool.js";
+import { invokeWithTools } from "@/graph/invokeWithTool.js";
+import {
+  HumanMessage,
+  providerStrategy,
+  toolCallLimitMiddleware,
+  type CreateAgentParams,
+} from "langchain";
+import { retry } from "@/utils/retry.js";
+import { CaseGenerationError } from "@/errors/AppError.js";
 
 type GenerateInconsistenciesOutput = Pick<ConsistencyState, "inconsistencies">;
 /**
@@ -22,9 +36,11 @@ export async function generateInconsistencies(
     "[Consistency: GenerateInconsistencies] Generating inconsistencies for case"
   );
 
-  const prompt = `You are a medical quality assurance expert validating a patient case for educational use.
+  if (!state.case) {
+    throw new CaseGenerationError("Case is missing for consistency check");
+  }
 
-Target Diagnosis: ${state.diagnosis}
+  const systemPrompt = `You are a medical quality assurance expert validating a patient case for educational use with a provided diagnosis and additional context.
 
 Case to validate:
 ${encodeObject(state.case)}
@@ -37,26 +53,65 @@ ${formatPromptInconsistencies()}
 
 Requirements:
 - Be thorough but fair
+- If you need symptom information, call the get_symptoms_for_icd tool ONCE, then immediately proceed to generate the inconsistencies
 - Only flag genuine medical/logical inconsistencies
 - Don't be overly pedantic
-- Return ONLY the format content`;
-  console.debug(`[Consistency: GenerateInconsistencies] Prompt:\n${prompt}`);
+- Return ONLY ${config.LLM_FORMAT} format content`;
+
+  const userPrompt = `Provided Diagnosis: ${state.diagnosis} ${state.icdCode ?? ""}
+${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
+
+  console.debug(
+    `[Consistency: GenerateInconsistencies] Prompt:\n${systemPrompt}\n${userPrompt}`
+  );
 
   try {
-    const response = await getDeterministicLLM(
-      config.LLM_FORMAT === "JSON" ? InconsistencyJsonFormatZod() : undefined
-    ).invoke(prompt);
-    const text = response.content.toString();
-    const inconsistencies = (
-      decodeObject(text) as { inconsistencies: Inconsistency[] }
-    ).inconsistencies;
+    const agentConfig: CreateAgentParams = {
+      model: getDeterministicLLM(),
+      tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
+      systemPrompt: systemPrompt,
+      middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
+    };
+    if (config.LLM_FORMAT === "JSON") {
+      agentConfig.responseFormat = providerStrategy(
+        InconsistencyArrayJsonFormatZod
+      );
+    }
+
+    const parsedInconsistencies: Inconsistency[] = await retry(
+      async () => {
+        const text = await invokeWithTools(agentConfig, [
+          new HumanMessage(userPrompt),
+        ]).catch((error) => {
+          handleLangchainError(error);
+        });
+        console.debug(
+          "[Consistency: GenerateInconsistencies] LLM Response:",
+          text
+        );
+
+        return await decodeObject(text)
+          .then(
+            (object) =>
+              InconsistencyArrayJsonFormatZod.parse(object).inconsistencies
+          )
+          .catch(() => {
+            throw new CaseGenerationError(
+              `Failed to parse LLM response in ${config.LLM_FORMAT} format`
+            );
+          });
+      },
+      2,
+      0
+    );
+
     console.debug(
       "[Consistency: GenerateInconsistencies] Parsed Inconsistencies:",
-      inconsistencies
+      parsedInconsistencies
     );
 
     return {
-      inconsistencies: inconsistencies.sort((a, b) =>
+      inconsistencies: parsedInconsistencies.sort((a, b) =>
         a.field > b.field ? 1 : -1
       ),
     };

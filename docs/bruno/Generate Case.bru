@@ -1,0 +1,23 @@
+meta {
+  name: Generate Case
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{base_url}}/api/cases
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "diagnosis": "diabetes",
+    "generationFlags": ["chiefComplaint", "anamnesis"]
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

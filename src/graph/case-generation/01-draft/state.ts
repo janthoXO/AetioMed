@@ -18,7 +18,7 @@ export const DraftStateSchema = z.object({
   draftCount: z.number().default(1),
   icdCode: ICDCodeSchema.optional(),
   diagnosis: z.string(),
-  context: z.string(),
+  context: z.string().optional(),
   generationFlags: z.array(GenerationFlagsSchema),
   inconsistencies: z.array(InconsistencySchema),
 });

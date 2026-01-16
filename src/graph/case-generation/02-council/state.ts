@@ -25,7 +25,7 @@ export const CouncilStateSchema = z.object({
   }),
   icdCode: ICDCodeSchema.optional(),
   diagnosis: z.string(),
-  context: z.string(),
+  context: z.string().optional(),
   generationFlags: z.array(GenerationFlagsSchema),
 });
 

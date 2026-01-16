@@ -12,7 +12,7 @@ export const ConsistencyStateSchema = z.object({
   inconsistencyIterationsRemaining: z.number(),
   icdCode: ICDCodeSchema.optional(),
   diagnosis: z.string(),
-  context: z.string(),
+  context: z.string().optional(),
   generationFlags: z.array(GenerationFlagsSchema),
 });
 

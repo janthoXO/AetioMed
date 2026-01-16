@@ -14,11 +14,11 @@ import { CaseGenerationError } from "@/errors/AppError.js";
 
 export function checkConsistency(state: GlobalState): "refine" | "end" {
   console.debug(
-    `[Consistency: CheckConsistency] Inconsistencies found: ${state.inconsistencies.length}, Remaining iterations: ${state.inconsistencyIterationsRemaining}`
+    `[Consistency: CheckConsistency] Inconsistencies found: ${state.inconsistencies.length}, Remaining iterations: ${state.loopIterationsRemaining}`
   );
 
   return Object.keys(state.inconsistencies).length === 0 ||
-    state.inconsistencyIterationsRemaining === 0
+    state.loopIterationsRemaining <= 0
     ? "end"
     : "refine";
 }

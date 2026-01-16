@@ -54,7 +54,7 @@ export const GlobalStateSchema = z.object({
    * Maximum remaining iterations for the refinement loop.
    * Decrements each loop to prevent infinite cycles.
    */
-  inconsistencyIterationsRemaining: z.number().default(1),
+  loopIterationsRemaining: z.number().default(1),
 });
 
 /**

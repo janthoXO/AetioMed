@@ -10,7 +10,13 @@ export async function invokeWithTools(
 
   if (agentConfig.responseFormat) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    return JSON.stringify((result as any).structuredResponse);
+    const structured = (result as any).structuredResponse;
+    if (structured) {
+      return JSON.stringify(structured);
+    }
+
+    // Fallback: If structuredResponse is missing, check content
   }
+
   return result.messages[result.messages.length - 1]!.content as string;
 }

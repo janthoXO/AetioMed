@@ -1,4 +1,4 @@
-import { translationGraph } from "./index.js";
+import { buildTranslationGraph } from "./index.js";
 import { AnamnesisCategory } from "../../domain-models/Anamnesis.js";
 import { type Case } from "@/domain-models/Case.js";
 import dotenv from "dotenv";
@@ -23,10 +23,7 @@ async function testTranslation() {
   };
 
   try {
-    const result = await translationGraph.invoke({
-      diagnosis: "Migraine",
-      icdCode: "G43.9",
-      generationFlags: [],
+    const result = await buildTranslationGraph().invoke({
       case: mockCase,
       language: "German",
     });

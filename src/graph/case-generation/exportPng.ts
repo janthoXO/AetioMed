@@ -7,5 +7,7 @@ await buildCaseGeneratorGraph()
   })
   .then((graph) => graph.drawMermaidPng())
   .then((image) => image.arrayBuffer())
-  .then((buffer) => fs.writeFile("docs/case-generation-graph.png", new Uint8Array(buffer)))
+  .then((buffer) =>
+    fs.writeFile("docs/case-generation-graph.png", new Uint8Array(buffer))
+  )
   .catch((error) => console.error(error));

@@ -1,7 +1,12 @@
 import { z, ZodObject } from "zod/v4";
-import { AnamnesisJsonExample, AnamnesisSchema } from "./Anamnesis.js";
+import {
+  AnamnesisJsonExample,
+  AnamnesisSchema,
+  AnamnesisSchemaWithLanguage,
+} from "./Anamnesis.js";
 import { ChiefComplaintSchema } from "./ChiefComplaint.js";
 import { AllGenerationFlags, type GenerationFlags } from "./GenerationFlags.js";
+import type { Language } from "./Language.js";
 
 /**
  * Zod schema for a complete medical case
@@ -14,9 +19,10 @@ export const CaseSchema = z.object({
 export type Case = z.infer<typeof CaseSchema>;
 
 export function CaseJsonFormatZod(
-  generationFlags?: GenerationFlags[]
+  generationFlags?: GenerationFlags[],
+  language: Language = "English"
 ): ZodObject {
-  let zodCase = CaseSchema as ZodObject;
+  let zodCase = CaseSchemaWithLanguage(language) as ZodObject;
 
   AllGenerationFlags.forEach((flag) => {
     if (generationFlags?.some((f) => f === flag)) {
@@ -39,10 +45,13 @@ export function CaseJsonFormatZod(
   return zodCase;
 }
 
-export function CaseJsonExample(generationFlags?: GenerationFlags[]): Case {
+export function CaseJsonExample(
+  generationFlags?: GenerationFlags[],
+  language?: Language
+): Case {
   const exampleCase: Case = {
     chiefComplaint: "The patients chief complaint",
-    anamnesis: AnamnesisJsonExample(),
+    anamnesis: AnamnesisJsonExample(language),
   };
 
   AllGenerationFlags.forEach((flag) => {
@@ -67,7 +76,13 @@ export function CaseJsonExample(generationFlags?: GenerationFlags[]): Case {
 }
 
 export function CaseJsonExampleString(
-  generationFlags?: GenerationFlags[]
+  generationFlags?: GenerationFlags[],
+  language?: Language
 ): string {
-  return JSON.stringify(CaseJsonExample(generationFlags));
+  return JSON.stringify(CaseJsonExample(generationFlags, language));
 }
+export const CaseSchemaWithLanguage = (language: Language = "English") => {
+  return CaseSchema.extend({
+    anamnesis: AnamnesisSchemaWithLanguage(language).optional(),
+  });
+};

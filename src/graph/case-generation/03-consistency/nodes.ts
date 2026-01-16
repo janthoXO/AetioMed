@@ -120,23 +120,3 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
     throw error;
   }
 }
-
-type DecreaseConsistencyIterationOutput = Pick<
-  ConsistencyState,
-  "inconsistencyIterationsRemaining"
->;
-/**
- * Decreases the remaining inconsistency iterations by one.
- */
-export function decreaseConsistencyIteration(
-  state: ConsistencyState
-): DecreaseConsistencyIterationOutput {
-  console.debug(
-    `[Consistency: DecreaseConsistencyIteration] Remaining iterations after decrement: ${state.inconsistencyIterationsRemaining - 1}`
-  );
-
-  return {
-    inconsistencyIterationsRemaining:
-      state.inconsistencyIterationsRemaining - 1,
-  };
-}

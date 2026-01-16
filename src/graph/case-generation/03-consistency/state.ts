@@ -9,7 +9,7 @@ export const ConsistencyStateSchema = z.object({
   // overwrite old inconsistencies on new update
   inconsistencies: z.array(InconsistencySchema),
   // reduce on each iteration until 0 is reached
-  inconsistencyIterationsRemaining: z.number(),
+  loopIterationsRemaining: z.number(),
   icdCode: ICDCodeSchema.optional(),
   diagnosis: z.string(),
   context: z.string().optional(),

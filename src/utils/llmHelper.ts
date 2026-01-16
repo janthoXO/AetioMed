@@ -67,6 +67,20 @@ ${generationFlags
 
 /**
  *
+ * @returns a format string representing the object {draftIndex: number}
+ */
+export function formatPromptDraftVote(): string {
+  switch (config.LLM_FORMAT) {
+    case "TOON":
+      return `Return your response in ${toonFormatExplanationPrompt()}:
+draftIndex: number`;
+    case "JSON":
+      return `Return your response in JSON:\n{draftIndex: number}`;
+  }
+}
+
+/**
+ *
  * @returns a format string representing the object {inconsistenies: Inconsistency[]}
  */
 export function formatPromptInconsistencies(): string {

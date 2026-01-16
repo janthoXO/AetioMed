@@ -9,7 +9,7 @@ export const CouncilStateSchema = z.object({
   case: CaseSchema.optional(),
   // drafts from the generation step
   drafts: z.array(CaseWithDraftIndexSchema),
-  councilSize: z.number().default(1),
+  councilSize: z.number().default(3),
   // accumulate votes from different council members
   votes: z.record(z.string(), z.number()).register(registry, {
     reducer: {

@@ -13,6 +13,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "graph:test": "tsx src/graph/case-generation/test.ts",
+    "graph:export": "tsx src/graph/case-generation/exportPng.ts",
     "swagger": "tsx src/rest/swagger.ts"
   },
   "keywords": [],

@@ -1,18 +1,16 @@
 import { START, StateGraph, END } from "@langchain/langgraph";
-import {
-  checkRemainingIterations,
-  decreaseConsistencyIteration,
-  generateInconsistencies,
-} from "./nodes.js";
+import { generateInconsistencies } from "./nodes.js";
 import { ConsistencyStateSchema } from "./state.js";
 
 export const consistencyGraph = new StateGraph(ConsistencyStateSchema)
-  .addNode("consistency_iteration_decrease", decreaseConsistencyIteration)
-  .addEdge(START, "consistency_iteration_decrease")
   .addNode("consistency_generation", generateInconsistencies)
-  .addConditionalEdges("consistency_iteration_decrease", checkRemainingIterations, {
-    run: "consistency_generation",
-    skip: END,
+  .addNode("consistency_reset", () => {
+    // Reset inconsistencies for new consistency check
+    return {
+      inconsistencies: [],
+    };
   })
+  .addEdge(START, "consistency_reset")
+  .addEdge("consistency_reset", "consistency_generation")
   .addEdge("consistency_generation", END)
   .compile();

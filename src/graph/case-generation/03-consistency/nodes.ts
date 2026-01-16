@@ -25,36 +25,6 @@ import {
 import { retry } from "@/utils/retry.js";
 import { CaseGenerationError } from "@/errors/AppError.js";
 
-type DecreaseConsistencyIterationOutput = Pick<
-  ConsistencyState,
-  "loopIterationsRemaining"
->;
-/**
- * Decreases the remaining inconsistency iterations by one.
- */
-export function decreaseConsistencyIteration(
-  state: ConsistencyState
-): DecreaseConsistencyIterationOutput {
-  console.debug(
-    `[Consistency: DecreaseConsistencyIteration] Remaining iterations after decrement: ${state.loopIterationsRemaining - 1}`
-  );
-
-  return {
-    loopIterationsRemaining: state.loopIterationsRemaining - 1,
-  };
-}
-
-export function checkRemainingIterations(
-  state: ConsistencyState
-): "run" | "skip" {
-  console.debug(
-    `[Consistency: CheckRemainingIterations] Remaining iterations: ${state.loopIterationsRemaining}. Should run: ${state.loopIterationsRemaining > 0}`
-  );
-
-  // compare to 0 becuase counter was decremented before this check
-  return state.loopIterationsRemaining <= 0 ? "skip" : "run";
-}
-
 type GenerateInconsistenciesOutput = Pick<ConsistencyState, "inconsistencies">;
 /**
  * Generates inconsistencies for the given case draft.

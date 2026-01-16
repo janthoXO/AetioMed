@@ -32,7 +32,7 @@ export function fanOutCouncil(state: CouncilState): Send[] {
   const sends: Send[] = [];
 
   for (let i = 0; i < state.councilSize; i++) {
-    sends.push(new Send("draft_vote", state));
+    sends.push(new Send("generate_vote", state));
   }
 
   console.debug(
@@ -46,8 +46,10 @@ type VoteDraftOutput = Pick<CouncilState, "votes">;
  *
  * Votes for a specific draft among the council of generated cases.
  */
-export async function voteDraft(state: CouncilState): Promise<VoteDraftOutput> {
-  console.debug("[Council: VoteDraft] Voting for the best draft case");
+export async function generateVote(
+  state: CouncilState
+): Promise<VoteDraftOutput> {
+  console.debug("[Council: GenerateVote] Voting for the best draft case");
 
   const systemPrompt = `You are a senior medical educator picking the best case draft among several options for a provided diagnosis with additional context.
 Your task:
@@ -60,7 +62,7 @@ ${state.context ? `\nAdditional context that was provided: ${state.context}` : "
 Drafts to choose from:
 ${encodeObject(state.drafts)}`;
 
-  console.debug(`[Council: VoteDraft] Prompt:\n${systemPrompt}\n${userPrompt}`);
+  console.debug(`[Council: GenerateVote] Prompt:\n${systemPrompt}\n${userPrompt}`);
 
   try {
     const agentConfig: CreateAgentParams = {
@@ -77,11 +79,11 @@ ${encodeObject(state.drafts)}`;
     });
 
     const draftIndex = parseInt(text);
-    console.debug(`[Council: VoteDraft] Voted for draft index: ${draftIndex}`);
+    console.debug(`[Council: GenerateVote] Voted for draft index: ${draftIndex}`);
 
     return { votes: { [draftIndex]: 1 } };
   } catch (error) {
-    console.error("[Council: VoteDraft] Error:", error);
+    console.error("[Council: GenerateVote] Error:", error);
     throw error;
   }
 }

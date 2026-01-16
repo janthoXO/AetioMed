@@ -10,6 +10,21 @@ export function initRouter(): Promise<void> {
   const apiRouter = express.Router();
 
   apiRouter.get("/hello", async (_req, res) => {
+    /* #swagger.responses[200] = {
+            content: {
+                "application/json": {
+                    schema:{
+                        type: "object",
+                        properties: {
+                            msg: {
+                                type: "string"
+                            }
+                        }
+                    }
+                }           
+            }
+        }   
+    */
     res.status(200).json({ msg: "Hello World" });
   });
 

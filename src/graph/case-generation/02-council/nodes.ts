@@ -1,7 +1,12 @@
 import { Send } from "@langchain/langgraph";
 import { getDeterministicLLM } from "@/graph/llm.js";
 import { type CouncilState } from "./state.js";
-import { encodeObject, handleLangchainError } from "@/utils/llmHelper.js";
+import {
+  decodeObject,
+  encodeObject,
+  formatPromptDraftVote,
+  handleLangchainError,
+} from "@/utils/llmHelper.js";
 import {
   symptomsTool,
   symptomsToolForICD,
@@ -12,6 +17,9 @@ import {
   toolCallLimitMiddleware,
   type CreateAgentParams,
 } from "langchain";
+import { config } from "@/utils/config.js";
+import z from "zod";
+import { CaseGenerationError } from "@/errors/AppError.js";
 
 /**
  * Check if generated drafts > 1 and councilSize > 1
@@ -41,6 +49,10 @@ export function fanOutCouncil(state: CouncilState): Send[] {
   return sends;
 }
 
+const VoteResponseSchema = z.object({
+  draftIndex: z.number(),
+});
+
 type VoteDraftOutput = Pick<CouncilState, "votes">;
 /**
  *
@@ -54,7 +66,7 @@ export async function generateVote(
   const systemPrompt = `You are a senior medical educator picking the best case draft among several options for a provided diagnosis with additional context.
 Your task:
 Select the BEST case. Ensure everything is appropriate, complete and consistent forming a coherent case
-Return a singular number (the draftIndex of the best case) as response, nothing more.`;
+${formatPromptDraftVote()}`;
 
   const userPrompt = `Diagnosis the cases were created for: ${state.diagnosis} ${state.icdCode ?? ""}
 ${state.context ? `\nAdditional context that was provided: ${state.context}` : ""}
@@ -62,30 +74,40 @@ ${state.context ? `\nAdditional context that was provided: ${state.context}` : "
 Drafts to choose from:
 ${encodeObject(state.drafts)}`;
 
-  console.debug(`[Council: GenerateVote] Prompt:\n${systemPrompt}\n${userPrompt}`);
+  console.debug(
+    `[Council: GenerateVote] Prompt:\n${systemPrompt}\n${userPrompt}`
+  );
 
-  try {
-    const agentConfig: CreateAgentParams = {
-      model: getDeterministicLLM(),
-      tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
-      systemPrompt: systemPrompt,
-      middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
-    };
+  const agentConfig: CreateAgentParams = {
+    model: getDeterministicLLM(),
+    tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
+    systemPrompt: systemPrompt,
+    middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
+  };
 
-    const text = await invokeWithTools(agentConfig, [
-      new HumanMessage(userPrompt),
-    ]).catch((error) => {
-      handleLangchainError(error);
-    });
-
-    const draftIndex = parseInt(text);
-    console.debug(`[Council: GenerateVote] Voted for draft index: ${draftIndex}`);
-
-    return { votes: { [draftIndex]: 1 } };
-  } catch (error) {
-    console.error("[Council: GenerateVote] Error:", error);
-    throw error;
+  if (config.LLM_FORMAT === "JSON") {
+    agentConfig.responseFormat = VoteResponseSchema;
   }
+
+  const text = await invokeWithTools(agentConfig, [
+    new HumanMessage(userPrompt),
+  ]).catch((error) => {
+    handleLangchainError(error);
+  });
+
+  return await decodeObject(text)
+    .then((object) => {
+      const draftIndex = VoteResponseSchema.parse(object).draftIndex;
+      console.debug(
+        `[Council: GenerateVote] Voted for draft index: ${draftIndex}`
+      );
+
+      return { votes: { [draftIndex]: 1 } };
+    })
+    .catch((error) => {
+      console.error("[Council: GenerateVote] Error:", error);
+      throw new CaseGenerationError(error);
+    });
 }
 
 /**

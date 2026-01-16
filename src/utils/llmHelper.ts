@@ -21,6 +21,7 @@ import {
 } from "@/domain-models/Inconsistency.js";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
 import { ModelUnreachableError } from "@/errors/AppError.js";
+import type { Language } from "@/domain-models/Language.js";
 
 export function descriptionPromptDraft(
   generationFlags: GenerationFlags[]
@@ -42,7 +43,10 @@ export function descriptionPromptDraft(
  * @param generationFlags
  * @returns
  */
-export function formatPromptDraft(generationFlags: GenerationFlags[]): string {
+export function formatPromptDraft(
+  generationFlags: GenerationFlags[],
+  language: Language = "English"
+): string {
   switch (config.LLM_FORMAT) {
     case "TOON":
       return `Return your response in ${toonFormatExplanationPrompt()}:
@@ -52,12 +56,12 @@ ${generationFlags
       case "chiefComplaint":
         return ChiefComplaintToonFormat();
       case "anamnesis":
-        return AnamnesisToonFormat();
+        return AnamnesisToonFormat(language);
     }
   })
   .join("\n")}`;
     case "JSON":
-      return `Return your response in JSON:\n${CaseJsonExampleString(generationFlags)}`;
+      return `Return your response in JSON:\n${CaseJsonExampleString(generationFlags, language)}`;
   }
 }
 

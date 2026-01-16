@@ -25,7 +25,7 @@ router.post("/", async (req, res) => {
   }
 
   let { diagnosis } = bodyResult.data;
-  const { icd, context, generationFlags } = bodyResult.data;
+  const { icd, context, generationFlags, language } = bodyResult.data;
 
   // fill diagnosis and icdCode - zod makes sure that at least one is filled
   if (!diagnosis) {
@@ -42,8 +42,9 @@ router.post("/", async (req, res) => {
     const caseData = await generateCase(
       icd,
       diagnosis,
+      generationFlags,
       context,
-      generationFlags
+      language
     );
     const response = CaseGenerationResponseSchema.parse(caseData);
     res.status(200).json(response);

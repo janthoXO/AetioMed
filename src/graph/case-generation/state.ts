@@ -11,7 +11,7 @@ import { ICDCodeSchema } from "@/domain-models/ICD.js";
 export const GraphInputSchema = z.object({
   icdCode: z.string().optional(),
   diagnosis: z.string(),
-  context: z.string(),
+  context: z.string().optional(),
   generationFlags: z.array(GenerationFlagsSchema).default(AllGenerationFlags),
 });
 
@@ -29,7 +29,7 @@ export const GlobalStateSchema = z.object({
   /**
    * Optional context to guide case generation
    */
-  context: z.string(),
+  context: z.string().optional(),
   /**
    * Generation flags to control case generation behavior
    */
@@ -54,7 +54,7 @@ export const GlobalStateSchema = z.object({
    * Maximum remaining iterations for the refinement loop.
    * Decrements each loop to prevent infinite cycles.
    */
-  inconsistencyIterationsRemaining: z.number().default(3),
+  inconsistencyIterationsRemaining: z.number().default(1),
 });
 
 /**

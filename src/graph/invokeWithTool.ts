@@ -14,7 +14,7 @@ export async function invokeWithTools(
     if (structured) {
       return JSON.stringify(structured);
     }
-    
+
     // Fallback: If structuredResponse is missing, check content
   }
 

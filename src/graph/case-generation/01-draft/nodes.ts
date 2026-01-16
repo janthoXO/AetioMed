@@ -2,16 +2,14 @@ import { Send } from "@langchain/langgraph";
 import {
   decodeObject,
   descriptionPromptDraft,
-  encodeObject,
-  formatPromptDraft,
   handleLangchainError,
 } from "@/utils/llmHelper.js";
 import {
+  CaseJsonExampleString,
   CaseJsonFormatZod,
   CaseSchema,
   type Case,
 } from "@/domain-models/Case.js";
-import { config } from "@/utils/config.js";
 import { type DraftState } from "./state.js";
 import { getCreativeLLM } from "@/graph/llm.js";
 import {
@@ -63,11 +61,12 @@ export async function generateDraft(
 The case should include:
 ${descriptionPromptDraft(state.generationFlags)}
 
-${formatPromptDraft(state.generationFlags)}
+Return your response in JSON:
+${CaseJsonExampleString(state.generationFlags)}
 ${
   state.case
-    ? `\nPrevious case generated:\n${encodeObject(state.case)}
-with inconsistencies:\n${encodeObject(Object.values(state.inconsistencies).flat())}
+    ? `\nPrevious case generated:\n${JSON.stringify(state.case)}
+with inconsistencies:\n${JSON.stringify(Object.values(state.inconsistencies).flat())}
 `
     : ``
 }
@@ -77,7 +76,7 @@ Requirements:
 - Use standard medical terminology
 - If you need symptom information, call the get_symptoms_for_icd tool ONCE, then immediately proceed to generate the case
 - After receiving symptom information (or if you don't need it), generate the complete case immediately
-- Return ONLY ${config.LLM_FORMAT} format content, no additional text`;
+- Return ONLY the JSON content, no additional text`;
 
   const userPrompt = `Provided Diagnosis for patient case: ${state.diagnosis} ${state.icdCode ?? ""}
 ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
@@ -93,13 +92,10 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
       tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
       systemPrompt: systemPrompt,
       middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
-    };
-
-    if (config.LLM_FORMAT === "JSON") {
-      agentConfig.responseFormat = providerStrategy(
+      responseFormat: providerStrategy(
         CaseJsonFormatZod(state.generationFlags)
-      );
-    }
+      ),
+    };
 
     const parsedCase: Case = await retry(
       async () => {
@@ -112,12 +108,11 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
           `[Draft: GenerateDraft #${state.draftIndex}] LLM raw Response:\n${text}`
         );
 
-        // Try to parse the TOON response
         return await decodeObject(text)
           .then((object) => CaseSchema.parse(object))
           .catch(() => {
             throw new CaseGenerationError(
-              `Failed to parse LLM response in ${config.LLM_FORMAT} format`
+              `Failed to parse LLM response in JSON format`
             );
           });
       },

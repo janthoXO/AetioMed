@@ -12,15 +12,38 @@ import type { GenerationFlags } from "@/domain-models/GenerationFlags.js";
 
 import { CaseGenerationError } from "@/errors/AppError.js";
 
-export function checkConsistency(state: GlobalState): "refine" | "end" {
+type DecreaseLoopIterationOutput = Pick<GlobalState, "loopIterationsRemaining">;
+/**
+ * Decreases the remaining loop iterations by one.
+ */
+export function decreaseConsistencyIteration(
+  state: GlobalState
+): DecreaseLoopIterationOutput {
   console.debug(
-    `[Consistency: CheckConsistency] Inconsistencies found: ${state.inconsistencies.length}, Remaining iterations: ${state.inconsistencyIterationsRemaining}`
+    `[CaseGenerator: DecreaseLoopIteration] Remaining iterations after decrement: ${state.loopIterationsRemaining - 1}`
   );
 
-  return Object.keys(state.inconsistencies).length === 0 ||
-    state.inconsistencyIterationsRemaining === 0
-    ? "end"
-    : "refine";
+  return {
+    loopIterationsRemaining: state.loopIterationsRemaining - 1,
+  };
+}
+
+export function checkRemainingLoopIterations(
+  state: GlobalState
+): "continue" | "end" {
+  console.debug(
+    `[CaseGenerator: CheckRemainingLoopIterations] Remaining iterations: ${state.loopIterationsRemaining}`
+  );
+
+  return state.loopIterationsRemaining <= 0 ? "end" : "continue";
+}
+
+export function checkConsistency(state: GlobalState): "refine" | "end" {
+  console.debug(
+    `[Consistency: CheckConsistency] Inconsistencies found: ${state.inconsistencies.length}`
+  );
+
+  return state.inconsistencies.length === 0 ? "end" : "refine";
 }
 
 /**
@@ -36,17 +59,13 @@ export function buildCaseGeneratorGraph() {
 
     .addNode("council_phase", councilGraph)
     .addEdge("draft_phase", "council_phase")
-
-    .addNode("consistency_reset", () => {
-      // Reset inconsistencies for new consistency check
-      return {
-        inconsistencies: [],
-      };
-    })
+    .addNode("iteration_decrease", decreaseConsistencyIteration)
+    .addEdge("council_phase", "iteration_decrease")
     .addNode("consistency_phase", consistencyGraph)
-    .addEdge("council_phase", "consistency_reset")
-    .addEdge("consistency_reset", "consistency_phase")
-
+    .addConditionalEdges("iteration_decrease", checkRemainingLoopIterations, {
+      continue: "consistency_phase",
+      end: END,
+    })
     .addNode("draft_reset", () => {
       // Reset drafts for new generation cycle
       return {

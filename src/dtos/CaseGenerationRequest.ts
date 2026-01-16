@@ -3,6 +3,7 @@ import {
   GenerationFlagsSchema,
 } from "@/domain-models/GenerationFlags.js";
 import { ICDCodeSchema } from "@/domain-models/ICD.js";
+import { LanguageSchema } from "@/domain-models/Language.js";
 import { z } from "zod/v4";
 
 export const CaseGenerationRequestSchema = z
@@ -14,12 +15,14 @@ export const CaseGenerationRequestSchema = z
     context: z
       .string()
       .optional()
-      .default("")
       .describe("Additional context for case generation"),
     generationFlags: z
       .array(GenerationFlagsSchema)
       .default(AllGenerationFlags)
       .describe("Generation flags to specify case fields to generate"),
+    language: LanguageSchema.optional().describe(
+      "Language to generate the case in"
+    ),
   })
   .refine((data) => data.icd || data.diagnosis, {
     message: "Either 'icd' or 'diagnosis' must be provided",

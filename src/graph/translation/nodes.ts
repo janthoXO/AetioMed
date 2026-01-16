@@ -4,13 +4,11 @@ import {
   AnamnesisCategory,
   AnamnesisCategoryTranslation,
 } from "@/domain-models/Anamnesis.js";
-import { CaseSchemaWithLanguage } from "@/domain-models/Case.js";
 import {
-  decodeObject,
-  encodeObject,
-  formatPromptDraft,
-} from "@/utils/llmHelper.js";
-import { config } from "@/utils/config.js";
+  CaseJsonExampleString,
+  CaseSchemaWithLanguage,
+} from "@/domain-models/Case.js";
+import { decodeObject } from "@/utils/llmHelper.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
 import { CaseGenerationError } from "@/errors/AppError.js";
@@ -49,15 +47,16 @@ export async function translateValues(
   const systemPrompt = `You are a medical translator.
 Your task is to translate the provided medical case JSON content into ${state.language}.
 
-${formatPromptDraft(state.generationFlags, state.language)}
+Return your response in JSON:
+${CaseJsonExampleString(state.generationFlags, state.language)}
 
 RULES:
 1. Preserve the structure exactly.
 2. Translate only the VALUES. Do not translate keys.
-3. Return ONLY ${config.LLM_FORMAT} format content, no additional text`;
+3. Return ONLY the JSON content, no additional text`;
 
   const userPrompt = `Case to translate:
-${encodeObject(state.case)}`;
+${JSON.stringify(state.case)}`;
 
   console.debug(
     `[Translation: TranslateCase] Prompt: ${systemPrompt}\n\n${userPrompt}`
@@ -74,16 +73,9 @@ ${encodeObject(state.case)}`;
     const translatedCase = await retry(
       async () => {
         try {
-          // let caseObject: object;
-          // if (config.LLM_FORMAT === "JSON") {
-          //   caseObject = await llm
-          //     .withStructuredOutput(CaseSchemaWithLanguage(state.language))
-          //     .invoke(messages);
-          // } else {
-          //   caseObject = await llm
-          //     .invoke(messages)
-          //     .then((response) => decodeObject(response.text));
-          // }
+          // const caseObject = await llm
+          //   .withStructuredOutput(CaseSchemaWithLanguage(state.language))
+          //   .invoke(messages);
 
           const caseObject = await llm
             .invoke(messages)
@@ -97,7 +89,7 @@ ${encodeObject(state.case)}`;
           return CaseSchemaWithLanguage(state.language).parse(caseObject);
         } catch {
           throw new CaseGenerationError(
-            `Failed to parse LLM response in ${config.LLM_FORMAT} format`
+            `Failed to parse LLM response in JSON format`
           );
         }
       },

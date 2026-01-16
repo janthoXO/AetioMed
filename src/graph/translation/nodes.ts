@@ -74,7 +74,7 @@ ${encodeObject(state.case)}`;
     const translatedCase = await retry(
       async () => {
         try {
-          let caseObject: object;
+          // let caseObject: object;
           // if (config.LLM_FORMAT === "JSON") {
           //   caseObject = await llm
           //     .withStructuredOutput(CaseSchemaWithLanguage(state.language))
@@ -85,7 +85,7 @@ ${encodeObject(state.case)}`;
           //     .then((response) => decodeObject(response.text));
           // }
 
-          caseObject = await llm
+          const caseObject = await llm
             .invoke(messages)
             .then((response) => decodeObject(response.text));
 
@@ -95,7 +95,7 @@ ${encodeObject(state.case)}`;
           );
 
           return CaseSchemaWithLanguage(state.language).parse(caseObject);
-        } catch (error) {
+        } catch {
           throw new CaseGenerationError(
             `Failed to parse LLM response in ${config.LLM_FORMAT} format`
           );

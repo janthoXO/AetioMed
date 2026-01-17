@@ -1,8 +1,8 @@
 import z from "zod";
-import { encode } from "@toon-format/toon";
 import {
   AllGenerationFlags,
   GenerationFlagsSchema,
+  type GenerationFlags,
 } from "./GenerationFlags.js";
 
 const InconsistencySeveritySchema = z.enum(["low", "medium", "high"]);
@@ -36,26 +36,10 @@ export const InconsistencyArrayJsonFormatZod = z.object({
 
 export function InconsistencyJsonExample(): Inconsistency {
   return {
-    field: "anamnesis",
-    description: "The anamnesis contradicts the chief complaint.",
+    field: AllGenerationFlags.join(" | ") as GenerationFlags,
+    description: "e.g. the anamnesis contradicts the chief complaint.",
     suggestion:
       "Review the anamnesis and ensure it aligns with the chief complaint.",
-    severity: "high",
+    severity: AllInconsistencySeverity.join(" | ") as InconsistencySeverity,
   };
-}
-
-/**
- * @returns a TOON format string representing {inconsistencies: Inconsistency[]}
- */
-export function InconsistencyArrayToonFormat(): string {
-  return `inconsistencies[N]{field,description,suggestion,severity}:
-  ${AllGenerationFlags.filter((flag) => typeof flag === "string").join(
-    "|"
-  )},"Description of the inconsistency","Suggested fix or improvement for the inconsistency",${AllInconsistencySeverity.filter(
-    (flag) => typeof flag === "string"
-  ).join("|")}`;
-}
-
-export function InconsistencyEmptyToonFormat(): string {
-  return `inconsistencies${encode([])}`;
 }

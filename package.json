@@ -13,6 +13,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "graph:test": "tsx src/graph/case-generation/test.ts",
+    "graph:export": "tsx src/graph/case-generation/exportPng.ts",
     "swagger": "tsx src/rest/swagger.ts"
   },
   "keywords": [],
@@ -35,7 +36,8 @@
     "swagger-autogen": "^2.23.7",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^13.0.0",
-    "zod": "^4.1.13"
+    "zod": "^4.1.13",
+    "zod-openapi": "^5.4.6"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",

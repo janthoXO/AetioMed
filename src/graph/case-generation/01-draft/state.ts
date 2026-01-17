@@ -15,10 +15,10 @@ export const DraftStateSchema = z.object({
     },
     default: () => [],
   }),
-  draftCount: z.number().default(1),
+  draftCount: z.number().default(3),
   icdCode: ICDCodeSchema.optional(),
   diagnosis: z.string(),
-  context: z.string(),
+  context: z.string().optional(),
   generationFlags: z.array(GenerationFlagsSchema),
   inconsistencies: z.array(InconsistencySchema),
 });

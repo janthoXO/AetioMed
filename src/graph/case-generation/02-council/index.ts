@@ -4,27 +4,22 @@ import {
   chooseVotedDraft,
   fanInCouncil,
   fanOutCouncil,
-  voteDraft,
+  generateVote,
 } from "./nodes.js";
-import { type CouncilState, CouncilStateSchema } from "./state.js";
-
-function passthrough(state: CouncilState) {
-  return state;
-}
+import { CouncilStateSchema } from "./state.js";
 
 export const councilGraph = new StateGraph(CouncilStateSchema)
-  .addNode("council_start", passthrough)
-  .addEdge(START, "council_start")
-  .addNode("draft_vote", voteDraft)
-  .addConditionalEdges("council_start", (state) => {
+  .addNode("draft_selection", chooseVotedDraft)
+  .addNode("generate_vote", generateVote)
+  .addConditionalEdges(START, (state) => {
     if (checkSkipCouncil(state)) {
       return "draft_selection";
     }
+
     return fanOutCouncil(state);
   })
   .addNode("council_fan_in", fanInCouncil)
-  .addEdge("draft_vote", "council_fan_in")
-  .addNode("draft_selection", chooseVotedDraft)
+  .addEdge("generate_vote", "council_fan_in")
   .addEdge("council_fan_in", "draft_selection")
   .addEdge("draft_selection", END)
   .compile();

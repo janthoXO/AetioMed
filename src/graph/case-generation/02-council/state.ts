@@ -9,7 +9,7 @@ export const CouncilStateSchema = z.object({
   case: CaseSchema.optional(),
   // drafts from the generation step
   drafts: z.array(CaseWithDraftIndexSchema),
-  councilSize: z.number().default(1),
+  councilSize: z.number().default(3),
   // accumulate votes from different council members
   votes: z.record(z.string(), z.number()).register(registry, {
     reducer: {
@@ -25,7 +25,7 @@ export const CouncilStateSchema = z.object({
   }),
   icdCode: ICDCodeSchema.optional(),
   diagnosis: z.string(),
-  context: z.string(),
+  context: z.string().optional(),
   generationFlags: z.array(GenerationFlagsSchema),
 });
 

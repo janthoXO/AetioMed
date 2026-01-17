@@ -25,11 +25,3 @@ export function ChiefComplaintJsonFormatZod(): z.ZodObject {
 export function ChiefComplaintJsonFormat(): string {
   return JSON.stringify(z.toJSONSchema(ChiefComplaintJsonFormatZod()));
 }
-
-/**
- *
- * @returns a TOON format string representing {chiefComplaint: string}
- */
-export function ChiefComplaintToonFormat(): string {
-  return 'chiefComplaint: "Patient presents with..."';
-}

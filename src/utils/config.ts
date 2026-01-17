@@ -12,7 +12,6 @@ const ConfigSchema = z.object({
     .string()
     .default("hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S"),
   LLM_TEMPERATURE: z.coerce.number().min(0).max(1).default(0.7),
-  LLM_FORMAT: z.enum(["TOON", "JSON"]).default("JSON"),
 
   // NATS
   NATS_URL: z.string().default("nats://localhost:4222"),

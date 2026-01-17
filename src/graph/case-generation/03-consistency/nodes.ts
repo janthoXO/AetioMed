@@ -1,15 +1,10 @@
 import { getDeterministicLLM } from "@/graph/llm.js";
 import {
   InconsistencyArrayJsonFormatZod,
+  InconsistencyJsonExample,
   type Inconsistency,
 } from "@/domain-models/Inconsistency.js";
-import {
-  decodeObject,
-  encodeObject,
-  formatPromptInconsistencies,
-  handleLangchainError,
-} from "@/utils/llmHelper.js";
-import { config } from "@/utils/config.js";
+import { decodeObject, handleLangchainError } from "@/utils/llmHelper.js";
 import { type ConsistencyState } from "./state.js";
 import {
   symptomsTool,
@@ -43,20 +38,21 @@ export async function generateInconsistencies(
   const systemPrompt = `You are a medical quality assurance expert validating a patient case for educational use with a provided diagnosis and additional context.
 
 Case to validate:
-${encodeObject(state.case)}
+${JSON.stringify(state.case)}
 
 Check for these types of inconsistencies:
 1. Is the diagnosis not directly revealed in the case?
 2. Are all entries internally consistent and support each other?
 
-${formatPromptInconsistencies()}
+Return your response in JSON:
+${JSON.stringify({ inconsistencies: [InconsistencyJsonExample()] })}
 
 Requirements:
 - Be thorough but fair
 - If you need symptom information, call the get_symptoms_for_icd tool ONCE, then immediately proceed to generate the inconsistencies
 - Only flag genuine medical/logical inconsistencies
 - Don't be overly pedantic
-- Return ONLY ${config.LLM_FORMAT} format content`;
+- Return ONLY the JSON content`;
 
   const userPrompt = `Provided Diagnosis: ${state.diagnosis} ${state.icdCode ?? ""}
 ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
@@ -71,12 +67,8 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
       tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
       systemPrompt: systemPrompt,
       middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
+      responseFormat: providerStrategy(InconsistencyArrayJsonFormatZod),
     };
-    if (config.LLM_FORMAT === "JSON") {
-      agentConfig.responseFormat = providerStrategy(
-        InconsistencyArrayJsonFormatZod
-      );
-    }
 
     const parsedInconsistencies: Inconsistency[] = await retry(
       async () => {
@@ -97,7 +89,7 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
           )
           .catch(() => {
             throw new CaseGenerationError(
-              `Failed to parse LLM response in ${config.LLM_FORMAT} format`
+              `Failed to parse LLM response in JSON format`
             );
           });
       },

@@ -1,12 +1,7 @@
 import { Send } from "@langchain/langgraph";
 import { getDeterministicLLM } from "@/graph/llm.js";
 import { type CouncilState } from "./state.js";
-import {
-  decodeObject,
-  encodeObject,
-  formatPromptDraftVote,
-  handleLangchainError,
-} from "@/utils/llmHelper.js";
+import { decodeObject, handleLangchainError } from "@/utils/llmHelper.js";
 import {
   symptomsTool,
   symptomsToolForICD,
@@ -17,7 +12,6 @@ import {
   toolCallLimitMiddleware,
   type CreateAgentParams,
 } from "langchain";
-import { config } from "@/utils/config.js";
 import z from "zod";
 import { CaseGenerationError } from "@/errors/AppError.js";
 
@@ -66,13 +60,14 @@ export async function generateVote(
   const systemPrompt = `You are a senior medical educator picking the best case draft among several options for a provided diagnosis with additional context.
 Your task:
 Select the BEST case. Ensure everything is appropriate, complete and consistent forming a coherent case
-${formatPromptDraftVote()}`;
+Return your response in JSON:
+{draftIndex: number}`;
 
   const userPrompt = `Diagnosis the cases were created for: ${state.diagnosis} ${state.icdCode ?? ""}
 ${state.context ? `\nAdditional context that was provided: ${state.context}` : ""}
 
 Drafts to choose from:
-${encodeObject(state.drafts)}`;
+${JSON.stringify(state.drafts)}`;
 
   console.debug(
     `[Council: GenerateVote] Prompt:\n${systemPrompt}\n${userPrompt}`
@@ -83,11 +78,8 @@ ${encodeObject(state.drafts)}`;
     tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
     systemPrompt: systemPrompt,
     middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
+    responseFormat: VoteResponseSchema,
   };
-
-  if (config.LLM_FORMAT === "JSON") {
-    agentConfig.responseFormat = VoteResponseSchema;
-  }
 
   const text = await invokeWithTools(agentConfig, [
     new HumanMessage(userPrompt),

@@ -127,31 +127,3 @@ export function AnamnesisJsonExample(
     })
   );
 }
-
-/**
- * 
- * @returns a TOON format string representing {anamnesis: Anamnesis[]}
-
- */
-export function AnamnesisToonFormat(language: Language = "English"): string {
-  let exampleAnswer: string;
-
-  switch (language) {
-    case "English": {
-      exampleAnswer = "The patient reports...";
-      break;
-    }
-    case "German": {
-      exampleAnswer = "The patient reports...";
-      break;
-    }
-  }
-
-  return `anamnesis[7]{category,answer}:
-${Object.values(AnamnesisCategoryByLanguage(language))
-  .map(
-    (category, idx) =>
-      `  ${category},${idx === 0 ? `${exampleAnswer}` : `"..."`}`
-  )
-  .join("\n")}`;
-}

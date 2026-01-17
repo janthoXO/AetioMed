@@ -15,12 +15,8 @@ export function getLLM(temperatureOverride?: number): BaseChatModel {
       const ollamaConfig: ChatOllamaInput = {
         model: config.LLM_MODEL,
         temperature,
+        format: "json",
       };
-
-      if (config.LLM_FORMAT === "JSON") {
-        console.debug("Setting Ollama format to JSON");
-        ollamaConfig.format = "json";
-      }
 
       chat = new ChatOllama(ollamaConfig);
       break;

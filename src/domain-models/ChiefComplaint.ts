@@ -25,3 +25,7 @@ export function ChiefComplaintJsonFormatZod(): z.ZodObject {
 export function ChiefComplaintJsonFormat(): string {
   return JSON.stringify(z.toJSONSchema(ChiefComplaintJsonFormatZod()));
 }
+
+export function ChiefComplaintJsonExample(): ChiefComplaint {
+  return "The patient's primary reason for seeking care";
+}

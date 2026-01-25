@@ -1,0 +1,60 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.3.0 Chrome/140.0.7339.249 Electron/38.7.2 Safari/537.36" version="29.3.0">
+  <diagram name="Page-1" id="TqDeOKI2bs-AgjPdrMzb">
+    <mxGraphModel dx="946" dy="1702" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="OiK-5bHTiRjEVat1DgTs-6" parent="1" style="html=1;whiteSpace=wrap;" value="Diagnosis &amp;amp; Patient Data" vertex="1">
+          <mxGeometry height="50" width="110" x="180" y="-120" as="geometry" />
+        </mxCell>
+        <mxCell id="OiK-5bHTiRjEVat1DgTs-7" parent="1" style="html=1;whiteSpace=wrap;" value="Diagnosis" vertex="1">
+          <mxGeometry height="50" width="110" x="385" y="-120" as="geometry" />
+        </mxCell>
+        <mxCell id="OiK-5bHTiRjEVat1DgTs-8" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;" value="Generate Patient Data" vertex="1">
+          <mxGeometry height="40" width="120" x="380" y="-10" as="geometry" />
+        </mxCell>
+        <mxCell id="OiK-5bHTiRjEVat1DgTs-9" edge="1" parent="1" source="OiK-5bHTiRjEVat1DgTs-8" style="edgeStyle=orthogonalEdgeStyle;html=1;verticalAlign=bottom;endArrow=open;endSize=8;rounded=0;" target="OiK-5bHTiRjEVat1DgTs-10" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="440" y="90" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="OiK-5bHTiRjEVat1DgTs-10" parent="1" style="html=1;whiteSpace=wrap;" value="Patient Data" vertex="1">
+          <mxGeometry height="50" width="110" x="385" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="OiK-5bHTiRjEVat1DgTs-11" edge="1" parent="1" source="OiK-5bHTiRjEVat1DgTs-7" style="edgeStyle=orthogonalEdgeStyle;html=1;verticalAlign=bottom;endArrow=open;endSize=8;rounded=0;" target="OiK-5bHTiRjEVat1DgTs-8" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="450" y="40" as="sourcePoint" />
+            <mxPoint x="450" y="100" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="OiK-5bHTiRjEVat1DgTs-12" edge="1" parent="1" source="OiK-5bHTiRjEVat1DgTs-6" style="edgeStyle=orthogonalEdgeStyle;html=1;verticalAlign=bottom;endArrow=open;endSize=8;rounded=0;" target="OiK-5bHTiRjEVat1DgTs-13" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="240" y="230" />
+            </Array>
+            <mxPoint x="440" y="-50" as="sourcePoint" />
+            <mxPoint x="280" y="180" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="OiK-5bHTiRjEVat1DgTs-13" parent="1" style="rounded=1;whiteSpace=wrap;html=1;arcSize=40;" value="Generate Symptoms&lt;br&gt;for Diagnosis" vertex="1">
+          <mxGeometry height="40" width="120" x="380" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="OiK-5bHTiRjEVat1DgTs-14" edge="1" parent="1" source="OiK-5bHTiRjEVat1DgTs-13" style="edgeStyle=orthogonalEdgeStyle;html=1;verticalAlign=bottom;endArrow=open;endSize=8;rounded=0;" value="">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="440" y="310" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="OiK-5bHTiRjEVat1DgTs-16" edge="1" parent="1" source="OiK-5bHTiRjEVat1DgTs-10" style="edgeStyle=orthogonalEdgeStyle;html=1;verticalAlign=bottom;endArrow=open;endSize=8;rounded=0;" target="OiK-5bHTiRjEVat1DgTs-13" value="">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="440" y="150" />
+              <mxPoint x="440" y="150" />
+            </Array>
+            <mxPoint x="280" y="70" as="sourcePoint" />
+            <mxPoint x="420" y="370" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

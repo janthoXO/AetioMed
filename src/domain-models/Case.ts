@@ -1,12 +1,10 @@
 import { z, ZodObject } from "zod/v4";
+import { AnamnesisJsonExample, AnamnesisSchema } from "./Anamnesis.js";
 import {
-  AnamnesisJsonExample,
-  AnamnesisSchema,
-  AnamnesisSchemaWithLanguage,
-} from "./Anamnesis.js";
-import { ChiefComplaintSchema } from "./ChiefComplaint.js";
+  ChiefComplaintJsonExample,
+  ChiefComplaintSchema,
+} from "./ChiefComplaint.js";
 import { AllGenerationFlags, type GenerationFlags } from "./GenerationFlags.js";
-import type { Language } from "./Language.js";
 
 /**
  * Zod schema for a complete medical case
@@ -19,10 +17,9 @@ export const CaseSchema = z.object({
 export type Case = z.infer<typeof CaseSchema>;
 
 export function CaseJsonFormatZod(
-  generationFlags?: GenerationFlags[],
-  language: Language = "English"
+  generationFlags?: GenerationFlags[]
 ): ZodObject {
-  let zodCase = CaseSchemaWithLanguage(language) as ZodObject;
+  let zodCase = CaseSchema as ZodObject;
 
   AllGenerationFlags.forEach((flag) => {
     if (generationFlags?.some((f) => f === flag)) {
@@ -45,13 +42,10 @@ export function CaseJsonFormatZod(
   return zodCase;
 }
 
-export function CaseJsonExample(
-  generationFlags?: GenerationFlags[],
-  language?: Language
-): Case {
+export function CaseJsonExample(generationFlags?: GenerationFlags[]): Case {
   const exampleCase: Case = {
-    chiefComplaint: "The patients chief complaint",
-    anamnesis: AnamnesisJsonExample(language),
+    chiefComplaint: ChiefComplaintJsonExample(),
+    anamnesis: AnamnesisJsonExample(),
   };
 
   AllGenerationFlags.forEach((flag) => {
@@ -76,13 +70,7 @@ export function CaseJsonExample(
 }
 
 export function CaseJsonExampleString(
-  generationFlags?: GenerationFlags[],
-  language?: Language
+  generationFlags?: GenerationFlags[]
 ): string {
-  return JSON.stringify(CaseJsonExample(generationFlags, language));
+  return JSON.stringify(CaseJsonExample(generationFlags));
 }
-export const CaseSchemaWithLanguage = (language: Language = "English") => {
-  return CaseSchema.extend({
-    anamnesis: AnamnesisSchemaWithLanguage(language).optional(),
-  });
-};

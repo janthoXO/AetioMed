@@ -1,18 +1,22 @@
-import {
-  AllGenerationFlags,
-  GenerationFlagsSchema,
-} from "../../domain-models/GenerationFlags.js";
+import { GenerationFlagsSchema } from "../../domain-models/GenerationFlags.js";
 import { InconsistencySchema } from "../../domain-models/Inconsistency.js";
 import z from "zod";
 import { CaseWithDraftIndexSchema } from "./models.js";
 import { CaseSchema } from "@/domain-models/Case.js";
 import { ICDCodeSchema } from "@/domain-models/ICD.js";
+import {
+  AnamnesisCategorySchema,
+  AnamnesisCategoryDefaults,
+} from "@/domain-models/Anamnesis.js";
 
 export const GraphInputSchema = z.object({
   icdCode: z.string().optional(),
   diagnosis: z.string(),
   context: z.string().optional(),
-  generationFlags: z.array(GenerationFlagsSchema).default(AllGenerationFlags),
+  generationFlags: z.array(GenerationFlagsSchema),
+  anamnesisCategories: z
+    .array(AnamnesisCategorySchema)
+    .default(AnamnesisCategoryDefaults),
 });
 
 export type GraphInput = z.infer<typeof GraphInputSchema>;
@@ -34,6 +38,13 @@ export const GlobalStateSchema = z.object({
    * Generation flags to control case generation behavior
    */
   generationFlags: z.array(GenerationFlagsSchema),
+
+  /**
+   * Anamnesis categories to include in the case
+   */
+  anamnesisCategories: z
+    .array(AnamnesisCategorySchema)
+    .default(AnamnesisCategoryDefaults),
 
   /**
    * Generated cases.

@@ -1,35 +1,44 @@
 import { getLLM } from "@/graph/llm.js";
 import { type GlobalState } from "./state.js";
-import {
-  AnamnesisCategory,
-  AnamnesisCategoryTranslation,
-} from "@/domain-models/Anamnesis.js";
-import {
-  CaseJsonExampleString,
-  CaseSchemaWithLanguage,
-} from "@/domain-models/Case.js";
+import { type AnamnesisCategory } from "@/domain-models/Anamnesis.js";
+import { CaseJsonExampleString, CaseSchema } from "@/domain-models/Case.js";
 import { decodeObject } from "@/utils/llmHelper.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
 import { CaseGenerationError } from "@/errors/AppError.js";
+import { translateAnamnesisCategoriesFromEnglish } from "@/services/anamnesis.service.js";
 
 type TranslateCaseOutput = Pick<GlobalState, "case">;
 
-export function translateAnamnesisCategory(
+export async function translateAnamnesisCategory(
   state: GlobalState
-): TranslateCaseOutput {
+): Promise<TranslateCaseOutput> {
   console.debug(
     "[Translation: TranslateCase] Translating anamnesis category to",
+    state.language
+  );
+
+  const anamnesisCategories =
+    state.case.anamnesis?.map(
+      (anamnesis) => anamnesis.category as AnamnesisCategory
+    ) ?? [];
+
+  if (anamnesisCategories.length === 0) {
+    console.debug(
+      "[Translation: TranslateCase] No anamnesis categories to translate."
+    );
+    return { case: state.case };
+  }
+
+  const categoryTranslations = await translateAnamnesisCategoriesFromEnglish(
+    anamnesisCategories,
     state.language
   );
 
   state.case.anamnesis = state.case.anamnesis?.map((anamnesis) => {
     return {
       ...anamnesis,
-      category:
-        AnamnesisCategoryTranslation[anamnesis.category as AnamnesisCategory][
-          state.language
-        ],
+      category: categoryTranslations[anamnesis.category as AnamnesisCategory]!,
     };
   });
 
@@ -48,7 +57,7 @@ export async function translateValues(
 Your task is to translate the provided medical case JSON content into ${state.language}.
 
 Return your response in JSON:
-${CaseJsonExampleString(state.generationFlags, state.language)}
+${CaseJsonExampleString(state.generationFlags)}
 
 RULES:
 1. Preserve the structure exactly.
@@ -86,7 +95,7 @@ ${JSON.stringify(state.case)}`;
             caseObject
           );
 
-          return CaseSchemaWithLanguage(state.language).parse(caseObject);
+          return CaseSchema.parse(caseObject);
         } catch {
           throw new CaseGenerationError(
             `Failed to parse LLM response in JSON format`

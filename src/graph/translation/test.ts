@@ -1,5 +1,4 @@
 import { buildTranslationGraph } from "./index.js";
-import { AnamnesisCategory } from "../../domain-models/Anamnesis.js";
 import { type Case } from "@/domain-models/Case.js";
 import dotenv from "dotenv";
 
@@ -12,11 +11,11 @@ async function testTranslation() {
     chiefComplaint: "Severe headache and sensitivity to light",
     anamnesis: [
       {
-        category: AnamnesisCategory.HPI,
+        category: "History of Present Illness",
         answer: "Patient reports a throbbing headache starting 2 hours ago.",
       },
       {
-        category: AnamnesisCategory.Medications,
+        category: "Medications",
         answer: "Taking ibuprofen occasionally.",
       },
     ],

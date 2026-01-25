@@ -36,6 +36,7 @@
     "swagger-autogen": "^2.23.7",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^13.0.0",
+    "yaml": "^2.8.2",
     "zod": "^4.1.13",
     "zod-openapi": "^5.4.6"
   },

@@ -1,0 +1,31 @@
+meta {
+  name: Translate Categories
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{base_url}}/api/cases/anamnesis/translate
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "categories": [
+      "History of Present Illness",
+      "Past Medical History",
+      "Medications",
+      "Allergies",
+      "Family History",
+      "Cardiovascular Risk Factors",
+      "Social and Occupational History"
+    ],
+    "language": "German"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

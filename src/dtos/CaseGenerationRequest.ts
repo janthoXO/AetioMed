@@ -23,6 +23,10 @@ export const CaseGenerationRequestSchema = z
     language: LanguageSchema.optional().describe(
       "Language to generate the case in"
     ),
+    anamnesisCategories: z
+      .array(z.string())
+      .optional()
+      .describe("Categories of anamnesis to include in the case"),
   })
   .refine((data) => data.icd || data.diagnosis, {
     message: "Either 'icd' or 'diagnosis' must be provided",

@@ -18,7 +18,10 @@ export function buildTranslationGraph() {
   return graph.compile();
 }
 
-export async function translateCase(caseToTranslate: Case, language: Language) {
+export async function translateCase(
+  caseToTranslate: Case,
+  language: Language
+): Promise<Case> {
   if (language === "English") {
     return caseToTranslate;
   }

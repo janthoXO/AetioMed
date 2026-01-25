@@ -5,6 +5,7 @@ import z from "zod";
 import { CaseWithDraftIndexSchema } from "../models.js";
 import { CaseSchema } from "@/domain-models/Case.js";
 import { ICDCodeSchema } from "@/domain-models/ICD.js";
+import { AnamnesisCategorySchema } from "@/domain-models/Anamnesis.js";
 
 export const DraftStateSchema = z.object({
   case: CaseSchema.optional(),
@@ -20,6 +21,7 @@ export const DraftStateSchema = z.object({
   diagnosis: z.string(),
   context: z.string().optional(),
   generationFlags: z.array(GenerationFlagsSchema),
+  anamnesisCategories: z.array(AnamnesisCategorySchema),
   inconsistencies: z.array(InconsistencySchema),
 });
 

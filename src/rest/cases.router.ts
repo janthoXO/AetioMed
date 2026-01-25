@@ -10,6 +10,10 @@ import {
 } from "../dtos/CaseGenerationResponse.js";
 import { IcdToDiseaseName } from "@/services/diseases.service.js";
 import { AppError } from "@/errors/AppError.js";
+import {
+  translateAnamnesisCategoriesFromEnglish,
+  translateAnamnesisCategoriesToEnglish,
+} from "@/services/anamnesis.service.js";
 
 const router = express.Router();
 
@@ -110,5 +114,33 @@ router.post(
     }
   }
 );
+
+router.get("/anamnesis/translate", async (req, res) => {
+  const { categories, language } = req.body;
+
+  try {
+    const englishTranslation = await translateAnamnesisCategoriesToEnglish(
+      categories,
+      language
+    );
+
+    const backToForeign = await translateAnamnesisCategoriesFromEnglish(
+      Object.values(englishTranslation),
+      language
+    );
+
+    res
+      .status(200)
+      .json({ ToEnglish: englishTranslation, ToForeign: backToForeign });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({
+      error: {
+        code: "INTERNAL_SERVER_ERROR",
+        message: `Internal server error: ${error}`,
+      },
+    });
+  }
+});
 
 export default router;

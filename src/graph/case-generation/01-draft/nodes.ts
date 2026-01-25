@@ -61,7 +61,7 @@ export async function generateDraft(
 The case should include:
 ${descriptionPromptDraft(state.generationFlags)}
 
-Return your response in JSON:
+Return your response in JSON ${state.generationFlags.includes("anamnesis") ? "with the provided anamnesis categories" : ""}:
 ${CaseJsonExampleString(state.generationFlags)}
 ${
   state.case
@@ -78,8 +78,15 @@ Requirements:
 - After receiving symptom information (or if you don't need it), generate the complete case immediately
 - Return ONLY the JSON content, no additional text`;
 
-  const userPrompt = `Provided Diagnosis for patient case: ${state.diagnosis} ${state.icdCode ?? ""}
-${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
+  const userPrompt = [
+    `Provided Diagnosis for patient case: ${state.diagnosis} ${state.icdCode ?? ""}`,
+    state.context ? `Additional provided context: ${state.context}` : "",
+    state.generationFlags.includes("anamnesis")
+      ? `Provided anamnesis categories: ${state.anamnesisCategories.join(", ")}`
+      : "",
+  ]
+    .filter((s) => s.length > 0)
+    .join("\n");
 
   console.debug(
     `[Draft: GenerateDraft #${state.draftIndex}] Prompt:\n${systemPrompt}\n${userPrompt}`

@@ -1,0 +1,3430 @@
+{
+  "Hand discomfort, worsening at night": {
+    "procedures": [
+      {
+        "cui": "C0221592",
+        "name": "Wrist(s) and/or Hand(s)",
+        "description": null
+      }
+    ]
+  },
+  "Pain with supination of forearm against resistance": {
+    "procedures": [
+      {
+        "cui": "C0221590",
+        "name": "Shoulder(s)",
+        "description": null
+      }
+    ]
+  },
+  "Tender bicipital tendon in bicipital groove": {
+    "procedures": [
+      {
+        "cui": "C0221590",
+        "name": "Shoulder(s)",
+        "description": null
+      }
+    ]
+  },
+  "Shoulder pain, worse at night": {
+    "procedures": [
+      {
+        "cui": "C0221590",
+        "name": "Shoulder(s)",
+        "description": null
+      }
+    ]
+  },
+  "Pain with flexion of shoulder against resistance": {
+    "procedures": [
+      {
+        "cui": "C0221590",
+        "name": "Shoulder(s)",
+        "description": null
+      }
+    ]
+  },
+  "Painful shoulder on abduction and/or rotation": {
+    "procedures": [
+      {
+        "cui": "C0221590",
+        "name": "Shoulder(s)",
+        "description": null
+      }
+    ]
+  },
+  "RISUS SARDONICUS": {
+    "procedures": [
+      {
+        "cui": "C2237116",
+        "name": "assessment of facies",
+        "description": null
+      }
+    ]
+  },
+  "Muscle weakness: flexion and adduction of hip": {
+    "procedures": [
+      {
+        "cui": "C0150882",
+        "name": "Neurologic Examination: Legs",
+        "description": null
+      }
+    ]
+  },
+  "Muscle weakness: adduction of hip, extension of knee": {
+    "procedures": [
+      {
+        "cui": "C0150882",
+        "name": "Neurologic Examination: Legs",
+        "description": null
+      }
+    ]
+  },
+  "Muscle weakness: extension of knee, dorsiflexion and inversion of foot": {
+    "procedures": [
+      {
+        "cui": "C0150882",
+        "name": "Neurologic Examination: Legs",
+        "description": null
+      }
+    ]
+  },
+  "Tiredness": {
+    "procedures": [
+      {
+        "cui": "C0203779",
+        "name": "Thyroid imaging, NOS",
+        "description": null
+      },
+      {
+        "cui": "C1255794",
+        "name": "Nursing Assessment Entity",
+        "description": null
+      }
+    ]
+  },
+  "Joint or joint related complaint": {
+    "procedures": [
+      {
+        "cui": "C0151037",
+        "name": "Phalen's maneuver or Reverse Phalen's maneuver",
+        "description": null
+      },
+      {
+        "cui": "C0221595",
+        "name": "Ankle(s), Heel(s), and/or Midfoot(feet)",
+        "description": null
+      },
+      {
+        "cui": "C0221596",
+        "name": "Foot or Feet",
+        "description": null
+      },
+      {
+        "cui": "C0562271",
+        "name": "Knee(s)",
+        "description": null
+      },
+      {
+        "cui": "C0221590",
+        "name": "Shoulder(s)",
+        "description": null
+      },
+      {
+        "cui": "C0221592",
+        "name": "Wrist(s) and/or Hand(s)",
+        "description": null
+      }
+    ]
+  },
+  "Spine complaint": {
+    "procedures": [
+      {
+        "cui": "C0151309",
+        "name": "Positive straight leg raising or femoral nerve stretch test",
+        "description": null
+      }
+    ]
+  },
+  "Shoulder joint or periarticular pain": {
+    "procedures": [
+      {
+        "cui": "C0221590",
+        "name": "Shoulder(s)",
+        "description": null
+      }
+    ]
+  },
+  "Painful arc (pain in 60-120 degree abduction)": {
+    "procedures": [
+      {
+        "cui": "C0221590",
+        "name": "Shoulder(s)",
+        "description": null
+      }
+    ]
+  },
+  "Pain with restricted abduction and/or rotation": {
+    "procedures": [
+      {
+        "cui": "C0221590",
+        "name": "Shoulder(s)",
+        "description": null
+      }
+    ]
+  },
+  "Knee pain with climbing stairs": {
+    "procedures": [
+      {
+        "cui": "C0562271",
+        "name": "Knee(s)",
+        "description": null
+      }
+    ]
+  },
+  "LIVER TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Soreness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "ATYPICAL CHEST PAIN": {
+    "procedures": [
+      {
+        "cui": "C0018795",
+        "name": "Cardiac Catheterizations",
+        "description": "Procedures in which placement of CARDIAC CATHETERS is performed for therapeutic or diagnostic procedures."
+      },
+      {
+        "cui": "C0015260",
+        "name": "Exercise tests",
+        "description": "Controlled physical activity which is performed in order to allow assessment of physiological functions, particularly cardiovascular and pulmonary, but also aerobic capacity. Maximal (most intense) exercise is usually required but submaximal exercise is also used."
+      },
+      {
+        "cui": "C1455714",
+        "name": "EXERCISE THALLIUM",
+        "description": null
+      }
+    ]
+  },
+  "Sputum - symptom": {
+    "procedures": [
+      {
+        "cui": "C0430356",
+        "name": "Sputum examination",
+        "description": null
+      }
+    ]
+  },
+  "Splitting of heart sounds": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Cardiorespiratory murmur": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "ABDOMINAL BRUIT": {
+    "procedures": [
+      {
+        "cui": "C0947985",
+        "name": "Vascular auscultatory investigations",
+        "description": null
+      },
+      {
+        "cui": "C2089447",
+        "name": "abdomen auscultation",
+        "description": null
+      },
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "CHRONIC RLQ ABDOMINAL PAIN": {
+    "procedures": [
+      {
+        "cui": "C0031150",
+        "name": "Laparoscopy",
+        "description": "A procedure in which a laparoscope (LAPAROSCOPES) is inserted through a small incision near the navel to examine the abdominal and pelvic organs in the PERITONEAL CAVITY. If appropriate, biopsy or surgery can be performed during laparoscopy."
+      }
+    ]
+  },
+  "ENT PROBLEM": {
+    "procedures": [
+      {
+        "cui": "C0745656",
+        "name": "LARYNGEAL CANCER BIOPSY",
+        "description": null
+      },
+      {
+        "cui": "C0750294",
+        "name": "Vocal Cord Biopsy",
+        "description": null
+      },
+      {
+        "cui": "C0746758",
+        "name": "NASAL DIGITAL MANIPULATION",
+        "description": null
+      }
+    ]
+  },
+  "RENAL PROBLEM": {
+    "procedures": [
+      {
+        "cui": "C0203108",
+        "name": "Intravenous pyelogram, NOS",
+        "description": null
+      },
+      {
+        "cui": "C0202930",
+        "name": "Renal arteriography, NOS",
+        "description": null
+      },
+      {
+        "cui": "C0748264",
+        "name": "RENAL BIOPSY ELECTIVE",
+        "description": null
+      },
+      {
+        "cui": "C0194073",
+        "name": "Kidney biopsy, NOS",
+        "description": null
+      },
+      {
+        "cui": "C0748323",
+        "name": "RENAL NUCLEAR SCAN",
+        "description": null
+      },
+      {
+        "cui": "C0203408",
+        "name": "Echography of kidney, NOS",
+        "description": null
+      }
+    ]
+  },
+  "Sciatic stretch sign": {
+    "procedures": [
+      {
+        "cui": "C1288281",
+        "name": "Lasegue test",
+        "description": null
+      }
+    ]
+  },
+  "Spontaneous nystagmus": {
+    "procedures": [
+      {
+        "cui": "C0200207",
+        "name": "Spontaneous nystagmus test including gaze and fixation nystagmus with recording",
+        "description": null
+      },
+      {
+        "cui": "C0200206",
+        "name": "Spontaneous nystagmus test including gaze",
+        "description": null
+      },
+      {
+        "cui": "C2228120",
+        "name": "extraocular movement ENT evaluation of spontaneous nystagmus",
+        "description": null
+      }
+    ]
+  },
+  "FACIAL TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "BONE TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "JOINT TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tender scar": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "SKIN TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Pain in male genitalia": {
+    "procedures": [
+      {
+        "cui": "C0562236",
+        "name": "Male genital examination",
+        "description": null
+      }
+    ]
+  },
+  "Paresthesia, diffuse": {
+    "procedures": [
+      {
+        "cui": "C0027853",
+        "name": "Examination, Neurological",
+        "description": "Assessment of sensory and motor responses and reflexes that is used to determine impairment of the nervous system."
+      }
+    ]
+  },
+  "Postnasal drip": {
+    "procedures": [
+      {
+        "cui": "C2077310",
+        "name": "inspection of nasopharynx (physical finding)",
+        "description": null
+      }
+    ]
+  },
+  "Painful haematuria": {
+    "procedures": [
+      {
+        "cui": "C0202514",
+        "name": "Urinalysis, blood, qualitative",
+        "description": null
+      }
+    ]
+  },
+  "Painless haematuria": {
+    "procedures": [
+      {
+        "cui": "C0202514",
+        "name": "Urinalysis, blood, qualitative",
+        "description": null
+      }
+    ]
+  },
+  "Clot haematuria": {
+    "procedures": [
+      {
+        "cui": "C0202514",
+        "name": "Urinalysis, blood, qualitative",
+        "description": null
+      }
+    ]
+  },
+  "Chemical haematuria": {
+    "procedures": [
+      {
+        "cui": "C0202514",
+        "name": "Urinalysis, blood, qualitative",
+        "description": null
+      }
+    ]
+  },
+  "[D]Sputum abnormal - amount (context-dependent category)": {
+    "procedures": [
+      {
+        "cui": "C0430356",
+        "name": "Sputum examination",
+        "description": null
+      }
+    ]
+  },
+  "[D]Sputum abnormal - color (context-dependent category)": {
+    "procedures": [
+      {
+        "cui": "C0430356",
+        "name": "Sputum examination",
+        "description": null
+      }
+    ]
+  },
+  "[D]Sputum abnormal - odor (context-dependent category)": {
+    "procedures": [
+      {
+        "cui": "C0430356",
+        "name": "Sputum examination",
+        "description": null
+      }
+    ]
+  },
+  "Deficient urine secretion": {
+    "procedures": [
+      {
+        "cui": "C2711865",
+        "name": "Evaluation of urine specimen",
+        "description": null
+      }
+    ]
+  },
+  "[D]Suppressed urine secretion (context-dependent category)": {
+    "procedures": [
+      {
+        "cui": "C2711865",
+        "name": "Evaluation of urine specimen",
+        "description": null
+      }
+    ]
+  },
+  "Acute pain": {
+    "procedures": [
+      {
+        "cui": "C1255794",
+        "name": "Nursing Assessment Entity",
+        "description": null
+      }
+    ]
+  },
+  "Oth uns sym/sign,nrv/muscsk": {
+    "procedures": [
+      {
+        "cui": "C0576155",
+        "name": "Lachmans test positive",
+        "description": null
+      },
+      {
+        "cui": "C0576169",
+        "name": "Pivot shift test positive",
+        "description": null
+      }
+    ]
+  },
+  "Oth specif gen sympt/signs": {
+    "procedures": [
+      {
+        "cui": "C0575476",
+        "name": "Slump test positive",
+        "description": null
+      }
+    ]
+  },
+  "Generalized abdominal tenderness (finding)": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Abnormal cardiac rate, NOS": {
+    "procedures": [
+      {
+        "cui": "C0947983",
+        "name": "Heart rate and pulse investigations",
+        "description": null
+      }
+    ]
+  },
+  "Infertility/subfertility": {
+    "procedures": [
+      {
+        "cui": "C0037842",
+        "name": "Count, Sperm",
+        "description": "A count of SPERM in the ejaculum, expressed as number per milliliter."
+      }
+    ]
+  },
+  "COSTAL MARGIN TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0203464",
+        "name": "Ultrasonography of abdomen, NOS",
+        "description": null
+      },
+      {
+        "cui": "C2195214",
+        "name": "examination of back (physical finding)",
+        "description": null
+      },
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "scrotal tenderness": {
+    "procedures": [
+      {
+        "cui": "C2243079",
+        "name": "scrotal exam",
+        "description": null
+      }
+    ]
+  },
+  "precipitous drop in hematocrit": {
+    "procedures": [
+      {
+        "cui": "C0018935",
+        "name": "Hct",
+        "description": "The volume of packed RED BLOOD CELLS in a blood specimen. The volume is measured by centrifugation in a tube with graduated markings, or with automated blood cell counters. It is an indicator of erythrocyte status in disease. For example, ANEMIA shows a low value; POLYCYTHEMIA, a high value."
+      },
+      {
+        "cui": "C1443988",
+        "name": "Serial haematocrit determinations",
+        "description": null
+      },
+      {
+        "cui": "C0022885",
+        "name": "Laboratory test",
+        "description": null
+      }
+    ]
+  },
+  "LYMPH NODE TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0562297",
+        "name": "Examination of lymph nodes",
+        "description": null
+      },
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "NIPPLE TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "NOSE TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "RECTAL TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0199900",
+        "name": "Rectal examination, NOS",
+        "description": null
+      }
+    ]
+  },
+  "Cervical spinous process tenderness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Beau's lines": {
+    "procedures": [
+      {
+        "cui": "C0562290",
+        "name": "Examination of nail",
+        "description": null
+      }
+    ]
+  },
+  "CLUBBING OF NAILS": {
+    "procedures": [
+      {
+        "cui": "C0562290",
+        "name": "Examination of nail",
+        "description": null
+      }
+    ]
+  },
+  "Abdominal rigidity": {
+    "procedures": [
+      {
+        "cui": "C0030248",
+        "name": "Palpation of abdomen",
+        "description": null
+      }
+    ]
+  },
+  "Oliguria and anuria": {
+    "procedures": [
+      {
+        "cui": "C2711865",
+        "name": "Evaluation of urine specimen",
+        "description": null
+      }
+    ]
+  },
+  "CHEST DISCOMFORT": {
+    "procedures": [
+      {
+        "cui": "C0018795",
+        "name": "Cardiac Catheterizations",
+        "description": "Procedures in which placement of CARDIAC CATHETERS is performed for therapeutic or diagnostic procedures."
+      }
+    ]
+  },
+  "Body temperature, increased": {
+    "procedures": [
+      {
+        "cui": "C0430404",
+        "name": "Urine for culture (context-dependent category)",
+        "description": null
+      },
+      {
+        "cui": "C0746860",
+        "name": "NEUROLOGIC EXAM FOCAL",
+        "description": null
+      }
+    ]
+  },
+  "SWALLOWING IMPAIRED": {
+    "procedures": [
+      {
+        "cui": "C1255794",
+        "name": "Nursing Assessment Entity",
+        "description": null
+      },
+      {
+        "cui": "C4062839",
+        "name": "Abnormal oral phase of swallow study",
+        "description": null
+      },
+      {
+        "cui": "C4062824",
+        "name": "Abnormal pharyngeal phase of swallow study",
+        "description": null
+      }
+    ]
+  },
+  "Audible crepitus of joint": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "SIGNS, SYMPTOMS AND MANEUVERS RELATED TO THE CERVICAL SPINE": {
+    "procedures": [
+      {
+        "cui": "C0231598",
+        "name": "Adson's maneuver",
+        "description": null
+      },
+      {
+        "cui": "C0231602",
+        "name": "Chin to chest distance",
+        "description": null
+      },
+      {
+        "cui": "C0231604",
+        "name": "Costoclavicular maneuver",
+        "description": null
+      },
+      {
+        "cui": "C0231601",
+        "name": "Cervical spine distraction test",
+        "description": null
+      },
+      {
+        "cui": "C0231600",
+        "name": "Modified Adson's test",
+        "description": null
+      },
+      {
+        "cui": "C0231606",
+        "name": "Shoulder depression test",
+        "description": null
+      },
+      {
+        "cui": "C0231609",
+        "name": "Spurling maneuver",
+        "description": null
+      }
+    ]
+  },
+  "SIGNS, SYMPTOMS AND MANEUVERS RELATED TO THE THORACIC SPINE": {
+    "procedures": [
+      {
+        "cui": "C0231628",
+        "name": "Bowstring test",
+        "description": null
+      },
+      {
+        "cui": "C0231622",
+        "name": "Contralateral straight raising test",
+        "description": null
+      },
+      {
+        "cui": "C0231630",
+        "name": "Ely's test",
+        "description": null
+      },
+      {
+        "cui": "C0231631",
+        "name": "Fajersztajn test",
+        "description": null
+      },
+      {
+        "cui": "C0231632",
+        "name": "Milgram test",
+        "description": null
+      },
+      {
+        "cui": "C0430750",
+        "name": "Modified Schober test",
+        "description": null
+      },
+      {
+        "cui": "C0231636",
+        "name": "Flip test",
+        "description": null
+      },
+      {
+        "cui": "C1288281",
+        "name": "Lasegue test",
+        "description": null
+      }
+    ]
+  },
+  "Bragard's sign": {
+    "procedures": [
+      {
+        "cui": "C2110364",
+        "name": "Bragard's sign of knee (physical finding)",
+        "description": null
+      },
+      {
+        "cui": "C2110366",
+        "name": "Bragard's sign of right knee (physical finding)",
+        "description": null
+      },
+      {
+        "cui": "C2110365",
+        "name": "Bragard's sign of left knee",
+        "description": null
+      }
+    ]
+  },
+  "Gaenslen's sign": {
+    "procedures": [
+      {
+        "cui": "C2176928",
+        "name": "sacroiliac Gaenslen's sign for joint dysfunction (physical finding)",
+        "description": null
+      },
+      {
+        "cui": "C2176929",
+        "name": "sacroiliac Gaenslen's sign right side",
+        "description": null
+      },
+      {
+        "cui": "C2176930",
+        "name": "sacroiliac Gaenslen's sign left side",
+        "description": null
+      }
+    ]
+  },
+  "SIGNS, SYMPTOMS AND MANEUVERS RELATED TO THE ELBOW": {
+    "procedures": [
+      {
+        "cui": "C0231660",
+        "name": "Elbow flexion test",
+        "description": null
+      },
+      {
+        "cui": "C0231662",
+        "name": "Tennis elbow test",
+        "description": null
+      }
+    ]
+  },
+  "Retropulsion": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  },
+  "ATAXIC GAIT": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  },
+  "Double step gait": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  },
+  "Drag-to gait": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  },
+  "Swing-through gait": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  },
+  "Oppenheim's gait": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  },
+  "Circling": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  },
+  "SIGNS, SYMPTOMS AND MANEUVERS RELATED TO THE HIP AND PELVIS": {
+    "procedures": [
+      {
+        "cui": "C4721409",
+        "name": "Barlow's maneuver",
+        "description": null
+      },
+      {
+        "cui": "C0231714",
+        "name": "Erichsen's test",
+        "description": null
+      },
+      {
+        "cui": "C0231720",
+        "name": "Iliac compression test",
+        "description": null
+      },
+      {
+        "cui": "C0231721",
+        "name": "Ober's test",
+        "description": null
+      },
+      {
+        "cui": "C0231723",
+        "name": "ORTOLANI",
+        "description": null
+      },
+      {
+        "cui": "C0231724",
+        "name": "Fabere test",
+        "description": null
+      },
+      {
+        "cui": "C0231731",
+        "name": "Trendelenburg test",
+        "description": null
+      }
+    ]
+  },
+  "Hoover's sign": {
+    "procedures": [
+      {
+        "cui": "C2046978",
+        "name": "lumbosacral spine Hoover test left leg",
+        "description": null
+      },
+      {
+        "cui": "C2046979",
+        "name": "lumbosacral spine Hoover test right leg",
+        "description": null
+      }
+    ]
+  },
+  "SIGNS, SYMPTOMS AND MANEUVERS RELATED TO THE KNEE": {
+    "procedures": [
+      {
+        "cui": "C0231733",
+        "name": "Abduction stress test",
+        "description": null
+      },
+      {
+        "cui": "C0231734",
+        "name": "Adduction stress test",
+        "description": null
+      },
+      {
+        "cui": "C0231743",
+        "name": "Bounce home test",
+        "description": null
+      },
+      {
+        "cui": "C0231735",
+        "name": "Drawer test",
+        "description": null
+      },
+      {
+        "cui": "C0231747",
+        "name": "External rotation recurvatum test",
+        "description": null
+      },
+      {
+        "cui": "C0231751",
+        "name": "Jerk test",
+        "description": null
+      },
+      {
+        "cui": "C0231754",
+        "name": "Losee's test",
+        "description": null
+      },
+      {
+        "cui": "C0231761",
+        "name": "Screw home motion test",
+        "description": null
+      },
+      {
+        "cui": "C0231763",
+        "name": "Slocum's test",
+        "description": null
+      },
+      {
+        "cui": "C0231764",
+        "name": "Steinman test",
+        "description": null
+      }
+    ]
+  },
+  "KNEE PAIN": {
+    "procedures": [
+      {
+        "cui": "C0344440",
+        "name": "Hemoglobin electrophoresis",
+        "description": null
+      }
+    ]
+  },
+  "SIGNS, SYMPTOMS AND MANEUVERS RELATED TO THE FOOT AND ANKLE": {
+    "procedures": [
+      {
+        "cui": "C0231771",
+        "name": "Ankle dorsiflexion test",
+        "description": null
+      },
+      {
+        "cui": "C0231778",
+        "name": "Forefoot adduction correction test",
+        "description": null
+      },
+      {
+        "cui": "C0231782",
+        "name": "Metatarsal compression test",
+        "description": null
+      },
+      {
+        "cui": "C0231790",
+        "name": "Simmonds' test",
+        "description": null
+      }
+    ]
+  },
+  "Anterior draw sign": {
+    "procedures": [
+      {
+        "cui": "C2088027",
+        "name": "anterior drawer sign of ankle",
+        "description": null
+      },
+      {
+        "cui": "C2071026",
+        "name": "anterior drawer sign of left knee",
+        "description": null
+      }
+    ]
+  },
+  "Talar tilt": {
+    "procedures": [
+      {
+        "cui": "C2177340",
+        "name": "talar tilt test of right ankle",
+        "description": null
+      },
+      {
+        "cui": "C2139390",
+        "name": "talar tilt test of left ankle",
+        "description": null
+      },
+      {
+        "cui": "C2139392",
+        "name": "talar tilt test of left ankle in adduction",
+        "description": null
+      },
+      {
+        "cui": "C2177343",
+        "name": "talar tilt test of both ankles (physical finding)",
+        "description": null
+      },
+      {
+        "cui": "C2177344",
+        "name": "a talar tilt test of both ankles in adduction was positive",
+        "description": null
+      },
+      {
+        "cui": "C2177345",
+        "name": "a talar tilt test of both ankles in abduction was positive",
+        "description": null
+      },
+      {
+        "cui": "C2054185",
+        "name": "talar tilt test (physical finding)",
+        "description": null
+      }
+    ]
+  },
+  "Calcaneal gait": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  },
+  "Homans' sign": {
+    "procedures": [
+      {
+        "cui": "C0508564",
+        "name": "Homans' sign",
+        "description": null
+      }
+    ]
+  },
+  "Breath sounds, vesicular": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Harsh breath sounds": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Rhonchi, sibilant": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Rhonchi, sonorous": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Medium rales": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Whispered pectoriloquy": {
+    "procedures": [
+      {
+        "cui": "C2230255",
+        "name": "auscultation of lungs (physical finding)",
+        "description": null
+      },
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Atelectatic rales": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Coin sign": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Superficial crackling rales": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Hyperresonance": {
+    "procedures": [
+      {
+        "cui": "C0030987",
+        "name": "Percussion",
+        "description": "A listening of the sounds produced in response to tapping the body surface"
+      }
+    ]
+  },
+  "CHEST PERCUSSION DULLNESS": {
+    "procedures": [
+      {
+        "cui": "C0030987",
+        "name": "Percussion",
+        "description": "A listening of the sounds produced in response to tapping the body surface"
+      }
+    ]
+  },
+  "Fremitus": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Fremitus, pleural friction": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Fremitus, rhonchal": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "NASAL FLARING": {
+    "procedures": [
+      {
+        "cui": "C2226686",
+        "name": "examination of upper airway (physical finding)",
+        "description": null
+      }
+    ]
+  },
+  "O/E - cardiac thrill": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Non-ejection systolic click, single": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Multiple non-ejection systolic clicks": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Cardiac murmur intensity, grade I": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Cardiac murmur intensity, grade II": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Cardiac murmur intensity, grade III": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Cardiac murmur intensity, grade V": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Cardiac murmur intensity, grade VI": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Heart murmur, organic": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Diastolic rumble": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Heart murmur configuration, NOS": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Heart murmur configuration, crescendo-decrescendo": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Heart murmur configuration, plateau": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Bruit de diable": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Orbital bruit": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Scalp tenderness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Circumoral rhytides": {
+    "procedures": [
+      {
+        "cui": "C2053432",
+        "name": "examination of perioral region",
+        "description": null
+      }
+    ]
+  },
+  "ABDOMINAL TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030248",
+        "name": "Palpation of abdomen",
+        "description": null
+      },
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Abdominal rebound pain": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Umbilical discharge": {
+    "procedures": [
+      {
+        "cui": "C2230326",
+        "name": "inspection of abdomen",
+        "description": null
+      }
+    ]
+  },
+  "GINGIVAL PAIN": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Expectoration of rusty sputum": {
+    "procedures": [
+      {
+        "cui": "C0430356",
+        "name": "Sputum examination",
+        "description": null
+      }
+    ]
+  },
+  "EXPECTORATION, FROTHY": {
+    "procedures": [
+      {
+        "cui": "C0430356",
+        "name": "Sputum examination",
+        "description": null
+      }
+    ]
+  },
+  "Expectoration of mucoid sputum": {
+    "procedures": [
+      {
+        "cui": "C0430356",
+        "name": "Sputum examination",
+        "description": null
+      }
+    ]
+  },
+  "SPUTUM, PURULENT": {
+    "procedures": [
+      {
+        "cui": "C0430356",
+        "name": "Sputum examination",
+        "description": null
+      }
+    ]
+  },
+  "PNEUMATURIA": {
+    "procedures": [
+      {
+        "cui": "C2711865",
+        "name": "Evaluation of urine specimen",
+        "description": null
+      }
+    ]
+  },
+  "CULLEN SIGN": {
+    "procedures": [
+      {
+        "cui": "C2230326",
+        "name": "inspection of abdomen",
+        "description": null
+      }
+    ]
+  },
+  "Pain and tenderness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Vomiting, persistent": {
+    "procedures": [
+      {
+        "cui": "C0430377",
+        "name": "Urine dipstick for ketones",
+        "description": null
+      }
+    ]
+  },
+  "MISCELLANEOUS CNS SIGNS AND SYMPTOMS": {
+    "procedures": [
+      {
+        "cui": "C0278206",
+        "name": "Queckenstedt's test",
+        "description": "Measurement of CSF pressure following compression of jugular vein"
+      }
+    ]
+  },
+  "Empty delta sign": {
+    "procedures": [
+      {
+        "cui": "C0542435",
+        "name": "Diagnostic radiologic examination with contrast media",
+        "description": null
+      },
+      {
+        "cui": "C1962945",
+        "name": "Radiography",
+        "description": "Examination of any part of the body for diagnostic purposes by means of X-RAYS or GAMMA RAYS, recording the image on a sensitized surface (such as photographic film)."
+      }
+    ]
+  },
+  "Retinal sign, NOS": {
+    "procedures": [
+      {
+        "cui": "C2225205",
+        "name": "dynamic retinoscopy Bell retinoscopy",
+        "description": null
+      }
+    ]
+  },
+  "Swelling round eyes": {
+    "procedures": [
+      {
+        "cui": "C2089883",
+        "name": "examination of anterior orbit and periorbital regions (physical finding)",
+        "description": null
+      }
+    ]
+  },
+  "Amphoric breath sounds": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Atrial septal defect murmur": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "ECG signs of myocardial ischaemia": {
+    "procedures": [
+      {
+        "cui": "C0947984",
+        "name": "Electrocardiogram investigations",
+        "description": null
+      }
+    ]
+  },
+  "Tenderness of tendon": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Skeletal muscle tender": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Lasegue test positive (finding)": {
+    "procedures": [
+      {
+        "cui": "C0852602",
+        "name": "Neurologic diagnostic procedures",
+        "description": null
+      }
+    ]
+  },
+  "Lasegue test negative (finding)": {
+    "procedures": [
+      {
+        "cui": "C0852602",
+        "name": "Neurologic diagnostic procedures",
+        "description": null
+      }
+    ]
+  },
+  "Infrapatellar tenderness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "CUSHINGOID FACIES": {
+    "procedures": [
+      {
+        "cui": "C2237116",
+        "name": "assessment of facies",
+        "description": null
+      }
+    ]
+  },
+  "Elfin facies": {
+    "procedures": [
+      {
+        "cui": "C2237116",
+        "name": "assessment of facies",
+        "description": null
+      }
+    ]
+  },
+  "Pinna tender": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "General tenderness in pinna": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Focal tenderness in pinna": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "VAS DEFERENS TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "PROSTATE TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0919654",
+        "name": "examination of prostate (physical finding)",
+        "description": null
+      },
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "SPLEEN TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Mass of ear structure": {
+    "procedures": [
+      {
+        "cui": "C0522787",
+        "name": "Middle ear mass visible on otoscopy",
+        "description": null
+      }
+    ]
+  },
+  "Quadriceps muscle weakness": {
+    "procedures": [
+      {
+        "cui": "C2070252",
+        "name": "motor strength of knee (physical finding)",
+        "description": null
+      }
+    ]
+  },
+  "Tenderness of body structure": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of eye structure": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of ear structure": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of resp struct": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of cardiovas struct": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of lymphoret struct": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of oral cav struct": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of digestive struct": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Genitourinary tenderness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Urinary tract tenderness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of male genitalia": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of female genitalia": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of endocr struct": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Musculoskeletal tenderness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of body region": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of head and neck region": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of truncal struct": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of epigastrium": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness R hypochondrium": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness L hypochondrium": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of central region": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of right lumbar": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of left lumbar": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of hypogastrium": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "RIF - Tenderness R iliac fossa": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "LIF - Tenderness L iliac fossa": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Rebound tenderness epigastrium": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Rebound tendern centr region": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Rebound tendern R lumbar": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Rebound tenderness L lumbar": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Rebound tendern hypogastrium": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "RIF-Rebnd tendern R iliac foss": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "LIF-Rebnd tendern L iliac foss": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "EXTREMITY TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "UPPER EXTREMITY TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness in lower limb": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Postproc obs of tenderness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Premenstrual breast tenderness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of thyroid": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tender heel pad": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Wound tenderness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Dark stool": {
+    "procedures": [
+      {
+        "cui": "C0022885",
+        "name": "Laboratory test",
+        "description": null
+      }
+    ]
+  },
+  "Froment's sign": {
+    "procedures": [
+      {
+        "cui": "C2008837",
+        "name": "wrist neurological dysfunction Froment's sign right",
+        "description": null
+      },
+      {
+        "cui": "C2008836",
+        "name": "wrist neurological dysfunction Froment's sign left",
+        "description": null
+      },
+      {
+        "cui": "C2243022",
+        "name": "Adductor pollicis test",
+        "description": null
+      }
+    ]
+  },
+  "oral temperature recorded at home, in degrees F": {
+    "procedures": [
+      {
+        "cui": "C0204689",
+        "name": "Oral temperature taking",
+        "description": null
+      }
+    ]
+  },
+  "head shape": {
+    "procedures": [
+      {
+        "cui": "C2226687",
+        "name": "examination of face (physical finding)",
+        "description": null
+      }
+    ]
+  },
+  "Parents' Evaluation of Developmental Status (pediatric screen)": {
+    "procedures": [
+      {
+        "cui": "C2041469",
+        "name": "psychometric developmental tests",
+        "description": null
+      }
+    ]
+  },
+  "weakness in right index finger (symptom)": {
+    "procedures": [
+      {
+        "cui": "C0562247",
+        "name": "Examination of index finger",
+        "description": null
+      }
+    ]
+  },
+  "weakness in right middle finger (symptom)": {
+    "procedures": [
+      {
+        "cui": "C0562248",
+        "name": "Examination of middle finger",
+        "description": null
+      }
+    ]
+  },
+  "weakness in right ring finger": {
+    "procedures": [
+      {
+        "cui": "C0562249",
+        "name": "Examination of ring finger",
+        "description": null
+      }
+    ]
+  },
+  "weakness in right little finger (symptom)": {
+    "procedures": [
+      {
+        "cui": "C0562250",
+        "name": "Examination of little finger",
+        "description": null
+      }
+    ]
+  },
+  "weakness in left index finger (symptom)": {
+    "procedures": [
+      {
+        "cui": "C0562247",
+        "name": "Examination of index finger",
+        "description": null
+      }
+    ]
+  },
+  "weakness in left middle finger": {
+    "procedures": [
+      {
+        "cui": "C0562248",
+        "name": "Examination of middle finger",
+        "description": null
+      }
+    ]
+  },
+  "weakness in left ring finger (symptom)": {
+    "procedures": [
+      {
+        "cui": "C0562249",
+        "name": "Examination of ring finger",
+        "description": null
+      }
+    ]
+  },
+  "weakness in left little finger (symptom)": {
+    "procedures": [
+      {
+        "cui": "C0562250",
+        "name": "Examination of little finger",
+        "description": null
+      }
+    ]
+  },
+  "weakness in both wrists (symptom)": {
+    "procedures": [
+      {
+        "cui": "C2070210",
+        "name": "motor strength of wrists (physical finding)",
+        "description": null
+      }
+    ]
+  },
+  "bilateral shoulder weakness": {
+    "procedures": [
+      {
+        "cui": "C2070180",
+        "name": "motor strength of shoulders",
+        "description": null
+      }
+    ]
+  },
+  "rectal temperature recorded at home, in degrees F": {
+    "procedures": [
+      {
+        "cui": "C0204690",
+        "name": "Rectal temperature taking",
+        "description": null
+      }
+    ]
+  },
+  "tympanic home temperature (symptom)": {
+    "procedures": [
+      {
+        "cui": "C3164811",
+        "name": "Measurement of temperature using tympanic thermometer (procedure)",
+        "description": null
+      }
+    ]
+  },
+  "ABDOMINAL TENDERNESS, LEFT LOWER QUADRANT": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "sweater finger sign was observed": {
+    "procedures": [
+      {
+        "cui": "C2178471",
+        "name": "finger tests for instability",
+        "description": null
+      }
+    ]
+  },
+  "Linberg's sign of finger of right hand (physical finding)": {
+    "procedures": [
+      {
+        "cui": "C2178567",
+        "name": "Linberg's sign was observed",
+        "description": null
+      }
+    ]
+  },
+  "Linberg's sign of finger of left hand": {
+    "procedures": [
+      {
+        "cui": "C2178567",
+        "name": "Linberg's sign was observed",
+        "description": null
+      }
+    ]
+  },
+  "Linberg's sign was observed in both hands": {
+    "procedures": [
+      {
+        "cui": "C2178567",
+        "name": "Linberg's sign was observed",
+        "description": null
+      }
+    ]
+  },
+  "Egawa's sign in both wrists": {
+    "procedures": [
+      {
+        "cui": "C1293106",
+        "name": "Hand maneuver (procedure)",
+        "description": null
+      }
+    ]
+  },
+  "Abnormal finding on evaluation procedure (finding)": {
+    "procedures": [
+      {
+        "cui": "C3650057",
+        "name": "body fluid analysis showed nonspecific abnormal findings",
+        "description": null
+      }
+    ]
+  },
+  "Motile microorganism (finding)": {
+    "procedures": [
+      {
+        "cui": "C0201074",
+        "name": "Motility test",
+        "description": null
+      }
+    ]
+  },
+  "Other symptoms and signs involving the musculoskeletal system": {
+    "procedures": [
+      {
+        "cui": "C0575263",
+        "name": "Cervical spine stress test pos",
+        "description": null
+      },
+      {
+        "cui": "C0576159",
+        "name": "Posterior drawer test positive",
+        "description": null
+      },
+      {
+        "cui": "C0576171",
+        "name": "Pivot shift test - instability",
+        "description": null
+      },
+      {
+        "cui": "C0576155",
+        "name": "Lachmans test positive",
+        "description": null
+      },
+      {
+        "cui": "C0576161",
+        "name": "Patellar compression test pos",
+        "description": null
+      },
+      {
+        "cui": "C0576151",
+        "name": "Patellar tap present",
+        "description": null
+      },
+      {
+        "cui": "C0576165",
+        "name": "Stroke test positive",
+        "description": null
+      },
+      {
+        "cui": "C0576172",
+        "name": "Dynamic extension test pos",
+        "description": null
+      },
+      {
+        "cui": "C0576169",
+        "name": "Pivot shift test positive",
+        "description": null
+      },
+      {
+        "cui": "C0576153",
+        "name": "McMurray test positive",
+        "description": null
+      },
+      {
+        "cui": "C0576163",
+        "name": "Knee squat test positive",
+        "description": null
+      },
+      {
+        "cui": "C0575476",
+        "name": "Slump test positive",
+        "description": null
+      }
+    ]
+  },
+  "Synchronizations, Electroencephalography Phase": {
+    "procedures": [
+      {
+        "cui": "C0010114",
+        "name": "Cortical Synchronization",
+        "description": "EEG phase synchronization of the cortical brain region (CEREBRAL CORTEX)."
+      },
+      {
+        "cui": "C0013819",
+        "name": "EEG",
+        "description": "Recording of electric currents developed in the brain by means of electrodes applied to the scalp, to the surface of the brain, or placed within the substance of the brain."
+      }
+    ]
+  },
+  "Tenderness of right upper quadrant of abdomen (finding)": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of left upper quadrant of abdomen (finding)": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of right lower quadrant of abdomen": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "VULVAR TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "UTERINE TENDERNESS": {
+    "procedures": [
+      {
+        "cui": "C0869889",
+        "name": "uterine exam",
+        "description": null
+      },
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Prodromal Symptom": {
+    "procedures": [
+      {
+        "cui": "C0011900",
+        "name": "Diagnoses",
+        "description": "The determination of the nature of a disease or condition, or the distinguishing of one disease or condition from another. Assessment may be made through physical examination, laboratory tests, or the likes. Computerized programs may be used to enhance the decision-making process."
+      }
+    ]
+  },
+  "Anoxemia": {
+    "procedures": [
+      {
+        "cui": "C0202155",
+        "name": "arterial pO2",
+        "description": null
+      },
+      {
+        "cui": "C0428171",
+        "name": "mixed venous pO2",
+        "description": null
+      }
+    ]
+  },
+  "Dizziness": {
+    "procedures": [
+      {
+        "cui": "C4076400",
+        "name": "Assessment of dizziness",
+        "description": null
+      }
+    ]
+  },
+  "Icterus": {
+    "procedures": [
+      {
+        "cui": "C0193388",
+        "name": "Biopsy of liver, NOS",
+        "description": null
+      },
+      {
+        "cui": "C0201916",
+        "name": "Bilirubin, direct measurement",
+        "description": null
+      },
+      {
+        "cui": "C1278039",
+        "name": "serum total bilirubin",
+        "description": null
+      },
+      {
+        "cui": "C0036808",
+        "name": "serum indirect bilirubin",
+        "description": null
+      },
+      {
+        "cui": "C1829782",
+        "name": "Icteric Index",
+        "description": null
+      }
+    ]
+  },
+  "Muscle Spasticity": {
+    "procedures": [
+      {
+        "cui": "C2243075",
+        "name": "muscle tone testing",
+        "description": null
+      }
+    ]
+  },
+  "Urine volume, increased": {
+    "procedures": [
+      {
+        "cui": "C2711865",
+        "name": "Evaluation of urine specimen",
+        "description": null
+      }
+    ]
+  },
+  "Vertigo": {
+    "procedures": [
+      {
+        "cui": "C0202691",
+        "name": "Computerized axial tomography of head",
+        "description": null
+      }
+    ]
+  },
+  "Abdominal Pain": {
+    "procedures": [
+      {
+        "cui": "C0750396",
+        "name": "WBC MICROSCOPIC EXAM",
+        "description": null
+      }
+    ]
+  },
+  "Back Pain, Low": {
+    "procedures": [
+      {
+        "cui": "C0040405",
+        "name": "CAT Scans, X-Ray",
+        "description": "Tomography using x-ray transmission and a computer algorithm to reconstruct the image."
+      },
+      {
+        "cui": "C0026995",
+        "name": "Myelographies",
+        "description": "X-ray visualization of the spinal cord following injection of contrast medium into the spinal arachnoid space."
+      }
+    ]
+  },
+  "HYPEROXIA": {
+    "procedures": [
+      {
+        "cui": "C0202155",
+        "name": "arterial pO2",
+        "description": null
+      }
+    ]
+  },
+  "Cervicalgia": {
+    "procedures": [
+      {
+        "cui": "C0018795",
+        "name": "Cardiac Catheterizations",
+        "description": "Procedures in which placement of CARDIAC CATHETERS is performed for therapeutic or diagnostic procedures."
+      }
+    ]
+  },
+  "Headache": {
+    "procedures": [
+      {
+        "cui": "C0740294",
+        "name": "Biopsy of Brain",
+        "description": null
+      },
+      {
+        "cui": "C0746860",
+        "name": "NEUROLOGIC EXAM FOCAL",
+        "description": null
+      },
+      {
+        "cui": "C0302357",
+        "name": "VER",
+        "description": null
+      },
+      {
+        "cui": "C5968158",
+        "name": "Assessment of headache (procedure)",
+        "description": null
+      }
+    ]
+  },
+  "Headache following lumbar puncture": {
+    "procedures": [
+      {
+        "cui": "C0553794",
+        "name": "Lumbar Punctures",
+        "description": "Tapping fluid from the subarachnoid space in the lumbar region, usually between the third and fourth lumbar vertebrae."
+      }
+    ]
+  },
+  "Neck stiffness": {
+    "procedures": [
+      {
+        "cui": "C0027853",
+        "name": "Examination, Neurological",
+        "description": "Assessment of sensory and motor responses and reflexes that is used to determine impairment of the nervous system."
+      }
+    ]
+  },
+  "INVOLUNTARY MOVEMENT (NOS)": {
+    "procedures": [
+      {
+        "cui": "C2237216",
+        "name": "motor exam (physical finding)",
+        "description": null
+      }
+    ]
+  },
+  "Abdomen, Acute": {
+    "procedures": [
+      {
+        "cui": "C2367452",
+        "name": "x-ray series for acute abdomen (procedure)",
+        "description": null
+      }
+    ]
+  },
+  "Functional gait abnormality": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  },
+  "Floating patella": {
+    "procedures": [
+      {
+        "cui": "C0576152",
+        "name": "Patellar tap absent",
+        "description": null
+      },
+      {
+        "cui": "C0576151",
+        "name": "Patellar tap present",
+        "description": null
+      }
+    ]
+  },
+  "Gastric tympany": {
+    "procedures": [
+      {
+        "cui": "C0030987",
+        "name": "Percussion",
+        "description": "A listening of the sounds produced in response to tapping the body surface"
+      }
+    ]
+  },
+  "NEUROLOGIC SYMPTOMS": {
+    "procedures": [
+      {
+        "cui": "C0151307",
+        "name": "Extension and abduction of hip; flexion of knee; dorsiflexion foot, especially hallux",
+        "description": null
+      },
+      {
+        "cui": "C0151308",
+        "name": "Flexion of knee, plantar flexion and eversion of foot",
+        "description": null
+      }
+    ]
+  },
+  "Pain": {
+    "procedures": [
+      {
+        "cui": "C1255794",
+        "name": "Nursing Assessment Entity",
+        "description": null
+      },
+      {
+        "cui": "C0030198",
+        "name": "Analgesia Test",
+        "description": "Scales, questionnaires, tests, and other methods used to assess pain severity and duration in patients or experimental animals to aid in diagnosis, therapy, and physiological studies."
+      }
+    ]
+  },
+  "Muscle Rigidity": {
+    "procedures": [
+      {
+        "cui": "C2243075",
+        "name": "muscle tone testing",
+        "description": null
+      }
+    ]
+  },
+  "Weakness": {
+    "procedures": [
+      {
+        "cui": "C0203779",
+        "name": "Thyroid imaging, NOS",
+        "description": null
+      }
+    ]
+  },
+  "Seizure": {
+    "procedures": [
+      {
+        "cui": "C0026995",
+        "name": "Myelographies",
+        "description": "X-ray visualization of the spinal cord following injection of contrast medium into the spinal arachnoid space."
+      }
+    ]
+  },
+  "Tenderness of right temporomandibular joint (finding)": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of left temporomandibular joint (finding)": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of bilateral temporomandibular joints": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of anatomical snuffbox (finding)": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Pain in epigastric region on palpation (finding)": {
+    "procedures": [
+      {
+        "cui": "C0030248",
+        "name": "Palpation of abdomen",
+        "description": null
+      }
+    ]
+  },
+  "Pain in abdominal region on palpation": {
+    "procedures": [
+      {
+        "cui": "C0030248",
+        "name": "Palpation of abdomen",
+        "description": null
+      }
+    ]
+  },
+  "motor strength spine weakness": {
+    "procedures": [
+      {
+        "cui": "C2228462",
+        "name": "motor strength reduced",
+        "description": null
+      }
+    ]
+  },
+  "Pain in lumbar region on palpation (finding)": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Pain on tooth palpation": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of left lumbar region of back (finding)": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Tenderness of right lumbar region of back": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "GLANDS SWOLLEN": {
+    "procedures": [
+      {
+        "cui": "C0562297",
+        "name": "Examination of lymph nodes",
+        "description": null
+      }
+    ]
+  },
+  "Tenderness of right lumbar region of abdomen": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "BACK MUSCLE SPASM": {
+    "procedures": [
+      {
+        "cui": "C2195214",
+        "name": "examination of back (physical finding)",
+        "description": null
+      }
+    ]
+  },
+  "Tenderness of left abdominal lumbar region (finding)": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "rebound tenderness of left lower quadrant": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "RLQ rebound tenderness": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "abdomen tenderness rebound RUQ": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "abdomen tenderness rebound LUQ": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Lemon and banana signs": {
+    "procedures": [
+      {
+        "cui": "C0033053",
+        "name": "Antenatal Diagnoses",
+        "description": "Determination of the nature of a pathological condition or disease in the postimplantation EMBRYO; FETUS; or pregnant female before birth."
+      }
+    ]
+  },
+  "SIGNS, SYMPTOMS AND MANEUVERS RELATED TO THE HAND AND WRIST": {
+    "procedures": [
+      {
+        "cui": "C0231664",
+        "name": "Allen's test",
+        "description": null
+      },
+      {
+        "cui": "C0231671",
+        "name": "Bunnell-Littler test",
+        "description": null
+      },
+      {
+        "cui": "C0231672",
+        "name": "Reverse intrinsic-plus test",
+        "description": null
+      },
+      {
+        "cui": "C0231676",
+        "name": "Schamroth test",
+        "description": null
+      },
+      {
+        "cui": "C0277841",
+        "name": "Paper-pulling test",
+        "description": null
+      }
+    ]
+  },
+  "Horizontal splitting of nail plate": {
+    "procedures": [
+      {
+        "cui": "C0562290",
+        "name": "Examination of nail",
+        "description": null
+      }
+    ]
+  },
+  "Neck pain co-occurrent with tenderness of neck following whiplash injury to neck": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "tenderness of left testis": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "tender right testis": {
+    "procedures": [
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "O/E - right eye background diabetic retinopathy (disorder)": {
+    "procedures": [
+      {
+        "cui": "C3241977",
+        "name": "Examination of retina",
+        "description": null
+      }
+    ]
+  },
+  "O/E - left eye background diabetic retinopathy (disorder)": {
+    "procedures": [
+      {
+        "cui": "C3241977",
+        "name": "Examination of retina",
+        "description": null
+      }
+    ]
+  },
+  "O/E - right eye preproliferative diabetic retinopathy (disorder)": {
+    "procedures": [
+      {
+        "cui": "C3241977",
+        "name": "Examination of retina",
+        "description": null
+      }
+    ]
+  },
+  "O/E - left eye preproliferative diabetic retinopathy (disorder)": {
+    "procedures": [
+      {
+        "cui": "C3241977",
+        "name": "Examination of retina",
+        "description": null
+      }
+    ]
+  },
+  "O/E - right eye proliferative diabetic retinopathy (disorder)": {
+    "procedures": [
+      {
+        "cui": "C3241977",
+        "name": "Examination of retina",
+        "description": null
+      }
+    ]
+  },
+  "O/E - left eye proliferative diabetic retinopathy (disorder)": {
+    "procedures": [
+      {
+        "cui": "C3241977",
+        "name": "Examination of retina",
+        "description": null
+      }
+    ]
+  },
+  "Hemoptyses": {
+    "procedures": [
+      {
+        "cui": "C0742263",
+        "name": "CHEST CT SCAN DYNAMIC",
+        "description": null
+      }
+    ]
+  },
+  "Constipation": {
+    "procedures": [
+      {
+        "cui": "C1255794",
+        "name": "Nursing Assessment Entity",
+        "description": null
+      }
+    ]
+  },
+  "Chyluria": {
+    "procedures": [
+      {
+        "cui": "C2711865",
+        "name": "Evaluation of urine specimen",
+        "description": null
+      },
+      {
+        "cui": "C0022885",
+        "name": "Laboratory test",
+        "description": null
+      }
+    ]
+  },
+  "Pelvic Pain": {
+    "procedures": [
+      {
+        "cui": "C0031150",
+        "name": "Laparoscopy",
+        "description": "A procedure in which a laparoscope (LAPAROSCOPES) is inserted through a small incision near the navel to examine the abdominal and pelvic organs in the PERITONEAL CAVITY. If appropriate, biopsy or surgery can be performed during laparoscopy."
+      }
+    ]
+  },
+  "Abnormal chest sounds": {
+    "procedures": [
+      {
+        "cui": "C0004339",
+        "name": "Auscultation",
+        "description": "A listening to spontaneously generated body sounds"
+      }
+    ]
+  },
+  "Anginal pain": {
+    "procedures": [
+      {
+        "cui": "C1623258",
+        "name": "ECG",
+        "description": "Recording of the moment-to-moment electromotive forces of the HEART as projected onto various sites on the body's surface, delineated as a scalar function of time. The recording is monitored by a tracing on slow moving chart paper or by observing it on a cardioscope, which is a CATHODE RAY TUBE DISPLAY."
+      },
+      {
+        "cui": "C0018795",
+        "name": "Cardiac Catheterizations",
+        "description": "Procedures in which placement of CARDIAC CATHETERS is performed for therapeutic or diagnostic procedures."
+      },
+      {
+        "cui": "C0013516",
+        "name": "Echocardiography",
+        "description": "Ultrasonic recording of the size, motion, and composition of the heart and surrounding tissues. The standard approach is transthoracic."
+      },
+      {
+        "cui": "C4529960",
+        "name": "Cardiac Test",
+        "description": null
+      }
+    ]
+  },
+  "Chest Pain": {
+    "procedures": [
+      {
+        "cui": "C1623258",
+        "name": "ECG",
+        "description": "Recording of the moment-to-moment electromotive forces of the HEART as projected onto various sites on the body's surface, delineated as a scalar function of time. The recording is monitored by a tracing on slow moving chart paper or by observing it on a cardioscope, which is a CATHODE RAY TUBE DISPLAY."
+      },
+      {
+        "cui": "C0018795",
+        "name": "Cardiac Catheterizations",
+        "description": "Procedures in which placement of CARDIAC CATHETERS is performed for therapeutic or diagnostic procedures."
+      },
+      {
+        "cui": "C0013516",
+        "name": "Echocardiography",
+        "description": "Ultrasonic recording of the size, motion, and composition of the heart and surrounding tissues. The standard approach is transthoracic."
+      },
+      {
+        "cui": "C0015260",
+        "name": "Exercise tests",
+        "description": "Controlled physical activity which is performed in order to allow assessment of physiological functions, particularly cardiovascular and pulmonary, but also aerobic capacity. Maximal (most intense) exercise is usually required but submaximal exercise is also used."
+      },
+      {
+        "cui": "C1455714",
+        "name": "EXERCISE THALLIUM",
+        "description": null
+      },
+      {
+        "cui": "C0521317",
+        "name": "MUGA scan",
+        "description": null
+      },
+      {
+        "cui": "C0560738",
+        "name": "VQ - Ventilation perfusion scan",
+        "description": "A two-part radionuclide imaging that measures VENTILATION-PERFUSION RATIO of the lungs often used to investigate PULMONARY EMBOLISM. Image acquisitions may be performed using various combinations of gamma camera, PET and SPECT scanning techniques."
+      },
+      {
+        "cui": "C1504183",
+        "name": "Esoph balloon distension tst",
+        "description": null
+      }
+    ]
+  },
+  "NOSE DISCHARGE": {
+    "procedures": [
+      {
+        "cui": "C0558826",
+        "name": "Examination of nose",
+        "description": null
+      }
+    ]
+  },
+  "Romberg's sign": {
+    "procedures": [
+      {
+        "cui": "C2174421",
+        "name": "balance",
+        "description": null
+      },
+      {
+        "cui": "C1260928",
+        "name": "rombergs test",
+        "description": null
+      }
+    ]
+  },
+  "Diarrhea": {
+    "procedures": [
+      {
+        "cui": "C0430414",
+        "name": "Faeces culture",
+        "description": null
+      },
+      {
+        "cui": "C1255794",
+        "name": "Nursing Assessment Entity",
+        "description": null
+      }
+    ]
+  },
+  "Colonic constipation": {
+    "procedures": [
+      {
+        "cui": "C1255794",
+        "name": "Nursing Assessment Entity",
+        "description": null
+      }
+    ]
+  },
+  "Duck gait": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  },
+  "Muscle weakness": {
+    "procedures": [
+      {
+        "cui": "C2070210",
+        "name": "motor strength of wrists (physical finding)",
+        "description": null
+      }
+    ]
+  },
+  "Fremitus, tactile": {
+    "procedures": [
+      {
+        "cui": "C2228454",
+        "name": "examination of lungs",
+        "description": null
+      },
+      {
+        "cui": "C0030247",
+        "name": "Palpation",
+        "description": "An exploration using the sense of touch"
+      }
+    ]
+  },
+  "Emesis": {
+    "procedures": [
+      {
+        "cui": "C0740329",
+        "name": "Osmolar gap",
+        "description": null
+      }
+    ]
+  },
+  "Chronic pain": {
+    "procedures": [
+      {
+        "cui": "C0031150",
+        "name": "Laparoscopy",
+        "description": "A procedure in which a laparoscope (LAPAROSCOPES) is inserted through a small incision near the navel to examine the abdominal and pelvic organs in the PERITONEAL CAVITY. If appropriate, biopsy or surgery can be performed during laparoscopy."
+      },
+      {
+        "cui": "C1255794",
+        "name": "Nursing Assessment Entity",
+        "description": null
+      }
+    ]
+  },
+  "Hemipareses": {
+    "procedures": [
+      {
+        "cui": "C0040405",
+        "name": "CAT Scans, X-Ray",
+        "description": "Tomography using x-ray transmission and a computer algorithm to reconstruct the image."
+      }
+    ]
+  },
+  "HEART": {
+    "procedures": [
+      {
+        "cui": "C1623258",
+        "name": "ECG",
+        "description": "Recording of the moment-to-moment electromotive forces of the HEART as projected onto various sites on the body's surface, delineated as a scalar function of time. The recording is monitored by a tracing on slow moving chart paper or by observing it on a cardioscope, which is a CATHODE RAY TUBE DISPLAY."
+      },
+      {
+        "cui": "C0018795",
+        "name": "Cardiac Catheterizations",
+        "description": "Procedures in which placement of CARDIAC CATHETERS is performed for therapeutic or diagnostic procedures."
+      },
+      {
+        "cui": "C0191244",
+        "name": "Biopsy of pericardium",
+        "description": null
+      },
+      {
+        "cui": "C0741907",
+        "name": "CARDIAC CATHETERIZATION ELECTIVE",
+        "description": null
+      },
+      {
+        "cui": "C0743635",
+        "name": "EXERCISE STRESS TEST PRE CATHETERIZATION",
+        "description": null
+      },
+      {
+        "cui": "C0013516",
+        "name": "Echocardiography",
+        "description": "Ultrasonic recording of the size, motion, and composition of the heart and surrounding tissues. The standard approach is transthoracic."
+      },
+      {
+        "cui": "C0743380",
+        "name": "ECHOCARDIOGRAM RESULT",
+        "description": null
+      },
+      {
+        "cui": "C0015260",
+        "name": "Exercise tests",
+        "description": "Controlled physical activity which is performed in order to allow assessment of physiological functions, particularly cardiovascular and pulmonary, but also aerobic capacity. Maximal (most intense) exercise is usually required but submaximal exercise is also used."
+      },
+      {
+        "cui": "C1455714",
+        "name": "EXERCISE THALLIUM",
+        "description": null
+      },
+      {
+        "cui": "C0521317",
+        "name": "MUGA scan",
+        "description": null
+      },
+      {
+        "cui": "C1314734",
+        "name": "Nonstress test",
+        "description": null
+      }
+    ]
+  },
+  "GAIT STUMBLING": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  },
+  "Lasegue sign": {
+    "procedures": [
+      {
+        "cui": "C1288281",
+        "name": "Lasegue test",
+        "description": null
+      }
+    ]
+  },
+  "Faintness": {
+    "procedures": [
+      {
+        "cui": "C0203668",
+        "name": "Bone imaging",
+        "description": null
+      },
+      {
+        "cui": "C0013516",
+        "name": "Echocardiography",
+        "description": "Ultrasonic recording of the size, motion, and composition of the heart and surrounding tissues. The standard approach is transthoracic."
+      }
+    ]
+  },
+  "EXTREMITY MUSCLE WEAKNESS, UPPER": {
+    "procedures": [
+      {
+        "cui": "C2230422",
+        "name": "musculoskeletal exam of upper arm (physical finding)",
+        "description": null
+      }
+    ]
+  },
+  "Nausea": {
+    "procedures": [
+      {
+        "cui": "C0740329",
+        "name": "Osmolar gap",
+        "description": null
+      }
+    ]
+  },
+  "Multifactorial gait problem (finding)": {
+    "procedures": [
+      {
+        "cui": "C2228444",
+        "name": "examination of gait and stance",
+        "description": null
+      }
+    ]
+  }
+}

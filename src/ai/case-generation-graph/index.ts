@@ -8,10 +8,11 @@ import { draftGraph } from "./01-draft/index.js";
 import { councilGraph } from "./02-council/index.js";
 import { consistencyGraph } from "./03-consistency/index.js";
 import type { Case } from "@/domain-models/Case.js";
-import type { GenerationFlags } from "@/domain-models/GenerationFlags.js";
+import type { GenerationFlag } from "@/domain-models/GenerationFlags.js";
 
 import { CaseGenerationError } from "@/errors/AppError.js";
 import type { AnamnesisCategory } from "@/domain-models/Anamnesis.js";
+import type { Diagnosis } from "@/domain-models/Diagnosis.js";
 
 type DecreaseLoopIterationOutput = Pick<GlobalState, "loopIterationsRemaining">;
 /**
@@ -90,9 +91,8 @@ export function buildCaseGeneratorGraph() {
  * Execute the case generator graph
  */
 export async function generateCase(
-  icdCode: string | undefined,
-  diseaseName: string,
-  generationFlags: GenerationFlags[],
+  diagnosis: Diagnosis,
+  generationFlags: GenerationFlag[],
   context?: string,
   anamnesisCategories?: AnamnesisCategory[]
 ): Promise<Case> {
@@ -102,8 +102,7 @@ export async function generateCase(
     `[CaseGenerator] Starting case generation for:\n`,
     JSON.stringify(
       {
-        icdCode,
-        diseaseName,
+        diagnosis,
         context,
         generationFlags,
         anamnesisCategories,
@@ -114,8 +113,7 @@ export async function generateCase(
   );
 
   const result = await graph.invoke({
-    icdCode: icdCode,
-    diagnosis: diseaseName,
+    diagnosis: diagnosis,
     generationFlags: generationFlags,
     context: context,
     anamnesisCategories: anamnesisCategories,

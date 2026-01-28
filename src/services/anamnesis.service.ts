@@ -1,6 +1,6 @@
 import type { AnamnesisCategory } from "@/domain-models/Anamnesis.js";
 import type { Language } from "@/domain-models/Language.js";
-import { getDeterministicLLM } from "@/graph/llm.js";
+import { getDeterministicLLM } from "@/ai/llm.js";
 import z from "zod";
 import YAML from "yaml";
 import fs from "fs";

@@ -1,12 +1,12 @@
 import { Send } from "@langchain/langgraph";
-import { getDeterministicLLM } from "@/graph/llm.js";
-import { type CouncilState } from "./state.js";
-import { decodeObject, handleLangchainError } from "@/utils/llmHelper.js";
 import {
-  symptomsTool,
-  symptomsToolForICD,
-} from "@/graph/tools/symptoms.tool.js";
-import { invokeWithTools } from "@/graph/invokeWithTool.js";
+  getDeterministicLLM,
+  decodeObject,
+  handleLangchainError,
+} from "@/ai/llm.js";
+import { type CouncilState } from "./state.js";
+import { symptomsTool, symptomsToolForICD } from "@/ai/tools/symptoms.tool.js";
+import { invokeWithTools } from "@/ai/invokeWithTool.js";
 import {
   HumanMessage,
   toolCallLimitMiddleware,
@@ -63,7 +63,7 @@ Select the BEST case. Ensure everything is appropriate, complete and consistent 
 Return your response in JSON:
 {draftIndex: number}`;
 
-  const userPrompt = `Diagnosis the cases were created for: ${state.diagnosis} ${state.icdCode ?? ""}
+  const userPrompt = `Diagnosis the cases were created for: ${state.diagnosis.name} ${state.diagnosis.icd ?? ""}
 ${state.context ? `\nAdditional context that was provided: ${state.context}` : ""}
 
 Drafts to choose from:
@@ -75,7 +75,7 @@ ${JSON.stringify(state.drafts)}`;
 
   const agentConfig: CreateAgentParams = {
     model: getDeterministicLLM(),
-    tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
+    tools: [state.diagnosis.icd ? symptomsToolForICD(state.diagnosis.icd) : symptomsTool],
     systemPrompt: systemPrompt,
     middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
     responseFormat: VoteResponseSchema,

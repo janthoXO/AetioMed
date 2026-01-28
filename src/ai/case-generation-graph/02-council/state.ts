@@ -2,14 +2,14 @@ import { registry } from "@langchain/langgraph/zod";
 import z from "zod";
 import { CaseWithDraftIndexSchema } from "../models.js";
 import { CaseSchema } from "@/domain-models/Case.js";
-import { GenerationFlagsSchema } from "@/domain-models/GenerationFlags.js";
-import { ICDCodeSchema } from "@/domain-models/ICD.js";
+import { GenerationFlagSchema } from "@/domain-models/GenerationFlags.js";
+import { DiagnosisSchema } from "@/domain-models/Diagnosis.js";
 
 export const CouncilStateSchema = z.object({
   case: CaseSchema.optional(),
   // drafts from the generation step
   drafts: z.array(CaseWithDraftIndexSchema),
-  councilSize: z.number().default(3),
+  councilSize: z.number().default(2),
   // accumulate votes from different council members
   votes: z.record(z.string(), z.number()).register(registry, {
     reducer: {
@@ -23,10 +23,9 @@ export const CouncilStateSchema = z.object({
     },
     default: () => ({}) as Record<string, number>,
   }),
-  icdCode: ICDCodeSchema.optional(),
-  diagnosis: z.string(),
+  diagnosis: DiagnosisSchema,
   context: z.string().optional(),
-  generationFlags: z.array(GenerationFlagsSchema),
+  generationFlags: z.array(GenerationFlagSchema),
 });
 
 export type CouncilState = z.infer<typeof CouncilStateSchema>;

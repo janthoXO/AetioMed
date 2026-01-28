@@ -1,51 +1,46 @@
-import { getDeterministicLLM } from "@/graph/llm.js";
+import { invokeWithTools } from "@/ai/invokeWithTool.js";
+import {
+  decodeObject,
+  getDeterministicLLM,
+  handleLangchainError,
+} from "@/ai/llm.js";
+import { symptomsTool, symptomsToolForICD } from "@/ai/tools/symptoms.tool.js";
+import type { Case } from "@/domain-models/Case.js";
+import type { Diagnosis } from "@/domain-models/Diagnosis.js";
 import {
   InconsistencyArrayJsonFormatZod,
-  InconsistencyJsonExample,
+  InconsistencyJsonExampleString,
   type Inconsistency,
 } from "@/domain-models/Inconsistency.js";
-import { decodeObject, handleLangchainError } from "@/utils/llmHelper.js";
-import { type ConsistencyState } from "./state.js";
-import {
-  symptomsTool,
-  symptomsToolForICD,
-} from "@/graph/tools/symptoms.tool.js";
-import { invokeWithTools } from "@/graph/invokeWithTool.js";
+import { CaseGenerationError } from "@/errors/AppError.js";
+import { retry } from "@/utils/retry.js";
 import {
   HumanMessage,
   providerStrategy,
   toolCallLimitMiddleware,
   type CreateAgentParams,
 } from "langchain";
-import { retry } from "@/utils/retry.js";
-import { CaseGenerationError } from "@/errors/AppError.js";
 
-type GenerateInconsistenciesOutput = Pick<ConsistencyState, "inconsistencies">;
-/**
- * Generates inconsistencies for the given case draft.
- */
-export async function generateInconsistencies(
-  state: ConsistencyState
-): Promise<GenerateInconsistenciesOutput> {
-  console.debug(
-    "[Consistency: GenerateInconsistencies] Generating inconsistencies for case"
-  );
-
-  if (!state.case) {
-    throw new CaseGenerationError("Case is missing for consistency check");
-  }
-
+export async function generateInconsistenciesOneShot(
+  caseToCheck: Case,
+  diagnosis: Diagnosis,
+  context?: string
+): Promise<Inconsistency[]> {
   const systemPrompt = `You are a medical quality assurance expert validating a patient case for educational use with a provided diagnosis and additional context.
 
 Case to validate:
-${JSON.stringify(state.case)}
+${JSON.stringify(caseToCheck)}
 
 Check for these types of inconsistencies:
 1. Is the diagnosis not directly revealed in the case?
 2. Are all entries internally consistent and support each other?
 
 Return your response in JSON:
-${JSON.stringify({ inconsistencies: [InconsistencyJsonExample()] })}
+${`{ inconsistencies: [
+${InconsistencyJsonExampleString()},
+...] }`}
+or an empty list if no inconsistencies are found.
+${JSON.stringify({ inconsistencies: [] })} 
 
 Requirements:
 - Be thorough but fair
@@ -54,8 +49,8 @@ Requirements:
 - Don't be overly pedantic
 - Return ONLY the JSON content`;
 
-  const userPrompt = `Provided Diagnosis: ${state.diagnosis} ${state.icdCode ?? ""}
-${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
+  const userPrompt = `Provided Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}
+${context ? `\nAdditional provided context: ${context}` : ""}`;
 
   console.debug(
     `[Consistency: GenerateInconsistencies] Prompt:\n${systemPrompt}\n${userPrompt}`
@@ -64,7 +59,7 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
   try {
     const agentConfig: CreateAgentParams = {
       model: getDeterministicLLM(),
-      tools: [state.icdCode ? symptomsToolForICD(state.icdCode) : symptomsTool],
+      tools: [diagnosis.icd ? symptomsToolForICD(diagnosis.icd) : symptomsTool],
       systemPrompt: systemPrompt,
       middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
       responseFormat: providerStrategy(InconsistencyArrayJsonFormatZod),
@@ -102,11 +97,7 @@ ${state.context ? `\nAdditional provided context: ${state.context}` : ""}`;
       parsedInconsistencies
     );
 
-    return {
-      inconsistencies: parsedInconsistencies.sort((a, b) =>
-        a.field > b.field ? 1 : -1
-      ),
-    };
+    return parsedInconsistencies.sort((a, b) => (a.field > b.field ? 1 : -1));
   } catch (error) {
     console.error("[Consistency: GenerateInconsistencies] Error:", error);
     throw error;

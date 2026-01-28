@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { SymptomsRelatedToDiseaseIcd } from "@/services/symptoms.service.js";
-import { ICDCodePattern } from "@/domain-models/ICD.js";
+import { ICDCodePattern } from "@/domain-models/Diagnosis.js";
 
 function SymptomToolFunction(icdCode: string): string {
   console.log(`[Tool: Symptoms] Fetching symptoms for ICD: ${icdCode}`);

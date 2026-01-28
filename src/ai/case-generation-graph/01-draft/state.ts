@@ -1,11 +1,11 @@
-import { GenerationFlagsSchema } from "@/domain-models/GenerationFlags.js";
+import { GenerationFlagSchema } from "@/domain-models/GenerationFlags.js";
 import { InconsistencySchema } from "@/domain-models/Inconsistency.js";
 import { registry } from "@langchain/langgraph/zod";
 import z from "zod";
 import { CaseWithDraftIndexSchema } from "../models.js";
 import { CaseSchema } from "@/domain-models/Case.js";
-import { ICDCodeSchema } from "@/domain-models/ICD.js";
 import { AnamnesisCategorySchema } from "@/domain-models/Anamnesis.js";
+import { DiagnosisSchema } from "@/domain-models/Diagnosis.js";
 
 export const DraftStateSchema = z.object({
   case: CaseSchema.optional(),
@@ -16,11 +16,10 @@ export const DraftStateSchema = z.object({
     },
     default: () => [],
   }),
-  draftCount: z.number().default(3),
-  icdCode: ICDCodeSchema.optional(),
-  diagnosis: z.string(),
+  draftCount: z.number().default(1),
+  diagnosis: DiagnosisSchema,
   context: z.string().optional(),
-  generationFlags: z.array(GenerationFlagsSchema),
+  generationFlags: z.array(GenerationFlagSchema),
   anamnesisCategories: z.array(AnamnesisCategorySchema),
   inconsistencies: z.array(InconsistencySchema),
 });

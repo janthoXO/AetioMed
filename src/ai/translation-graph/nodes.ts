@@ -1,8 +1,7 @@
-import { getLLM } from "@/graph/llm.js";
+import { getLLM, decodeObject } from "@/ai/llm.js";
 import { type GlobalState } from "./state.js";
 import { type AnamnesisCategory } from "@/domain-models/Anamnesis.js";
 import { CaseJsonExampleString, CaseSchema } from "@/domain-models/Case.js";
-import { decodeObject } from "@/utils/llmHelper.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
 import { CaseGenerationError } from "@/errors/AppError.js";

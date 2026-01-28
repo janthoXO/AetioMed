@@ -1,8 +1,8 @@
-import { GenerationFlagsSchema } from "@/domain-models/GenerationFlags.js";
+import { GenerationFlagSchema } from "@/domain-models/GenerationFlags.js";
 import { InconsistencySchema } from "@/domain-models/Inconsistency.js";
 import z from "zod";
 import { CaseSchema } from "@/domain-models/Case.js";
-import { ICDCodeSchema } from "@/domain-models/ICD.js";
+import { DiagnosisSchema } from "@/domain-models/Diagnosis.js";
 
 export const ConsistencyStateSchema = z.object({
   case: CaseSchema.optional(),
@@ -10,10 +10,9 @@ export const ConsistencyStateSchema = z.object({
   inconsistencies: z.array(InconsistencySchema),
   // reduce on each iteration until 0 is reached
   loopIterationsRemaining: z.number(),
-  icdCode: ICDCodeSchema.optional(),
-  diagnosis: z.string(),
+  diagnosis: DiagnosisSchema,
   context: z.string().optional(),
-  generationFlags: z.array(GenerationFlagsSchema),
+  generationFlags: z.array(GenerationFlagSchema),
 });
 
 export type ConsistencyState = z.infer<typeof ConsistencyStateSchema>;

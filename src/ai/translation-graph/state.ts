@@ -1,10 +1,10 @@
 import {
   AllGenerationFlags,
-  GenerationFlagsSchema,
+  GenerationFlagSchema,
 } from "../../domain-models/GenerationFlags.js";
 import z from "zod";
 import { CaseSchema } from "@/domain-models/Case.js";
-import { ICDCodeSchema } from "@/domain-models/ICD.js";
+import { ICDCodeSchema } from "@/domain-models/Diagnosis.js";
 import { LanguageSchema } from "@/domain-models/Language.js";
 
 export const GlobalStateSchema = z.object({
@@ -26,7 +26,7 @@ export const GlobalStateSchema = z.object({
   /**
    * Generation flags to control case generation behavior
    */
-  generationFlags: z.array(GenerationFlagsSchema).default(AllGenerationFlags),
+  generationFlags: z.array(GenerationFlagSchema).default(AllGenerationFlags),
 
   /**
    * Generated case.

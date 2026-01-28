@@ -73,8 +73,10 @@ router.post(
 
     try {
       const caseData = await generateCase(
-        icd,
-        diagnosis,
+        {
+          name: diagnosis,
+          icd: icd,
+        },
         generationFlags,
         context,
         language

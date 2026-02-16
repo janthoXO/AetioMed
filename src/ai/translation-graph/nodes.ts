@@ -4,7 +4,7 @@ import { type AnamnesisCategory } from "@/domain-models/Anamnesis.js";
 import { CaseJsonExampleString, CaseSchema } from "@/domain-models/Case.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
-import { CaseGenerationError } from "@/errors/AppError.js";
+import { GenerationError } from "@/errors/AppError.js";
 import { translateAnamnesisCategoriesFromEnglish } from "@/services/anamnesis.service.js";
 
 type TranslateCaseOutput = Pick<GlobalState, "case">;
@@ -96,7 +96,7 @@ ${JSON.stringify(state.case)}`;
 
           return CaseSchema.parse(caseObject);
         } catch {
-          throw new CaseGenerationError(
+          throw new GenerationError(
             `Failed to parse LLM response in JSON format`
           );
         }

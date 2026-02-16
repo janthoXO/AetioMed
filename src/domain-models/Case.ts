@@ -2,7 +2,7 @@ import { z, ZodObject } from "zod/v4";
 import { AnamnesisDescriptionPrompt, AnamnesisJsonExample, AnamnesisSchema } from "./Anamnesis.js";
 import {
   ChiefComplaintDescriptionPrompt,
-  ChiefComplaintJsonExample,
+  ChiefComplaintExample,
   ChiefComplaintSchema,
 } from "./ChiefComplaint.js";
 import { AllGenerationFlags, type GenerationFlag } from "./GenerationFlags.js";
@@ -60,7 +60,7 @@ export function descriptionPromptDraft(
 
 export function CaseJsonExample(generationFlags?: GenerationFlag[]): Case {
   const exampleCase: Case = {
-    chiefComplaint: ChiefComplaintJsonExample(),
+    chiefComplaint: ChiefComplaintExample(),
     anamnesis: AnamnesisJsonExample(),
   };
 

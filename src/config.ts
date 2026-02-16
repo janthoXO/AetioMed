@@ -7,6 +7,7 @@ dotenv.config();
 const ConfigSchema = z.object({
   PORT: z.coerce.number().default(3030),
   DEBUG: z.coerce.boolean().default(false),
+  LLM_API_KEY: z.string().optional(),
   LLM_PROVIDER: LLMProviderSchema.default("ollama"),
   LLM_MODEL: z
     .string()

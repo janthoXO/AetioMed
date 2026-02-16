@@ -1,10 +1,9 @@
-import { invokeWithTools } from "@/ai/invokeWithTool.js";
+import { invokeWithTools } from "@/ai/llm.js";
 import {
   decodeObject,
   getDeterministicLLM,
   handleLangchainError,
 } from "@/ai/llm.js";
-import { symptomsTool, symptomsToolForICD } from "@/ai/tools/symptoms.tool.js";
 import type { Case } from "@/domain-models/Case.js";
 import type { Diagnosis } from "@/domain-models/Diagnosis.js";
 import {
@@ -12,7 +11,8 @@ import {
   InconsistencyJsonExampleString,
   type Inconsistency,
 } from "@/domain-models/Inconsistency.js";
-import { CaseGenerationError } from "@/errors/AppError.js";
+import type { Symptom } from "@/domain-models/Symptom.js";
+import { GenerationError } from "@/errors/AppError.js";
 import { retry } from "@/utils/retry.js";
 import {
   HumanMessage,
@@ -24,9 +24,10 @@ import {
 export async function generateInconsistenciesOneShot(
   caseToCheck: Case,
   diagnosis: Diagnosis,
-  context?: string
+  symptoms: Symptom[] = [],
+  userInstructions?: string
 ): Promise<Inconsistency[]> {
-  const systemPrompt = `You are a medical quality assurance expert validating a patient case for educational use with a provided diagnosis and additional context.
+  const systemPrompt = `You are a medical quality assurance expert validating a patient case for educational use with a provided diagnosis and additional user instructions.
 
 Case to validate:
 ${JSON.stringify(caseToCheck)}
@@ -44,13 +45,21 @@ ${JSON.stringify({ inconsistencies: [] })}
 
 Requirements:
 - Be thorough but fair
-- If you need symptom information, call the get_symptoms_for_icd tool ONCE, then immediately proceed to generate the inconsistencies
 - Only flag genuine medical/logical inconsistencies
 - Don't be overly pedantic
 - Return ONLY the JSON content`;
 
-  const userPrompt = `Provided Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}
-${context ? `\nAdditional provided context: ${context}` : ""}`;
+  const userPrompt = [
+    `Provided Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
+    symptoms && symptoms.length > 0
+      ? `Provided Symptoms: ${symptoms.map((s) => s.name).join(", ")}`
+      : "",
+    userInstructions
+      ? `\nAdditional provided context: ${userInstructions}`
+      : "",
+  ]
+    .filter((s) => s.length > 0)
+    .join("\n");
 
   console.debug(
     `[Consistency: GenerateInconsistencies] Prompt:\n${systemPrompt}\n${userPrompt}`
@@ -59,7 +68,7 @@ ${context ? `\nAdditional provided context: ${context}` : ""}`;
   try {
     const agentConfig: CreateAgentParams = {
       model: getDeterministicLLM(),
-      tools: [diagnosis.icd ? symptomsToolForICD(diagnosis.icd) : symptomsTool],
+      tools: [],
       systemPrompt: systemPrompt,
       middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
       responseFormat: providerStrategy(InconsistencyArrayJsonFormatZod),
@@ -83,7 +92,7 @@ ${context ? `\nAdditional provided context: ${context}` : ""}`;
               InconsistencyArrayJsonFormatZod.parse(object).inconsistencies
           )
           .catch(() => {
-            throw new CaseGenerationError(
+            throw new GenerationError(
               `Failed to parse LLM response in JSON format`
             );
           });

@@ -30,8 +30,7 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
 
     console.log(`[NATS] Generating case for ${diagnosis}`);
     const generatedCase = await generateCase(
-      icd,
-      diagnosis,
+      { name: diagnosis, icd: icd },
       generationFlags,
       context,
       language

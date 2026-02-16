@@ -11,7 +11,7 @@ import {
 } from "@/domain-models/Case.js";
 import type { GenerationFlag } from "@/domain-models/GenerationFlags.js";
 import type { Language } from "@/domain-models/Language.js";
-import { generateCase as graphGenerateCase } from "@/ai/case-generation-graph/index.js";
+import { generateCase as graphGenerateCase } from "@/ai/case-persona-graph/index.js";
 import { translateCase } from "@/ai/translation-graph/index.js";
 import { translateAnamnesisCategoriesToEnglish } from "./anamnesis.service.js";
 import type { Diagnosis } from "@/domain-models/Diagnosis.js";
@@ -29,13 +29,13 @@ import {
 } from "@/ai/llm.js";
 import { symptomsTool, symptomsToolForICD } from "@/ai/tools/symptoms.tool.js";
 import { retry } from "@/utils/retry.js";
-import { invokeWithTools } from "@/ai/invokeWithTool.js";
-import { CaseGenerationError } from "@/errors/AppError.js";
+import { invokeWithTools } from "@/ai/llm.js";
+import { GenerationError } from "@/errors/AppError.js";
 
 export async function generateCase(
   diagnosis: Diagnosis,
   generationFlags: GenerationFlag[],
-  context?: string,
+  userInstructions?: string,
   language?: Language,
   anamnesisCategories?: AnamnesisCategory[]
 ): Promise<Case> {
@@ -52,7 +52,7 @@ export async function generateCase(
   let generatedCase = await graphGenerateCase(
     diagnosis,
     generationFlags,
-    context,
+    userInstructions,
     anamnesisCategories
   );
 
@@ -66,12 +66,13 @@ export async function generateCase(
 export async function generateCaseOneShot(
   generationFlags: GenerationFlag[],
   diagnosis: Diagnosis,
-  context?: string,
+  userInstructions?: string,
   anamnesisCategories: AnamnesisCategory[] = AnamnesisCategoryDefaults,
   previousCase?: Case,
   inconsistencies?: Inconsistency[]
 ): Promise<Case> {
-  const systemPrompt = `You are a medical education expert creating realistic patient cases for medical students for a provided diagnosis with additional context.
+  const systemPrompt = `You are a medical education expert creating realistic patient cases for medical students for a provided diagnosis with additional instructions.
+
 The case should include:
 ${descriptionPromptDraft(generationFlags)}
 
@@ -94,7 +95,7 @@ Requirements:
 
   const userPrompt = [
     `Provided Diagnosis for patient case: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
-    context ? `Additional provided context: ${context}` : "",
+    userInstructions ? `Additional provided instructions: ${userInstructions}` : "",
     generationFlags.includes("anamnesis")
       ? `Provided anamnesis categories: ${anamnesisCategories.join(", ")}`
       : "",
@@ -128,7 +129,7 @@ Requirements:
         return await decodeObject(text)
           .then((object) => CaseSchema.parse(object))
           .catch(() => {
-            throw new CaseGenerationError(
+            throw new GenerationError(
               `Failed to parse LLM response in JSON format`
             );
           });

@@ -1,5 +1,5 @@
 import { initRouter } from "./rest/router.js";
-import { config } from "./utils/config.js";
+import { config } from "./config.js";
 import { initNats, closeNats } from "./nats/index.js";
 
 console.log("Environment variables loaded.", config);

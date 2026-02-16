@@ -10,22 +10,26 @@ export function ChiefComplaintDescriptionPrompt(): string {
   return "Chief Complaint: The patient's primary reason for seeking care (1-2 sentences)";
 }
 
-/**
- *
- * @returns a zod representing {chiefComplaint: string}
- */
-export function ChiefComplaintJsonFormatZod(): z.ZodObject {
-  return z.object({ chiefComplaint: ChiefComplaintSchema });
-}
+export const ChiefComplaintJsonSchema = z.object({
+  chiefComplaint: ChiefComplaintSchema,
+});
+
+export type ChiefComplaintJson = z.infer<typeof ChiefComplaintJsonSchema>;
 
 /**
  *
  * @returns a JSON format string representing {chiefComplaint: string}
  */
 export function ChiefComplaintJsonFormat(): string {
-  return JSON.stringify(z.toJSONSchema(ChiefComplaintJsonFormatZod()));
+  return JSON.stringify(z.toJSONSchema(ChiefComplaintJsonSchema));
 }
 
-export function ChiefComplaintJsonExample(): ChiefComplaint {
-  return "The patient's primary reason for seeking care";
+export function ChiefComplaintExample(): ChiefComplaint {
+  return "The patient's primary reason for seeking care in the words of the doctor";
+}
+
+export function ChiefComplaintJsonExample(): ChiefComplaintJson {
+  return {
+    chiefComplaint: ChiefComplaintExample(),
+  };
 }

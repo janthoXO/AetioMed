@@ -1,47 +1,116 @@
 import { ChatOllama, type ChatOllamaInput } from "@langchain/ollama";
+import { ChatGoogle, type ChatGoogleParams } from "@langchain/google";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import { config } from "@/utils/config.js";
-import { JsonOutputParser } from "@langchain/core/output_parsers";
+import { config as envConfig } from "@/config.js";
+import {
+  JsonOutputParser,
+  StructuredOutputParser,
+} from "@langchain/core/output_parsers";
 import { ModelUnreachableError } from "@/errors/AppError.js";
+import {
+  createAgent,
+  tool,
+  type CreateAgentParams,
+  type HumanMessage,
+} from "langchain";
+import z from "zod";
+import { Ollama } from "ollama";
+
+type LLMConfig = {
+  temperature: number;
+  outputFormat?: "json" | "text";
+};
 
 /**
  * Get an LLM instance based on current configuration.
  * Easily extendable to support cloud providers.
  */
-export function getLLM(temperatureOverride?: number): BaseChatModel {
-  const temperature = temperatureOverride ?? config.LLM_TEMPERATURE;
+export function getLLM(llmConfig?: LLMConfig): BaseChatModel {
+  const temperature = llmConfig?.temperature ?? envConfig.LLM_TEMPERATURE;
 
   let chat: BaseChatModel;
-  switch (config.LLM_PROVIDER) {
+  switch (envConfig.LLM_PROVIDER) {
     case "ollama": {
       const ollamaConfig: ChatOllamaInput = {
-        model: config.LLM_MODEL,
+        model: envConfig.LLM_MODEL,
         temperature,
-        format: "json",
       };
+
+      if (!llmConfig || llmConfig?.outputFormat === "json") {
+        ollamaConfig.format = "json";
+      }
+
+      if (envConfig.LLM_API_KEY) {
+        ollamaConfig.headers = {
+          Authorization: "Bearer " + envConfig.LLM_API_KEY,
+        };
+      }
 
       chat = new ChatOllama(ollamaConfig);
       break;
     }
+    case "google": {
+      const googleConfig: ChatGoogleParams = {
+        apiKey: envConfig.LLM_API_KEY ?? "",
+        model: envConfig.LLM_MODEL,
+        temperature,
+      };
+      chat = new ChatGoogle(googleConfig);
+      break;
+    }
     default:
-      throw new Error(`Unsupported LLM Provider: ${config.LLM_PROVIDER}`);
+      throw new Error(`Unsupported LLM Provider: ${envConfig.LLM_PROVIDER}`);
   }
 
   return chat;
 }
 
+export function getSearchTool() {
+  switch (envConfig.LLM_PROVIDER) {
+    case "ollama": {
+      return tool(
+        async ({ query }: { query: string }) => {
+          return await new Ollama({
+            headers: {
+              Authorization: "Bearer " + envConfig.LLM_API_KEY,
+            },
+          }).webSearch({ query: query });
+        },
+        {
+          name: "web_search",
+          description: "Searches the web for information related to a query.",
+          schema: z.object({
+            query: z.string().describe("The query to search for on the web"),
+          }),
+        }
+      );
+    }
+    case "google": {
+      return {
+        googleSearch: {},
+      };
+    }
+    default:
+      throw new Error(`Unsupported LLM Provider: ${envConfig.LLM_PROVIDER}`);
+  }
+}
+
 /**
  * Get a low-temperature LLM for deterministic tasks (consistency checks, etc.)
  */
-export function getDeterministicLLM(): BaseChatModel {
-  return getLLM(0.1);
+export function getDeterministicLLM(
+  config?: Omit<LLMConfig, "temperature">
+): BaseChatModel {
+  return getLLM({ temperature: 0.1, ...config });
 }
 
 /**
  * Get a creative LLM for generation tasks
  */
-export function getCreativeLLM(): BaseChatModel {
-  return getLLM(0.8);
+export function getCreativeLLM(
+  config?: Omit<LLMConfig, "temperature">
+): BaseChatModel {
+  return getLLM({ temperature: 0.8, ...config });
 }
 
 /**
@@ -49,9 +118,14 @@ export function getCreativeLLM(): BaseChatModel {
  * @param input
  * @returns
  */
-export async function decodeObject(input: string): Promise<object> {
-  const parser = new JsonOutputParser();
-  return parser.parse(input);
+export async function decodeObject(
+  input: string,
+  schema?: z.ZodObject
+): Promise<object> {
+  const parser = schema
+    ? new StructuredOutputParser( schema )
+    : new JsonOutputParser();
+  return  parser.parse(input);
 }
 
 export function handleLangchainError(error: Error): never {
@@ -68,4 +142,29 @@ export function handleLangchainError(error: Error): never {
   }
 
   throw error;
+}
+
+export async function invokeWithTools(
+  agentConfig: CreateAgentParams,
+  userMessages: HumanMessage[]
+): Promise<string> {
+  const agent = createAgent(agentConfig);
+
+  const result = await agent.invoke({ messages: userMessages });
+
+  console.debug(
+    `[invokeWithTools] Raw Agent Result:\n${JSON.stringify(result)}`
+  );
+
+  if (agentConfig.responseFormat) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const structured = (result as any).structuredResponse;
+    if (structured) {
+      return JSON.stringify(structured);
+    }
+
+    // Fallback: If structuredResponse is missing, check content
+  }
+
+  return result.messages[result.messages.length - 1]!.content as string;
 }

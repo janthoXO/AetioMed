@@ -6,14 +6,14 @@ import {
 } from "@/ai/llm.js";
 import { type CouncilState } from "./state.js";
 import { symptomsTool, symptomsToolForICD } from "@/ai/tools/symptoms.tool.js";
-import { invokeWithTools } from "@/ai/invokeWithTool.js";
+import { invokeWithTools } from "@/ai/llm.js";
 import {
   HumanMessage,
   toolCallLimitMiddleware,
   type CreateAgentParams,
 } from "langchain";
 import z from "zod";
-import { CaseGenerationError } from "@/errors/AppError.js";
+import { GenerationError } from "@/errors/AppError.js";
 
 /**
  * Check if generated drafts > 1 and councilSize > 1
@@ -98,7 +98,7 @@ ${JSON.stringify(state.drafts)}`;
     })
     .catch((error) => {
       console.error("[Council: GenerateVote] Error:", error);
-      throw new CaseGenerationError(error);
+      throw new GenerationError(error);
     });
 }
 

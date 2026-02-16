@@ -1,5 +1,5 @@
 import { type ConsistencyState } from "./state.js";
-import { CaseGenerationError } from "@/errors/AppError.js";
+import { GenerationError } from "@/errors/AppError.js";
 import { generateInconsistenciesOneShot } from "@/services/consistency.service.js";
 
 type GenerateInconsistenciesOutput = Pick<ConsistencyState, "inconsistencies">;
@@ -14,7 +14,7 @@ export async function generateInconsistencies(
   );
 
   if (!state.case) {
-    throw new CaseGenerationError("Case is missing for consistency check");
+    throw new GenerationError("Case is missing for consistency check");
   }
 
   return {

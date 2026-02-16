@@ -5,12 +5,12 @@
  * Run with: pnpm tsx src/graph/test.ts
  */
 
-import { buildCaseGeneratorGraph } from "./index.js";
+import { buildCaseDraftCouncilGraph } from "./index.js";
 
 async function testGraphCompilation() {
   console.log("=== Test 1: Graph Compilation ===");
   try {
-    buildCaseGeneratorGraph();
+    buildCaseDraftCouncilGraph();
     console.log("✅ Graph compiled successfully");
     console.log("   Graph has nodes and edges configured");
     return true;
@@ -22,7 +22,7 @@ async function testGraphCompilation() {
 
 async function testGraphStructure() {
   console.log("\n=== Test 2: Graph Structure ===");
-  const graph = buildCaseGeneratorGraph();
+  const graph = buildCaseDraftCouncilGraph();
 
   // Check that the graph has the expected structure
   console.log("   Checking graph properties...");

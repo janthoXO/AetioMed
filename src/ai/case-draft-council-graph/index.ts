@@ -10,7 +10,7 @@ import { consistencyGraph } from "./03-consistency/index.js";
 import type { Case } from "@/domain-models/Case.js";
 import type { GenerationFlag } from "@/domain-models/GenerationFlags.js";
 
-import { CaseGenerationError } from "@/errors/AppError.js";
+import { GenerationError } from "@/errors/AppError.js";
 import type { AnamnesisCategory } from "@/domain-models/Anamnesis.js";
 import type { Diagnosis } from "@/domain-models/Diagnosis.js";
 
@@ -51,7 +51,7 @@ export function checkConsistency(state: GlobalState): "refine" | "end" {
 /**
  * Build and compile the Council-Consistency-Refinement graph
  */
-export function buildCaseGeneratorGraph() {
+export function buildCaseDraftCouncilGraph() {
   // Create the state graph with our annotation schema
   const graph = new StateGraph(GlobalStateSchema, {
     input: GraphInputSchema,
@@ -82,7 +82,7 @@ export function buildCaseGeneratorGraph() {
     .addEdge("draft_reset", "draft_phase");
   const compiledGraph = graph.compile();
 
-  console.log("[GraphBuilder] Case generation graph compiled");
+  console.log("[GraphBuilder] Case draft council graph compiled");
 
   return compiledGraph;
 }
@@ -96,7 +96,7 @@ export async function generateCase(
   context?: string,
   anamnesisCategories?: AnamnesisCategory[]
 ): Promise<Case> {
-  const graph = buildCaseGeneratorGraph();
+  const graph = buildCaseDraftCouncilGraph();
 
   console.log(
     `[CaseGenerator] Starting case generation for:\n`,
@@ -122,7 +122,7 @@ export async function generateCase(
   console.log("[CaseGenerator] Generation complete", result);
 
   if (!result.case) {
-    throw new CaseGenerationError("Case generation failed: No case generated");
+    throw new GenerationError("Case generation failed: No case generated");
   }
 
   return result.case;

@@ -1,5 +1,5 @@
 import { connect, type NatsConnection } from "@nats-io/transport-node";
-import { config } from "../utils/config.js";
+import { config } from "../config.js";
 import { jetstream, type JetStreamClient } from "@nats-io/jetstream";
 
 let nc: NatsConnection | undefined;

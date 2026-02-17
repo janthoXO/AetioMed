@@ -1,3 +1,3 @@
-export function passthrough(state: any): any {
+export function passthrough<T>(state: T): T {
   return state;
 }

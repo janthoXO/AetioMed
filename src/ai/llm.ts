@@ -145,7 +145,7 @@ export function parseStructuredResponse<T>(
 
   try {
     return schema.parse(JSON.parse(content));
-  } catch (error) {
+  } catch {
     const repaired = jsonrepair(content);
     console.debug("Repaired JSON:", repaired);
     return schema.parse(JSON.parse(repaired));

@@ -62,7 +62,7 @@ async function refineAnamnesis(
   state.case.anamnesis = await generateAnamnesisOneShot(
     state.diagnosis,
     state.symptoms,
-    undefined,
+    undefined, // CoT only needed for initial generation, not refinement
     state.userInstructions,
     state.anamnesisCategories,
     state.case.anamnesis,
@@ -108,7 +108,7 @@ export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
       const sends: Send[] = [];
       if (state.inconsistencies.some((i) => i.field === "chiefComplaint")) {
         const filteredInconsistencies = state.inconsistencies.filter(
-          (i) => i.field !== "chiefComplaint"
+          (i) => i.field === "chiefComplaint"
         );
         sends.push(
           new Send("chief_complaint_refine", {
@@ -120,7 +120,7 @@ export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
 
       if (state.inconsistencies.some((i) => i.field === "anamnesis")) {
         const filteredInconsistencies = state.inconsistencies.filter(
-          (i) => i.field !== "anamnesis"
+          (i) => i.field === "anamnesis"
         );
         sends.push(
           new Send("anamnesis_refine", {

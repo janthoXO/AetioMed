@@ -89,7 +89,7 @@ export async function generateCase(
   const graph = buildCasePersonaGraph();
 
   console.log(
-    `[CaseGenerator] Starting case generation for:\n`,
+    `[CasePersonaGraph] Starting case generation for:\n`,
     JSON.stringify(
       {
         diagnosis,
@@ -109,7 +109,10 @@ export async function generateCase(
     anamnesisCategories: anamnesisCategories,
   });
 
-  console.log("[CaseGenerator] Generation complete", result);
+  console.log(
+    "[CasePersonaGraph] Generation complete",
+    JSON.stringify(result, null, 2)
+  );
 
   if (!result.case) {
     throw new GenerationError("Case generation failed: No case generated");

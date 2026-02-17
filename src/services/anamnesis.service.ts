@@ -7,11 +7,10 @@ import {
 } from "@/domain-models/Anamnesis.js";
 import type { Language } from "@/domain-models/Language.js";
 import {
-  decodeObject,
   getCreativeLLM,
   getDeterministicLLM,
   handleLangchainError,
-  invokeWithTools,
+  parseStructuredResponse,
 } from "@/ai/llm.js";
 import z from "zod";
 import YAML from "yaml";
@@ -20,13 +19,12 @@ import type { Inconsistency } from "@/domain-models/Inconsistency.js";
 import type { Diagnosis } from "@/domain-models/Diagnosis.js";
 import type { Symptom } from "@/domain-models/Symptom.js";
 import {
+  createAgent,
   HumanMessage,
   providerStrategy,
   SystemMessage,
-  type CreateAgentParams,
 } from "langchain";
 import { retry } from "@/utils/retry.js";
-import { GenerationError } from "@/errors/AppError.js";
 
 const LanguageAnamnesisCategoryMappingSchema = z.partialRecord(
   z.enum(["English", "German"]),
@@ -345,7 +343,7 @@ Return the steps as a list of steps in markdown format.`;
           .catch((error) => {
             handleLangchainError(error);
           });
-        console.debug(`[GenerateAnamnesisCoT] LLM raw Response:\n${text}`);
+        console.debug("[GenerateAnamnesisCoT] LLM raw Response:\n", text);
 
         return text.text;
       },
@@ -376,13 +374,13 @@ ${cot ? `Think step by step:\n${cot}` : ""}
 ${
   previousAnamnesis
     ? `Try to fix the inconsistencies from the previous anamnesis generated:\n${JSON.stringify({ anamnesis: previousAnamnesis })}
-with inconsistencies:\n${JSON.stringify(
-        inconsistencies?.map((i) => {
-          const { field, ...rest } = i;
-          return rest;
-        })
-      )}
-`
+with inconsistencies:
+${inconsistencies
+  ?.map((i, idx) => {
+    return `${idx + 1}. severity ${i.severity}: ${i.description}
+suggested fix: ${i.suggestion}`;
+  })
+  .join("\n")}`
     : ``
 }
 Return your response in JSON with the provided anamnesis categories
@@ -412,29 +410,29 @@ Requirements:
     const AnamnesisSchemaWrapper = z.object({
       anamnesis: AnamnesisSchema.describe("Generated anamnesis"),
     });
-    const agentConfig: CreateAgentParams = {
-      model: getCreativeLLM(),
-      tools: [],
-      systemPrompt: systemPrompt,
-      responseFormat: providerStrategy(AnamnesisSchemaWrapper),
-    };
 
     const anamnesis: Anamnesis = await retry(
       async () => {
-        const text = await invokeWithTools(agentConfig, [
-          new HumanMessage(userPrompt),
-        ]).catch((error) => {
-          handleLangchainError(error);
-        });
-        console.debug(`[GenerateAnamnesisOneShot] LLM raw Response:\n${text}`);
-
-        return await decodeObject(text)
-          .then((object) => AnamnesisSchemaWrapper.parse(object).anamnesis)
-          .catch(() => {
-            throw new GenerationError(
-              `Failed to parse LLM response in JSON format`
-            );
+        const result = await createAgent({
+          model: getCreativeLLM(),
+          tools: [],
+          systemPrompt: systemPrompt,
+          responseFormat: providerStrategy(AnamnesisSchemaWrapper),
+        })
+          .invoke({ messages: [new HumanMessage(userPrompt)] })
+          .catch((error) => {
+            handleLangchainError(error);
           });
+
+        console.debug(
+          "[GenerateAnamnesisOneShot] LLM raw Response:\ncontent:\n",
+          result.messages[result.messages.length - 1]?.content,
+          "\nstructured response:\n",
+          result.structuredResponse
+        );
+
+        return parseStructuredResponse(result, AnamnesisSchemaWrapper)
+          .anamnesis;
       },
       2,
       0

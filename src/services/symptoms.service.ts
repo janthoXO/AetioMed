@@ -6,19 +6,13 @@ import {
 import symptomData from "../data/disease_symptoms.json" with { type: "json" };
 import type { Diagnosis, ICDCode } from "@/domain-models/Diagnosis.js";
 import {
-  decodeObject,
   getDeterministicLLM,
   handleLangchainError,
-  invokeWithTools,
+  parseStructuredResponse,
 } from "@/ai/llm.js";
-import {
-  HumanMessage,
-  providerStrategy,
-  type CreateAgentParams,
-} from "langchain";
+import { createAgent, HumanMessage, providerStrategy } from "langchain";
 import z from "zod";
 import { retry } from "@/utils/retry.js";
-import { GenerationError } from "@/errors/AppError.js";
 
 const symptomMap = symptomData as Record<string, { symptoms: Symptom[] }>;
 
@@ -64,29 +58,27 @@ Requirements:
       symptoms: SymptomSchema.array(),
     });
 
-    const agentConfig: CreateAgentParams = {
-      model: getDeterministicLLM(),
-      tools: [],
-      systemPrompt: systemPrompt,
-      responseFormat: providerStrategy(SymptomArrayWrapperSchema),
-    };
-
     const symptoms: Symptom[] = await retry(
       async () => {
-        const text = await invokeWithTools(agentConfig, [
-          new HumanMessage(userPrompt),
-        ]).catch((error) => {
-          handleLangchainError(error);
-        });
-        console.debug(`[GenerateSymptomsOneShot] LLM raw Response:\n${text}`);
-
-        return await decodeObject(text)
-          .then((object) => SymptomArrayWrapperSchema.parse(object).symptoms)
-          .catch(() => {
-            throw new GenerationError(
-              `Failed to parse LLM response in JSON format`
-            );
+        const result = await createAgent({
+          model: getDeterministicLLM(),
+          systemPrompt: systemPrompt,
+          responseFormat: providerStrategy(SymptomArrayWrapperSchema),
+        })
+          .invoke({ messages: [new HumanMessage(userPrompt)] })
+          .catch((error) => {
+            handleLangchainError(error);
           });
+
+        console.debug(
+          "[GenerateSymptomsOneShot] LLM raw Response:\ncontent:\n",
+          result.messages[result.messages.length - 1]?.content,
+          "\nstructured response:\n",
+          result.structuredResponse
+        );
+
+        return parseStructuredResponse(result, SymptomArrayWrapperSchema)
+          .symptoms;
       },
       2,
       0

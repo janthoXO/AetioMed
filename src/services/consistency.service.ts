@@ -1,8 +1,7 @@
-import { invokeWithTools } from "@/ai/llm.js";
 import {
-  decodeObject,
   getDeterministicLLM,
   handleLangchainError,
+  parseStructuredResponse,
 } from "@/ai/llm.js";
 import type { Case } from "@/domain-models/Case.js";
 import type { Diagnosis } from "@/domain-models/Diagnosis.js";
@@ -12,14 +11,8 @@ import {
   type Inconsistency,
 } from "@/domain-models/Inconsistency.js";
 import type { Symptom } from "@/domain-models/Symptom.js";
-import { GenerationError } from "@/errors/AppError.js";
 import { retry } from "@/utils/retry.js";
-import {
-  HumanMessage,
-  providerStrategy,
-  toolCallLimitMiddleware,
-  type CreateAgentParams,
-} from "langchain";
+import { createAgent, HumanMessage, providerStrategy } from "langchain";
 
 export async function generateInconsistenciesOneShot(
   caseToCheck: Case,
@@ -66,36 +59,28 @@ Requirements:
   );
 
   try {
-    const agentConfig: CreateAgentParams = {
-      model: getDeterministicLLM(),
-      tools: [],
-      systemPrompt: systemPrompt,
-      middleware: [toolCallLimitMiddleware({ runLimit: 3 })],
-      responseFormat: providerStrategy(InconsistencyArrayJsonFormatZod),
-    };
-
     const parsedInconsistencies: Inconsistency[] = await retry(
       async () => {
-        const text = await invokeWithTools(agentConfig, [
-          new HumanMessage(userPrompt),
-        ]).catch((error) => {
-          handleLangchainError(error);
-        });
+        const result = await createAgent({
+          model: getDeterministicLLM(),
+          tools: [],
+          systemPrompt: systemPrompt,
+          responseFormat: providerStrategy(InconsistencyArrayJsonFormatZod),
+        })
+          .invoke({ messages: [new HumanMessage(userPrompt)] })
+          .catch((error) => {
+            handleLangchainError(error);
+          });
+
         console.debug(
-          "[Consistency: GenerateInconsistencies] LLM Response:",
-          text
+          "[GenerateInconsistenciesOneShot] LLM raw Response:\ncontent:\n",
+          result.messages[result.messages.length - 1]?.content,
+          "\nstructured response:\n",
+          result.structuredResponse
         );
 
-        return await decodeObject(text)
-          .then(
-            (object) =>
-              InconsistencyArrayJsonFormatZod.parse(object).inconsistencies
-          )
-          .catch(() => {
-            throw new GenerationError(
-              `Failed to parse LLM response in JSON format`
-            );
-          });
+        return parseStructuredResponse(result, InconsistencyArrayJsonFormatZod)
+          .inconsistencies;
       },
       2,
       0

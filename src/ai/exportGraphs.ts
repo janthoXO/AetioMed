@@ -4,6 +4,7 @@ import { buildCaseDraftCouncilGraph } from "./case-draft-council-graph/index.js"
 import { buildCasePersonaGraph } from "./case-persona-graph/index.js";
 
 export async function exportGraphPng(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   graph: CompiledGraph<any>,
   exportName: string
 ) {

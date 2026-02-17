@@ -95,7 +95,9 @@ Requirements:
 
   const userPrompt = [
     `Provided Diagnosis for patient case: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
-    userInstructions ? `Additional provided instructions: ${userInstructions}` : "",
+    userInstructions
+      ? `Additional provided instructions: ${userInstructions}`
+      : "",
     generationFlags.includes("anamnesis")
       ? `Provided anamnesis categories: ${anamnesisCategories.join(", ")}`
       : "",

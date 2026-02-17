@@ -75,7 +75,11 @@ ${JSON.stringify(state.drafts)}`;
 
   const agentConfig: CreateAgentParams = {
     model: getDeterministicLLM(),
-    tools: [state.diagnosis.icd ? symptomsToolForICD(state.diagnosis.icd) : symptomsTool],
+    tools: [
+      state.diagnosis.icd
+        ? symptomsToolForICD(state.diagnosis.icd)
+        : symptomsTool,
+    ],
     systemPrompt: systemPrompt,
     middleware: [toolCallLimitMiddleware({ runLimit: 2 })],
     responseFormat: VoteResponseSchema,

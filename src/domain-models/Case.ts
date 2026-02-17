@@ -1,5 +1,9 @@
 import { z, ZodObject } from "zod/v4";
-import { AnamnesisDescriptionPrompt, AnamnesisJsonExample, AnamnesisSchema } from "./Anamnesis.js";
+import {
+  AnamnesisDescriptionPrompt,
+  AnamnesisJsonExample,
+  AnamnesisSchema,
+} from "./Anamnesis.js";
 import {
   ChiefComplaintDescriptionPrompt,
   ChiefComplaintExample,

@@ -21,7 +21,9 @@ type AnamnesisGraphState = z.infer<typeof AnamnesisGraphStateSchema>;
 async function generateAnamnesisCoT(
   state: AnamnesisGraphState
 ): Promise<AnamnesisGraphState> {
-  console.debug("[AnamnesisGraph: generateAnamnesisCoT] Generating anamnesis CoT with LLM...");
+  console.debug(
+    "[AnamnesisGraph: generateAnamnesisCoT] Generating anamnesis CoT with LLM..."
+  );
   state.cot = await generateAnamnesisCoTService(
     state.diagnosis,
     state.symptoms,
@@ -33,7 +35,9 @@ async function generateAnamnesisCoT(
 async function generateAnamnesis(
   state: AnamnesisGraphState
 ): Promise<AnamnesisGraphState> {
-  console.debug("[AnamnesisGraph: generateAnamnesis] Generating anamnesis with LLM...");
+  console.debug(
+    "[AnamnesisGraph: generateAnamnesis] Generating anamnesis with LLM..."
+  );
   state.case.anamnesis = await generateAnamnesisOneShot(
     state.diagnosis,
     state.symptoms,

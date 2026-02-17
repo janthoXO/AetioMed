@@ -15,6 +15,8 @@ import {
 } from "langchain";
 import z from "zod";
 import { Ollama } from "ollama";
+import type { Message } from "@langchain/core/messages";
+import { jsonrepair } from "jsonrepair";
 
 type LLMConfig = {
   temperature: number;
@@ -123,9 +125,31 @@ export async function decodeObject(
   schema?: z.ZodObject
 ): Promise<object> {
   const parser = schema
-    ? new StructuredOutputParser( schema )
+    ? new StructuredOutputParser(schema)
     : new JsonOutputParser();
-  return  parser.parse(input);
+  return parser.parse(input);
+}
+
+export function parseStructuredResponse<T>(
+  result: { messages: Message[]; structuredResponse?: T },
+  schema: z.ZodSchema<T>
+): T {
+  if (result.structuredResponse) {
+    return result.structuredResponse;
+  }
+
+  const content = result.messages[result.messages.length - 1]?.content;
+  if (typeof content !== "string") {
+    throw new Error("LLM response content is not a string");
+  }
+
+  try {
+    return schema.parse(JSON.parse(content));
+  } catch (error) {
+    const repaired = jsonrepair(content);
+    console.debug("Repaired JSON:", repaired);
+    return schema.parse(JSON.parse(repaired));
+  }
 }
 
 export function handleLangchainError(error: Error): never {

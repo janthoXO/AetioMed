@@ -1,21 +1,19 @@
 import {
-  decodeObject,
   getCreativeLLM,
   getDeterministicLLM,
   handleLangchainError,
-  invokeWithTools,
+  parseStructuredResponse,
 } from "@/ai/llm.js";
 import type { Inconsistency } from "@/domain-models/Inconsistency.js";
 import type { Diagnosis } from "@/domain-models/Diagnosis.js";
 import type { Symptom } from "@/domain-models/Symptom.js";
 import {
+  createAgent,
   HumanMessage,
   providerStrategy,
   SystemMessage,
-  type CreateAgentParams,
 } from "langchain";
 import { retry } from "@/utils/retry.js";
-import { GenerationError } from "@/errors/AppError.js";
 import {
   ChiefComplaintJsonExample,
   ChiefComplaintJsonSchema,
@@ -61,7 +59,7 @@ ONLY return the list of steps, do not return the chief complaint or any addition
           .catch((error) => {
             handleLangchainError(error);
           });
-        console.debug(`[GenerateChiefComplaintCoT] LLM raw Response:\n${text}`);
+        console.debug("[GenerateChiefComplaintCoT] LLM raw Response:\n", text);
 
         return text.text;
       },
@@ -91,13 +89,13 @@ ${cot ? `Think step by step:\n${cot}` : ""}
 ${
   previousChiefComplaint
     ? `Try to fix the inconsistencies from the previous chief complaint generated:\n${JSON.stringify(previousChiefComplaint)}
-with inconsistencies:\n${JSON.stringify(
-        inconsistencies?.map((i) => {
-          const { field, ...rest } = i;
-          return rest;
-        })
-      )}
-`
+with inconsistencies:
+${inconsistencies
+  ?.map((i, idx) => {
+    return `${idx + 1}. severity ${i.severity}: ${i.description}
+suggested fix: ${i.suggestion}`;
+  })
+  .join("\n")}`
     : ``
 }
 Return your response in JSON:
@@ -123,33 +121,27 @@ Requirements:
 
   // Initialize cases to empty in case of failure
   try {
-    const agentConfig: CreateAgentParams = {
-      model: getCreativeLLM(),
-      tools: [],
-      systemPrompt: systemPrompt,
-      responseFormat: providerStrategy(ChiefComplaintJsonSchema),
-    };
-
     const chiefComplaint: ChiefComplaint = await retry(
       async () => {
-        const text = await invokeWithTools(agentConfig, [
-          new HumanMessage(userPrompt),
-        ]).catch((error) => {
-          handleLangchainError(error);
-        });
+        const result = await createAgent({
+          model: getCreativeLLM(),
+          tools: [],
+          systemPrompt: systemPrompt,
+          responseFormat: providerStrategy(ChiefComplaintJsonSchema),
+        })
+          .invoke({ messages: [new HumanMessage(userPrompt)] })
+          .catch((error) => {
+            handleLangchainError(error);
+          });
         console.debug(
-          `[GenerateChiefComplaintOneShot] LLM raw Response:\n${text}`
+          "[GenerateChiefComplaintOneShot] LLM raw Response:\ncontent:\n",
+          result.messages[result.messages.length - 1]?.content,
+          "\nstructured response:\n",
+          result.structuredResponse
         );
 
-        return await decodeObject(text)
-          .then(
-            (object) => ChiefComplaintJsonSchema.parse(object).chiefComplaint
-          )
-          .catch(() => {
-            throw new GenerationError(
-              `Failed to parse LLM response in JSON format`
-            );
-          });
+        return parseStructuredResponse(result, ChiefComplaintJsonSchema)
+          .chiefComplaint;
       },
       2,
       0

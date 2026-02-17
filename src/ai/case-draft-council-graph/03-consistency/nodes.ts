@@ -21,6 +21,7 @@ export async function generateInconsistencies(
     inconsistencies: await generateInconsistenciesOneShot(
       state.case,
       state.diagnosis,
+      undefined,
       state.context
     ),
   };

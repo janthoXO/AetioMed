@@ -1,9 +1,5 @@
 import z from "zod";
-import {
-  AllGenerationFlags,
-  GenerationFlagsSchema,
-  type GenerationFlags,
-} from "./GenerationFlags.js";
+import { AllGenerationFlags, GenerationFlagSchema } from "./GenerationFlags.js";
 
 const InconsistencySeveritySchema = z.enum(["low", "medium", "high"]);
 
@@ -15,7 +11,7 @@ const AllInconsistencySeverity = InconsistencySeveritySchema.options;
  * Schema for consistency errors
  */
 export const InconsistencySchema = z.object({
-  field: GenerationFlagsSchema.describe("Field with inconsistency"),
+  field: GenerationFlagSchema.describe("Field with inconsistency"),
   description: z.string().describe("Description of the inconsistency"),
   suggestion: z
     .string()
@@ -36,10 +32,19 @@ export const InconsistencyArrayJsonFormatZod = z.object({
 
 export function InconsistencyJsonExample(): Inconsistency {
   return {
-    field: AllGenerationFlags.join(" | ") as GenerationFlags,
+    field: "anamnesis",
     description: "e.g. the anamnesis contradicts the chief complaint.",
     suggestion:
       "Review the anamnesis and ensure it aligns with the chief complaint.",
-    severity: AllInconsistencySeverity.join(" | ") as InconsistencySeverity,
+    severity: "medium",
   };
+}
+
+export function InconsistencyJsonExampleString(): string {
+  return `{
+field: ${AllGenerationFlags.join(" | ")},
+description: string,
+suggestion: string,
+severity: ${AllInconsistencySeverity.join(" | ")},
+}`;
 }

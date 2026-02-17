@@ -1,5 +1,5 @@
 import z from "zod";
-import { ICDCodeSchema } from "./ICD.js";
+import { ICDCodeSchema } from "./Diagnosis.js";
 
 export const DiseaseSchema = z.object({
   code: ICDCodeSchema.describe("ICD-10 code of the disease"),

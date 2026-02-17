@@ -1,5 +1,4 @@
 import { GenerationFlagSchema } from "../../domain-models/GenerationFlags.js";
-import { InconsistencySchema } from "../../domain-models/Inconsistency.js";
 import z from "zod";
 import { CaseSchema } from "@/domain-models/Case.js";
 import {

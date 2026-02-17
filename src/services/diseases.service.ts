@@ -1,6 +1,6 @@
 import Fuse from "fuse.js";
 import diseasesData from "../data/diseases_all.json" with { type: "json" };
-import type { ICDCode } from "@/domain-models/ICD.js";
+import type { ICDCode } from "@/domain-models/Diagnosis.js";
 
 interface DiseaseEntry {
   code: string;

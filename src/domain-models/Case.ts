@@ -1,10 +1,15 @@
 import { z, ZodObject } from "zod/v4";
-import { AnamnesisJsonExample, AnamnesisSchema } from "./Anamnesis.js";
 import {
-  ChiefComplaintJsonExample,
+  AnamnesisDescriptionPrompt,
+  AnamnesisJsonExample,
+  AnamnesisSchema,
+} from "./Anamnesis.js";
+import {
+  ChiefComplaintDescriptionPrompt,
+  ChiefComplaintExample,
   ChiefComplaintSchema,
 } from "./ChiefComplaint.js";
-import { AllGenerationFlags, type GenerationFlags } from "./GenerationFlags.js";
+import { AllGenerationFlags, type GenerationFlag } from "./GenerationFlags.js";
 
 /**
  * Zod schema for a complete medical case
@@ -17,7 +22,7 @@ export const CaseSchema = z.object({
 export type Case = z.infer<typeof CaseSchema>;
 
 export function CaseJsonFormatZod(
-  generationFlags?: GenerationFlags[]
+  generationFlags?: GenerationFlag[]
 ): ZodObject {
   let zodCase = CaseSchema as ZodObject;
 
@@ -42,9 +47,24 @@ export function CaseJsonFormatZod(
   return zodCase;
 }
 
-export function CaseJsonExample(generationFlags?: GenerationFlags[]): Case {
+export function descriptionPromptDraft(
+  generationFlags: GenerationFlag[]
+): string {
+  return generationFlags
+    .map((flag) => {
+      switch (flag) {
+        case "chiefComplaint":
+          return ChiefComplaintDescriptionPrompt();
+        case "anamnesis":
+          return AnamnesisDescriptionPrompt();
+      }
+    })
+    .join("\n");
+}
+
+export function CaseJsonExample(generationFlags?: GenerationFlag[]): Case {
   const exampleCase: Case = {
-    chiefComplaint: ChiefComplaintJsonExample(),
+    chiefComplaint: ChiefComplaintExample(),
     anamnesis: AnamnesisJsonExample(),
   };
 
@@ -70,7 +90,7 @@ export function CaseJsonExample(generationFlags?: GenerationFlags[]): Case {
 }
 
 export function CaseJsonExampleString(
-  generationFlags?: GenerationFlags[]
+  generationFlags?: GenerationFlag[]
 ): string {
   return JSON.stringify(CaseJsonExample(generationFlags));
 }

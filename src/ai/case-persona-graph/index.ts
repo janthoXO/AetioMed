@@ -26,9 +26,9 @@ export function buildCasePersonaGraph() {
   })
     .addNode("symptom_phase", symptomsGraph)
     .addNode("chief_complaint_phase", chiefComplaintGraph)
-    .addNode("chief_complaint_after", passthrough)
+    .addNode("chief_complaint_after", passthrough<GlobalState>)
     .addNode("anamnesis_phase", anamnesisGraph)
-    .addNode("loop_entry", passthrough)
+    .addNode("loop_entry", passthrough<GlobalState>)
     .addNode("inconsistency_phase", inconsistencyGraph)
 
     .addEdge(START, "symptom_phase")

@@ -20,7 +20,9 @@ type ChiefComplaintGraphState = z.infer<typeof ChiefComplaintGraphStateSchema>;
 async function generateChiefComplaintCoT(
   state: ChiefComplaintGraphState
 ): Promise<ChiefComplaintGraphState> {
-  console.debug("[ChiefComplaintGraph: generateChiefComplaintCoT] Generating chief complaint CoT with LLM...");
+  console.debug(
+    "[ChiefComplaintGraph: generateChiefComplaintCoT] Generating chief complaint CoT with LLM..."
+  );
   state.cot = await generateChiefComplaintCoTService(
     state.diagnosis,
     state.symptoms,
@@ -32,7 +34,9 @@ async function generateChiefComplaintCoT(
 async function generateChiefComplaint(
   state: ChiefComplaintGraphState
 ): Promise<ChiefComplaintGraphState> {
-  console.debug("[ChiefComplaintGraph: generateChiefComplaint] Generating chief complaint with LLM...");
+  console.debug(
+    "[ChiefComplaintGraph: generateChiefComplaint] Generating chief complaint with LLM..."
+  );
   state.case.chiefComplaint = await generateChiefComplaintOneShot(
     state.diagnosis,
     state.symptoms,

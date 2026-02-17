@@ -1,8 +1,4 @@
-import {
-  END,
-  START,
-  StateGraph,
-} from "@langchain/langgraph";
+import { END, START, StateGraph } from "@langchain/langgraph";
 import { GlobalStateSchema } from "../state.js";
 import z from "zod";
 import {
@@ -19,7 +15,9 @@ const SymptomsGraphStateSchema = GlobalStateSchema.pick({
 type SymptomsGraphState = z.infer<typeof SymptomsGraphStateSchema>;
 
 function retrieveSymptomsUMLS(state: SymptomsGraphState): SymptomsGraphState {
-  console.debug("[SymptomsGraph: retrieveSymptomsUMLS] Retrieving symptoms from UMLS...");
+  console.debug(
+    "[SymptomsGraph: retrieveSymptomsUMLS] Retrieving symptoms from UMLS..."
+  );
   if (!state.diagnosis.icd) {
     return state;
   }
@@ -31,7 +29,9 @@ function retrieveSymptomsUMLS(state: SymptomsGraphState): SymptomsGraphState {
 async function generateSymptoms(
   state: SymptomsGraphState
 ): Promise<SymptomsGraphState> {
-  console.debug("[SymptomsGraph: generateSymptoms] Generating symptoms with LLM...");
+  console.debug(
+    "[SymptomsGraph: generateSymptoms] Generating symptoms with LLM..."
+  );
   state.symptoms = await generateSymptomsOneShot(
     state.diagnosis,
     state.userInstructions,

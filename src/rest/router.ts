@@ -4,7 +4,7 @@ import swaggerDocument from "./swagger-output.json" with { type: "json" };
 import morgan from "morgan";
 
 import casesRouter from "./cases.router.js";
-import { config } from "@/utils/config.js";
+import { config } from "@/config.js";
 
 export function initRouter(): Promise<void> {
   const apiRouter = express.Router();

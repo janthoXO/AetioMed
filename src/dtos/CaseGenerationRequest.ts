@@ -1,8 +1,8 @@
 import {
   AllGenerationFlags,
-  GenerationFlagsSchema,
+  GenerationFlagSchema,
 } from "@/domain-models/GenerationFlags.js";
-import { ICDCodeSchema } from "@/domain-models/ICD.js";
+import { ICDCodeSchema } from "@/domain-models/Diagnosis.js";
 import { LanguageSchema } from "@/domain-models/Language.js";
 import { z } from "zod/v4";
 
@@ -17,7 +17,7 @@ export const CaseGenerationRequestSchema = z
       .optional()
       .describe("Additional context for case generation"),
     generationFlags: z
-      .array(GenerationFlagsSchema)
+      .array(GenerationFlagSchema)
       .default(AllGenerationFlags)
       .describe("Generation flags to specify case fields to generate"),
     language: LanguageSchema.optional().describe(

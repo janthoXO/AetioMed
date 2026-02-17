@@ -1,8 +1,5 @@
 import z from "zod";
-import {
-  AllGenerationFlags,
-  GenerationFlagSchema,
-} from "./GenerationFlags.js";
+import { AllGenerationFlags, GenerationFlagSchema } from "./GenerationFlags.js";
 
 const InconsistencySeveritySchema = z.enum(["low", "medium", "high"]);
 
@@ -49,5 +46,5 @@ field: ${AllGenerationFlags.join(" | ")},
 description: string,
 suggestion: string,
 severity: ${AllInconsistencySeverity.join(" | ")},
-}`
+}`;
 }

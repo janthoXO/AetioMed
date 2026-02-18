@@ -6,6 +6,7 @@ import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
 import { GenerationError } from "@/errors/AppError.js";
 import { translateAnamnesisCategoriesFromEnglish } from "@/services/anamnesis.service.js";
+import { translateProceduresFromEnglish } from "@/services/procedures.service.js";
 
 type TranslateCaseOutput = Pick<GlobalState, "case">;
 
@@ -38,6 +39,34 @@ export async function translateAnamnesisCategory(
     return {
       ...anamnesis,
       category: categoryTranslations[anamnesis.category as AnamnesisCategory]!,
+    };
+  });
+
+  return { case: state.case };
+}
+
+export async function translateProcedures(
+  state: GlobalState
+): Promise<TranslateCaseOutput> {
+  console.debug(
+    "[Translation: TranslateCase] Translating procedures to",
+    state.language
+  );
+
+  if (!state.case.procedures?.length) {
+    console.debug("[Translation: TranslateCase] No procedures to translate.");
+    return { case: state.case };
+  }
+
+  const englishProcedures = await translateProceduresFromEnglish(
+    state.case.procedures,
+    state.language
+  );
+
+  state.case.procedures = state.case.procedures?.map((procedure, index) => {
+    return {
+      ...procedure,
+      ...englishProcedures[index],
     };
   });
 

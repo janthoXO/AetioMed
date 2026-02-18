@@ -37,17 +37,19 @@ type LanguageAnamnesisCategoryMapping = z.infer<
 >;
 
 /**
- * Record<Language, Record<AnamnesisCategoryTranslation, AnamnesisCategoryEnglish>>
+ * Record<Language, Record<AnamnesisCategoryEnglish, AnamnesisCategoryTranslation>>
  */
 
-// Preload translations from `src/data/anamnesisCategories.yml` if present and `js-yaml` is available.
+// Preload translations from `src/data/anamnesisCategoriesTranslations.yml` if present and `js-yaml` is available.
 function preloadAnamnesisCategories(): LanguageAnamnesisCategoryMapping {
-  const dataPath = new URL("../data/anamnesisCategories.yml", import.meta.url)
-    .pathname;
+  const dataPath = new URL(
+    "../data/anamnesisCategoriesTranslations.yml",
+    import.meta.url
+  ).pathname;
 
   if (!fs.existsSync(dataPath)) {
     console.warn(
-      "[Anamnesis Service] No anamnesisCategories.yml found, skipping preload."
+      "[Anamnesis Service] No anamnesisCategoriesTranslations.yml found, skipping preload."
     );
     return {};
   }
@@ -66,19 +68,20 @@ function preloadAnamnesisCategories(): LanguageAnamnesisCategoryMapping {
     }
 
     console.info(
-      "[Anamnesis Service] Preloaded anamnesis categories from YAML."
+      "[Anamnesis Service] Preloaded anamnesis categories translations from YAML.",
+      parsed.data
     );
     return parsed.data;
   } catch (err) {
     console.warn(
-      "[Anamnesis Service] Failed to preload anamnesis categories:",
+      "[Anamnesis Service] Failed to preload anamnesis categories translations:",
       err
     );
     return {};
   }
 }
 
-const AnamnesisCategoryToEnglish: LanguageAnamnesisCategoryMapping =
+const AnamnesisCategoryFromEnglish: LanguageAnamnesisCategoryMapping =
   preloadAnamnesisCategories();
 
 /**
@@ -91,7 +94,18 @@ function getAnamnesisCategoryTranslationToEnglish(
   category: AnamnesisCategory,
   language: Language
 ): AnamnesisCategory | undefined {
-  return AnamnesisCategoryToEnglish[language]?.[category];
+  const translations = AnamnesisCategoryFromEnglish[language];
+  if (!translations) return undefined;
+
+  for (const [engCategory, translatedCategory] of Object.entries(
+    translations
+  )) {
+    if (translatedCategory === category) {
+      return engCategory as AnamnesisCategory;
+    }
+  }
+
+  return undefined;
 }
 
 /**
@@ -104,18 +118,7 @@ function getAnamnesisCategoryTranslationFromEnglish(
   category: AnamnesisCategory,
   language: Language
 ): AnamnesisCategory | undefined {
-  const translations = AnamnesisCategoryToEnglish[language];
-  if (!translations) return undefined;
-
-  for (const [translatedCategory, engCategory] of Object.entries(
-    translations
-  )) {
-    if (engCategory === category) {
-      return translatedCategory as AnamnesisCategory;
-    }
-  }
-
-  return undefined;
+  return AnamnesisCategoryFromEnglish[language]?.[category];
 }
 
 async function generateAnamnesisCategoriesToEnglish(
@@ -255,10 +258,18 @@ export async function translateAnamnesisCategoriesToEnglish(
 
     Object.assign(translations, generatedTranslations);
 
-    if (!AnamnesisCategoryToEnglish[language]) {
-      AnamnesisCategoryToEnglish[language] = {};
+    if (!AnamnesisCategoryFromEnglish[language]) {
+      AnamnesisCategoryFromEnglish[language] = {};
     }
-    Object.assign(AnamnesisCategoryToEnglish[language], generatedTranslations);
+    Object.assign(
+      AnamnesisCategoryFromEnglish[language],
+      Object.fromEntries(
+        Object.entries(generatedTranslations).map(([translated, eng]) => [
+          eng,
+          translated,
+        ])
+      )
+    );
   }
 
   return translations;
@@ -291,17 +302,12 @@ export async function translateAnamnesisCategoriesFromEnglish(
 
     Object.assign(translations, generatedTranslations);
 
-    if (!AnamnesisCategoryToEnglish[language]) {
-      AnamnesisCategoryToEnglish[language] = {};
+    if (!AnamnesisCategoryFromEnglish[language]) {
+      AnamnesisCategoryFromEnglish[language] = {};
     }
     Object.assign(
-      AnamnesisCategoryToEnglish[language],
-      Object.fromEntries(
-        Object.entries(generatedTranslations).map(([eng, translated]) => [
-          translated,
-          eng,
-        ])
-      )
+      AnamnesisCategoryFromEnglish[language],
+      generatedTranslations
     );
   }
 
@@ -313,11 +319,13 @@ export async function generateAnamnesisCoT(
   symptoms: Symptom[],
   relatedCase?: Case,
   userInstructions?: string,
-  anamnesisCategories: AnamnesisCategory[] = AnamnesisCategoryDefaults
+  anamnesisCategories:
+    | AnamnesisCategory[]
+    | undefined = AnamnesisCategoryDefaults
 ): Promise<string> {
   const systemPrompt = `You are a patient with these symptoms: 
 ${symptoms.map((s) => s.name).join(", ")}
-Generate a step by step reasoning process to answer the provided anamnesis categories.
+Generate a step by step reasoning process ${anamnesisCategories ? "to answer the provided anamnesis categories." : "to generate an anamnesis."}
 Return the steps as a list of steps in markdown format.
 ${
   relatedCase
@@ -331,7 +339,9 @@ ${
     userInstructions
       ? `Additional provided instructions: ${userInstructions}`
       : "",
-    `Provided anamnesis categories: ${anamnesisCategories.join(", ")}`,
+    anamnesisCategories
+      ? `Provided anamnesis categories: ${anamnesisCategories.join(", ")}`
+      : "",
   ]
     .filter((s) => s.length > 0)
     .join("\n");
@@ -372,13 +382,16 @@ export async function generateAnamnesisOneShot(
   relatedCase?: Case, // generated by a previous chain step
   cot?: string, // generated by a previous chain step
   userInstructions?: string, // provided by the user
-  anamnesisCategories: AnamnesisCategory[] = AnamnesisCategoryDefaults, // provided by the user
+  anamnesisCategories:
+    | AnamnesisCategory[]
+    | undefined = AnamnesisCategoryDefaults, // provided by the user
   inconsistencies?: Inconsistency[] // generated by a previous chain step
 ): Promise<Anamnesis> {
-  const { anamnesis: previousAnamnesis, ...caseWithoutAnamnesis } = relatedCase ?? {};
+  const { anamnesis: previousAnamnesis, ...caseWithoutAnamnesis } =
+    relatedCase ?? {};
   const systemPrompt = `You are a patient with these symptoms: 
 ${symptoms.map((s) => s.name).join(", ")}
-Generate an anamnesis answering the provided categories based on your symptoms.
+Generate an anamnesis ${anamnesisCategories ? "answering the provided categories based on your symptoms." : "answering standard anamnesis categories."}
 ${cot ? `Think step by step:\n${cot}` : ""}
 ${
   Object.keys(caseWithoutAnamnesis).length > 0
@@ -411,7 +424,9 @@ Requirements:
     userInstructions
       ? `Additional provided instructions: ${userInstructions}`
       : "",
-    `Provided anamnesis categories: ${anamnesisCategories.join(", ")}`,
+    anamnesisCategories
+      ? `Provided anamnesis categories: ${anamnesisCategories.join(", ")}`
+      : "",
   ]
     .filter((s) => s.length > 0)
     .join("\n");

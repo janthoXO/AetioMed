@@ -10,7 +10,7 @@ import {
   ChiefComplaintSchema,
 } from "./ChiefComplaint.js";
 import { AllGenerationFlags, type GenerationFlag } from "./GenerationFlags.js";
-import { ProcedureSchema } from "./Procedure.js";
+import { ProcedureWithRelevanceSchema } from "./Procedure.js";
 
 /**
  * Zod schema for a complete medical case
@@ -18,7 +18,7 @@ import { ProcedureSchema } from "./Procedure.js";
 export const CaseSchema = z.object({
   chiefComplaint: ChiefComplaintSchema.optional(),
   anamnesis: AnamnesisSchema.optional(),
-  procedures: z.array(ProcedureSchema).optional(),
+  procedures: z.array(ProcedureWithRelevanceSchema).optional(),
 });
 
 export type Case = z.infer<typeof CaseSchema>;
@@ -50,7 +50,7 @@ export function CaseJsonFormatZod(
 }
 
 export function descriptionPromptDraft(
-  generationFlags: GenerationFlag[]
+  generationFlags: GenerationFlag[],
 ): string {
   return generationFlags
     .map((flag) => {
@@ -59,6 +59,8 @@ export function descriptionPromptDraft(
           return ChiefComplaintDescriptionPrompt();
         case "anamnesis":
           return AnamnesisDescriptionPrompt();
+        default:
+          return "";
       }
     })
     .join("\n");

@@ -23,18 +23,12 @@ export const GlobalStateSchema = GraphInputSchema.extend({
   /**
    * Generated cases.
    */
-  case: CaseSchema.default({}),
+  case: CaseSchema.optional(),
 
   /**
    * Retrieved symptoms for the diagnosis.
    */
   symptoms: SymptomSchema.array().default([]),
-
-  /**
-   * Maximum remaining iterations for the refinement loop.
-   * Decrements each loop to prevent infinite cycles.
-   */
-  refinementIterationsRemaining: z.number().default(2),
 });
 
 /**

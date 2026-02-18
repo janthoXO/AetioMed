@@ -14,21 +14,21 @@ const SymptomsGraphStateSchema = GlobalStateSchema.pick({
 
 type SymptomsGraphState = z.infer<typeof SymptomsGraphStateSchema>;
 
-function retrieveSymptomsUMLS(state: SymptomsGraphState): SymptomsGraphState {
+function retrieveSymptomsUMLS(state: SymptomsGraphState): Pick<SymptomsGraphState, "symptoms"> {
   console.debug(
     "[SymptomsGraph: retrieveSymptomsUMLS] Retrieving symptoms from UMLS..."
   );
   if (!state.diagnosis.icd) {
-    return state;
+    return { symptoms: state.symptoms };
   }
 
   state.symptoms = SymptomsRelatedToDiseaseIcd(state.diagnosis.icd);
-  return state;
+  return { symptoms: state.symptoms };
 }
 
 async function generateSymptoms(
   state: SymptomsGraphState
-): Promise<SymptomsGraphState> {
+): Promise<Pick<SymptomsGraphState, "symptoms">> {
   console.debug(
     "[SymptomsGraph: generateSymptoms] Generating symptoms with LLM..."
   );
@@ -37,7 +37,7 @@ async function generateSymptoms(
     state.userInstructions,
     state.symptoms
   );
-  return state;
+  return { symptoms: state.symptoms };
 }
 
 export const symptomsGraph = new StateGraph(SymptomsGraphStateSchema)

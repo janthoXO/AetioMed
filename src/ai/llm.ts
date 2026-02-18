@@ -131,6 +131,19 @@ export async function decodeObject(
 }
 
 export function parseStructuredResponse<T>(
+  response: string,
+  schema: z.ZodSchema<T>
+): T {
+  try {
+    return schema.parse(JSON.parse(response));
+  } catch {
+    const repaired = jsonrepair(response);
+    console.debug("Repaired JSON:", repaired);
+    return schema.parse(JSON.parse(repaired));
+  }
+}
+
+export function parseStructuredResponseAgent<T>(
   result: { messages: Message[]; structuredResponse?: T },
   schema: z.ZodSchema<T>
 ): T {
@@ -143,13 +156,7 @@ export function parseStructuredResponse<T>(
     throw new Error("LLM response content is not a string");
   }
 
-  try {
-    return schema.parse(JSON.parse(content));
-  } catch {
-    const repaired = jsonrepair(content);
-    console.debug("Repaired JSON:", repaired);
-    return schema.parse(JSON.parse(repaired));
-  }
+  return parseStructuredResponse(content, schema);
 }
 
 export function handleLangchainError(error: Error): never {

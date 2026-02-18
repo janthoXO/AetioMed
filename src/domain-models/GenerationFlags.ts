@@ -1,6 +1,6 @@
 import z from "zod";
 
-export const GenerationFlagSchema = z.enum(["chiefComplaint", "anamnesis"]);
+export const GenerationFlagSchema = z.enum(["chiefComplaint", "anamnesis", "procedures"]);
 
 export type GenerationFlag = z.infer<typeof GenerationFlagSchema>;
 

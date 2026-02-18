@@ -1,4 +1,4 @@
-import { getLLM, decodeObject } from "@/ai/llm.js";
+import { getLLM, parseStructuredResponse } from "@/ai/llm.js";
 import { type GlobalState } from "./state.js";
 import { type AnamnesisCategory } from "@/domain-models/Anamnesis.js";
 import { CaseJsonExampleString, CaseSchema } from "@/domain-models/Case.js";
@@ -57,7 +57,7 @@ Your task is to translate the provided medical case JSON content into ${state.la
 
 Return your response in JSON:
 ${CaseJsonExampleString(state.generationFlags)}
-
+${state.generationFlags.includes("procedures") ? "Do NOT translate the procedures relevance field, keep it as is." : ""}
 RULES:
 1. Preserve the structure exactly.
 2. Translate only the VALUES. Do not translate keys.
@@ -85,16 +85,14 @@ ${JSON.stringify(state.case)}`;
           //   .withStructuredOutput(CaseSchemaWithLanguage(state.language))
           //   .invoke(messages);
 
-          const caseObject = await llm
-            .invoke(messages)
-            .then((response) => decodeObject(response.text));
+          const result = await llm.invoke(messages);
 
           console.debug(
             "[Translation: TranslateCase] LLM Response:",
-            caseObject
+            result.text
           );
 
-          return CaseSchema.parse(caseObject);
+          return parseStructuredResponse(result.text, CaseSchema);
         } catch {
           throw new GenerationError(
             `Failed to parse LLM response in JSON format`

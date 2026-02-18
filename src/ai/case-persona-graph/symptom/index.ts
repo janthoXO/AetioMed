@@ -14,7 +14,9 @@ const SymptomsGraphStateSchema = GlobalStateSchema.pick({
 
 type SymptomsGraphState = z.infer<typeof SymptomsGraphStateSchema>;
 
-function retrieveSymptomsUMLS(state: SymptomsGraphState): Pick<SymptomsGraphState, "symptoms"> {
+function retrieveSymptomsUMLS(
+  state: SymptomsGraphState
+): Pick<SymptomsGraphState, "symptoms"> {
   console.debug(
     "[SymptomsGraph: retrieveSymptomsUMLS] Retrieving symptoms from UMLS..."
   );

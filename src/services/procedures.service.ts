@@ -235,7 +235,10 @@ function preloadProcedureTranslations(): LanguageProcedureTranslationMapping {
     return {}; // Return empty object on parsing failure
   }
 
-  console.info("[Procedures] Loaded procedure translations from YAML:", parseResult.data);
+  console.info(
+    "[Procedures] Loaded procedure translations from YAML:",
+    parseResult.data
+  );
   return parseResult.data;
 }
 

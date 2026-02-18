@@ -79,8 +79,10 @@ Requirements:
           result.structuredResponse
         );
 
-        return parseStructuredResponseAgent(result, InconsistencyArrayJsonFormatZod)
-          .inconsistencies;
+        return parseStructuredResponseAgent(
+          result,
+          InconsistencyArrayJsonFormatZod
+        ).inconsistencies;
       },
       2,
       0

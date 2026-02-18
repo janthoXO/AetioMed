@@ -1,6 +1,9 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { NoPredefinedProceduresError, searchForProcedures } from "@/services/procedures.service.js";
+import {
+  NoPredefinedProceduresError,
+  searchForProcedures,
+} from "@/services/procedures.service.js";
 
 /**
  * Tool to retrieve procedures for a given query.

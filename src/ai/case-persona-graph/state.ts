@@ -1,10 +1,7 @@
 import { GenerationFlagSchema } from "../../domain-models/GenerationFlags.js";
 import z from "zod";
 import { CaseSchema } from "@/domain-models/Case.js";
-import {
-  AnamnesisCategorySchema,
-  AnamnesisCategoryDefaults,
-} from "@/domain-models/Anamnesis.js";
+import { AnamnesisCategorySchema } from "@/domain-models/Anamnesis.js";
 import { DiagnosisSchema } from "@/domain-models/Diagnosis.js";
 import { SymptomSchema } from "@/domain-models/Symptom.js";
 
@@ -12,10 +9,7 @@ export const GraphInputSchema = z.object({
   diagnosis: DiagnosisSchema,
   userInstructions: z.string().optional(),
   generationFlags: z.array(GenerationFlagSchema),
-  anamnesisCategories: z
-    .array(AnamnesisCategorySchema)
-    .default(AnamnesisCategoryDefaults)
-    .optional(),
+  anamnesisCategories: z.array(AnamnesisCategorySchema).optional(),
 });
 
 export type GraphInput = z.infer<typeof GraphInputSchema>;

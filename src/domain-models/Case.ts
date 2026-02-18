@@ -50,7 +50,7 @@ export function CaseJsonFormatZod(
 }
 
 export function descriptionPromptDraft(
-  generationFlags: GenerationFlag[],
+  generationFlags: GenerationFlag[]
 ): string {
   return generationFlags
     .map((flag) => {

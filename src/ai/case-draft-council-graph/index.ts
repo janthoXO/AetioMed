@@ -11,7 +11,10 @@ import type { Case } from "@/domain-models/Case.js";
 import type { GenerationFlag } from "@/domain-models/GenerationFlags.js";
 
 import { GenerationError } from "@/errors/AppError.js";
-import type { AnamnesisCategory } from "@/domain-models/Anamnesis.js";
+import {
+  AnamnesisCategoryDefaults,
+  type AnamnesisCategory,
+} from "@/domain-models/Anamnesis.js";
 import type { Diagnosis } from "@/domain-models/Diagnosis.js";
 
 type DecreaseLoopIterationOutput = Pick<GlobalState, "loopIterationsRemaining">;
@@ -97,6 +100,8 @@ export async function generateCase(
   anamnesisCategories?: AnamnesisCategory[]
 ): Promise<Case> {
   const graph = buildCaseDraftCouncilGraph();
+
+  anamnesisCategories = anamnesisCategories ?? AnamnesisCategoryDefaults;
 
   console.log(
     `[CaseGenerator] Starting case generation for:\n`,

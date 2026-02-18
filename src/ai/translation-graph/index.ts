@@ -1,6 +1,10 @@
 import { START, StateGraph, END } from "@langchain/langgraph";
 import { GlobalStateSchema } from "./state.js";
-import { translateValues, translateAnamnesisCategory, translateProcedures } from "./nodes.js";
+import {
+  translateValues,
+  translateAnamnesisCategory,
+  translateProcedures,
+} from "./nodes.js";
 import type { Case } from "@/domain-models/Case.js";
 import type { Language } from "@/domain-models/Language.js";
 

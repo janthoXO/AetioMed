@@ -45,10 +45,6 @@ export const AnamnesisSchema = z
 
 export type Anamnesis = z.infer<typeof AnamnesisSchema>;
 
-export function AnamnesisDescriptionPrompt(): string {
-  return "Anamnesis: Medical history with multiple categories";
-}
-
 export function AnamnesisJsonExample(): Anamnesis {
   return [
     {
@@ -60,4 +56,8 @@ export function AnamnesisJsonExample(): Anamnesis {
       answer: "The patient's response or clinical finding",
     },
   ];
+}
+
+export function AnamnesisJsonExampleString(): string {
+  return JSON.stringify(AnamnesisJsonExample(), null, 2);
 }

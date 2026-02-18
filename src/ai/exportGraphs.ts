@@ -1,6 +1,5 @@
 import * as fs from "node:fs/promises";
 import type { CompiledGraph } from "@langchain/langgraph";
-import { buildCaseDraftCouncilGraph } from "./case-draft-council-graph/index.js";
 import { buildCasePersonaGraph } from "./case-persona-graph/index.js";
 import { buildTranslationGraph } from "./translation-graph/index.js";
 
@@ -22,7 +21,6 @@ export async function exportGraphPng(
 }
 
 await Promise.all([
-  exportGraphPng(buildCaseDraftCouncilGraph(), "case-draft-council-graph"),
   exportGraphPng(buildCasePersonaGraph(), "case-persona-graph"),
   exportGraphPng(buildTranslationGraph(), "translation-graph"),
 ]);

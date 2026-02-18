@@ -15,6 +15,7 @@ import { anamnesisGraph } from "./anamnesis/index.js";
 import { inconsistencyGraph } from "./inconsistency/index.js";
 import { passthrough } from "../graph.utils.js";
 import { symptomsGraph } from "./symptom/index.js";
+import { procedureGraph } from "./procedure/index.js";
 
 /**
  * Build and compile the Council-Consistency-Refinement graph
@@ -28,7 +29,9 @@ export function buildCasePersonaGraph() {
     .addNode("chief_complaint_phase", chiefComplaintGraph)
     .addNode("chief_complaint_after", passthrough<GlobalState>)
     .addNode("anamnesis_phase", anamnesisGraph)
-    .addNode("loop_entry", passthrough<GlobalState>)
+    .addNode("anamnesis_after", passthrough<GlobalState>)
+    .addNode("procedure_phase", procedureGraph)
+    .addNode("procedure_after", passthrough<GlobalState>)
     .addNode("inconsistency_phase", inconsistencyGraph)
 
     .addEdge(START, "symptom_phase")
@@ -54,22 +57,25 @@ export function buildCasePersonaGraph() {
       },
       {
         generate: "anamnesis_phase",
-        skip: "loop_entry",
+        skip: "anamnesis_after",
       }
     )
-    .addEdge("anamnesis_phase", "loop_entry")
+    .addEdge("anamnesis_phase", "anamnesis_after")
     .addConditionalEdges(
-      "loop_entry",
+      "anamnesis_after",
       (state: GlobalState) => {
-        return state.refinementIterationsRemaining > 0 ? "continue" : "end";
+        return state.generationFlags.includes("procedures")
+          ? "generate"
+          : "loop_entry";
       },
       {
-        end: END,
-        // inconsistencies generation should then decrease the iteration count
-        continue: "inconsistency_phase",
+        generate: "procedure_phase",
+        skip: "procedure_after",
       }
     )
-    .addEdge("inconsistency_phase", "loop_entry");
+    .addEdge("procedure_phase", "procedure_after")
+    .addEdge("procedure_after", "inconsistency_phase")
+    .addEdge("inconsistency_phase", END);
   const compiledGraph = graph.compile();
 
   console.log("[GraphBuilder] Case Persona graph compiled");

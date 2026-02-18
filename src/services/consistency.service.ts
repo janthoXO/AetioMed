@@ -1,7 +1,7 @@
 import {
   getDeterministicLLM,
   handleLangchainError,
-  parseStructuredResponse,
+  parseStructuredResponseAgent,
 } from "@/ai/llm.js";
 import type { Case } from "@/domain-models/Case.js";
 import type { Diagnosis } from "@/domain-models/Diagnosis.js";
@@ -79,7 +79,7 @@ Requirements:
           result.structuredResponse
         );
 
-        return parseStructuredResponse(result, InconsistencyArrayJsonFormatZod)
+        return parseStructuredResponseAgent(result, InconsistencyArrayJsonFormatZod)
           .inconsistencies;
       },
       2,

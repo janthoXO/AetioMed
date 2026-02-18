@@ -8,7 +8,7 @@ import type { Diagnosis, ICDCode } from "@/domain-models/Diagnosis.js";
 import {
   getDeterministicLLM,
   handleLangchainError,
-  parseStructuredResponse,
+  parseStructuredResponseAgent,
 } from "@/ai/llm.js";
 import { createAgent, HumanMessage, providerStrategy } from "langchain";
 import z from "zod";
@@ -77,7 +77,7 @@ Requirements:
           result.structuredResponse
         );
 
-        return parseStructuredResponse(result, SymptomArrayWrapperSchema)
+        return parseStructuredResponseAgent(result, SymptomArrayWrapperSchema)
           .symptoms;
       },
       2,

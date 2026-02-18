@@ -10,6 +10,7 @@ import {
   ChiefComplaintSchema,
 } from "./ChiefComplaint.js";
 import { AllGenerationFlags, type GenerationFlag } from "./GenerationFlags.js";
+import { ProcedureSchema } from "./Procedure.js";
 
 /**
  * Zod schema for a complete medical case
@@ -17,6 +18,7 @@ import { AllGenerationFlags, type GenerationFlag } from "./GenerationFlags.js";
 export const CaseSchema = z.object({
   chiefComplaint: ChiefComplaintSchema.optional(),
   anamnesis: AnamnesisSchema.optional(),
+  procedures: z.array(ProcedureSchema).optional(),
 });
 
 export type Case = z.infer<typeof CaseSchema>;

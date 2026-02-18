@@ -1,4 +1,33 @@
 import z from "zod";
+import fs from "node:fs";
+import YAML from "yaml";
+import path from "node:path";
+
+export const ProcedureSchema = z.object({
+  name: z.string().describe("Procedure name"),
+});
+
+export type Procedure = z.infer<typeof ProcedureSchema>;
+
+function preloadPredefinedProcedures(): Procedure[] | undefined {
+  const filepath = path.resolve(import.meta.dirname, "../data/procedures.yml");
+
+  const procedureObject = YAML.parse(fs.readFileSync(filepath, "utf-8")) as
+    | {
+        procedures: Procedure[];
+      }
+    | undefined;
+
+  console.info(
+    "[Procedure] Loaded predefined procedures from YAML:",
+    procedureObject?.procedures
+  );
+
+  return procedureObject?.procedures;
+}
+
+export const PredefinedProcedures: Procedure[] | undefined =
+  preloadPredefinedProcedures();
 
 export const ProcedureRelevanceSchema = z.enum([
   "obligatory",
@@ -7,28 +36,26 @@ export const ProcedureRelevanceSchema = z.enum([
 ]);
 export type ProcedureRelevance = z.infer<typeof ProcedureRelevanceSchema>;
 
-export const ProcedureSchema = z.object({
-  name: z.string().describe("Procedure name"),
-  description: z.string().optional().describe("Description of the procedure"),
+export const ProcedureWithRelevanceSchema = ProcedureSchema.extend({
   relevance: ProcedureRelevanceSchema.describe(
     "Relevance of the procedure to the diagnosis"
   ),
 });
 
-export type Procedure = z.infer<typeof ProcedureSchema>;
+export type ProcedureWithRelevance = z.infer<
+  typeof ProcedureWithRelevanceSchema
+>;
 
-export function ProcedureArrayJsonExampleString(): string {
+export function ProcedureWithRelevanceArrayJsonExampleString(): string {
   return `[
     {
       "name": "Blood Test",
-      "description": "A test to analyze the patient's blood sample.",
       "relevance": ${ProcedureRelevanceSchema.options
         .map((option) => `"${option}"`)
         .join(" | ")},
     },
     {
       "name": "X-Ray",
-      "description": "An imaging procedure to visualize internal structures.",
       "relevance": ${ProcedureRelevanceSchema.options
         .map((option) => `"${option}"`)
         .join(" | ")},

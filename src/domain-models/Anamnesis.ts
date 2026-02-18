@@ -1,27 +1,33 @@
 import { z } from "zod/v4";
-
-export const AnamnesisCategoryDefaultSchema = z.enum([
-  "History of Present Illness",
-  "Past Medical History",
-  "Medications",
-  "Allergies",
-  "Family History",
-  "Cardiovascular Risk Factors",
-  "Social and Occupational History",
-]);
-
-export const AnamnesisCategoryDefaults = AnamnesisCategoryDefaultSchema.options;
-
-/**
- * Anamnesis categories for medical history
- */
-export type AnamnesisCategoryDefaults = z.infer<
-  typeof AnamnesisCategoryDefaultSchema
->;
+import fs from "node:fs";
+import YAML from "yaml";
+import path from "node:path";
 
 export const AnamnesisCategorySchema = z.string();
 
 export type AnamnesisCategory = z.infer<typeof AnamnesisCategorySchema>;
+
+function preloadAnamnesisCategoryDefaults(): AnamnesisCategory[] | undefined {
+  const filepath = path.resolve(
+    import.meta.dirname,
+    "../data/anamnesisCategories.yml"
+  );
+
+  const categoryObject = YAML.parse(fs.readFileSync(filepath, "utf-8")) as
+    | {
+        categories: AnamnesisCategory[];
+      }
+    | undefined;
+
+  console.info(
+    "[Anamnesis] Loaded default categories from YAML:",
+    categoryObject?.categories
+  );
+  return categoryObject?.categories;
+}
+
+export const AnamnesisCategoryDefaults: AnamnesisCategory[] | undefined =
+  preloadAnamnesisCategoryDefaults();
 
 export const AnamnesisFieldSchema = z.object({
   category: AnamnesisCategorySchema.describe("Category of the anamnesis field"),

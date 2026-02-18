@@ -15,32 +15,13 @@ export const GraphInputSchema = z.object({
   generationFlags: z.array(GenerationFlagSchema),
   anamnesisCategories: z
     .array(AnamnesisCategorySchema)
-    .default(AnamnesisCategoryDefaults),
+    .default(AnamnesisCategoryDefaults)
+    .optional(),
 });
 
 export type GraphInput = z.infer<typeof GraphInputSchema>;
 
-export const GlobalStateSchema = z.object({
-  /**
-   * The medical diagnosis to generate a case for
-   */
-  diagnosis: DiagnosisSchema,
-  /**
-   * Optional context to guide case generation
-   */
-  context: z.string().optional(),
-  /**
-   * Generation flags to control case generation behavior
-   */
-  generationFlags: z.array(GenerationFlagSchema),
-
-  /**
-   * Anamnesis categories to include in the case
-   */
-  anamnesisCategories: z
-    .array(AnamnesisCategorySchema)
-    .default(AnamnesisCategoryDefaults),
-
+export const GlobalStateSchema = GraphInputSchema.extend({
   /**
    * Generated cases.
    */

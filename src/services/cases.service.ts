@@ -67,7 +67,7 @@ export async function generateCaseOneShot(
   generationFlags: GenerationFlag[],
   diagnosis: Diagnosis,
   userInstructions?: string,
-  anamnesisCategories: AnamnesisCategory[] = AnamnesisCategoryDefaults,
+  anamnesisCategories: AnamnesisCategory[] | undefined = AnamnesisCategoryDefaults,
   previousCase?: Case,
   inconsistencies?: Inconsistency[]
 ): Promise<Case> {
@@ -98,7 +98,7 @@ Requirements:
     userInstructions
       ? `Additional provided instructions: ${userInstructions}`
       : "",
-    generationFlags.includes("anamnesis")
+    generationFlags.includes("anamnesis") && anamnesisCategories
       ? `Provided anamnesis categories: ${anamnesisCategories.join(", ")}`
       : "",
   ]

@@ -14,7 +14,8 @@ export const GraphInputSchema = z.object({
   generationFlags: z.array(GenerationFlagSchema),
   anamnesisCategories: z
     .array(AnamnesisCategorySchema)
-    .default(AnamnesisCategoryDefaults),
+    .default(AnamnesisCategoryDefaults)
+    .optional(),
 });
 
 export type GraphInput = z.infer<typeof GraphInputSchema>;

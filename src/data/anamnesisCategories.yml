@@ -1,8 +1,8 @@
-German:
-  Krankheitsverlauf: History of Present Illness
-  Vorerkrankungen: Past Medical History
-  Medikamente: Medications
-  Allergien: Allergies
-  Familienanamnese: Family History
-  Kardiovaskuläre Risikofaktoren: Cardiovascular Risk Factors
-  Sozial-/Berufsanamnese: Social and Occupational History
+categories:
+  - History of Present Illness
+  - Past Medical History
+  - Medications
+  - Allergies
+  - Family History
+  - Cardiovascular Risk Factors
+  - Social and Occupational History

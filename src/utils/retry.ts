@@ -16,6 +16,10 @@ export function retry<T>(
         .then(resolve)
         .catch((error) => {
           if (n > 0) {
+            console.debug(
+              `Retry attempt ${retries - n + 1} failed. Retrying...`,
+              error.message
+            );
             // Exponential backoff with jitter
             // Base delay: 1s, 2s, 4s...
             const exponentialBackoff = baseDelayMs * Math.pow(2, n - 1);

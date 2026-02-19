@@ -1,6 +1,12 @@
-import { ChatOllama, type ChatOllamaInput } from "@langchain/ollama";
+import {
+  ChatOllama,
+  type ChatOllamaInput,
+  OllamaEmbeddings,
+} from "@langchain/ollama";
 import { ChatGoogle, type ChatGoogleParams } from "@langchain/google";
+import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import type { EmbeddingsInterface } from "@langchain/core/embeddings";
 import { config as envConfig } from "@/config.js";
 import {
   JsonOutputParser,
@@ -47,8 +53,11 @@ export function getLLM(llmConfig?: LLMConfig): BaseChatModel {
       break;
     }
     case "google": {
+      if (!envConfig.LLM_API_KEY) {
+        throw new ModelUnreachableError("Google API key is not configured");
+      }
       const googleConfig: ChatGoogleParams = {
-        apiKey: envConfig.LLM_API_KEY ?? "",
+        apiKey: envConfig.LLM_API_KEY,
         model: envConfig.LLM_MODEL,
         temperature,
       };
@@ -60,6 +69,28 @@ export function getLLM(llmConfig?: LLMConfig): BaseChatModel {
   }
 
   return chat;
+}
+
+/**
+ * Get an Embeddings instance based on current configuration.
+ * Used for vector-based similarity search.
+ */
+export function getEmbeddings(): EmbeddingsInterface {
+  switch (envConfig.LLM_PROVIDER) {
+    case "ollama": {
+      return new OllamaEmbeddings();
+    }
+    case "google": {
+      if (!envConfig.LLM_API_KEY) {
+        throw new ModelUnreachableError("Google API key is not configured");
+      }
+      return new GoogleGenerativeAIEmbeddings({
+        apiKey: envConfig.LLM_API_KEY,
+      });
+    }
+    default:
+      throw new Error(`Unsupported LLM Provider: ${envConfig.LLM_PROVIDER}`);
+  }
 }
 
 export function getSearchTool() {

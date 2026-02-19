@@ -3,7 +3,7 @@ import {
   getDeterministicLLM,
   handleLangchainError,
   parseStructuredResponseAgent,
-} from "@/02ai/llm.js";
+} from "@/utils/llm.js";
 import type { Inconsistency } from "@/02domain-models/Inconsistency.js";
 import type { Diagnosis } from "@/02domain-models/Diagnosis.js";
 import type { Symptom } from "@/02domain-models/Symptom.js";

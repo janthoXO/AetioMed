@@ -53,7 +53,8 @@ procedures:
   - name: "Ophthalmology: Fluorescein Angiography"
   - name: "Ophthalmology: Strabismus Test"
   - name: "Ophthalmology: Applanation Tonometry"
-  - name: "Bacteriology and Mycology: Microscopic Examination (Native Preparation or
+  - name:
+      "Bacteriology and Mycology: Microscopic Examination (Native Preparation or
       Simple Staining, e.g. Methylene Blue)"
   - name: "Cultural Examinations: Blood Culture"
   - name: "Cultural Examinations: (Wound) Swab (Cultural Detection Fungi/Bacteria)"
@@ -64,7 +65,8 @@ procedures:
   - name: "Antigen & Antibody-based Examinations: Helicobacter pylori (Ab)"
   - name: "Antigen & Antibody-based Examinations: TPHA (Treponema Pallidum
       Hemagglutination Test)"
-  - name: "Antigen & Antibody-based Examinations: FTA-ABS (Fluorescent Treponemal
+  - name:
+      "Antigen & Antibody-based Examinations: FTA-ABS (Fluorescent Treponemal
       Antibody Absorption Test)"
   - name: "Antigen & Antibody-based Examinations: Venereal Disease Research
       Laboratory Test"
@@ -78,11 +80,13 @@ procedures:
   - name: "Antigen & Antibody-based Examinations: HP Antigen in Stool"
   - name: "PCR: GI Infection Pathogens"
   - name: "PCR: Pneumococci"
-  - name: "PCR: STD Pathogens (Chlamydia tr., Neisseria g., Mycoplasma genitalium,
+  - name:
+      "PCR: STD Pathogens (Chlamydia tr., Neisseria g., Mycoplasma genitalium,
       Trichomonas, HSV 1 & 2)"
   - name: "PCR: Mycology PCR"
   - name: "PCR: Mycobacterium tuberculosis"
-  - name: "Toxin and Enzyme Detection: Clostridium Difficile Toxin A/B, Clostridia
+  - name:
+      "Toxin and Enzyme Detection: Clostridium Difficile Toxin A/B, Clostridia
       GLDH"
   - name: "Coagulation: INR/Quick"
   - name: "Current Vital Signs: Pulse"

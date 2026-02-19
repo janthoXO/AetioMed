@@ -44,7 +44,9 @@ export const proceduresQueryTool = tool(
     schema: z.object({
       query: z
         .string()
-        .describe("The search string for which to query in the procedure names."),
+        .describe(
+          "The search string for which to query in the procedure names."
+        ),
     }),
   }
 );

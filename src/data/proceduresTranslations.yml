@@ -53,37 +53,45 @@ German:
   "Ophthalmology: Fluorescein Angiography": "Augenheilkunde: Fluoreszenzangiographie"
   "Ophthalmology: Strabismus Test": "Augenheilkunde: Strabismusprüfung"
   "Ophthalmology: Applanation Tonometry": "Augenheilkunde: Applanationstonometrie"
-  "Bacteriology and Mycology: Microscopic Examination (Native Preparation or Simple Staining, e.g. Methylene Blue)": "Bakteriologie und Mykologie: Mikroskopische Untersuchung
+  "Bacteriology and Mycology: Microscopic Examination (Native Preparation or Simple Staining, e.g. Methylene Blue)":
+    "Bakteriologie und Mykologie: Mikroskopische Untersuchung
     (Nativpräparat oder einfache Färbung, z.B. Methylenblau)"
   "Cultural Examinations: Blood Culture": "Kulturelle Untersuchungen: Blutkultur"
-  "Cultural Examinations: (Wound) Swab (Cultural Detection Fungi/Bacteria)": "Kulturelle Untersuchungen: (Wund)Abstrich (kultureller Nachweis
+  "Cultural Examinations: (Wound) Swab (Cultural Detection Fungi/Bacteria)":
+    "Kulturelle Untersuchungen: (Wund)Abstrich (kultureller Nachweis
     Pilze/Bakterien)"
   "Cultural Examinations: Urine Culture": "Kulturelle Untersuchungen: Urinkultur"
   "Cultural Examinations: Stool Culture": "Kulturelle Untersuchungen: Stuhl-Kultur"
   "Antigen & Antibody-based Examinations: Borrelia (Ab)": "Antigen- & Antikörperbasierte Untersuchungen: Borrelien (AK)"
   "Antigen & Antibody-based Examinations: Campylobacter jejuni (Ab)": "Antigen- & Antikörperbasierte Untersuchungen: Campylobacter jejuni (AK)"
   "Antigen & Antibody-based Examinations: Helicobacter pylori (Ab)": "Antigen- & Antikörperbasierte Untersuchungen: Helicobacter pylori (AK)"
-  "Antigen & Antibody-based Examinations: TPHA (Treponema Pallidum Hemagglutination Test)": "Antigen- & Antikörperbasierte Untersuchungen: TPHA (Treponema
+  "Antigen & Antibody-based Examinations: TPHA (Treponema Pallidum Hemagglutination Test)":
+    "Antigen- & Antikörperbasierte Untersuchungen: TPHA (Treponema
     Pallidum Hämagglutinationstest)"
-  "Antigen & Antibody-based Examinations: FTA-ABS (Fluorescent Treponemal Antibody Absorption Test)": "Antigen- & Antikörperbasierte Untersuchungen: FTA-ABS
+  "Antigen & Antibody-based Examinations: FTA-ABS (Fluorescent Treponemal Antibody Absorption Test)":
+    "Antigen- & Antikörperbasierte Untersuchungen: FTA-ABS
     (Fluoreszenz-Treponemen-Antikörper-Absorptionstest)"
-  "Antigen & Antibody-based Examinations: Venereal Disease Research Laboratory Test": "Antigen- & Antikörperbasierte Untersuchungen: Venereal Disease
+  "Antigen & Antibody-based Examinations: Venereal Disease Research Laboratory Test":
+    "Antigen- & Antikörperbasierte Untersuchungen: Venereal Disease
     Research Laboratory Test"
   "Antigen & Antibody-based Examinations: Legionella Antigen (Urine)": "Antigen- & Antikörperbasierte Untersuchungen: Legionellen Antigen (Urin)"
   "Antigen & Antibody-based Examinations: Pneumococcal Antigen": "Antigen- & Antikörperbasierte Untersuchungen: Pneumokokken Antigen"
   "Antigen & Antibody-based Examinations: Galactomannan": "Antigen- & Antikörperbasierte Untersuchungen: Galaktomannan"
   "Antigen & Antibody-based Examinations: Beta-D-Glucan Detection": "Antigen- & Antikörperbasierte Untersuchungen: Beta-D-Glucan Nachweis"
   "Antigen & Antibody-based Examinations: Aspergillus Antibodies": "Antigen- & Antikörperbasierte Untersuchungen: Aspergillus-Antikörper"
-  "Antigen & Antibody-based Examinations: Helicobacter Pylori Antibodies (Serum)": "Antigen- & Antikörperbasierte Untersuchungen: Helicobacter Pylori
+  "Antigen & Antibody-based Examinations: Helicobacter Pylori Antibodies (Serum)":
+    "Antigen- & Antikörperbasierte Untersuchungen: Helicobacter Pylori
     Antikörper (Serum)"
   "Antigen & Antibody-based Examinations: HP Antigen in Stool": "Antigen- & Antikörperbasierte Untersuchungen: HP-Antigen im Stuhl"
   "PCR: GI Infection Pathogens": "PCR: GI-Infektionen Erreger"
   "PCR: Pneumococci": "PCR: Pneumokokken"
-  "PCR: STD Pathogens (Chlamydia tr., Neisseria g., Mycoplasma genitalium, Trichomonas, HSV 1 & 2)": "PCR: STD Erreger (Chlamydia tr., Neisseria g., Mycoplasma genitalium,
+  "PCR: STD Pathogens (Chlamydia tr., Neisseria g., Mycoplasma genitalium, Trichomonas, HSV 1 & 2)":
+    "PCR: STD Erreger (Chlamydia tr., Neisseria g., Mycoplasma genitalium,
     Trichomonas, HSV 1 & 2)"
   "PCR: Mycology PCR": "PCR: Mykologie PCR"
   "PCR: Mycobacterium tuberculosis": "PCR: Mykobakterium tuberkulosis"
-  "Toxin and Enzyme Detection: Clostridium Difficile Toxin A/B, Clostridia GLDH": "Toxin- und Enzym-Nachweise: Clostridium Difficile Toxin A/B,
+  "Toxin and Enzyme Detection: Clostridium Difficile Toxin A/B, Clostridia GLDH":
+    "Toxin- und Enzym-Nachweise: Clostridium Difficile Toxin A/B,
     Clostridien GLDH"
   "Coagulation: INR/Quick": "Gerinnung: INR/Quick"
   "Current Vital Signs: Pulse": "Aktuelle Vitalparameter: Puls"

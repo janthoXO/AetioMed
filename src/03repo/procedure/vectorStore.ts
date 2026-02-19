@@ -33,7 +33,9 @@ export async function initProcedureVectorStore(): Promise<void> {
       })
   );
 
-  console.info(`[VectorStore] Indexing ${docs.length} predefined procedures...`);
+  console.info(
+    `[VectorStore] Indexing ${docs.length} predefined procedures...`
+  );
   vectorStore = await MemoryVectorStore.fromDocuments(docs, embeddings);
   console.info(
     `[VectorStore] Indexed ${PredefinedProcedures.length} procedures.`
@@ -50,9 +52,6 @@ export async function searchForProcedures(query: string): Promise<Procedure[]> {
     throw new NoPredefinedProceduresError();
   }
 
-  const results = await vectorStore.similaritySearch(
-    query,
-    TOP_K
-  );
+  const results = await vectorStore.similaritySearch(query, TOP_K);
   return results.map((doc) => ({ name: doc.metadata.name as string }));
 }

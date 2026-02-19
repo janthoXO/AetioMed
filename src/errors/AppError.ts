@@ -38,8 +38,8 @@ export class InvalidRequestError extends AppError {
   }
 }
 
-export class CaseGenerationError extends AppError {
-  constructor(message: string = "Case generation failed", details?: string) {
+export class GenerationError extends AppError {
+  constructor(message: string = "Generation failed", details?: string) {
     super(message, "GENERATION_FAILED", 500, details);
   }
 }

@@ -6,7 +6,7 @@ import { InconsistencySchema } from "@/02domain-models/Inconsistency.js";
 import { generateAnamnesisOneShot } from "@/02services/anamnesis.service.js";
 import { generateChiefComplaintOneShot } from "@/02services/chiefComplaint.service.js";
 import { generateInconsistenciesOneShot } from "@/02services/consistency.service.js";
-import { generateProceduresOneShot } from "@/02services/procedures.service.js";
+import { generateProceduresOneShot } from "@/03repo/procedure/llm.js";
 import { passthrough } from "@/02ai/graph.utils.js";
 
 const InconsistencyGraphStateSchema = GlobalStateSchema.pick({

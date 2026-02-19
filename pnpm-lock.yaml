@@ -17,6 +17,9 @@ importers:
       '@langchain/google':
         specifier: ^0.1.0
         version: 0.1.0(@langchain/core@1.1.24(openai@6.22.0(zod@4.3.6)))
+      '@langchain/google-genai':
+        specifier: ^2.1.19
+        version: 2.1.19(@langchain/core@1.1.24(openai@6.22.0(zod@4.3.6)))
       '@langchain/langgraph':
         specifier: ^1.1.4
         version: 1.1.4(@langchain/core@1.1.24(openai@6.22.0(zod@4.3.6)))(zod-to-json-schema@3.25.1(zod@4.3.6))(zod@4.3.6)
@@ -319,6 +322,10 @@ packages:
     resolution: {integrity: sha512-bIZEUzOI1jkhviX2cp5vNyXQc6olzb2ohewQubuYlMXZ2Q/XjBO0x0XhGPvc9fjSIiUN0vw+0hq53BJ4eQSJKQ==}
     engines: {node: ^20.19.0 || ^22.13.0 || >=24}
 
+  '@google/generative-ai@0.24.1':
+    resolution: {integrity: sha512-MqO+MLfM6kjxcKoy0p1wRzG3b4ZZXtPI+z2IE26UogS2Cm/XHO+7gGRBh6gcJsOiIVoH93UwKvW4HdgiOZCy9Q==}
+    engines: {node: '>=18.0.0'}
+
   '@humanfs/core@0.19.1':
     resolution: {integrity: sha512-5DyQ4+1JEUzejeK1JGICcideyfUbGixgS9jNgex5nqkW+cY7WZhxBigmieN5Qnw9ZosSNVC9KQKyb+GUaGyKUA==}
     engines: {node: '>=18.18.0'}
@@ -372,6 +379,12 @@ packages:
   '@langchain/core@1.1.24':
     resolution: {integrity: sha512-u6l0dmMHN/2PCsY6stXoh9CH1OTlVR5Gjz0JjT1XRPuidAlu3kTq4ivW95xCog/PRhiAsCh6GCEC4/PqhNrcgQ==}
     engines: {node: '>=20'}
+
+  '@langchain/google-genai@2.1.19':
+    resolution: {integrity: sha512-41u+a81BIr8UcGcptJ57Pc7IyEXP75LERzheyS5X+iNSQu5U4vaIMwSNnyJ0hzAlTjSp552XCsa8D2Ifq7icuA==}
+    engines: {node: '>=20'}
+    peerDependencies:
+      '@langchain/core': ^1.1.25
 
   '@langchain/google@0.1.0':
     resolution: {integrity: sha512-Wy9OsenGkfG+dGHG4N28U5cjie8K/PcrJDowvTnNLtXyChqzO7gQRSdLeLBdcDXCK4DwSl0XFSyTkf9kzKjMvg==}
@@ -1745,6 +1758,10 @@ packages:
     resolution: {integrity: sha512-8XkAphELsDnEGrDxUOHB3RGvXz6TeuYSGEZBOjtTtPm2lwhGBjLgOzLHB63IUWfBpNucQjND6d3AOudO+H3RWQ==}
     hasBin: true
 
+  uuid@11.1.0:
+    resolution: {integrity: sha512-0/A9rDy9P7cJ+8w1c9WD9V//9Wj15Ce2MPz8Ri6032usz+NfePxx5AcN3bN+r6ZL6jEo066/yNYB3tn4pQEx+A==}
+    hasBin: true
+
   uuid@13.0.0:
     resolution: {integrity: sha512-XQegIaBTVUjSHliKqcnFqYypAd4S+WCYt5NIeRs6w/UAry7z8Y9j5ZwRRL4kzq9U3sD6v+85er9FvkEaBpji2w==}
     hasBin: true
@@ -1942,6 +1959,8 @@ snapshots:
       '@eslint/core': 1.1.0
       levn: 0.4.1
 
+  '@google/generative-ai@0.24.1': {}
+
   '@humanfs/core@0.19.1': {}
 
   '@humanfs/node@0.16.7':
@@ -2012,6 +2031,12 @@ snapshots:
       - '@opentelemetry/exporter-trace-otlp-proto'
       - '@opentelemetry/sdk-trace-base'
       - openai
+
+  '@langchain/google-genai@2.1.19(@langchain/core@1.1.24(openai@6.22.0(zod@4.3.6)))':
+    dependencies:
+      '@google/generative-ai': 0.24.1
+      '@langchain/core': 1.1.24(openai@6.22.0(zod@4.3.6))
+      uuid: 11.1.0
 
   '@langchain/google@0.1.0(@langchain/core@1.1.24(openai@6.22.0(zod@4.3.6)))':
     dependencies:
@@ -3501,6 +3526,8 @@ snapshots:
       punycode: 2.3.1
 
   uuid@10.0.0: {}
+
+  uuid@11.1.0: {}
 
   uuid@13.0.0: {}
 

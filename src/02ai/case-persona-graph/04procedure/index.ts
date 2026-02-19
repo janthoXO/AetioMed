@@ -4,7 +4,7 @@ import z from "zod";
 import {
   generateProceduresCoT as generateProceduresCoTService,
   generateProceduresOneShot,
-} from "@/02services/procedures.service.js";
+} from "@/03repo/procedure/llm.js";
 
 const ProcedureGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,

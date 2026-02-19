@@ -2,7 +2,7 @@ import {
   getDeterministicLLM,
   handleLangchainError,
   parseStructuredResponseAgent,
-} from "@/02ai/llm.js";
+} from "@/utils/llm.js";
 import type { Case } from "@/02domain-models/Case.js";
 import type { Diagnosis } from "@/02domain-models/Diagnosis.js";
 import {

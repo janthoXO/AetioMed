@@ -1,8 +1,11 @@
-import { LLMProviderSchema } from "@/domain-models/LLM.js";
 import dotenv from "dotenv";
 import z from "zod";
 
 dotenv.config();
+
+export const LLMProviderSchema = z.enum(["ollama", "google"]);
+
+export type LLMProvider = z.infer<typeof LLMProviderSchema>;
 
 const ConfigSchema = z.object({
   PORT: z.coerce.number().default(3030),

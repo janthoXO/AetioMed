@@ -5,6 +5,7 @@ import {
   generateProceduresCoT as generateProceduresCoTService,
   generateProceduresOneShot,
 } from "@/03repo/procedure/llm.js";
+import { PredefinedProcedures } from "@/02domain-models/Procedure.js";
 
 const ProcedureGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,
@@ -48,6 +49,23 @@ async function generateProcedure(
     state.cot,
     state.userInstructions
   );
+
+  // map generated to procedures to predefined procedures as good as possible
+  if (PredefinedProcedures) {
+    state.case.procedures = state.case.procedures
+      .map((p) => {
+        const predefined = PredefinedProcedures!.find((pre) =>
+          pre.name.toLowerCase().includes(p.name.toLowerCase())
+        );
+        return predefined
+          ? {
+              ...p,
+              name: predefined.name,
+            }
+          : undefined;
+      })
+      .filter((p) => !!p);
+  }
   return { case: state.case };
 }
 

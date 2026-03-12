@@ -93,6 +93,13 @@ export function getEmbeddings(): EmbeddingsInterface {
   }
 }
 
+/**
+ * Concatenates the provided strings with new lines and removes any empty or undefined strings.
+ */
+export function buildPrompt(...parts: (string | undefined)[]): string {
+  return parts.filter((s): s is string => !!s).join("\n");
+}
+
 export function getSearchTool() {
   switch (envConfig.LLM_PROVIDER) {
     case "ollama": {

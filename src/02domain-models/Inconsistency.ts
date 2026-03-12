@@ -42,7 +42,7 @@ export function InconsistencyJsonExample(): Inconsistency {
 
 export function InconsistencyJsonExampleString(): string {
   return `{
-field: ${AllGenerationFlags.join(" | ")},
+field: ${AllGenerationFlags.join('" | "')},
 description: string,
 suggestion: string,
 severity: ${AllInconsistencySeverity.join(" | ")},

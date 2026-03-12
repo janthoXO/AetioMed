@@ -54,10 +54,10 @@ async function generateChiefComplaint(
 export const chiefComplaintGraph = new StateGraph(
   ChiefComplaintGraphStateSchema
 )
-  .addNode("chief_complaint_cto_generate", generateChiefComplaintCoT)
+  .addNode("chief_complaint_cot_generate", generateChiefComplaintCoT)
   .addNode("chief_complaint_generate", generateChiefComplaint)
 
-  .addEdge(START, "chief_complaint_cto_generate")
-  .addEdge("chief_complaint_cto_generate", "chief_complaint_generate")
+  .addEdge(START, "chief_complaint_cot_generate")
+  .addEdge("chief_complaint_cot_generate", "chief_complaint_generate")
   .addEdge("chief_complaint_generate", END)
   .compile();

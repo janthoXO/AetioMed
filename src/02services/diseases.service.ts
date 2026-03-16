@@ -7,7 +7,7 @@ interface DiseaseEntry {
   names: string[];
 }
 
-const diseases = diseasesData as DiseaseEntry[];
+export const diseases = diseasesData as DiseaseEntry[];
 
 const fuse = new Fuse(diseases, {
   keys: ["names"],

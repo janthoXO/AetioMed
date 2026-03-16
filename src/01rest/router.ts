@@ -5,6 +5,8 @@ import morgan from "morgan";
 import cors from "cors";
 
 import casesRouter from "./cases.router.js";
+import diseasesRouter from "./diseases.router.js";
+import proceduresRouter from "./procedures.router.js";
 import { config } from "@/config.js";
 
 export function initRouter(): Promise<void> {
@@ -30,6 +32,8 @@ export function initRouter(): Promise<void> {
   });
 
   apiRouter.use("/cases", casesRouter);
+  apiRouter.use("/diseases", diseasesRouter);
+  apiRouter.use("/procedures", proceduresRouter);
 
   apiRouter.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 

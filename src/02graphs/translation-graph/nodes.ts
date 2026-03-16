@@ -6,7 +6,7 @@ import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
 import { GenerationError } from "@/errors/AppError.js";
 import { translateAnamnesisCategoriesFromEnglish } from "@/02services/anamnesis.service.js";
-import { translateProceduresFromEnglish } from "@/03repo/procedure/translation.js";
+import { translateProceduresFromEnglish } from "@/02services/procedures.service.js";
 
 type TranslateCaseOutput = Pick<GlobalState, "case">;
 

@@ -54,10 +54,10 @@ async function generateAnamnesis(
 }
 
 export const anamnesisGraph = new StateGraph(AnamnesisGraphStateSchema)
-  .addNode("anamnesis_cto_generate", generateAnamnesisCoT)
+  .addNode("anamnesis_cot_generate", generateAnamnesisCoT)
   .addNode("anamnesis_generate", generateAnamnesis)
 
-  .addEdge(START, "anamnesis_cto_generate")
-  .addEdge("anamnesis_cto_generate", "anamnesis_generate")
+  .addEdge(START, "anamnesis_cot_generate")
+  .addEdge("anamnesis_cot_generate", "anamnesis_generate")
   .addEdge("anamnesis_generate", END)
   .compile();

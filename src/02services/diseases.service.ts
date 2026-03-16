@@ -10,7 +10,9 @@ interface DiseaseEntry {
 }
 
 const filepath = path.resolve(import.meta.dirname, "../data/diseases_all.yml");
-export const diseases = yaml.parse(fs.readFileSync(filepath, "utf-8")) as DiseaseEntry[];
+export const diseases = yaml.parse(
+  fs.readFileSync(filepath, "utf-8")
+) as DiseaseEntry[];
 console.log("[DiseasesService] Loaded diseases from YAML:", diseases);
 
 const fuse = new Fuse(diseases, {

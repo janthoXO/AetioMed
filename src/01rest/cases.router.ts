@@ -14,6 +14,7 @@ import {
   translateAnamnesisCategoriesFromEnglish,
   translateAnamnesisCategoriesToEnglish,
 } from "@/02services/anamnesis.service.js";
+import { generateProceduresOneShot } from "@/03repo/procedure/llm.js";
 
 const router = express.Router();
 
@@ -143,6 +144,13 @@ router.get("/anamnesis/translate", async (req, res) => {
       },
     });
   }
+});
+
+router.post("/procedures", async (req, res) => {
+  const { diagnosis }: { diagnosis: string } = req.body;
+  const procedures = await generateProceduresOneShot({ name: diagnosis }, []);
+
+  res.status(200).json({ procedures });
 });
 
 export default router;

@@ -1,9 +1,9 @@
 import {
   AllGenerationFlags,
   GenerationFlagSchema,
-} from "@/02domain-models/GenerationFlags.js";
-import { ICDCodeSchema } from "@/02domain-models/Diagnosis.js";
-import { LanguageSchema } from "@/02domain-models/Language.js";
+} from "@/models/GenerationFlags.js";
+import { ICDCodeSchema } from "@/models/Diagnosis.js";
+import { LanguageSchema } from "@/models/Language.js";
 import { z } from "zod/v4";
 
 export const CaseGenerationRequestSchema = z

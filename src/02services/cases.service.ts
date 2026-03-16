@@ -1,11 +1,11 @@
-import { type AnamnesisCategory } from "@/02domain-models/Anamnesis.js";
-import { type Case } from "@/02domain-models/Case.js";
-import type { GenerationFlag } from "@/02domain-models/GenerationFlags.js";
-import type { Language } from "@/02domain-models/Language.js";
-import { generateCase as graphGenerateCase } from "@/02ai/case-persona-graph/index.js";
-import { translateCase } from "@/02ai/translation-graph/index.js";
+import { type AnamnesisCategory } from "@/models/Anamnesis.js";
+import { type Case } from "@/models/Case.js";
+import type { GenerationFlag } from "@/models/GenerationFlags.js";
+import type { Language } from "@/models/Language.js";
+import { generateCase as graphGenerateCase } from "@/02graphs/case-persona-graph/index.js";
+import { translateCase } from "@/02graphs/translation-graph/index.js";
 import { translateAnamnesisCategoriesToEnglish } from "./anamnesis.service.js";
-import type { Diagnosis } from "@/02domain-models/Diagnosis.js";
+import type { Diagnosis } from "@/models/Diagnosis.js";
 
 export async function generateCase(
   diagnosis: Diagnosis,

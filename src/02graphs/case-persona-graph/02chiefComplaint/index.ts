@@ -4,7 +4,7 @@ import z from "zod";
 import {
   generateChiefComplaintCoT as generateChiefComplaintCoTService,
   generateChiefComplaintOneShot,
-} from "@/02services/chiefComplaint.service.js";
+} from "@/03aigateway/chiefComplaint.aigateway.js";
 
 const ChiefComplaintGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,

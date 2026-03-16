@@ -4,8 +4,8 @@ import {
   AnamnesisSchema,
   type Anamnesis,
   type AnamnesisCategory,
-} from "@/02domain-models/Anamnesis.js";
-import type { Language } from "@/02domain-models/Language.js";
+} from "@/models/Anamnesis.js";
+import type { Language } from "@/models/Language.js";
 import {
   getCreativeLLM,
   getDeterministicLLM,
@@ -13,9 +13,9 @@ import {
   parseStructuredResponseAgent,
 } from "@/utils/llm.js";
 import z from "zod";
-import type { Inconsistency } from "@/02domain-models/Inconsistency.js";
-import type { Diagnosis } from "@/02domain-models/Diagnosis.js";
-import type { Symptom } from "@/02domain-models/Symptom.js";
+import type { Inconsistency } from "@/models/Inconsistency.js";
+import type { Diagnosis } from "@/models/Diagnosis.js";
+import type { Symptom } from "@/models/Symptom.js";
 import {
   createAgent,
   HumanMessage,
@@ -23,7 +23,7 @@ import {
   SystemMessage,
 } from "langchain";
 import { retry } from "@/utils/retry.js";
-import type { Case } from "@/02domain-models/Case.js";
+import type { Case } from "@/models/Case.js";
 
 /**
  * Translates anamnesis categories from a provided language to English, using a combination of repository lookups and LLM generation for missing translations.

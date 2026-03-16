@@ -1,5 +1,5 @@
-import { type AnamnesisCategory } from "@/02domain-models/Anamnesis.js";
-import type { Language } from "@/02domain-models/Language.js";
+import { type AnamnesisCategory } from "@/models/Anamnesis.js";
+import type { Language } from "@/models/Language.js";
 import {
   generateAnamnesisCategoriesFromEnglish,
   generateAnamnesisCategoriesToEnglish,

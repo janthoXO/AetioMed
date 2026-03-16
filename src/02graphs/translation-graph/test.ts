@@ -1,5 +1,5 @@
 import { buildTranslationGraph } from "./index.js";
-import { type Case } from "@/02domain-models/Case.js";
+import { type Case } from "@/models/Case.js";
 import dotenv from "dotenv";
 
 dotenv.config();

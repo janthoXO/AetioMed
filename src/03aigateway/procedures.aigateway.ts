@@ -1,5 +1,5 @@
-import type { Language } from "@/02domain-models/Language.js";
-import type { Procedure } from "@/02domain-models/Procedure.js";
+import type { Language } from "@/models/Language.js";
+import type { Procedure } from "@/models/Procedure.js";
 import { retry } from "@/utils/retry.js";
 import z from "zod";
 import {
@@ -9,16 +9,16 @@ import {
   handleLangchainError,
   parseStructuredResponseAgent,
 } from "@/utils/llm.js";
-import type { Case } from "@/02domain-models/Case.js";
-import type { Diagnosis } from "@/02domain-models/Diagnosis.js";
-import type { Inconsistency } from "@/02domain-models/Inconsistency.js";
+import type { Case } from "@/models/Case.js";
+import type { Diagnosis } from "@/models/Diagnosis.js";
+import type { Inconsistency } from "@/models/Inconsistency.js";
 import {
   PredefinedProcedures,
   ProcedureWithRelevanceArrayJsonExampleString,
   ProcedureWithRelevanceSchema,
   type ProcedureWithRelevance,
-} from "@/02domain-models/Procedure.js";
-import type { Symptom } from "@/02domain-models/Symptom.js";
+} from "@/models/Procedure.js";
+import type { Symptom } from "@/models/Symptom.js";
 import {
   createAgent,
   HumanMessage,

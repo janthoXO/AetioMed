@@ -13,10 +13,12 @@ import {
 import type { Symptom } from "@/models/Symptom.js";
 import { retry } from "@/utils/retry.js";
 import { createAgent, HumanMessage, providerStrategy } from "langchain";
+import type { GenerationFlag } from "@/models/GenerationFlags.js";
 
 export async function generateInconsistenciesOneShot(
   caseToCheck: Case,
   diagnosis: Diagnosis,
+  generationFlags: GenerationFlag[],
   symptoms: Symptom[] = [],
   userInstructions?: string
 ): Promise<Inconsistency[]> {
@@ -31,7 +33,7 @@ Check for these types of inconsistencies:
 
 Return your response in JSON:
 ${`{ inconsistencies: [
-${InconsistencyJsonExampleString()},
+${InconsistencyJsonExampleString(generationFlags)},
 ...] }`}
 or an empty list if no inconsistencies are found.
 ${JSON.stringify({ inconsistencies: [] })} 

@@ -1,5 +1,9 @@
 import z from "zod";
-import { AllGenerationFlags, GenerationFlagSchema } from "./GenerationFlags.js";
+import {
+  AllGenerationFlags,
+  GenerationFlagSchema,
+  type GenerationFlag,
+} from "./GenerationFlags.js";
 
 const InconsistencySeveritySchema = z.enum(["low", "medium", "high"]);
 
@@ -40,9 +44,11 @@ export function InconsistencyJsonExample(): Inconsistency {
   };
 }
 
-export function InconsistencyJsonExampleString(): string {
+export function InconsistencyJsonExampleString(
+  generationFlags?: GenerationFlag[]
+): string {
   return `{
-field: ${AllGenerationFlags.join('" | "')},
+field: ${(generationFlags ?? AllGenerationFlags).join('" | "')},
 description: string,
 suggestion: string,
 severity: ${AllInconsistencySeverity.join(" | ")},

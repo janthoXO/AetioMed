@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { NavLink } from "react-router-dom";
-import { Plus, FileText, Stethoscope } from "lucide-react";
+import { NavLink, useNavigate } from "react-router-dom";
+import { Plus, FileText, Stethoscope, Trash2, ScrollText } from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -17,12 +17,29 @@ import {
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { useCases } from "@/hooks/useCases";
 import { GenerateCaseModal } from "./GenerateCaseModal";
+import { Spinner } from "./ui/spinner";
 
 export function AppSidebar() {
-  const { cases, isLoading } = useCases();
+  const { cases, isLoading, deleteCase } = useCases();
   const [modalOpen, setModalOpen] = useState(false);
+  const navigate = useNavigate();
+
+  const handleDelete = async (e: React.MouseEvent, id: string) => {
+    e.stopPropagation();
+    e.preventDefault();
+    await deleteCase(id);
+    if (window.location.pathname.includes(id)) {
+      navigate("/");
+    }
+  };
 
   return (
     <>
@@ -60,28 +77,62 @@ export function AppSidebar() {
                   {/* Case list */}
                   {!isLoading &&
                     cases.map((c, index) =>
-                      c.id == null ? (
-                        // No id = still generating — custom skeleton matching case item layout
+                      c.createdAt ? (
+                        <ContextMenu key={c.id}>
+                          <ContextMenuTrigger asChild>
+                            <SidebarMenuItem>
+                              <SidebarMenuButton asChild>
+                                <NavLink
+                                  to={`/cases/${c.id}`}
+                                  className={({ isActive }) =>
+                                    isActive ? "bg-sidebar-accent" : ""
+                                  }
+                                >
+                                  <FileText className="shrink-0" />
+                                  <div className="flex flex-col overflow-hidden">
+                                    <span className="truncate text-sm font-medium">
+                                      {c.diagnosis?.name ?? "Untitled Case"}
+                                    </span>
+                                    <span className="truncate text-xs text-muted-foreground">
+                                      {c.diagnosis?.icd && `${c.diagnosis.icd} · `}
+                                      {new Date(c.createdAt).toLocaleDateString()}
+                                    </span>
+                                  </div>
+                                </NavLink>
+                              </SidebarMenuButton>
+                            </SidebarMenuItem>
+                          </ContextMenuTrigger>
+                          <ContextMenuContent className="w-48">
+                            <ContextMenuItem onClick={() => navigate(`/cases/${c.id}/generating`)}>
+                              <ScrollText className="mr-2 h-4 w-4" />
+                              <span>View Traces</span>
+                            </ContextMenuItem>
+                            <ContextMenuItem
+                              onClick={(e) => handleDelete(e, c.id)}
+                              className="text-destructive focus:text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              <span>Delete Case</span>
+                            </ContextMenuItem>
+                          </ContextMenuContent>
+                        </ContextMenu>
+                      ): (
+                        // Case is currently generating
                         <SidebarMenuItem key={`generating-${index}`}>
-                          <SidebarMenuSkeleton />
-                        </SidebarMenuItem>
-                      ) : (
-                        <SidebarMenuItem key={c.id}>
                           <SidebarMenuButton asChild>
                             <NavLink
-                              to={`/cases/${c.id}`}
+                              to={`/cases/${c.id}/generating`}
                               className={({ isActive }) =>
                                 isActive ? "bg-sidebar-accent" : ""
                               }
                             >
-                              <FileText className="shrink-0" />
+                              <Spinner className="shrink-0" />
                               <div className="flex flex-col overflow-hidden">
                                 <span className="truncate text-sm font-medium">
                                   {c.diagnosis?.name ?? "Untitled Case"}
                                 </span>
                                 <span className="truncate text-xs text-muted-foreground">
-                                  {c.diagnosis?.icd && `${c.diagnosis.icd} · `}
-                                  {new Date(c.createdAt).toLocaleDateString()}
+                                  Generating...
                                 </span>
                               </div>
                             </NavLink>

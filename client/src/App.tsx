@@ -3,6 +3,7 @@ import { CasesProvider } from "@/context/CasesContext";
 import Layout from "@/pages/Layout";
 import HomePage from "@/pages/HomePage";
 import CaseDetailPage from "@/pages/CaseDetailPage";
+import { GeneratingCaseView } from "@/pages/GeneratingCaseView";
 import { ThemeProvider } from "./context/ThemeProvider";
 
 function App() {
@@ -12,7 +13,8 @@ function App() {
         <Routes>
           <Route element={<Layout />}>
             <Route index element={<HomePage />} />
-            <Route path="cases/:id" element={<CaseDetailPage />} />
+            <Route path="cases/:caseId" element={<CaseDetailPage />} />
+            <Route path="cases/:caseId/generating" element={<GeneratingCaseView />} />
           </Route>
         </Routes>
       </CasesProvider>

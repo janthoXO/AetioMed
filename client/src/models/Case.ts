@@ -5,9 +5,9 @@ import type { GenerationFlag } from "./GenerationFlags";
 import { type Procedure } from "./Procedure";
 
 export type Case = {
-  id?: number;
+  id: string;
   diagnosis: Diagnosis;
-  createdAt: Date;
+  createdAt?: Date;
   chiefComplaint?: ChiefComplaint;
   anamnesis?: Anamnesis[];
   procedures?: Procedure[];

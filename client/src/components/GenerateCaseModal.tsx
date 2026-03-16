@@ -183,11 +183,6 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
                     >
                       {label}
                     </Label>
-                    {selectedFlags.has(value) && (
-                      <Badge variant="secondary" className="text-xs">
-                        Selected
-                      </Badge>
-                    )}
                   </div>
 
                   {/* Per-flag context input */}

@@ -6,7 +6,7 @@ const db = new Dexie("AetioMedDB") as Dexie & {
 };
 
 db.version(1).stores({
-  cases: "++id, createdAt",
+  cases: "id, createdAt",
 });
 
 export { db };

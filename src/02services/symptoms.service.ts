@@ -2,9 +2,9 @@ import {
   SymptomArrayJsonExample,
   SymptomSchema,
   type Symptom,
-} from "@/02domain-models/Symptom.js";
+} from "@/models/Symptom.js";
 import symptomData from "../data/disease_symptoms.json" with { type: "json" };
-import type { Diagnosis, ICDCode } from "@/02domain-models/Diagnosis.js";
+import type { Diagnosis, ICDCode } from "@/models/Diagnosis.js";
 import {
   getDeterministicLLM,
   handleLangchainError,

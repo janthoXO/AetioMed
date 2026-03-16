@@ -5,8 +5,8 @@ import {
   translateAnamnesisCategory,
   translateProcedures,
 } from "./nodes.js";
-import type { Case } from "@/02domain-models/Case.js";
-import type { Language } from "@/02domain-models/Language.js";
+import type { Case } from "@/models/Case.js";
+import type { Language } from "@/models/Language.js";
 
 /**
  * Graph to translate a generated case

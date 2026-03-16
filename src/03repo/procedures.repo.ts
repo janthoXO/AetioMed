@@ -1,9 +1,9 @@
-import { type Procedure } from "@/02domain-models/Procedure.js";
+import { type Procedure } from "@/models/Procedure.js";
 import path from "node:path";
 import YAML from "yaml";
 import fs from "fs";
 import z from "zod";
-import type { Language } from "@/02domain-models/Language.js";
+import type { Language } from "@/models/Language.js";
 
 const LanguageProcedureTranslationSchema = z.partialRecord(
   z.enum(["English", "German"]),

@@ -4,7 +4,7 @@ import z from "zod";
 import {
   generateAnamnesisCoT as generateAnamnesisCoTService,
   generateAnamnesisOneShot,
-} from "@/02services/anamnesis.service.js";
+} from "@/03aigateway/anamnesis.aigateway.js";
 
 const AnamnesisGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,

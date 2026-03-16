@@ -2,9 +2,8 @@ import {
   SymptomArrayJsonExample,
   SymptomSchema,
   type Symptom,
-} from "@/02domain-models/Symptom.js";
-import symptomData from "../data/disease_symptoms.json" with { type: "json" };
-import type { Diagnosis, ICDCode } from "@/02domain-models/Diagnosis.js";
+} from "@/models/Symptom.js";
+import type { Diagnosis } from "@/models/Diagnosis.js";
 import {
   getDeterministicLLM,
   handleLangchainError,
@@ -13,12 +12,6 @@ import {
 import { createAgent, HumanMessage, providerStrategy } from "langchain";
 import z from "zod";
 import { retry } from "@/utils/retry.js";
-
-const symptomMap = symptomData as Record<string, { symptoms: Symptom[] }>;
-
-export function SymptomsRelatedToDiseaseIcd(icdCode: ICDCode): Symptom[] {
-  return symptomMap[icdCode]?.symptoms || [];
-}
 
 export async function generateSymptomsOneShot(
   diagnosis: Diagnosis,

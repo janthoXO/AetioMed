@@ -3,7 +3,7 @@ import { registry } from "@langchain/langgraph/zod";
 import { GlobalStateSchema } from "../state.js";
 import z from "zod";
 import { InconsistencySchema } from "@/02domain-models/Inconsistency.js";
-import { generateAnamnesisOneShot } from "@/02services/anamnesis.service.js";
+import { generateAnamnesisOneShot } from "@/03aigateway/anamnesis.aigateway.js";
 import { generateChiefComplaintOneShot } from "@/02services/chiefComplaint.service.js";
 import { generateInconsistenciesOneShot } from "@/02services/consistency.service.js";
 import { generateProceduresOneShot } from "@/03aigateway/procedures.aigateway.js";

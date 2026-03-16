@@ -8,7 +8,7 @@ import {
   CaseGenerationResponseSchema,
   type CaseGenerationResponse,
 } from "@/01dtos/CaseGenerationResponse.js";
-import { IcdToDiseaseName } from "@/02services/diseases.service.js";
+import { IcdToDiseaseName } from "@/03repo/diseases.repo.js";
 import { AppError } from "@/errors/AppError.js";
 import {
   translateAnamnesisCategoriesFromEnglish,

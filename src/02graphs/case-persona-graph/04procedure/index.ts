@@ -4,7 +4,7 @@ import z from "zod";
 import {
   generateProceduresCoT as generateProceduresCoTService,
   generateProceduresOneShot,
-} from "@/03repo/procedure/llm.js";
+} from "@/03aigateway/procedures.aigateway.js";
 import { PredefinedProcedures } from "@/02domain-models/Procedure.js";
 
 const ProcedureGraphStateSchema = GlobalStateSchema.pick({

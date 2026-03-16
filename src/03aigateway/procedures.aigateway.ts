@@ -1,3 +1,7 @@
+import type { Language } from "@/02domain-models/Language.js";
+import type { Procedure } from "@/02domain-models/Procedure.js";
+import { retry } from "@/utils/retry.js";
+import z from "zod";
 import {
   buildPrompt,
   getCreativeLLM,
@@ -15,14 +19,12 @@ import {
   type ProcedureWithRelevance,
 } from "@/02domain-models/Procedure.js";
 import type { Symptom } from "@/02domain-models/Symptom.js";
-import { retry } from "@/utils/retry.js";
 import {
   createAgent,
   HumanMessage,
   providerStrategy,
   SystemMessage,
 } from "langchain";
-import z from "zod";
 
 export async function generateProceduresCoT(
   diagnosis: Diagnosis,
@@ -179,4 +181,69 @@ ${`{ "procedures": ${ProcedureWithRelevanceArrayJsonExampleString()} }`}`,
     console.error(`[GenerateProceduresOneShot] Error:`, error);
     throw error;
   }
+}
+
+export async function generateProceduresFromEnglish(
+  procedures: Procedure[],
+  language: Language
+): Promise<(Procedure | undefined)[]> {
+  const systemPrompt = `Translate the provided procedures from English to a target language:
+  
+Return the procedures mapped to their translated part in a JSON
+{
+  "provided procedure1": "translated procedure1",
+  "provided procedure2": "translated procedure2",
+  ...
+}
+ONLY return the JSON object, no additional text.`;
+
+  const userPrompt = `Target language: ${language}
+Procedures to translate:
+${procedures.map((p) => p.name.toLowerCase()).join("\n")}`;
+
+  console.debug(
+    `[Procedures Service] Generating procedure translations with prompt: 
+  ${systemPrompt}
+  ${userPrompt}`
+  );
+
+  const prompt = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: userPrompt },
+  ];
+
+  const parsed = await retry(
+    async () => {
+      const response = await getDeterministicLLM().invoke(prompt);
+
+      console.debug(
+        "[Procedures Service] Generated procedure translations:",
+        response.text
+      );
+
+      const responseSchema = z.record(z.string(), z.string());
+      return responseSchema.parse(JSON.parse(response.text));
+    },
+    2,
+    0
+  );
+
+  // Filter only the requested procedures
+  const sortedTranslation: (Procedure | undefined)[] = procedures.map(
+    () => undefined
+  );
+  for (const [original, translated] of Object.entries(parsed)) {
+    const index = procedures
+      .map((p) => p.name.toLowerCase())
+      .indexOf(original.toLowerCase());
+    if (index === -1) {
+      continue; // keep the original procedure if no translation was provided
+      // throw new Error(
+      //   `The procedure "${original}" was not in the list of procedures to translate.`
+      // );
+    }
+    sortedTranslation[index] = { name: translated };
+  }
+
+  return sortedTranslation;
 }

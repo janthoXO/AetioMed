@@ -50,7 +50,9 @@ async function generateInconsistencies(
   );
 
   // filter inconsistencies to only those relevant for the current generation flags
-  state.inconsistencies = state.inconsistencies.filter((i) => state.generationFlags.some((f) => f === i.field));
+  state.inconsistencies = state.inconsistencies.filter((i) =>
+    state.generationFlags.some((f) => f === i.field)
+  );
 
   return { inconsistencies: state.inconsistencies };
 }

@@ -160,9 +160,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
                 setIcdError("");
               }}
             />
-            {icdError && (
-              <p className="text-sm text-destructive">{icdError}</p>
-            )}
+            {icdError && <p className="text-sm text-destructive">{icdError}</p>}
           </div>
 
           <Separator />
@@ -244,10 +242,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
             </Button>
             <Button
               type="submit"
-              disabled={
-                !diagnosis.trim() ||
-                selectedFlags.size === 0
-              }
+              disabled={!diagnosis.trim() || selectedFlags.size === 0}
             >
               Generate Case
             </Button>

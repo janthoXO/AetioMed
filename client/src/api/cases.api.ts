@@ -31,4 +31,3 @@ export async function generateCase(
 
   return (await response.json()) as CaseGenerationResponse;
 }
-

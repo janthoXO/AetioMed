@@ -1,5 +1,7 @@
 import Fuse from "fuse.js";
-import diseasesData from "../data/diseases_all.json" with { type: "json" };
+import fs from "fs";
+import path from "path";
+import yaml from "yaml";
 import type { ICDCode } from "@/02domain-models/Diagnosis.js";
 
 interface DiseaseEntry {
@@ -7,7 +9,11 @@ interface DiseaseEntry {
   names: string[];
 }
 
-const diseases = diseasesData as DiseaseEntry[];
+const filepath = path.resolve(import.meta.dirname, "../data/diseases_all.yml");
+export const diseases = yaml.parse(
+  fs.readFileSync(filepath, "utf-8")
+) as DiseaseEntry[];
+console.log("[DiseasesService] Loaded diseases from YAML:", diseases);
 
 const fuse = new Fuse(diseases, {
   keys: ["names"],

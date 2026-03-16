@@ -12,6 +12,7 @@ import { passthrough } from "@/02graphs/graph.utils.js";
 const InconsistencyGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
+  generationFlags: true,
   case: true,
   symptoms: true,
   anamnesisCategories: true,
@@ -43,9 +44,13 @@ async function generateInconsistencies(
   state.inconsistencies = await generateInconsistenciesOneShot(
     state.case,
     state.diagnosis,
+    state.generationFlags,
     state.symptoms,
     state.userInstructions
   );
+
+  // filter inconsistencies to only those relevant for the current generation flags
+  state.inconsistencies = state.inconsistencies.filter((i) => state.generationFlags.some((f) => f === i.field));
 
   return { inconsistencies: state.inconsistencies };
 }

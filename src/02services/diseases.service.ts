@@ -1,22 +1,11 @@
 import Fuse from "fuse.js";
-import fs from "fs";
-import path from "path";
-import yaml from "yaml";
-import type { ICDCode } from "@/02domain-models/Diagnosis.js";
+import {
+  PredefinedDiagnoses,
+  type ICDCode,
+} from "@/02domain-models/Diagnosis.js";
 
-interface DiseaseEntry {
-  code: string;
-  names: string[];
-}
-
-const filepath = path.resolve(import.meta.dirname, "../data/diseases_all.yml");
-export const diseases = yaml.parse(
-  fs.readFileSync(filepath, "utf-8")
-) as DiseaseEntry[];
-console.log("[DiseasesService] Loaded diseases from YAML:", diseases);
-
-const fuse = new Fuse(diseases, {
-  keys: ["names"],
+const fuse = new Fuse(PredefinedDiagnoses, {
+  keys: ["name", "alternativeNames"],
   includeScore: true,
   shouldSort: true,
   threshold: 0.4,
@@ -33,16 +22,16 @@ export async function DiseaseNameToIcd(
     return undefined;
   }
 
-  return results[0]?.item.code;
+  return results[0]?.item.icd;
 }
 
 export async function IcdToDiseaseName(
   icdCode: ICDCode
 ): Promise<string | undefined> {
-  const disease = diseases.find((d) => d.code === icdCode);
+  const disease = PredefinedDiagnoses.find((d) => d.icd === icdCode);
   if (!disease) {
     return undefined;
   }
 
-  return disease.names[0];
+  return disease.name;
 }

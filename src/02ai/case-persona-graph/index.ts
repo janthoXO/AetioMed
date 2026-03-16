@@ -69,7 +69,7 @@ export function buildCasePersonaGraph() {
       (state: GlobalState) => {
         return state.generationFlags.includes("procedures")
           ? "generate"
-          : "loop_entry";
+          : "skip";
       },
       {
         generate: "procedure_phase",

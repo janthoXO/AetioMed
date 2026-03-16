@@ -1,0 +1,1 @@
+export type ChiefComplaint = string;

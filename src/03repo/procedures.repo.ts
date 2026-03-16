@@ -17,7 +17,7 @@ type LanguageProcedureTranslationMapping = z.infer<
 function preloadProcedureTranslations(): LanguageProcedureTranslationMapping {
   const filepath = path.resolve(
     import.meta.dirname,
-    "../../data/proceduresTranslations.yml"
+    "../data/proceduresTranslations.yml"
   );
 
   const translationsObject = YAML.parse(fs.readFileSync(filepath, "utf-8"));

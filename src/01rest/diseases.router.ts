@@ -1,4 +1,4 @@
-import { PredefinedDiagnoses } from "@/02domain-models/Diagnosis.js";
+import { PredefinedDiagnoses } from "@/models/Diagnosis.js";
 import express from "express";
 
 const router = express.Router();

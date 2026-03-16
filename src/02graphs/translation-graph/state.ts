@@ -1,11 +1,11 @@
 import {
   AllGenerationFlags,
   GenerationFlagSchema,
-} from "@/02domain-models/GenerationFlags.js";
+} from "@/models/GenerationFlags.js";
 import z from "zod";
-import { CaseSchema } from "@/02domain-models/Case.js";
-import { ICDCodeSchema } from "@/02domain-models/Diagnosis.js";
-import { LanguageSchema } from "@/02domain-models/Language.js";
+import { CaseSchema } from "@/models/Case.js";
+import { ICDCodeSchema } from "@/models/Diagnosis.js";
+import { LanguageSchema } from "@/models/Language.js";
 
 export const GlobalStateSchema = z.object({
   /**

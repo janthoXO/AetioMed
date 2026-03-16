@@ -1,5 +1,5 @@
-import { type Procedure } from "@/02domain-models/Procedure.js";
-import type { Language } from "@/02domain-models/Language.js";
+import { type Procedure } from "@/models/Procedure.js";
+import type { Language } from "@/models/Language.js";
 import {
   getProcedureTranslationFromEnglish,
   saveProcedureTranslation,

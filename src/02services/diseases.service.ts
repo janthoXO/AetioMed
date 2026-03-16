@@ -1,8 +1,5 @@
 import Fuse from "fuse.js";
-import {
-  PredefinedDiagnoses,
-  type ICDCode,
-} from "@/02domain-models/Diagnosis.js";
+import { PredefinedDiagnoses, type ICDCode } from "@/models/Diagnosis.js";
 
 const fuse = new Fuse(PredefinedDiagnoses, {
   keys: ["name", "alternativeNames"],

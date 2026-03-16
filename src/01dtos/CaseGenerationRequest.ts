@@ -27,6 +27,10 @@ export const CaseGenerationRequestSchema = z
       .array(z.string())
       .optional()
       .describe("Categories of anamnesis to include in the case"),
+    requestId: z
+      .string()
+      .optional()
+      .describe("Optional unique ID to track generation progress via SSE"),
   })
   .refine((data) => data.icd || data.diagnosis, {
     message: "Either 'icd' or 'diagnosis' must be provided",

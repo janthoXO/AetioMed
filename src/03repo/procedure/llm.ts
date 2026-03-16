@@ -1,4 +1,5 @@
 import {
+  buildPrompt,
   getCreativeLLM,
   getDeterministicLLM,
   handleLangchainError,
@@ -8,6 +9,7 @@ import type { Case } from "@/02domain-models/Case.js";
 import type { Diagnosis } from "@/02domain-models/Diagnosis.js";
 import type { Inconsistency } from "@/02domain-models/Inconsistency.js";
 import {
+  PredefinedProcedures,
   ProcedureWithRelevanceArrayJsonExampleString,
   ProcedureWithRelevanceSchema,
   type ProcedureWithRelevance,
@@ -21,7 +23,6 @@ import {
   SystemMessage,
 } from "langchain";
 import z from "zod";
-import { proceduresQueryTool } from "@/tools/procedures.tool.js";
 
 export async function generateProceduresCoT(
   diagnosis: Diagnosis,
@@ -29,16 +30,17 @@ export async function generateProceduresCoT(
   relatedCase?: Case,
   userInstructions?: string
 ): Promise<string> {
-  const systemPrompt = `You are a doctor whos patient has these symptoms: 
+  const systemPrompt = buildPrompt(
+    `You are a senior doctor whos patient has these symptoms: 
 ${symptoms.map((s) => s.name).join(", ")}
-Generate a step by step reasoning process which procedures should be performed.
-Return the steps as a list of steps in markdown format.
-${
-  relatedCase
-    ? `The patient case has the following properties which might be relevant for the procedures generation:
-  ${JSON.stringify(relatedCase)}`
-    : ""
-}`;
+You want to help a junior doctor to decide which procedures to schedule. For that you should generate a step by step reasoning process to let the junior determine which procedures should be performed.`,
+    "Return the thinking steps as a list in markdown format. Do not return any additional text like prefix or suffix text, only the markdown list.",
+
+    relatedCase
+      ? `The patient case has the following properties which might be relevant for the procedures generation:
+${JSON.stringify(relatedCase)}`
+      : undefined
+  );
 
   const userPrompt = [
     `Provided Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
@@ -90,19 +92,24 @@ export async function generateProceduresOneShot(
   const { procedures: previousProcedures, ...caseWithoutProcedures } =
     relatedCase ?? {};
 
-  const systemPrompt = `You are a doctor whos patient has these symptoms: 
-${symptoms.map((s) => s.name).join(", ")}
-Generate a list of procedures that should be performed.
-${cot ? `Think step by step:\n${cot}` : ""}
-${
-  Object.keys(caseWithoutProcedures).length > 0
-    ? `The patient case has the following properties which might be relevant for the procedures generation:
+  const systemPrompt = buildPrompt(
+    `You are a doctor whos patient has these symptoms: 
+${symptoms.map((s) => s.name).join(", ")}`,
+    `Generate procedures that should be performed for the patient.`,
+
+    PredefinedProcedures?.length
+      ? `Pick only procedures from the following list of procedures:\n${PredefinedProcedures.map((p) => `- ${p.name}`).join("\n")}`
+      : undefined,
+
+    cot ? `Think step by step:\n${cot}` : undefined,
+
+    Object.keys(caseWithoutProcedures).length > 0
+      ? `The patient case has the following properties which might be relevant for the procedures generation:
   ${JSON.stringify(caseWithoutProcedures)}`
-    : ""
-}
-${
-  previousProcedures
-    ? `Try to fix the inconsistencies from the previous procedures generated:\n${JSON.stringify({ procedures: previousProcedures })}
+      : undefined,
+
+    previousProcedures
+      ? `Try to fix the inconsistencies from the previous procedures generated:\n${JSON.stringify({ procedures: previousProcedures })}
 with inconsistencies:
 ${inconsistencies
   ?.map((i, idx) => {
@@ -110,32 +117,24 @@ ${inconsistencies
 suggested fix: ${i.suggestion}`;
   })
   .join("\n")}`
-    : ``
-}
+      : undefined,
 
-Follow this exact workflow:
-1. First, reason about which procedures are medically appropriate for this diagnosis and symptoms. List the procedures you think are relevant.
-2. For EACH procedure you identified, call the "query_procedures" tool to check whether it exists and to get the exact name. Use short, general medical terms as your search query (e.g. "blood test", "MRI", "ECG").
-3. ONLY include procedures whose names were returned by the tool. Do NOT invent procedure names or use your own wording — use the exact names from the tool results.
-4. If the tool says no predefined procedures are available, generate procedures yourself using standard medical terminology.
+    `Return your response in JSON
+${`{ "procedures": ${ProcedureWithRelevanceArrayJsonExampleString()} }`}`,
 
-Return your response in JSON
-${`{ "procedures": ${ProcedureWithRelevanceArrayJsonExampleString()} }`}
-
-Requirements:
+    `Requirements:
 - Be medically accurate and realistic
 - Use standard medical terminology
 - The procedure "name" field MUST exactly match a name returned by the "query_procedures" tool
-- Return ONLY the JSON object, no additional text`;
+- Return ONLY the JSON object, no additional text like prefix or suffix text`
+  );
 
-  const userPrompt = [
+  const userPrompt = buildPrompt(
     `Provided Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
     userInstructions
       ? `Additional provided instructions: ${userInstructions}`
-      : "",
-  ]
-    .filter((s) => s.length > 0)
-    .join("\n");
+      : undefined
+  );
 
   console.debug(
     `[GenerateProceduresOneShot] Prompt:\n${systemPrompt}\n${userPrompt}`
@@ -153,7 +152,6 @@ Requirements:
       async () => {
         const result = await createAgent({
           model: getCreativeLLM(),
-          tools: [proceduresQueryTool],
           systemPrompt: systemPrompt,
           responseFormat: providerStrategy(ProcedureSchemaWrapper),
         })

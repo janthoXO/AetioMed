@@ -1,5 +1,5 @@
 import express from "express";
-import { PredefinedProcedures } from "@/02domain-models/Procedure.js";
+import { PredefinedProcedures } from "@/models/Procedure.js";
 
 const router = express.Router();
 

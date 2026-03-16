@@ -2,12 +2,12 @@ import { END, Send, START, StateGraph } from "@langchain/langgraph";
 import { registry } from "@langchain/langgraph/zod";
 import { GlobalStateSchema } from "../state.js";
 import z from "zod";
-import { InconsistencySchema } from "@/02domain-models/Inconsistency.js";
-import { generateAnamnesisOneShot } from "@/02services/anamnesis.service.js";
-import { generateChiefComplaintOneShot } from "@/02services/chiefComplaint.service.js";
-import { generateInconsistenciesOneShot } from "@/02services/consistency.service.js";
-import { generateProceduresOneShot } from "@/03repo/procedure/llm.js";
-import { passthrough } from "@/02ai/graph.utils.js";
+import { InconsistencySchema } from "@/models/Inconsistency.js";
+import { generateAnamnesisOneShot } from "@/03aigateway/anamnesis.aigateway.js";
+import { generateChiefComplaintOneShot } from "@/03aigateway/chiefComplaint.aigateway.js";
+import { generateInconsistenciesOneShot } from "@/03aigateway/consistency.aigateway.js";
+import { generateProceduresOneShot } from "@/03aigateway/procedures.aigateway.js";
+import { passthrough } from "@/02graphs/graph.utils.js";
 
 const InconsistencyGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,

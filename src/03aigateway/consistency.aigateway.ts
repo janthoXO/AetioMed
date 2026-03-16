@@ -3,14 +3,14 @@ import {
   handleLangchainError,
   parseStructuredResponseAgent,
 } from "@/utils/llm.js";
-import type { Case } from "@/02domain-models/Case.js";
-import type { Diagnosis } from "@/02domain-models/Diagnosis.js";
+import type { Case } from "@/models/Case.js";
+import type { Diagnosis } from "@/models/Diagnosis.js";
 import {
   InconsistencyArrayJsonFormatZod,
   InconsistencyJsonExampleString,
   type Inconsistency,
-} from "@/02domain-models/Inconsistency.js";
-import type { Symptom } from "@/02domain-models/Symptom.js";
+} from "@/models/Inconsistency.js";
+import type { Symptom } from "@/models/Symptom.js";
 import { retry } from "@/utils/retry.js";
 import { createAgent, HumanMessage, providerStrategy } from "langchain";
 

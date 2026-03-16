@@ -1,12 +1,12 @@
 import { getLLM, parseStructuredResponse } from "@/utils/llm.js";
 import { type GlobalState } from "./state.js";
-import { type AnamnesisCategory } from "@/02domain-models/Anamnesis.js";
-import { CaseJsonExampleString, CaseSchema } from "@/02domain-models/Case.js";
+import { type AnamnesisCategory } from "@/models/Anamnesis.js";
+import { CaseJsonExampleString, CaseSchema } from "@/models/Case.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
 import { GenerationError } from "@/errors/AppError.js";
 import { translateAnamnesisCategoriesFromEnglish } from "@/02services/anamnesis.service.js";
-import { translateProceduresFromEnglish } from "@/03repo/procedure/translation.js";
+import { translateProceduresFromEnglish } from "@/02services/procedures.service.js";
 
 type TranslateCaseOutput = Pick<GlobalState, "case">;
 

@@ -4,15 +4,15 @@ import {
   GraphInputSchema,
   type GlobalState,
 } from "./state.js";
-import type { Case } from "@/02domain-models/Case.js";
-import type { GenerationFlag } from "@/02domain-models/GenerationFlags.js";
+import type { Case } from "@/models/Case.js";
+import type { GenerationFlag } from "@/models/GenerationFlags.js";
 
 import { GenerationError } from "@/errors/AppError.js";
 import {
   AnamnesisCategoryDefaults,
   type AnamnesisCategory,
-} from "@/02domain-models/Anamnesis.js";
-import type { Diagnosis } from "@/02domain-models/Diagnosis.js";
+} from "@/models/Anamnesis.js";
+import type { Diagnosis } from "@/models/Diagnosis.js";
 import { chiefComplaintGraph } from "./02chiefComplaint/index.js";
 import { anamnesisGraph } from "./03anamnesis/index.js";
 import { inconsistencyGraph } from "./05inconsistency/index.js";

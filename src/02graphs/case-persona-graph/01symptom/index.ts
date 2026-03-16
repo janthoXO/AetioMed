@@ -1,10 +1,8 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
 import { GlobalStateSchema } from "../state.js";
 import z from "zod";
-import {
-  generateSymptomsOneShot,
-  SymptomsRelatedToDiseaseIcd,
-} from "@/02services/symptoms.service.js";
+import { SymptomsRelatedToDiseaseIcd } from "@/03repo/symptoms.repo.js";
+import { generateSymptomsOneShot } from "@/03aigateway/symptoms.aigateway.js";
 
 const SymptomsGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,

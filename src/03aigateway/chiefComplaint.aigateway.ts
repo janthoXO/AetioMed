@@ -4,9 +4,9 @@ import {
   handleLangchainError,
   parseStructuredResponseAgent,
 } from "@/utils/llm.js";
-import type { Inconsistency } from "@/02domain-models/Inconsistency.js";
-import type { Diagnosis } from "@/02domain-models/Diagnosis.js";
-import type { Symptom } from "@/02domain-models/Symptom.js";
+import type { Inconsistency } from "@/models/Inconsistency.js";
+import type { Diagnosis } from "@/models/Diagnosis.js";
+import type { Symptom } from "@/models/Symptom.js";
 import {
   createAgent,
   HumanMessage,
@@ -18,8 +18,8 @@ import {
   ChiefComplaintJsonExample,
   ChiefComplaintJsonSchema,
   type ChiefComplaint,
-} from "@/02domain-models/ChiefComplaint.js";
-import type { Case } from "@/02domain-models/Case.js";
+} from "@/models/ChiefComplaint.js";
+import type { Case } from "@/models/Case.js";
 
 export async function generateChiefComplaintCoT(
   diagnosis: Diagnosis,

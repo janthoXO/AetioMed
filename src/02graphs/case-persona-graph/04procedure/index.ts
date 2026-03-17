@@ -83,7 +83,8 @@ async function generateProcedure(
     if (filteredProcedures.length === 0) {
       // maybe wrap that into a retry block aswell
       emitTrace(
-        `[ProcedureGraph] Warning: No generated procedures could be mapped to predefined procedures. Generated procedures: ${state.case.procedures.map((p) => p.name).join(", ")}`
+        `[ProcedureGraph] No generated procedures could be mapped to predefined procedures. Generated procedures: ${state.case.procedures.map((p) => p.name).join(", ")}`,
+        { category: "warn" }
       );
     } else {
       state.case.procedures = filteredProcedures;

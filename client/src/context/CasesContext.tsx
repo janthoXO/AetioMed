@@ -137,7 +137,9 @@ export function CasesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <CasesContext.Provider value={{ cases, isLoading, generateCase, getCase, deleteCase }}>
+    <CasesContext.Provider
+      value={{ cases, isLoading, generateCase, getCase, deleteCase }}
+    >
       {children}
     </CasesContext.Provider>
   );

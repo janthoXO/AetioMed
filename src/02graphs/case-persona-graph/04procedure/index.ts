@@ -80,14 +80,14 @@ async function generateProcedure(
       })
       .filter((p) => !!p);
 
-      if (filteredProcedures.length === 0) {
-        // maybe wrap that into a retry block aswell
-        emitTrace(
-          `[ProcedureGraph] Warning: No generated procedures could be mapped to predefined procedures. Generated procedures: ${state.case.procedures.map(p => p.name).join(", ")}`
-        );
-      } else {
-        state.case.procedures = filteredProcedures;
-      }
+    if (filteredProcedures.length === 0) {
+      // maybe wrap that into a retry block aswell
+      emitTrace(
+        `[ProcedureGraph] Warning: No generated procedures could be mapped to predefined procedures. Generated procedures: ${state.case.procedures.map((p) => p.name).join(", ")}`
+      );
+    } else {
+      state.case.procedures = filteredProcedures;
+    }
   }
 
   emitTrace(

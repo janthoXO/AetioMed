@@ -1,7 +1,7 @@
-import * as React from "react"
-import { Switch as SwitchPrimitive } from "radix-ui"
+import * as React from "react";
+import { Switch as SwitchPrimitive } from "radix-ui";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 function Switch({
   className,
@@ -9,8 +9,8 @@ function Switch({
   children,
   ...props
 }: React.ComponentProps<typeof SwitchPrimitive.Root> & {
-  size?: "sm" | "default"
-  children?: React.ReactNode
+  size?: "sm" | "default";
+  children?: React.ReactNode;
 }) {
   return (
     <SwitchPrimitive.Root
@@ -29,7 +29,7 @@ function Switch({
         {children}
       </SwitchPrimitive.Thumb>
     </SwitchPrimitive.Root>
-  )
+  );
 }
 
-export { Switch }
+export { Switch };

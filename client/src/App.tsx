@@ -14,7 +14,10 @@ function App() {
           <Route element={<Layout />}>
             <Route index element={<HomePage />} />
             <Route path="cases/:caseId" element={<CaseDetailPage />} />
-            <Route path="cases/:caseId/generating" element={<GeneratingCaseView />} />
+            <Route
+              path="cases/:caseId/generating"
+              element={<GeneratingCaseView />}
+            />
           </Route>
         </Routes>
       </CasesProvider>

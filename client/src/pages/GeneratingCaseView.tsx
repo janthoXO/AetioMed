@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useCases } from "@/hooks/useCases";
 import { Button } from "@/components/ui/button";
@@ -9,25 +8,8 @@ export function GeneratingCaseView() {
   const { caseId } = useParams();
   const navigate = useNavigate();
   const { getCase } = useCases();
-  const [isCompleted, setIsCompleted] = useState(false);
 
   const matchedCase = caseId ? getCase(caseId) : undefined;
-  const isActuallyCompleted = matchedCase && matchedCase.createdAt;
-
-  useEffect(() => {
-    if (isActuallyCompleted) {
-      setIsCompleted(true);
-    }
-  }, [isActuallyCompleted]);
-
-  // Effect to handle navigation when case finishes
-  useEffect(() => {
-    // If the case becomes fully resolved in context (meaning its DB id is assigned if different, though we used requestId as db id now)
-    // Actually, since we use requestId as db id, the case is 'ready' when it has its chiefComplaint or other fields populated.
-    if (matchedCase?.chiefComplaint) {
-      setIsCompleted(true);
-    }
-  }, [matchedCase]);
 
   if (!matchedCase) {
     return (
@@ -44,7 +26,7 @@ export function GeneratingCaseView() {
           <h1 className="text-2xl font-bold tracking-tight">
             Generating Case: {matchedCase.diagnosis.name}
           </h1>
-          {!isCompleted && (
+          {!matchedCase.createdAt && (
             <Loader2 className="animate-spin text-primary h-6 w-6" />
           )}
         </div>
@@ -57,12 +39,12 @@ export function GeneratingCaseView() {
       </div>
 
       <div className="flex-1 flex flex-col min-h-75">
-        {caseId && <TraceViewer caseId={caseId} isCompleted={isCompleted} />}
+        {caseId && <TraceViewer caseId={caseId} isCompleted={!!matchedCase.createdAt} />}
       </div>
 
       <div className="flex justify-end pt-2">
         <Button
-          disabled={!isCompleted}
+          disabled={!matchedCase.createdAt}
           onClick={() => navigate(`/cases/${caseId}`)}
           className="w-full sm:w-auto"
         >

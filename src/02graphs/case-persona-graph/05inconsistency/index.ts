@@ -39,9 +39,7 @@ type InconsistencyGraphState = z.infer<typeof InconsistencyGraphStateSchema>;
 async function generateInconsistencies(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "inconsistencies">> {
-  emitTrace(
-    "[InconsistencyGraph] Starting generation of inconsistencies..."
-  );
+  emitTrace("[InconsistencyGraph] Starting generation of inconsistencies...");
   state.inconsistencies = await generateInconsistenciesOneShot(
     state.case,
     state.diagnosis,
@@ -67,16 +65,13 @@ async function generateInconsistencies(
       .join("\n")}`
   );
 
-
   return { inconsistencies: state.inconsistencies };
 }
 
 async function refineChiefComplaint(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "case">> {
-  emitTrace(
-    "[InconsistencyGraph] Starting refinement of chief complaint..."
-  );
+  emitTrace("[InconsistencyGraph] Starting refinement of chief complaint...");
   state.case.chiefComplaint = await generateChiefComplaintOneShot(
     state.diagnosis,
     state.symptoms,
@@ -87,10 +82,9 @@ async function refineChiefComplaint(
     state.userInstructions,
     state.inconsistencies //these should already be filtered by the send logic
   ).catch((error) => {
-    emitTrace(
-      `[InconsistencyGraph] Error refining chief complaint: ${error}`,
-      { category: "error" }
-    );
+    emitTrace(`[InconsistencyGraph] Error refining chief complaint: ${error}`, {
+      category: "error",
+    });
     throw error;
   });
 
@@ -108,9 +102,7 @@ async function refineChiefComplaint(
 async function refineAnamnesis(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "case">> {
-  emitTrace(
-    "[InconsistencyGraph] Starting refinement of anamnesis..."
-  );
+  emitTrace("[InconsistencyGraph] Starting refinement of anamnesis...");
   state.case.anamnesis = await generateAnamnesisOneShot(
     state.diagnosis,
     state.symptoms,
@@ -122,10 +114,9 @@ async function refineAnamnesis(
     state.anamnesisCategories,
     state.inconsistencies //these should already be filtered by the send logic
   ).catch((error) => {
-    emitTrace(
-      `[InconsistencyGraph] Error refining anamnesis: ${error}`,
-      { category: "error" }
-    );
+    emitTrace(`[InconsistencyGraph] Error refining anamnesis: ${error}`, {
+      category: "error",
+    });
     throw error;
   });
 
@@ -143,9 +134,7 @@ async function refineAnamnesis(
 async function refineProcedures(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "case">> {
-  emitTrace(
-    "[InconsistencyGraph] Starting refinement of procedures..."
-  );
+  emitTrace("[InconsistencyGraph] Starting refinement of procedures...");
   state.case.procedures = await generateProceduresOneShot(
     state.diagnosis,
     state.symptoms,
@@ -156,10 +145,9 @@ async function refineProcedures(
     state.userInstructions,
     state.inconsistencies //these should already be filtered by the send logic
   ).catch((error) => {
-    emitTrace(
-      `[InconsistencyGraph] Error refining procedures: ${error}`,
-      { category: "error" }
-    );
+    emitTrace(`[InconsistencyGraph] Error refining procedures: ${error}`, {
+      category: "error",
+    });
     throw error;
   });
 

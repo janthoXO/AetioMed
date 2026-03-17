@@ -69,7 +69,10 @@ ${JSON.stringify(relatedCase)}`
           .catch((error) => {
             handleLangchainError(error);
           });
-        console.debug(`[GenerateProceduresCoT] [Attempt ${attempt}] LLM raw Response:\n`, text);
+        console.debug(
+          `[GenerateProceduresCoT] [Attempt ${attempt}] LLM raw Response:\n`,
+          text
+        );
 
         return text.text;
       },

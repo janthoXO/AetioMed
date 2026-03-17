@@ -73,7 +73,8 @@ router.post(
       }
     }
 
-    const generationRequestId = bodyResult.data.requestId || crypto.randomUUID();
+    const generationRequestId =
+      bodyResult.data.requestId || crypto.randomUUID();
 
     try {
       const caseData = await runWithTracing(generationRequestId, () =>
@@ -87,7 +88,10 @@ router.post(
           language
         )
       );
-      const response = CaseGenerationResponseSchema.parse({ ...caseData, requestId: generationRequestId });
+      const response = CaseGenerationResponseSchema.parse({
+        ...caseData,
+        requestId: generationRequestId,
+      });
 
       /* #swagger.responses[200] = {
             content: {
@@ -171,6 +175,7 @@ router.get("/:requestId/traces/stream", (req, res) => {
   // Send an initial connected ping
   res.write("event: connected\ndata: {}\n\n");
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const onTrace = (data: any) => {
     res.write(`event: trace\ndata: ${JSON.stringify(data)}\n\n`);
   };

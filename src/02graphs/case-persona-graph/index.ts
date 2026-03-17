@@ -19,7 +19,6 @@ import { inconsistencyGraph } from "./05inconsistency/index.js";
 import { passthrough } from "../graph.utils.js";
 import { symptomsGraph } from "./01symptom/index.js";
 import { procedureGraph } from "./04procedure/index.js";
-import { TracingCallbackHandler } from "../trace-callback.js";
 
 /**
  * Build and compile the Council-Consistency-Refinement graph
@@ -120,7 +119,7 @@ export async function generateCase(
       generationFlags: generationFlags,
       userInstructions: context,
       anamnesisCategories: anamnesisCategories,
-    },
+    }
     // {
     //   callbacks: [new TracingCallbackHandler()],
     // }

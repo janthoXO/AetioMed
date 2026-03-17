@@ -16,17 +16,22 @@ type SymptomsGraphState = z.infer<typeof SymptomsGraphStateSchema>;
 function retrieveSymptomsUMLS(
   state: SymptomsGraphState
 ): Pick<SymptomsGraphState, "symptoms"> {
-  emitTrace("[SymptomsGraph] Retrieving symptoms from UMLS...");
   if (!state.diagnosis.icd) {
     return { symptoms: state.symptoms };
   }
 
+  emitTrace(
+    `[SymptomsGraph] Retrieving symptoms from UMLS for ICD ${state.diagnosis.icd}...`
+  );
+
   state.symptoms = SymptomsRelatedToDiseaseIcd(state.diagnosis.icd);
 
   emitTrace(
-    `[SymptomsGraph] Retrieved symptoms from UMLS:\n${state.symptoms
-      .map((s) => s.name)
-      .join(", ")}`
+    `[SymptomsGraph] Retrieved symptoms from UMLS:\n${
+      state.symptoms.length > 0
+        ? state.symptoms.map((s) => s.name).join(", ")
+        : "none"
+    }`
   );
   return { symptoms: state.symptoms };
 }

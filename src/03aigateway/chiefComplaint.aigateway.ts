@@ -20,6 +20,7 @@ import {
   type ChiefComplaint,
 } from "@/models/ChiefComplaint.js";
 import type { Case } from "@/models/Case.js";
+import { emitTrace } from "@/utils/tracing.js";
 
 export async function generateChiefComplaintCoT(
   diagnosis: Diagnosis,
@@ -58,7 +59,7 @@ ${
 
   try {
     const stepsString: string = await retry(
-      async () => {
+      async (attempt: number) => {
         const text = await getDeterministicLLM({ outputFormat: "text" })
           .invoke([
             new SystemMessage(systemPrompt),
@@ -67,12 +68,21 @@ ${
           .catch((error) => {
             handleLangchainError(error);
           });
-        console.debug("[GenerateChiefComplaintCoT] LLM raw Response:\n", text);
+        console.debug(
+          `[GenerateChiefComplaintCoT] [Attempt ${attempt}] LLM raw Response:\n`,
+          text
+        );
 
         return text.text;
       },
       2,
-      0
+      0,
+      (error, attempt) => {
+        emitTrace(
+          `[GenerateChiefComplaintCoT] Attempt ${attempt} failed with error: ${error.message}`,
+          { category: "error" }
+        );
+      }
     );
 
     return stepsString;
@@ -141,7 +151,7 @@ Requirements:
   // Initialize cases to empty in case of failure
   try {
     const chiefComplaint: ChiefComplaint = await retry(
-      async () => {
+      async (attempt: number) => {
         const result = await createAgent({
           model: getCreativeLLM(),
           tools: [],
@@ -153,7 +163,7 @@ Requirements:
             handleLangchainError(error);
           });
         console.debug(
-          "[GenerateChiefComplaintOneShot] LLM raw Response:\ncontent:\n",
+          `[GenerateChiefComplaintOneShot] [Attempt ${attempt}] LLM raw Response:\ncontent:\n`,
           result.messages[result.messages.length - 1]?.content,
           "\nstructured response:\n",
           result.structuredResponse
@@ -163,7 +173,13 @@ Requirements:
           .chiefComplaint;
       },
       2,
-      0
+      0,
+      (error, attempt) => {
+        emitTrace(
+          `[GenerateChiefComplaintOneShot] Attempt ${attempt} failed with error: ${error.message}`,
+          { category: "error" }
+        );
+      }
     );
 
     return chiefComplaint;

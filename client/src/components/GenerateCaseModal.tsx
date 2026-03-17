@@ -1,5 +1,4 @@
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
 import { X } from "lucide-react";
 import {
   Dialog,
@@ -15,7 +14,6 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Separator } from "@/components/ui/separator";
-import { Badge } from "@/components/ui/badge";
 import { useCases } from "@/hooks/useCases";
 import type { GenerationFlag } from "@/models/GenerationFlags";
 import { ICDCodePattern } from "@/models/Diagnosis";
@@ -32,7 +30,6 @@ type Props = {
 };
 
 export function GenerateCaseModal({ open, onOpenChange }: Props) {
-  const navigate = useNavigate();
   const { generateCase } = useCases();
 
   const [diagnosis, setDiagnosis] = useState("");
@@ -110,8 +107,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
     onOpenChange(false);
 
     try {
-      const id = await generateCase(request);
-      navigate(`/cases/${id}`);
+      await generateCase(request);
     } catch (error) {
       console.error("Generation failed:", error);
     }
@@ -183,11 +179,6 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
                     >
                       {label}
                     </Label>
-                    {selectedFlags.has(value) && (
-                      <Badge variant="secondary" className="text-xs">
-                        Selected
-                      </Badge>
-                    )}
                   </div>
 
                   {/* Per-flag context input */}

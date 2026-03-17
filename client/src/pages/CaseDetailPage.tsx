@@ -5,7 +5,7 @@ import { CaseDetail } from "@/components/CaseDetail";
 import { useCases } from "@/hooks/useCases";
 
 export default function CaseDetailPage() {
-  const { id } = useParams<{ id: string }>();
+  const { caseId } = useParams<{ caseId: string }>();
   const { getCase, isLoading } = useCases();
 
   if (isLoading) {
@@ -16,7 +16,7 @@ export default function CaseDetailPage() {
     );
   }
 
-  const medicalCase = id ? getCase(Number(id)) : undefined;
+  const medicalCase = caseId ? getCase(caseId) : undefined;
 
   if (!medicalCase) {
     return (

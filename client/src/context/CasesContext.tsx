@@ -15,8 +15,9 @@ import * as casesApi from "@/api/cases.api";
 export type CasesContextType = {
   cases: Case[];
   isLoading: boolean;
-  generateCase: (request: CaseGenerationRequest) => Promise<number>;
-  getCase: (id: number) => Case | undefined;
+  generateCase: (request: CaseGenerationRequest) => Promise<string>;
+  getCase: (id: string) => Case | undefined;
+  deleteCase: (id: string) => Promise<void>;
 };
 
 export const CasesContext = createContext<CasesContextType | null>(null);
@@ -34,11 +35,13 @@ export function CasesProvider({ children }: { children: ReactNode }) {
         if (serverCases && serverCases.length > 0) {
           // Upsert server cases into IndexedDB
           await db.cases.bulkPut(serverCases);
+
+          const now = new Date();
           setCases(
             serverCases.sort(
               (a, b) =>
-                new Date(b.createdAt).getTime() -
-                new Date(a.createdAt).getTime()
+                new Date(b.createdAt ?? now).getTime() -
+                new Date(a.createdAt ?? now).getTime()
             )
           );
         } else {
@@ -65,16 +68,17 @@ export function CasesProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const generateCase = useCallback(
-    async (request: CaseGenerationRequest): Promise<number> => {
-      const createdAt = new Date();
+    async (request: CaseGenerationRequest): Promise<string> => {
+      const caseId = crypto.randomUUID();
+
       try {
-        // 1. Create a placeholder case with input params (no id = not yet persisted)
+        // 1. Create a placeholder case with input params
         const placeholderCase: Case = {
+          id: caseId,
           diagnosis: {
             name: request.diagnosis,
             icd: request.icd,
           },
-          createdAt,
           generationFlags: request.generationFlags,
           language: request.language ?? config.language,
         };
@@ -83,27 +87,31 @@ export function CasesProvider({ children }: { children: ReactNode }) {
         setCases((prev) => [placeholderCase, ...prev]);
 
         // 3. Send generation request
-        const response = await casesApi.generateCase(request);
+        const response = await casesApi.generateCase({
+          ...request,
+          requestId: caseId,
+        });
 
         // 4. Merge response with placeholder and save to DB
         const completedCase: Case = {
           ...placeholderCase,
+          createdAt: new Date(),
           chiefComplaint: response.chiefComplaint,
           anamnesis: response.anamnesis,
           procedures: response.procedures,
         };
 
-        const id = (await db.cases.add(completedCase)) as number;
-        const savedCase = { ...completedCase, id };
+        await db.cases.put(completedCase, completedCase.id);
+        const savedCase = { ...completedCase };
 
-        // Replace the placeholder (matched by createdAt) with the saved case
+        // Replace the placeholder matched by requestId with the saved case
         setCases((prev) =>
-          prev.map((c) => (c.createdAt === createdAt ? savedCase : c))
+          prev.map((c) => (c.id === savedCase.id ? savedCase : c))
         );
 
-        return id;
+        return savedCase.id;
       } catch (error) {
-        setCases((prev) => prev.filter((c) => c.createdAt !== createdAt));
+        setCases((prev) => prev.filter((c) => c.id !== caseId));
         console.error("Error generating case:", error);
         throw error;
       }
@@ -112,14 +120,26 @@ export function CasesProvider({ children }: { children: ReactNode }) {
   );
 
   const getCase = useCallback(
-    (id: number) => {
+    (id: string) => {
       return cases.find((c) => c.id === id);
     },
     [cases]
   );
 
+  const deleteCase = useCallback(async (id: string) => {
+    try {
+      await db.cases.delete(id);
+      setCases((prev) => prev.filter((c) => c.id !== id));
+    } catch (error) {
+      console.error("Error deleting case:", error);
+      throw error;
+    }
+  }, []);
+
   return (
-    <CasesContext.Provider value={{ cases, isLoading, generateCase, getCase }}>
+    <CasesContext.Provider
+      value={{ cases, isLoading, generateCase, getCase, deleteCase }}
+    >
       {children}
     </CasesContext.Provider>
   );

@@ -6,4 +6,5 @@ export type CaseGenerationRequest = {
   context?: Record<GenerationFlag & "general", string>;
   generationFlags: GenerationFlag[];
   language?: string;
+  requestId?: string;
 };

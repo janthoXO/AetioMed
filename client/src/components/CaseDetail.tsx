@@ -4,6 +4,8 @@ import {
   Stethoscope,
   ClipboardList,
   Activity,
+  ScrollText,
+  Trash2,
 } from "lucide-react";
 import {
   Card,
@@ -14,13 +16,32 @@ import {
 } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import type { Case } from "@/models/Case";
+import { TraceViewer } from "./TraceViewer";
+import { useCases } from "@/hooks/useCases";
+import { useNavigate } from "react-router-dom";
 
 type Props = {
   medicalCase: Case;
 };
 
 export function CaseDetail({ medicalCase }: Props) {
+  const { deleteCase } = useCases();
+  const navigate = useNavigate();
+
+  const handleDelete = async () => {
+    await deleteCase(medicalCase.id);
+    navigate("/");
+  };
   const {
     diagnosis,
     createdAt,
@@ -31,7 +52,7 @@ export function CaseDetail({ medicalCase }: Props) {
   } = medicalCase;
 
   return (
-    <div className="space-y-6 max-w-3xl">
+    <div className="space-y-6">
       {/* Header */}
       <div className="space-y-2">
         <div className="flex items-center gap-3 flex-wrap">
@@ -40,7 +61,7 @@ export function CaseDetail({ medicalCase }: Props) {
           </h1>
           {diagnosis.icd && (
             <Badge variant="secondary" className="text-sm">
-              <Tag className="mr-1 h-3 w-3" />
+              <Tag className="h-3 w-3" />
               {diagnosis.icd}
             </Badge>
           )}
@@ -56,9 +77,44 @@ export function CaseDetail({ medicalCase }: Props) {
             </Badge>
           ))}
         </div>
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-          <Calendar className="h-4 w-4" />
-          <span>{new Date(createdAt).toLocaleString()}</span>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap justify-between">
+          <div className="flex items-center gap-2">
+            <Calendar className="h-4 w-4" />
+            <span>{(createdAt ?? new Date()).toLocaleString()}</span>
+          </div>
+
+          {medicalCase.createdAt && (
+            <div className="flex gap-2 items-center">
+              <Dialog>
+                <DialogTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8">
+                    <ScrollText className="mr-2 h-4 w-4" />
+                    View Generation Traces
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="flex flex-col p-6 max-h-[80vh] w-fit sm:max-w-[80vw]">
+                  <DialogHeader className="shrink-0">
+                    <DialogTitle>Generation Traces</DialogTitle>
+                    <DialogDescription>
+                      Execution logs for {diagnosis.name}
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="flex-1 overflow-auto pt-4 flex flex-col w-full">
+                    <TraceViewer caseId={medicalCase.id} isCompleted={true} />
+                  </div>
+                </DialogContent>
+              </Dialog>
+              <Button
+                variant="destructive"
+                size="sm"
+                className="h-8"
+                onClick={handleDelete}
+              >
+                <Trash2 className="mr-2 h-4 w-4" />
+                Delete Case
+              </Button>
+            </div>
+          )}
         </div>
       </div>
 

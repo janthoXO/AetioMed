@@ -66,7 +66,7 @@ async function generateProcedure(
 
   // map generated to procedures to predefined procedures as good as possible
   if (PredefinedProcedures) {
-    state.case.procedures = state.case.procedures
+    const filteredProcedures = state.case.procedures
       .map((p) => {
         const predefined = PredefinedProcedures!.find((pre) =>
           pre.name.toLowerCase().includes(p.name.toLowerCase())
@@ -79,6 +79,15 @@ async function generateProcedure(
           : undefined;
       })
       .filter((p) => !!p);
+
+      if (filteredProcedures.length === 0) {
+        // maybe wrap that into a retry block aswell
+        emitTrace(
+          `[ProcedureGraph] Warning: No generated procedures could be mapped to predefined procedures. Generated procedures: ${state.case.procedures.map(p => p.name).join(", ")}`
+        );
+      } else {
+        state.case.procedures = filteredProcedures;
+      }
   }
 
   emitTrace(

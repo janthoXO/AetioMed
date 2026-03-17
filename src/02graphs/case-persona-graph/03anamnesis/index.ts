@@ -47,9 +47,7 @@ async function generateAnamnesisCoT(
 async function generateAnamnesis(
   state: AnamnesisGraphState
 ): Promise<Pick<AnamnesisGraphState, "case">> {
-  emitTrace(
-    "[AnamnesisGraph] Starting generation for anamnesis..."
-  );
+  emitTrace("[AnamnesisGraph] Starting generation for anamnesis...");
   if (!state.case) {
     state.case = {};
   }
@@ -61,15 +59,14 @@ async function generateAnamnesis(
     state.userInstructions,
     state.anamnesisCategories
   ).catch((error) => {
-    emitTrace(
-      `[AnamnesisGraph] Error generating anamnesis: ${error}`,
-      { category: "error" }
-    );
+    emitTrace(`[AnamnesisGraph] Error generating anamnesis: ${error}`, {
+      category: "error",
+    });
     throw error;
   });
 
   emitTrace(
-    `[AnamnesisGraph] Successfully generated anamnesis: ${state.case.anamnesis}`
+    `[AnamnesisGraph] Successfully generated anamnesis: ${JSON.stringify(state.case.anamnesis, null, 2)}`
   );
 
   return { case: state.case };

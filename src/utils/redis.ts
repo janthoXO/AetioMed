@@ -16,25 +16,15 @@ export function getRedisClient(): Promise<RedisClientType | null> {
       return null;
     }
 
-    try {
-      const client = createClient({ url: config.REDIS_URL });
+    const client = createClient({ url: config.REDIS_URL });
 
-      // Non-blocking error handler, so we don't crash
-      client.on("error", (err) => {
-        console.error("[Redis] Client error:", err);
-      });
-
-      await client.connect();
-      console.log("[Redis] Connected to Redis successfully.");
-      return client as RedisClientType;
-    } catch (error) {
-      console.warn(
-        `[Redis] Failed to connect to Redis at ${config.REDIS_URL}. Traces will not be persisted.`,
-        error
-      );
-      return null;
-    }
-  })();
+    await client.connect();
+    console.log("[Redis] Connected to Redis successfully.");
+    return client as RedisClientType;
+  })().catch(() => {
+    console.error("[Redis] Failed to connect to Redis");
+    return null;
+  });
 
   return redisClientPromise;
 }

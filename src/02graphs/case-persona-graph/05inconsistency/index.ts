@@ -8,6 +8,7 @@ import { generateChiefComplaintOneShot } from "@/03aigateway/chiefComplaint.aiga
 import { generateInconsistenciesOneShot } from "@/03aigateway/consistency.aigateway.js";
 import { generateProceduresOneShot } from "@/03aigateway/procedures.aigateway.js";
 import { passthrough } from "@/02graphs/graph.utils.js";
+import { emitTrace } from "@/utils/tracing.js";
 
 const InconsistencyGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,
@@ -38,8 +39,8 @@ type InconsistencyGraphState = z.infer<typeof InconsistencyGraphStateSchema>;
 async function generateInconsistencies(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "inconsistencies">> {
-  console.debug(
-    "[InconsistencyGraph: generateInconsistencies] Generating inconsistencies with LLM..."
+  emitTrace(
+    "[InconsistencyGraph] Starting generation of inconsistencies..."
   );
   state.inconsistencies = await generateInconsistenciesOneShot(
     state.case,
@@ -47,12 +48,25 @@ async function generateInconsistencies(
     state.generationFlags,
     state.symptoms,
     state.userInstructions
-  );
+  ).catch((error) => {
+    emitTrace(
+      `[InconsistencyGraph] Error generating inconsistencies: ${error}`,
+      { category: "error" }
+    );
+    throw error;
+  });
 
   // filter inconsistencies to only those relevant for the current generation flags
   state.inconsistencies = state.inconsistencies.filter((i) =>
     state.generationFlags.some((f) => f === i.field)
   );
+
+  emitTrace(
+    `[InconsistencyGraph] Successfully generated inconsistencies:\n${state.inconsistencies
+      .map((i) => `- ${i.field}: ${i.description}`)
+      .join("\n")}`
+  );
+
 
   return { inconsistencies: state.inconsistencies };
 }
@@ -60,8 +74,8 @@ async function generateInconsistencies(
 async function refineChiefComplaint(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "case">> {
-  console.debug(
-    "[InconsistencyGraph: refineChiefComplaint] Refining chief complaint with LLM..."
+  emitTrace(
+    "[InconsistencyGraph] Starting refinement of chief complaint..."
   );
   state.case.chiefComplaint = await generateChiefComplaintOneShot(
     state.diagnosis,
@@ -72,6 +86,16 @@ async function refineChiefComplaint(
     undefined, // CoT only needed for initial generation, not refinement
     state.userInstructions,
     state.inconsistencies //these should already be filtered by the send logic
+  ).catch((error) => {
+    emitTrace(
+      `[InconsistencyGraph] Error refining chief complaint: ${error}`,
+      { category: "error" }
+    );
+    throw error;
+  });
+
+  emitTrace(
+    `[InconsistencyGraph] Successfully refined chief complaint: ${state.case.chiefComplaint}`
   );
 
   return {
@@ -84,8 +108,8 @@ async function refineChiefComplaint(
 async function refineAnamnesis(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "case">> {
-  console.debug(
-    "[InconsistencyGraph: refineAnamnesis] Refining anamnesis with LLM..."
+  emitTrace(
+    "[InconsistencyGraph] Starting refinement of anamnesis..."
   );
   state.case.anamnesis = await generateAnamnesisOneShot(
     state.diagnosis,
@@ -97,6 +121,16 @@ async function refineAnamnesis(
     state.userInstructions,
     state.anamnesisCategories,
     state.inconsistencies //these should already be filtered by the send logic
+  ).catch((error) => {
+    emitTrace(
+      `[InconsistencyGraph] Error refining anamnesis: ${error}`,
+      { category: "error" }
+    );
+    throw error;
+  });
+
+  emitTrace(
+    `[InconsistencyGraph] Successfully refined anamnesis: ${state.case.anamnesis}`
   );
 
   return {
@@ -109,8 +143,8 @@ async function refineAnamnesis(
 async function refineProcedures(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "case">> {
-  console.debug(
-    "[InconsistencyGraph: refineProcedures] Refining procedures with LLM..."
+  emitTrace(
+    "[InconsistencyGraph] Starting refinement of procedures..."
   );
   state.case.procedures = await generateProceduresOneShot(
     state.diagnosis,
@@ -121,6 +155,16 @@ async function refineProcedures(
     undefined, // CoT only needed for initial generation, not refinement
     state.userInstructions,
     state.inconsistencies //these should already be filtered by the send logic
+  ).catch((error) => {
+    emitTrace(
+      `[InconsistencyGraph] Error refining procedures: ${error}`,
+      { category: "error" }
+    );
+    throw error;
+  });
+
+  emitTrace(
+    `[InconsistencyGraph] Successfully refined procedures: ${state.case.procedures}`
   );
 
   return {

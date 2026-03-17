@@ -12,6 +12,7 @@ import {
 import { createAgent, HumanMessage, providerStrategy } from "langchain";
 import z from "zod";
 import { retry } from "@/utils/retry.js";
+import { emitTrace } from "@/utils/tracing.js";
 
 export async function generateSymptomsOneShot(
   diagnosis: Diagnosis,
@@ -52,7 +53,7 @@ Requirements:
     });
 
     const symptoms: Symptom[] = await retry(
-      async () => {
+      async (attempt: number) => {
         const result = await createAgent({
           model: getDeterministicLLM(),
           systemPrompt: systemPrompt,
@@ -64,7 +65,7 @@ Requirements:
           });
 
         console.debug(
-          "[GenerateSymptomsOneShot] LLM raw Response:\ncontent:\n",
+          `[GenerateSymptomsOneShot] [Attempt ${attempt}] LLM raw Response:\ncontent:\n`,
           result.messages[result.messages.length - 1]?.content,
           "\nstructured response:\n",
           result.structuredResponse
@@ -74,7 +75,13 @@ Requirements:
           .symptoms;
       },
       2,
-      0
+      0,
+      (error, attempt) => {
+        emitTrace(
+          `[GenerateSymptomsOneShot] Attempt ${attempt} failed with error: ${error.message}`,
+          { category: "error" }
+        );
+      }
     );
 
     return symptoms;

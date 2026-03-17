@@ -14,6 +14,7 @@ import type { Symptom } from "@/models/Symptom.js";
 import { retry } from "@/utils/retry.js";
 import { createAgent, HumanMessage, providerStrategy } from "langchain";
 import type { GenerationFlag } from "@/models/GenerationFlags.js";
+import { emitTrace } from "@/utils/tracing.js";
 
 export async function generateInconsistenciesOneShot(
   caseToCheck: Case,
@@ -62,7 +63,7 @@ Requirements:
 
   try {
     const parsedInconsistencies: Inconsistency[] = await retry(
-      async () => {
+      async (attempt: number) => {
         const result = await createAgent({
           model: getDeterministicLLM(),
           tools: [],
@@ -75,7 +76,7 @@ Requirements:
           });
 
         console.debug(
-          "[GenerateInconsistenciesOneShot] LLM raw Response:\ncontent:\n",
+          `[GenerateInconsistenciesOneShot] [Attempt ${attempt}] LLM raw Response:\ncontent:\n`,
           result.messages[result.messages.length - 1]?.content,
           "\nstructured response:\n",
           result.structuredResponse
@@ -87,7 +88,13 @@ Requirements:
         ).inconsistencies;
       },
       2,
-      0
+      0,
+      (error, attempt) => {
+        emitTrace(
+          `[GenerateInconsistenciesOneShot] Attempt ${attempt} failed with error: ${error.message}`,
+          { category: "error" }
+        );
+      }
     );
 
     console.debug(

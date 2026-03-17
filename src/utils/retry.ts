@@ -6,13 +6,14 @@
  * @returns
  */
 export function retry<T>(
-  fn: () => Promise<T>,
+  fn: (attempt: number) => Promise<T>,
   retries: number = 3,
-  baseDelayMs: number = 1000
+  baseDelayMs: number = 1000,
+  errorFn?: (error: any, attempt: number) => void
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const attempt = (n: number) => {
-      fn()
+      fn(retries - n)
         .then(resolve)
         .catch((error) => {
           if (n > 0) {
@@ -20,6 +21,10 @@ export function retry<T>(
               `Retry attempt ${retries - n + 1} failed. Retrying...`,
               error.message
             );
+
+            if (errorFn) {
+              errorFn(error, retries - n + 1);
+            }
             // Exponential backoff with jitter
             // Base delay: 1s, 2s, 4s...
             const exponentialBackoff = baseDelayMs * Math.pow(2, n - 1);

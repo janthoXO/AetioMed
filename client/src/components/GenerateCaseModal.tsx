@@ -110,8 +110,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
     onOpenChange(false);
 
     try {
-      const id = await generateCase(request);
-      navigate(`/cases/${id}`);
+      await generateCase(request);
     } catch (error) {
       console.error("Generation failed:", error);
     }

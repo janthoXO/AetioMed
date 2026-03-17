@@ -5,6 +5,7 @@ import {
   generateChiefComplaintCoT as generateChiefComplaintCoTService,
   generateChiefComplaintOneShot,
 } from "@/03aigateway/chiefComplaint.aigateway.js";
+import { emitTrace } from "@/utils/tracing.js";
 
 const ChiefComplaintGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,
@@ -20,24 +21,33 @@ type ChiefComplaintGraphState = z.infer<typeof ChiefComplaintGraphStateSchema>;
 async function generateChiefComplaintCoT(
   state: ChiefComplaintGraphState
 ): Promise<Pick<ChiefComplaintGraphState, "cot">> {
-  console.debug(
-    "[ChiefComplaintGraph: generateChiefComplaintCoT] Generating chief complaint CoT with LLM..."
+  emitTrace(
+    `[ChiefComplaintGraph] Starting generation of chain of thought for chief complaint...`
   );
   state.cot = await generateChiefComplaintCoTService(
     state.diagnosis,
     state.symptoms,
     state.case,
     state.userInstructions
+  ).catch((error) => {
+    emitTrace(
+      `[ChiefComplaintGraph] Error generating chain of thought for chief complaint: ${error}`,
+      { category: "error" }
+    );
+    throw error;
+  });
+
+  emitTrace(
+    `[ChiefComplaintGraph] Successfully generated chain of thought for chief complaint:\n${state.cot}`
   );
+
   return { cot: state.cot };
 }
 
 async function generateChiefComplaint(
   state: ChiefComplaintGraphState
 ): Promise<Pick<ChiefComplaintGraphState, "case">> {
-  console.debug(
-    "[ChiefComplaintGraph: generateChiefComplaint] Generating chief complaint with LLM..."
-  );
+  emitTrace(`[ChiefComplaintGraph] Starting generation of chief complaint...`);
   if (!state.case) {
     state.case = {};
   }
@@ -47,7 +57,18 @@ async function generateChiefComplaint(
     state.case,
     state.cot,
     state.userInstructions
+  ).catch((error) => {
+    emitTrace(
+      `[ChiefComplaintGraph] Error generating chief complaint: ${error}`,
+      { category: "error" }
+    );
+    throw error;
+  });
+
+  emitTrace(
+    `[ChiefComplaintGraph] Successfully generated chief complaint: ${state.case.chiefComplaint}`
   );
+
   return { case: state.case };
 }
 

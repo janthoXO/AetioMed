@@ -113,12 +113,17 @@ export async function generateCase(
     )
   );
 
-  const result = await graph.invoke({
-    diagnosis: diagnosis,
-    generationFlags: generationFlags,
-    userInstructions: context,
-    anamnesisCategories: anamnesisCategories,
-  });
+  const result = await graph.invoke(
+    {
+      diagnosis: diagnosis,
+      generationFlags: generationFlags,
+      userInstructions: context,
+      anamnesisCategories: anamnesisCategories,
+    }
+    // {
+    //   callbacks: [new TracingCallbackHandler()],
+    // }
+  );
 
   console.log(
     "[CasePersonaGraph] Generation complete",

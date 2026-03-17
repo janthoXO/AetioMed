@@ -10,9 +10,11 @@ services:
       - NATS_URL=${NATS_URL:-nats://nats:4222}
       - NATS_USER=${NATS_USER:-nats}
       - NATS_PASSWORD=${NATS_PASSWORD:-nats}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     depends_on:
       - nats
       - ollama
+      - redis
     restart: unless-stopped
 
   ollama:
@@ -38,6 +40,15 @@ services:
       - nats_data:/data
     restart: unless-stopped
 
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+
 volumes:
   ollama_data:
   nats_data:
+  redis_data:

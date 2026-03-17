@@ -7,7 +7,6 @@ import {
   getCreativeLLM,
   getDeterministicLLM,
   handleLangchainError,
-  parseStructuredResponseAgent,
 } from "@/utils/llm.js";
 import type { Case } from "@/models/Case.js";
 import type { Diagnosis } from "@/models/Diagnosis.js";
@@ -19,12 +18,7 @@ import {
   type ProcedureWithRelevance,
 } from "@/models/Procedure.js";
 import type { Symptom } from "@/models/Symptom.js";
-import {
-  createAgent,
-  HumanMessage,
-  providerStrategy,
-  SystemMessage,
-} from "langchain";
+import { HumanMessage, SystemMessage } from "langchain";
 import { emitTrace } from "@/utils/tracing.js";
 
 export async function generateProceduresCoT(
@@ -162,25 +156,22 @@ ${`{ "procedures": ${ProcedureWithRelevanceArrayJsonExampleString()} }`}`,
 
     const procedures: ProcedureWithRelevance[] = await retry(
       async (attempt: number) => {
-        const result = await createAgent({
-          model: getCreativeLLM(),
-          systemPrompt: systemPrompt,
-          responseFormat: providerStrategy(ProcedureSchemaWrapper),
-        })
-          .invoke({ messages: [new HumanMessage(userPrompt)] })
+        const result = await getCreativeLLM()
+          .withStructuredOutput(ProcedureSchemaWrapper)
+          .invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(userPrompt),
+          ])
           .catch((error) => {
             handleLangchainError(error);
           });
 
         console.debug(
-          `[GenerateProceduresOneShot] [Attempt ${attempt}] LLM raw Response:\ncontent:\n`,
-          result.messages[result.messages.length - 1]?.content,
-          "\nstructured response:\n",
-          result.structuredResponse
+          `[GenerateProceduresOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
+          JSON.stringify(result)
         );
 
-        return parseStructuredResponseAgent(result, ProcedureSchemaWrapper)
-          .procedures;
+        return result.procedures;
       },
       2,
       0,

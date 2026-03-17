@@ -121,7 +121,7 @@ async function refineAnamnesis(
   });
 
   emitTrace(
-    `[InconsistencyGraph] Successfully refined anamnesis: ${state.case.anamnesis}`
+    `[InconsistencyGraph] Successfully refined anamnesis: ${JSON.stringify(state.case.anamnesis, null, 2)}`
   );
 
   return {
@@ -152,7 +152,7 @@ async function refineProcedures(
   });
 
   emitTrace(
-    `[InconsistencyGraph] Successfully refined procedures: ${state.case.procedures}`
+    `[InconsistencyGraph] Successfully refined procedures: ${JSON.stringify(state.case.procedures, null, 2)}`
   );
 
   return {

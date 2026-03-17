@@ -24,6 +24,7 @@ import {
 } from "langchain";
 import { retry } from "@/utils/retry.js";
 import type { Case } from "@/models/Case.js";
+import { emitTrace } from "@/utils/tracing.js";
 
 /**
  * Translates anamnesis categories from a provided language to English, using a combination of repository lookups and LLM generation for missing translations.
@@ -185,7 +186,7 @@ ${
 
   try {
     const stepsString: string = await retry(
-      async () => {
+      async (attempt: number) => {
         const text = await getDeterministicLLM({ outputFormat: "text" })
           .invoke([
             new SystemMessage(systemPrompt),
@@ -194,12 +195,21 @@ ${
           .catch((error) => {
             handleLangchainError(error);
           });
-        console.debug("[GenerateAnamnesisCoT] LLM raw Response:\n", text);
+        console.debug(
+          `[GenerateAnamnesisCoT] [Attempt ${attempt}] LLM raw Response:\n`,
+          text
+        );
 
         return text.text;
       },
       2,
-      0
+      0,
+      (error, attempt) => {
+        emitTrace(
+          `[GenerateAnamnesisCoT] Attempt ${attempt} failed with error: ${error.message}`,
+          { category: "error" }
+        );
+      }
     );
 
     return stepsString;
@@ -275,7 +285,7 @@ Requirements:
     });
 
     const anamnesis: Anamnesis = await retry(
-      async () => {
+      async (attempt: number) => {
         const result = await createAgent({
           model: getCreativeLLM(),
           tools: [],
@@ -288,7 +298,7 @@ Requirements:
           });
 
         console.debug(
-          "[GenerateAnamnesisOneShot] LLM raw Response:\ncontent:\n",
+          `[GenerateAnamnesisOneShot] [Attempt ${attempt}] LLM raw Response:\ncontent:\n`,
           result.messages[result.messages.length - 1]?.content,
           "\nstructured response:\n",
           result.structuredResponse
@@ -298,7 +308,13 @@ Requirements:
           .anamnesis;
       },
       2,
-      0
+      0,
+      (error, attempt) => {
+        emitTrace(
+          `[GenerateAnamnesisOneShot] Attempt ${attempt} failed with error: ${error.message}`,
+          { category: "error" }
+        );
+      }
     );
 
     return anamnesis;

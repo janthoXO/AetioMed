@@ -38,6 +38,7 @@
     "langchain": "^1.2.24",
     "morgan": "^1.10.1",
     "ollama": "^0.6.3",
+    "redis": "^5.11.0",
     "swagger-autogen": "^2.23.7",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^13.0.0",

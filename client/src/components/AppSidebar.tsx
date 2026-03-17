@@ -150,7 +150,7 @@ export function AppSidebar() {
                                   {c.diagnosis?.name ?? "Untitled Case"}
                                 </span>
                                 <span className="truncate text-xs text-muted-foreground">
-                                  Generating...
+                                  View Progress
                                 </span>
                               </div>
                             </NavLink>

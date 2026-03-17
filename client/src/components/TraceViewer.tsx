@@ -31,7 +31,7 @@ export function TraceViewer({ caseId, isCompleted }: TraceViewerProps) {
                   {new Date(t.timestamp).toLocaleTimeString()}
                 </span>
                 <span
-                  className={`${t.category === "error" ? "text-destructive" : t.category === "warning" ? "text-warning" : ""}`}
+                  className={`${t.category === "error" ? "text-destructive" : t.category === "warn" ? "text-warning" : ""}`}
                 >
                   <ReactMarkdown>{t.message}</ReactMarkdown>
                 </span>

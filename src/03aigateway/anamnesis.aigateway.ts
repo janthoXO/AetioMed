@@ -10,18 +10,12 @@ import {
   getCreativeLLM,
   getDeterministicLLM,
   handleLangchainError,
-  parseStructuredResponseAgent,
 } from "@/utils/llm.js";
 import z from "zod";
 import type { Inconsistency } from "@/models/Inconsistency.js";
 import type { Diagnosis } from "@/models/Diagnosis.js";
 import type { Symptom } from "@/models/Symptom.js";
-import {
-  createAgent,
-  HumanMessage,
-  providerStrategy,
-  SystemMessage,
-} from "langchain";
+import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
 import type { Case } from "@/models/Case.js";
 import { emitTrace } from "@/utils/tracing.js";
@@ -286,26 +280,22 @@ Requirements:
 
     const anamnesis: Anamnesis = await retry(
       async (attempt: number) => {
-        const result = await createAgent({
-          model: getCreativeLLM(),
-          tools: [],
-          systemPrompt: systemPrompt,
-          responseFormat: providerStrategy(AnamnesisSchemaWrapper),
-        })
-          .invoke({ messages: [new HumanMessage(userPrompt)] })
+        const result = await getCreativeLLM()
+          .withStructuredOutput(AnamnesisSchemaWrapper)
+          .invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(userPrompt),
+          ])
           .catch((error) => {
             handleLangchainError(error);
           });
 
         console.debug(
-          `[GenerateAnamnesisOneShot] [Attempt ${attempt}] LLM raw Response:\ncontent:\n`,
-          result.messages[result.messages.length - 1]?.content,
-          "\nstructured response:\n",
-          result.structuredResponse
+          `[GenerateAnamnesisOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
+          JSON.stringify(result)
         );
 
-        return parseStructuredResponseAgent(result, AnamnesisSchemaWrapper)
-          .anamnesis;
+        return result.anamnesis;
       },
       2,
       0,

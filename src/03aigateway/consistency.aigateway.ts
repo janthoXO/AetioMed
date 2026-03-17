@@ -1,8 +1,4 @@
-import {
-  getDeterministicLLM,
-  handleLangchainError,
-  parseStructuredResponseAgent,
-} from "@/utils/llm.js";
+import { getDeterministicLLM, handleLangchainError } from "@/utils/llm.js";
 import type { Case } from "@/models/Case.js";
 import type { Diagnosis } from "@/models/Diagnosis.js";
 import {
@@ -12,7 +8,7 @@ import {
 } from "@/models/Inconsistency.js";
 import type { Symptom } from "@/models/Symptom.js";
 import { retry } from "@/utils/retry.js";
-import { createAgent, HumanMessage, providerStrategy } from "langchain";
+import { HumanMessage, SystemMessage } from "langchain";
 import type { GenerationFlag } from "@/models/GenerationFlags.js";
 import { emitTrace } from "@/utils/tracing.js";
 
@@ -64,28 +60,22 @@ Requirements:
   try {
     const parsedInconsistencies: Inconsistency[] = await retry(
       async (attempt: number) => {
-        const result = await createAgent({
-          model: getDeterministicLLM(),
-          tools: [],
-          systemPrompt: systemPrompt,
-          responseFormat: providerStrategy(InconsistencyArrayJsonFormatZod),
-        })
-          .invoke({ messages: [new HumanMessage(userPrompt)] })
+        const result = await getDeterministicLLM()
+          .withStructuredOutput(InconsistencyArrayJsonFormatZod)
+          .invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(userPrompt),
+          ])
           .catch((error) => {
             handleLangchainError(error);
           });
 
         console.debug(
-          `[GenerateInconsistenciesOneShot] [Attempt ${attempt}] LLM raw Response:\ncontent:\n`,
-          result.messages[result.messages.length - 1]?.content,
-          "\nstructured response:\n",
-          result.structuredResponse
+          `[GenerateInconsistenciesOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
+          JSON.stringify(result)
         );
 
-        return parseStructuredResponseAgent(
-          result,
-          InconsistencyArrayJsonFormatZod
-        ).inconsistencies;
+        return result.inconsistencies;
       },
       2,
       0,

@@ -9,6 +9,7 @@ export function retry<T>(
   fn: (attempt: number) => Promise<T>,
   retries: number = 3,
   baseDelayMs: number = 1000,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   errorFn?: (error: any, attempt: number) => void
 ): Promise<T> {
   return new Promise((resolve, reject) => {

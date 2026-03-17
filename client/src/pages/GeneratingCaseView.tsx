@@ -39,7 +39,9 @@ export function GeneratingCaseView() {
       </div>
 
       <div className="flex-1 flex flex-col min-h-75">
-        {caseId && <TraceViewer caseId={caseId} isCompleted={!!matchedCase.createdAt} />}
+        {caseId && (
+          <TraceViewer caseId={caseId} isCompleted={!!matchedCase.createdAt} />
+        )}
       </div>
 
       <div className="flex justify-end pt-2">

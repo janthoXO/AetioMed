@@ -4,12 +4,8 @@ import {
   type Symptom,
 } from "@/models/Symptom.js";
 import type { Diagnosis } from "@/models/Diagnosis.js";
-import {
-  getDeterministicLLM,
-  handleLangchainError,
-  parseStructuredResponseAgent,
-} from "@/utils/llm.js";
-import { createAgent, HumanMessage, providerStrategy } from "langchain";
+import { getDeterministicLLM, handleLangchainError } from "@/utils/llm.js";
+import { HumanMessage, SystemMessage } from "langchain";
 import z from "zod";
 import { retry } from "@/utils/retry.js";
 import { emitTrace } from "@/utils/tracing.js";
@@ -54,25 +50,22 @@ Requirements:
 
     const symptoms: Symptom[] = await retry(
       async (attempt: number) => {
-        const result = await createAgent({
-          model: getDeterministicLLM(),
-          systemPrompt: systemPrompt,
-          responseFormat: providerStrategy(SymptomArrayWrapperSchema),
-        })
-          .invoke({ messages: [new HumanMessage(userPrompt)] })
+        const result = await getDeterministicLLM()
+          .withStructuredOutput(SymptomArrayWrapperSchema)
+          .invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(userPrompt),
+          ])
           .catch((error) => {
             handleLangchainError(error);
           });
 
         console.debug(
-          `[GenerateSymptomsOneShot] [Attempt ${attempt}] LLM raw Response:\ncontent:\n`,
-          result.messages[result.messages.length - 1]?.content,
-          "\nstructured response:\n",
-          result.structuredResponse
+          `[GenerateSymptomsOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
+          JSON.stringify(result)
         );
 
-        return parseStructuredResponseAgent(result, SymptomArrayWrapperSchema)
-          .symptoms;
+        return result.symptoms;
       },
       2,
       0,

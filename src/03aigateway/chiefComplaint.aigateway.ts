@@ -2,17 +2,11 @@ import {
   getCreativeLLM,
   getDeterministicLLM,
   handleLangchainError,
-  parseStructuredResponseAgent,
 } from "@/utils/llm.js";
 import type { Inconsistency } from "@/models/Inconsistency.js";
 import type { Diagnosis } from "@/models/Diagnosis.js";
 import type { Symptom } from "@/models/Symptom.js";
-import {
-  createAgent,
-  HumanMessage,
-  providerStrategy,
-  SystemMessage,
-} from "langchain";
+import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
 import {
   ChiefComplaintJsonExample,
@@ -152,25 +146,21 @@ Requirements:
   try {
     const chiefComplaint: ChiefComplaint = await retry(
       async (attempt: number) => {
-        const result = await createAgent({
-          model: getCreativeLLM(),
-          tools: [],
-          systemPrompt: systemPrompt,
-          responseFormat: providerStrategy(ChiefComplaintJsonSchema),
-        })
-          .invoke({ messages: [new HumanMessage(userPrompt)] })
+        const result = await getCreativeLLM()
+          .withStructuredOutput(ChiefComplaintJsonSchema)
+          .invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(userPrompt),
+          ])
           .catch((error) => {
             handleLangchainError(error);
           });
         console.debug(
-          `[GenerateChiefComplaintOneShot] [Attempt ${attempt}] LLM raw Response:\ncontent:\n`,
-          result.messages[result.messages.length - 1]?.content,
-          "\nstructured response:\n",
-          result.structuredResponse
+          `[GenerateChiefComplaintOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
+          JSON.stringify(result)
         );
 
-        return parseStructuredResponseAgent(result, ChiefComplaintJsonSchema)
-          .chiefComplaint;
+        return result.chiefComplaint;
       },
       2,
       0,

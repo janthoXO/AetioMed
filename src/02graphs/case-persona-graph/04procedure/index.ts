@@ -5,7 +5,6 @@ import {
   generateProceduresCoT as generateProceduresCoTService,
   generateProceduresOneShot,
 } from "@/03aigateway/procedures.aigateway.js";
-import { PredefinedProcedures } from "@/models/Procedure.js";
 import { emitTrace } from "@/utils/tracing.js";
 
 const ProcedureGraphStateSchema = GlobalStateSchema.pick({
@@ -69,40 +68,6 @@ async function generateProcedure(
       .map((p) => p.name)
       .join(", ")}`
   );
-
-  // map generated to procedures to predefined procedures as good as possible
-  if (PredefinedProcedures) {
-    const filteredProcedures = state.case.procedures
-      .map((p) => {
-        const predefined = PredefinedProcedures!.find((pre) =>
-          pre.name.toLowerCase().includes(p.name.toLowerCase())
-        );
-        return predefined
-          ? {
-              ...p,
-              name: predefined.name,
-            }
-          : undefined;
-      })
-      .filter((p) => !!p);
-
-    if (filteredProcedures.length === 0) {
-      // maybe wrap that into a retry block aswell
-      emitTrace(
-        `[ProcedureGraph] No generated procedures could be mapped to predefined procedures. Generated procedures: ${state.case.procedures.map((p) => p.name).join(", ")}`,
-        { category: "warn" }
-      );
-    } else {
-      if (state.case.procedures.length !== filteredProcedures.length) {
-        emitTrace(
-          `[ProcedureGraph] Filtered procedures by config: ${state.case.procedures
-            .map((p) => p.name)
-            .join(", ")}`
-        );
-      }
-      state.case.procedures = filteredProcedures;
-    }
-  }
 
   return { case: state.case };
 }

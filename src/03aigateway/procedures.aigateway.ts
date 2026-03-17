@@ -25,6 +25,7 @@ import {
   providerStrategy,
   SystemMessage,
 } from "langchain";
+import { emitTrace } from "@/utils/tracing.js";
 
 export async function generateProceduresCoT(
   diagnosis: Diagnosis,
@@ -59,7 +60,7 @@ ${JSON.stringify(relatedCase)}`
 
   try {
     const stepsString: string = await retry(
-      async () => {
+      async (attempt: number) => {
         const text = await getDeterministicLLM({ outputFormat: "text" })
           .invoke([
             new SystemMessage(systemPrompt),
@@ -68,12 +69,18 @@ ${JSON.stringify(relatedCase)}`
           .catch((error) => {
             handleLangchainError(error);
           });
-        console.debug("[GenerateProceduresCoT] LLM raw Response:\n", text);
+        console.debug(`[GenerateProceduresCoT] [Attempt ${attempt}] LLM raw Response:\n`, text);
 
         return text.text;
       },
       2,
-      0
+      0,
+      (error, attempt) => {
+        emitTrace(
+          `[GenerateProceduresCoT] Attempt ${attempt} failed with error: ${error.message}`,
+          { category: "error" }
+        );
+      }
     );
 
     return stepsString;
@@ -151,7 +158,7 @@ ${`{ "procedures": ${ProcedureWithRelevanceArrayJsonExampleString()} }`}`,
     });
 
     const procedures: ProcedureWithRelevance[] = await retry(
-      async () => {
+      async (attempt: number) => {
         const result = await createAgent({
           model: getCreativeLLM(),
           systemPrompt: systemPrompt,
@@ -163,7 +170,7 @@ ${`{ "procedures": ${ProcedureWithRelevanceArrayJsonExampleString()} }`}`,
           });
 
         console.debug(
-          "[GenerateProceduresOneShot] LLM raw Response:\ncontent:\n",
+          `[GenerateProceduresOneShot] [Attempt ${attempt}] LLM raw Response:\ncontent:\n`,
           result.messages[result.messages.length - 1]?.content,
           "\nstructured response:\n",
           result.structuredResponse
@@ -173,7 +180,13 @@ ${`{ "procedures": ${ProcedureWithRelevanceArrayJsonExampleString()} }`}`,
           .procedures;
       },
       2,
-      0
+      0,
+      (error, attempt) => {
+        emitTrace(
+          `[GenerateProceduresOneShot] Attempt ${attempt} failed with error: ${error.message}`,
+          { category: "error" }
+        );
+      }
     );
 
     return procedures;

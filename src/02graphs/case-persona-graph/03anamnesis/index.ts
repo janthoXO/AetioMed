@@ -5,6 +5,7 @@ import {
   generateAnamnesisCoT as generateAnamnesisCoTService,
   generateAnamnesisOneShot,
 } from "@/03aigateway/anamnesis.aigateway.js";
+import { emitTrace } from "@/utils/tracing.js";
 
 const AnamnesisGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,
@@ -21,14 +22,24 @@ type AnamnesisGraphState = z.infer<typeof AnamnesisGraphStateSchema>;
 async function generateAnamnesisCoT(
   state: AnamnesisGraphState
 ): Promise<Pick<AnamnesisGraphState, "cot">> {
-  console.debug(
-    "[AnamnesisGraph: generateAnamnesisCoT] Generating anamnesis CoT with LLM..."
+  emitTrace(
+    "[AnamnesisGraph] Starting generation of Chain of Thought for anamnesis..."
   );
   state.cot = await generateAnamnesisCoTService(
     state.diagnosis,
     state.symptoms,
     state.case,
     state.userInstructions
+  ).catch((error) => {
+    emitTrace(
+      `[AnamnesisGraph] Error generating Chain of Thought for anamnesis: ${error}`,
+      { category: "error" }
+    );
+    throw error;
+  });
+
+  emitTrace(
+    `[AnamnesisGraph] Successfully generated Chain of Thought for anamnesis:\n${state.cot}`
   );
   return { cot: state.cot };
 }
@@ -36,8 +47,8 @@ async function generateAnamnesisCoT(
 async function generateAnamnesis(
   state: AnamnesisGraphState
 ): Promise<Pick<AnamnesisGraphState, "case">> {
-  console.debug(
-    "[AnamnesisGraph: generateAnamnesis] Generating anamnesis with LLM..."
+  emitTrace(
+    "[AnamnesisGraph] Starting generation for anamnesis..."
   );
   if (!state.case) {
     state.case = {};
@@ -49,7 +60,18 @@ async function generateAnamnesis(
     state.cot,
     state.userInstructions,
     state.anamnesisCategories
+  ).catch((error) => {
+    emitTrace(
+      `[AnamnesisGraph] Error generating anamnesis: ${error}`,
+      { category: "error" }
+    );
+    throw error;
+  });
+
+  emitTrace(
+    `[AnamnesisGraph] Successfully generated anamnesis: ${state.case.anamnesis}`
   );
+
   return { case: state.case };
 }
 

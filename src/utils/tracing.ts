@@ -1,6 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { EventEmitter } from "node:events";
 import { getRedisClient } from "./redis.js";
+import z from "zod";
 
 export class TraceBus extends EventEmitter {}
 
@@ -8,6 +9,15 @@ export interface TraceContextPayload {
   requestId: string;
   bus: TraceBus;
 }
+
+export const TraceEventSchema = z.object({
+  message: z.string(),
+  data: z.any().optional(),
+  timestamp: z.iso.time().default(() => new Date().toISOString()),
+  category: z.enum(["info", "error", "warn"]).default("info"),
+});
+
+export type TraceEvent = z.infer<typeof TraceEventSchema>;
 
 export const traceContext = new AsyncLocalStorage<TraceContextPayload>();
 
@@ -25,7 +35,7 @@ export function runWithTracing<T>(requestId: string, fn: () => T): T {
     }, 10000);
   };
 
-  const persistTrace = (traceEvent: { message: string, data?: any, timestamp: string }) => {
+  const persistTrace = (traceEvent: TraceEvent) => {
     getRedisClient()
       .then((redis) => {
         if (redis) {
@@ -62,12 +72,31 @@ export function getTraceBus(requestId: string): TraceBus | undefined {
   return activeBuses.get(requestId);
 }
 
-export function emitTrace(message: string, data?: any) {
+export function emitTrace(
+  message: string,
+  traceConfig?: Partial<Omit<TraceEvent, "message">>
+): void {
   const store = traceContext.getStore();
   if (!store) {
     return;
   }
 
-  const timestamp = new Date().toISOString();
-  store.bus.emit("trace", { message, data, timestamp });
+  const traceEvent: TraceEvent = {
+    message,
+    timestamp: traceConfig?.timestamp ?? new Date().toISOString(),
+    category: traceConfig?.category ?? "info",
+    data: traceConfig?.data,
+  };
+
+  store.bus.emit("trace", traceEvent);
+  switch (traceEvent.category) {
+    case "error":
+      console.error(`[Trace] ${traceEvent.message}`, traceEvent.data);
+      break;
+    case "warn":
+      console.warn(`[Trace] ${traceEvent.message}`, traceEvent.data);
+      break;
+    default:
+      console.debug(`[Trace] ${traceEvent.message}`, traceEvent.data);
+  }
 }

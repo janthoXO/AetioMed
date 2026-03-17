@@ -121,9 +121,9 @@ export async function generateCase(
       userInstructions: context,
       anamnesisCategories: anamnesisCategories,
     },
-    {
-      callbacks: [new TracingCallbackHandler()],
-    }
+    // {
+    //   callbacks: [new TracingCallbackHandler()],
+    // }
   );
 
   console.log(

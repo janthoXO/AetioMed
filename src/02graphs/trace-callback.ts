@@ -28,7 +28,7 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
       this.runIdNameMap.set(runId, `chain ${chainName}`);
     }
 
-    emitTrace(message, { runId, tags, metadata });
+    emitTrace(message, { data: { runId, tags, metadata } });
   }
 
   override async handleChainEnd(
@@ -40,7 +40,7 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
   ): Promise<void> {
     const name = this.runIdNameMap.get(runId);
     if (name) {
-      emitTrace(`Finished ${name}`, { runId });
+      emitTrace(`Finished ${name}`, { data: { runId } });
       this.runIdNameMap.delete(runId);
     } else {
       // Don't emit for ignored chains like RunnableSequence
@@ -57,7 +57,7 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
     const name = this.runIdNameMap.get(runId);
     if (name) {
       const errorMessage = err?.message || err?.toString() || "Unknown error";
-      emitTrace(`Error in ${name}: ${errorMessage}`, { runId, error: err });
+      emitTrace(`Error in ${name}: ${errorMessage}`, { data: { runId, error: err }, category: "error" });
       this.runIdNameMap.delete(runId);
     }
   }
@@ -68,7 +68,7 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
     runId: string
   ): Promise<void> {
     const toolName = tool.id[tool.id.length - 1] || "unknown";
-    emitTrace(`Using tool: ${toolName}`, { input, runId });
+    emitTrace(`Using tool: ${toolName}`, { data: { input, runId } });
     this.runIdNameMap.set(runId, `tool ${toolName}`);
   }
 
@@ -78,10 +78,10 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
   ): Promise<void> {
     const name = this.runIdNameMap.get(runId);
     if (name) {
-      emitTrace(`Finished ${name}`, { runId });
+      emitTrace(`Finished ${name}`, { data: { runId } });
       this.runIdNameMap.delete(runId);
     } else {
-      emitTrace(`Finished tool`, { runId });
+      emitTrace(`Finished tool`, { data: { runId } });
     }
   }
 
@@ -91,7 +91,7 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
   ): Promise<void> {
     const name = this.runIdNameMap.get(runId) || "tool";
     const errorMessage = err?.message || err?.toString() || "Unknown error";
-    emitTrace(`Error in ${name}: ${errorMessage}`, { runId, error: err });
+    emitTrace(`Error in ${name}: ${errorMessage}`, { data: { runId, error: err }, category: "error" });
     this.runIdNameMap.delete(runId);
   }
 
@@ -101,7 +101,7 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
     runId: string
   ): Promise<void> {
     const llmName = llm.id[llm.id.length - 1] || "unknown";
-    emitTrace(`Starting LLM: ${llmName}`, { runId });
+    emitTrace(`Starting LLM: ${llmName}`, { data: { runId } });
     this.runIdNameMap.set(runId, `LLM ${llmName}`);
   }
 
@@ -111,10 +111,10 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
   ): Promise<void> {
     const name = this.runIdNameMap.get(runId);
     if (name) {
-      emitTrace(`Finished ${name}`, { runId });
+      emitTrace(`Finished ${name}`, { data: { runId } });
       this.runIdNameMap.delete(runId);
     } else {
-      emitTrace(`Finished LLM`, { runId });
+      emitTrace(`Finished LLM`, { data: { runId } });
     }
   }
 
@@ -124,7 +124,7 @@ export class TracingCallbackHandler extends BaseCallbackHandler {
   ): Promise<void> {
     const name = this.runIdNameMap.get(runId) || "LLM";
     const errorMessage = err?.message || err?.toString() || "Unknown error";
-    emitTrace(`Error in ${name}: ${errorMessage}`, { runId, error: err });
+    emitTrace(`Error in ${name}: ${errorMessage}`, { data: { runId, error: err }, category: "error" });
     this.runIdNameMap.delete(runId);
   }
 }

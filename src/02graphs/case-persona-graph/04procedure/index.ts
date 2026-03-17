@@ -64,6 +64,12 @@ async function generateProcedure(
     throw error;
   });
 
+  emitTrace(
+    `[ProcedureGraph] Successfully generated procedures: ${state.case.procedures
+      .map((p) => p.name)
+      .join(", ")}`
+  );
+
   // map generated to procedures to predefined procedures as good as possible
   if (PredefinedProcedures) {
     const filteredProcedures = state.case.procedures
@@ -87,15 +93,17 @@ async function generateProcedure(
         { category: "warn" }
       );
     } else {
+      if (state.case.procedures.length !== filteredProcedures.length) {
+        emitTrace(
+          `[ProcedureGraph] Filtered procedures by config: ${state.case.procedures
+            .map((p) => p.name)
+            .join(", ")}`
+        );
+      }
       state.case.procedures = filteredProcedures;
     }
   }
 
-  emitTrace(
-    `[ProcedureGraph] Successfully generated procedures: ${state.case.procedures
-      .map((p) => p.name)
-      .join(", ")}`
-  );
   return { case: state.case };
 }
 

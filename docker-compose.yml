@@ -47,6 +47,7 @@ services:
     volumes:
       - redis_data:/data
     restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
 
 volumes:
   ollama_data:

@@ -30,7 +30,8 @@ export async function generateProceduresCoT(
   const systemPrompt = buildPrompt(
     `You are a senior doctor whos patient has these symptoms: 
 ${symptoms.map((s) => s.name).join(", ")}
-You want to help a junior doctor to decide which procedures to schedule. For that you should generate a step by step reasoning process to let the junior determine which procedures should be performed.`,
+You want to help a junior doctor to decide which procedures to schedule to come to a diagnosis. For that you should generate a step by step reasoning process to let the junior determine which procedures should be performed.`,
+
     "Return the thinking steps as a list in markdown format. Do not return any additional text like prefix or suffix text, only the markdown list.",
 
     relatedCase
@@ -101,21 +102,22 @@ export async function generateProceduresOneShot(
   const systemPrompt = buildPrompt(
     `You are a doctor whos patient has these symptoms: 
 ${symptoms.map((s) => s.name).join(", ")}`,
-    `Generate procedures that should be performed for the patient.`,
 
     PredefinedProcedures?.length
-      ? `Pick only procedures from the following list of procedures:\n${PredefinedProcedures.map((p) => `- ${p.name}`).join("\n")}`
-      : undefined,
+      ? `Select procedures from the following list of procedures that should be performed on the patient to come to a diagnosis:
+${PredefinedProcedures.map((p) => `- ${p.name}`).join("\n")}`
+      : `Generate procedures that should be performed for the patient to come to a diagnosis.`,
 
     cot ? `Think step by step:\n${cot}` : undefined,
 
     Object.keys(caseWithoutProcedures).length > 0
-      ? `The patient case has the following properties which might be relevant for the procedures generation:
+      ? `The patient case has the following properties which might be relevant for the procedures:
   ${JSON.stringify(caseWithoutProcedures)}`
       : undefined,
 
     previousProcedures
-      ? `Try to fix the inconsistencies from the previous procedures generated:\n${JSON.stringify({ procedures: previousProcedures })}
+      ? `Try to fix the inconsistencies from the previous procedures:
+${JSON.stringify({ procedures: previousProcedures })}
 with inconsistencies:
 ${inconsistencies
   ?.map((i, idx) => {

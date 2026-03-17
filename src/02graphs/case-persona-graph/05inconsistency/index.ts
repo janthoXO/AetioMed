@@ -143,6 +143,7 @@ async function refineProcedures(
     }, // do not provide the case to avoid refinement on "old" case data
     undefined, // CoT only needed for initial generation, not refinement
     state.userInstructions,
+    undefined,
     state.inconsistencies //these should already be filtered by the send logic
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining procedures: ${error}`, {

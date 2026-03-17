@@ -1,6 +1,14 @@
 import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
-import { Plus, FileText, Stethoscope, Trash2, ScrollText } from "lucide-react";
+import {
+  Plus,
+  FileText,
+  Stethoscope,
+  Trash2,
+  ScrollText,
+  Moon,
+  Sun,
+} from "lucide-react";
 import {
   Sidebar,
   SidebarContent,
@@ -26,10 +34,13 @@ import {
 import { useCases } from "@/hooks/useCases";
 import { GenerateCaseModal } from "./GenerateCaseModal";
 import { Spinner } from "./ui/spinner";
+import { Switch } from "./ui/switch";
+import { useTheme } from "@/context/ThemeProvider";
 
 export function AppSidebar() {
   const { cases, isLoading, deleteCase } = useCases();
   const [modalOpen, setModalOpen] = useState(false);
+  const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
 
   const handleDelete = async (e: React.MouseEvent, id: string) => {
@@ -94,8 +105,11 @@ export function AppSidebar() {
                                       {c.diagnosis?.name ?? "Untitled Case"}
                                     </span>
                                     <span className="truncate text-xs text-muted-foreground">
-                                      {c.diagnosis?.icd && `${c.diagnosis.icd} · `}
-                                      {new Date(c.createdAt).toLocaleDateString()}
+                                      {c.diagnosis?.icd &&
+                                        `${c.diagnosis.icd} · `}
+                                      {new Date(
+                                        c.createdAt
+                                      ).toLocaleDateString()}
                                     </span>
                                   </div>
                                 </NavLink>
@@ -103,7 +117,11 @@ export function AppSidebar() {
                             </SidebarMenuItem>
                           </ContextMenuTrigger>
                           <ContextMenuContent className="w-48">
-                            <ContextMenuItem onClick={() => navigate(`/cases/${c.id}/generating`)}>
+                            <ContextMenuItem
+                              onClick={() =>
+                                navigate(`/cases/${c.id}/generating`)
+                              }
+                            >
                               <ScrollText className="mr-2 h-4 w-4" />
                               <span>View Traces</span>
                             </ContextMenuItem>
@@ -116,7 +134,7 @@ export function AppSidebar() {
                             </ContextMenuItem>
                           </ContextMenuContent>
                         </ContextMenu>
-                      ): (
+                      ) : (
                         // Case is currently generating
                         <SidebarMenuItem key={`generating-${index}`}>
                           <SidebarMenuButton asChild>
@@ -155,10 +173,20 @@ export function AppSidebar() {
           </ScrollArea>
         </SidebarContent>
 
-        <SidebarFooter className="p-4">
+        <SidebarFooter className="p-4 flex flex-row ">
           <p className="text-xs text-muted-foreground text-center">
             AetioMed Case Generator
           </p>
+          <Switch
+            id="dark-mode-toggle"
+            className="ml-auto"
+            checked={theme === "dark"}
+            onCheckedChange={() =>
+              setTheme(theme === "dark" ? "light" : "dark")
+            }
+          >
+            {theme === "dark" ? <Moon size={12} /> : <Sun size={12} />}
+          </Switch>
         </SidebarFooter>
       </Sidebar>
 

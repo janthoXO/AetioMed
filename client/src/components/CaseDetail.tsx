@@ -200,16 +200,14 @@ export function CaseDetail({ medicalCase }: Props) {
         </Card>
       )}
 
-      {/* Empty state if nothing generated yet */}
-      {!chiefComplaint &&
-        (!anamnesis || anamnesis.length === 0) &&
-        (!procedures || procedures.length === 0) && (
-          <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              No generated content for this case yet.
-            </CardContent>
-          </Card>
-        )}
+      {/* Error Display */}
+      {medicalCase.error && (
+        <Card>
+          <CardContent className="py-8 text-center text-destructive">
+            Error generating case: {medicalCase.error}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

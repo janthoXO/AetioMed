@@ -13,4 +13,5 @@ export type Case = {
   procedures?: Procedure[];
   generationFlags: GenerationFlag[];
   language: string;
+  error?: string;
 };

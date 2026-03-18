@@ -32,21 +32,18 @@ function preloadAnamnesisCategoryTranslations(): LanguageAnamnesisCategoryMappin
   }
 
   try {
-    const fileContents = fs.readFileSync(dataPath, "utf-8");
     const parsed = LanguageAnamnesisCategoryMappingSchema.safeParse(
-      YAML.parse(fileContents)
+      YAML.parse(fs.readFileSync(dataPath, "utf-8"))
     );
     if (!parsed.success) {
       console.warn(
-        "[Anamnesis Service] Parsed YAML is not an object, skipping preload.",
-        parsed.error
+        "[Anamnesis Service] Parsed YAML is not an object, skipping preload."
       );
       return {};
     }
 
     console.info(
-      "[Anamnesis Service] Preloaded anamnesis categories translations from YAML.",
-      parsed.data
+      `[Anamnesis Service] Preloaded ${Object.keys(parsed.data).length} anamnesis categories translations from YAML.`
     );
     return parsed.data;
   } catch (err) {

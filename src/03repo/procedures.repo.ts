@@ -25,16 +25,12 @@ function preloadProcedureTranslations(): LanguageProcedureTranslationMapping {
   const parseResult =
     LanguageProcedureTranslationSchema.safeParse(translationsObject);
   if (!parseResult.success) {
-    console.error(
-      "Error parsing procedure translations YAML:",
-      parseResult.error
-    );
+    console.error("Error parsing procedure translations YAML");
     return {}; // Return empty object on parsing failure
   }
 
   console.info(
-    "[Procedures] Loaded procedure translations from YAML:",
-    parseResult.data
+    `[Procedures] Loaded ${Object.keys(parseResult.data).length} procedure translations from YAML`
   );
   return parseResult.data;
 }

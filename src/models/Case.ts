@@ -6,17 +6,19 @@ import {
 } from "./ChiefComplaint.js";
 import { AllGenerationFlags, type GenerationFlag } from "./GenerationFlags.js";
 import {
-  ProcedureWithRelevanceArrayJsonExampleString,
-  ProcedureWithRelevanceSchema,
+  ProcedureGenerationArrayJsonExampleString,
+  ProcedureGenerationSchema,
 } from "./Procedure.js";
+import { PatientSchema } from "./Patient.js";
 
 /**
  * Zod schema for a complete medical case
  */
 export const CaseSchema = z.object({
+  patient: PatientSchema.optional(),
   chiefComplaint: ChiefComplaintSchema.optional(),
   anamnesis: AnamnesisSchema.optional(),
-  procedures: z.array(ProcedureWithRelevanceSchema).optional(),
+  procedures: z.array(ProcedureGenerationSchema).optional(),
 });
 
 export type Case = z.infer<typeof CaseSchema>;
@@ -32,7 +34,7 @@ export function CaseJsonExampleString(
         case "anamnesis":
           return `anamnesis: ${AnamnesisJsonExampleString()}`;
         case "procedures":
-          return `procedures: ${ProcedureWithRelevanceArrayJsonExampleString()}`;
+          return `procedures: ${ProcedureGenerationArrayJsonExampleString()}`;
         default:
           return "";
       }

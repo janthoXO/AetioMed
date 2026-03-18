@@ -10,3 +10,14 @@ export const PatientSchema = z.object({
 });
 
 export type Patient = z.infer<typeof PatientSchema>;
+
+export function PatientJsonExample(): Patient {
+  return {
+    name: "John Doe",
+    age: 65,
+    height: 175,
+    weight: 70,
+    gender: "male",
+    race: "Caucasian",
+  };
+}

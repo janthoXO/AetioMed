@@ -1,13 +1,16 @@
-name: Build Generator
+name: Build Client
 
 on:
   pull_request:
     paths:
-      - "src/**"
+      - "client/**"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: client
 
     steps:
       - name: Checkout code
@@ -27,9 +30,6 @@ jobs:
 
       - name: Install dependencies
         run: pnpm install
-
-      - name: Check formatting
-        run: pnpm run format:check
 
       - name: Lint
         run: pnpm run lint

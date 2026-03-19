@@ -2,8 +2,11 @@ import express from "express";
 import swaggerUi from "swagger-ui-express";
 import swaggerDocument from "./swagger-output.json" with { type: "json" };
 import morgan from "morgan";
+import cors from "cors";
 
 import casesRouter from "./cases.router.js";
+import diseasesRouter from "./diseases.router.js";
+import proceduresRouter from "./procedures.router.js";
 import { config } from "@/config.js";
 
 export function initRouter(): Promise<void> {
@@ -29,6 +32,8 @@ export function initRouter(): Promise<void> {
   });
 
   apiRouter.use("/cases", casesRouter);
+  apiRouter.use("/diseases", diseasesRouter);
+  apiRouter.use("/procedures", proceduresRouter);
 
   apiRouter.use("/docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
 
@@ -36,6 +41,7 @@ export function initRouter(): Promise<void> {
 
   app.use(express.json());
   if (config.DEBUG === true) {
+    app.use(cors());
     app.use(morgan("dev"));
   }
 

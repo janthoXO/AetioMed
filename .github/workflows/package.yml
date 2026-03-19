@@ -1,4 +1,4 @@
-name: Package
+name: Package Generator
 
 on:
   pull_request:

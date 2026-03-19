@@ -1,0 +1,100 @@
+import { getDeterministicLLM, handleLangchainError } from "@/utils/llm.js";
+import type { Case } from "@/models/Case.js";
+import type { Diagnosis } from "@/models/Diagnosis.js";
+import {
+  InconsistencyArrayJsonFormatZod,
+  InconsistencyJsonExampleString,
+  type Inconsistency,
+} from "@/models/Inconsistency.js";
+import type { Symptom } from "@/models/Symptom.js";
+import { retry } from "@/utils/retry.js";
+import { HumanMessage, SystemMessage } from "langchain";
+import type { GenerationFlag } from "@/models/GenerationFlags.js";
+import { emitTrace } from "@/utils/tracing.js";
+
+export async function generateInconsistenciesOneShot(
+  caseToCheck: Case,
+  diagnosis: Diagnosis,
+  generationFlags: GenerationFlag[],
+  symptoms: Symptom[] = [],
+  userInstructions?: string
+): Promise<Inconsistency[]> {
+  const systemPrompt = `You are a medical quality assurance expert validating a patient case for educational use with a provided diagnosis and additional user instructions.
+
+Case to validate:
+${JSON.stringify(caseToCheck)}
+
+Check for these types of inconsistencies:
+1. Is the diagnosis not directly revealed in the case?
+2. Are all entries internally consistent and support each other?
+
+Return your response in JSON:
+${`{ inconsistencies: [
+${InconsistencyJsonExampleString(generationFlags)},
+...] }`}
+or an empty list if no inconsistencies are found.
+${JSON.stringify({ inconsistencies: [] })} 
+
+Requirements:
+- Be thorough but fair
+- Only flag genuine medical/logical inconsistencies
+- Don't be overly pedantic
+- Return ONLY the JSON content`;
+
+  const userPrompt = [
+    `Provided Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
+    symptoms && symptoms.length > 0
+      ? `Provided Symptoms: ${symptoms.map((s) => s.name).join(", ")}`
+      : "",
+    userInstructions
+      ? `\nAdditional provided context: ${userInstructions}`
+      : "",
+  ]
+    .filter((s) => s.length > 0)
+    .join("\n");
+
+  console.debug(
+    `[Consistency: GenerateInconsistencies] Prompt:\n${systemPrompt}\n${userPrompt}`
+  );
+
+  try {
+    const parsedInconsistencies: Inconsistency[] = await retry(
+      async (attempt: number) => {
+        const result = await getDeterministicLLM()
+          .withStructuredOutput(InconsistencyArrayJsonFormatZod)
+          .invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(userPrompt),
+          ])
+          .catch((error) => {
+            handleLangchainError(error);
+          });
+
+        console.debug(
+          `[GenerateInconsistenciesOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
+          JSON.stringify(result)
+        );
+
+        return result.inconsistencies;
+      },
+      2,
+      0,
+      (error, attempt) => {
+        emitTrace(
+          `[GenerateInconsistenciesOneShot] Attempt ${attempt} failed with error: ${error.message}`,
+          { category: "error" }
+        );
+      }
+    );
+
+    console.debug(
+      "[Consistency: GenerateInconsistencies] Parsed Inconsistencies:",
+      parsedInconsistencies
+    );
+
+    return parsedInconsistencies.sort((a, b) => (a.field > b.field ? 1 : -1));
+  } catch (error) {
+    console.error("[Consistency: GenerateInconsistencies] Error:", error);
+    throw error;
+  }
+}

@@ -1,9 +1,9 @@
 import {
   AllGenerationFlags,
   GenerationFlagSchema,
-} from "@/02domain-models/GenerationFlags.js";
-import { ICDCodeSchema } from "@/02domain-models/Diagnosis.js";
-import { LanguageSchema } from "@/02domain-models/Language.js";
+} from "@/models/GenerationFlags.js";
+import { ICDCodeSchema } from "@/models/Diagnosis.js";
+import { LanguageSchema } from "@/models/Language.js";
 import { z } from "zod/v4";
 
 export const CaseGenerationRequestSchema = z
@@ -27,6 +27,10 @@ export const CaseGenerationRequestSchema = z
       .array(z.string())
       .optional()
       .describe("Categories of anamnesis to include in the case"),
+    requestId: z
+      .string()
+      .optional()
+      .describe("Optional unique ID to track generation progress via SSE"),
   })
   .refine((data) => data.icd || data.diagnosis, {
     message: "Either 'icd' or 'diagnosis' must be provided",

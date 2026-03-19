@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { CaseSchema } from "@/02domain-models/Case.js";
+import { CaseSchema } from "@/models/Case.js";
 import { ErrorResponseSchema } from "./ErrorResponse.js";
 
 export const CaseGenerationResponseSchema = z.union([

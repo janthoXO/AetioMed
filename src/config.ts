@@ -21,6 +21,9 @@ const ConfigSchema = z.object({
   NATS_URL: z.string().default("nats://localhost:4222"),
   NATS_USER: z.string().default("nats"),
   NATS_PASSWORD: z.string().default("nats"),
+
+  // Redis
+  REDIS_URL: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

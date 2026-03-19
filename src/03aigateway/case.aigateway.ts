@@ -17,13 +17,13 @@ export async function generateCaseCoT(
 ): Promise<string> {
   const systemPrompt = buildPrompt(
     `You are an expert medical educator specializing in designing realistic clinical mock cases for medical students. 
-Your task is to generate a step-by-step logical reasoning process (Chain of Thought) detailing EXACTLY HOW to construct a medically accurate and cohesive case for a given diagnosis.`,
+Your task is to generate a step-by-step logical reasoning process (Chain of Thought) detailing EXACTLY HOW to construct a medically accurate and cohesive case for the given diagnosis.`,
 
     `The final case will eventually require the following fields:
 ${generationFlags.join(", ")}`,
 
     `Instructions:
-1. DO NOT generate the actual case data or outline yet. Only generate the thinking process.
+1. DO NOT generate the actual case data yet. Only generate the thinking process which should be specific to the given diagnosis.
 2. Outline a sequential thought process (e.g., "1. First, determine the demographic most representative of this diagnosis...", "2. Next, decide how the chief complaint should manifest...", "3. Then, connect the anamnesis to...").
 3. Explicitly state how the requested fields should logically relate to and influence each other to create a clinically sound scenario.
 4. Output ONLY the numbered reasoning steps, without any conversational filler.`
@@ -82,21 +82,23 @@ export async function generateCaseOutline(
   userInstructions?: string // provided by the user
 ): Promise<string> {
   const systemPrompt = buildPrompt(
-    `You are an expert medical educator tasked with creating a concrete, high-level blueprint/outline for a clinical practice case based on a specific diagnosis.`,
+    `You are an expert medical educator tasked with creating a concrete, outline for a clinical practice case based on a specific diagnosis.`,
     `You must outline the specific content and direction for the following required fields:
 ${generationFlags.join(", ")}`,
+
+`This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents generating the final JSON fields. It must contain specific, hard data outlining the content of each field.`,
 
     `Typical symptoms associated with this diagnosis are:
 ${symptoms.map((s) => s.name).join(", ")}
 (You should select a clinically coherent subset of these symptoms to feature in the patient's presentation).`,
 
-    `Please base your outline on the following logical reasoning (Chain of Thought):
+    `Think step by step:
 ${cot}`,
 
     `Instructions:
 1. Generate a structured markdown outline that briefly describes the exact clinical content that will go into each required field.
-2. Clearly demonstrate the clinical correlation between the fields (e.g., show how the selected symptoms in the chief complaint dictate the specific procedures to be scheduled).
-3. Do not write the full narrative text for the fields yet; provide the detailed structural blueprint.
+2. Make sure that all fields are clinically coherent to each other
+3. Do not write the full narrative text for the fields yet; provide the essential details needed to formulate them.
 4. Return ONLY the markdown outline. Do not include introductory text, acknowledgments, or conversational filler.`
   );
 

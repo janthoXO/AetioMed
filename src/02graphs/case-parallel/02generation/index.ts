@@ -2,7 +2,10 @@ import { END, Send, START, StateGraph } from "@langchain/langgraph";
 import { GlobalStateSchema } from "../state.js";
 import z from "zod";
 import { generateChiefComplaintFromOutline } from "@/03aigateway/chiefComplaint.aigateway.js";
-import { generateCaseCoT as generateCaseCoTGateway, generateCaseOutline as generateCaseOutlineGateway } from "@/03aigateway/case.aigateway.js";
+import {
+  generateCaseCoT as generateCaseCoTGateway,
+  generateCaseOutline as generateCaseOutlineGateway,
+} from "@/03aigateway/case.aigateway.js";
 import { emitTrace } from "@/utils/tracing.js";
 import { generatePatientFromOutline } from "@/03aigateway/patient.aigateway.js";
 import { generateAnamnesisFromOutline } from "@/03aigateway/anamnesis.aigateway.js";

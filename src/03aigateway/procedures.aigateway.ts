@@ -83,12 +83,17 @@ ${`{ "procedures": ${ProcedureGenerationArrayJsonExampleString()} }`}`,
     });
 
     const procedures: ProcedureGeneration[] = await retry(
-      async (attempt: number) => {
+      async (attempt: number, previousError?: Error) => {
         const result = await getCreativeLLM()
           .withStructuredOutput(ProcedureSchemaWrapper)
           .invoke([
             new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
+            new HumanMessage(
+              userPrompt +
+                (previousError
+                  ? `\nPrevious generation error: ${previousError.message}`
+                  : "")
+            ),
           ])
           .catch((error) => {
             handleLangchainError(error);

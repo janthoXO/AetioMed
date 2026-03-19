@@ -20,7 +20,6 @@ export async function generateInconsistenciesFromOutline(
   caseToCheck: Case,
   diagnosis: Diagnosis,
   generationFlags: GenerationFlag[],
-  outline: string,
   userInstructions?: string
 ): Promise<Inconsistency[]> {
   const systemPrompt = buildPrompt(
@@ -28,9 +27,8 @@ export async function generateInconsistenciesFromOutline(
 
     `CRITICAL EVALUATION CRITERIA:
 1. Diagnosis Secrecy (Pedagogical): The target diagnosis MUST NOT be explicitly named in any of the fields (the student is supposed to deduce it).
-2. Outline Adherence: Does the generated data strictly follow the approved Case Outline?
-3. Clinical Coherence: Do the fields logically align? (e.g., Do the Procedures make sense for the Chief Complaint? Does the Anamnesis contradict the Patient's age/gender?)
-4. Realism: Are there impossible biometric values (e.g., a 2-year-old weighing 70kg), contradictory timelines, or medical hallucinations?`,
+2. Clinical Coherence: Do the fields logically align? (e.g., Do the Procedures make sense for the Chief Complaint? Does the Anamnesis contradict the Patient's age/gender?)
+3. Realism: Are there impossible biometric values (e.g., a 2-year-old weighing 70kg), contradictory timelines, or medical hallucinations?`,
 
     `When creating an inconsistency record, ensure the "suggestion" field provides a highly specific, actionable directive. This suggestion will be fed directly to the AI regenerating that specific field. Tell it EXACTLY how to fix the error.`,
 
@@ -50,8 +48,6 @@ ${JSON.stringify({ inconsistencies: [] })} `,
 
   const userPrompt = buildPrompt(
     `Target Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
-
-    `Case Outline: ${outline}`,
 
     `Generated Case Data to Validate:\n${JSON.stringify(caseToCheck, null, 2)}`,
 

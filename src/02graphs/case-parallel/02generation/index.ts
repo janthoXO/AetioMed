@@ -2,7 +2,7 @@ import { END, Send, START, StateGraph } from "@langchain/langgraph";
 import { GlobalStateSchema } from "../state.js";
 import z from "zod";
 import { generateChiefComplaintFromOutline } from "@/03aigateway/chiefComplaint.aigateway.js";
-import { generateCaseCoT as generateCaseCoTGateway } from "@/03aigateway/case.aigateway.js";
+import { generateCaseCoT as generateCaseCoTGateway, generateCaseOutline as generateCaseOutlineGateway } from "@/03aigateway/case.aigateway.js";
 import { emitTrace } from "@/utils/tracing.js";
 import { generatePatientFromOutline } from "@/03aigateway/patient.aigateway.js";
 import { generateAnamnesisFromOutline } from "@/03aigateway/anamnesis.aigateway.js";
@@ -36,9 +36,11 @@ async function generateCaseCoT(
 async function generateCaseOutline(
   state: GenerationGraphState
 ): Promise<Pick<GenerationGraphState, "outline">> {
-  state.outline = await generateCaseCoTGateway(
+  state.outline = await generateCaseOutlineGateway(
     state.diagnosis,
     state.generationFlags,
+    state.symptoms,
+    state.cot,
     state.userInstructions
   ).catch((error) => {
     emitTrace(`[GenerationGraph] Error generating case outline: ${error}`, {
@@ -115,7 +117,7 @@ async function generateAnamnesis(state: GenerationGraphState) {
   });
 
   emitTrace(
-    `[GenerationGraph] Successfully generated anamnesis:\n${state.case.anamnesis}`
+    `[GenerationGraph] Successfully generated anamnesis:\n${JSON.stringify(state.case.anamnesis, null, 2)}`
   );
 
   return { case: state.case };
@@ -135,7 +137,7 @@ async function generateProcedures(state: GenerationGraphState) {
   });
 
   emitTrace(
-    `[GenerationGraph] Successfully generated procedures:\n${state.case.procedures}`
+    `[GenerationGraph] Successfully generated procedures:\n${JSON.stringify(state.case.procedures, null, 2)}`
   );
 
   return { case: state.case };

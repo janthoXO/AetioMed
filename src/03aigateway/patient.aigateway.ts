@@ -63,12 +63,17 @@ ${JSON.stringify(PatientJsonExample())}`,
 
   try {
     const patient: Patient = await retry(
-      async (attempt: number) => {
+      async (attempt: number, previousError?: Error) => {
         const result = await getCreativeLLM()
           .withStructuredOutput(PatientSchema)
           .invoke([
             new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
+            new HumanMessage(
+              userPrompt +
+                (previousError
+                  ? `\nPrevious generation error: ${previousError.message}`
+                  : "")
+            ),
           ])
           .catch((error) => {
             handleLangchainError(error);

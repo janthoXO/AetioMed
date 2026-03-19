@@ -16,7 +16,6 @@ const InconsistencyGraphStateSchema = GlobalStateSchema.pick({
   generationFlags: true,
   case: true,
   anamnesisCategories: true,
-  outline: true,
 }).extend({
   refinementIterationsRemaining: z.number().default(2),
   inconsistencies: z.array(InconsistencySchema).default([]),
@@ -32,7 +31,6 @@ async function generateInconsistencies(
     state.case,
     state.diagnosis,
     state.generationFlags,
-    state.outline,
     state.userInstructions
   ).catch((error) => {
     emitTrace(
@@ -62,10 +60,12 @@ async function refinePatient(
   emitTrace(`[InconsistencyGraph] Starting refinement of patient fields...`);
   state.case.patient = await generatePatientFromOutline(
     state.diagnosis,
-    state.outline,
     state.userInstructions,
-    state.case, // provide the case to allow refinement on "old" case data
-    state.inconsistencies //these should already be filtered by the send logic
+    undefined,
+    {
+      case: state.case, // provide the case to allow refinement on "old" case data
+      inconsistencies: state.inconsistencies, //these should already be filtered by the send logic to fit only patient generation
+    }
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining patient: ${error}`, {
       category: "error",
@@ -86,10 +86,12 @@ async function refineChiefComplaint(
   emitTrace("[InconsistencyGraph] Starting refinement of chief complaint...");
   state.case.chiefComplaint = await generateChiefComplaintFromOutline(
     state.diagnosis,
-    state.outline,
     state.userInstructions,
-    state.case, // provide the case to allow refinement on "old" case data
-    state.inconsistencies //these should already be filtered by the send logic
+    undefined,
+    {
+      case: state.case, // provide the case to allow refinement on "old" case data
+      inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
+    }
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining chief complaint: ${error}`, {
       category: "error",
@@ -114,11 +116,13 @@ async function refineAnamnesis(
   emitTrace("[InconsistencyGraph] Starting refinement of anamnesis...");
   state.case.anamnesis = await generateAnamnesisFromOutline(
     state.diagnosis,
-    state.outline,
     state.userInstructions,
     state.anamnesisCategories,
-    state.case, // provide the case to allow refinement on "old" case data
-    state.inconsistencies //these should already be filtered by the send logic
+    undefined,
+    {
+      case: state.case, // provide the case to allow refinement on "old" case data
+      inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
+    }
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining anamnesis: ${error}`, {
       category: "error",
@@ -143,11 +147,13 @@ async function refineProcedures(
   emitTrace("[InconsistencyGraph] Starting refinement of procedures...");
   state.case.procedures = await generateProceduresFromOutline(
     state.diagnosis,
-    state.outline,
     state.userInstructions,
     undefined, // no specified procedures will take the predefined ones.
-    state.case, // provide the case to allow refinement on "old" case data
-    state.inconsistencies //these should already be filtered by the send logic
+    undefined, // no outline for refinement, we want the model to focus on fixing the inconsistencies
+    {
+      case: state.case, // provide the case to allow refinement on "old" case data
+      inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
+    }
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining procedures: ${error}`, {
       category: "error",

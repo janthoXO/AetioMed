@@ -86,7 +86,7 @@ export async function generateCaseOutline(
     `You must outline the specific content and direction for the following required fields:
 ${generationFlags.join(", ")}`,
 
-`This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents generating the final JSON fields. It must contain specific, hard data outlining the content of each field.`,
+    `This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents generating the final JSON fields. It must contain specific, hard data outlining the content of each field.`,
 
     `Typical symptoms associated with this diagnosis are:
 ${symptoms.map((s) => s.name).join(", ")}

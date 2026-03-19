@@ -63,8 +63,8 @@ async function generatePatient(state: GenerationGraphState) {
   emitTrace(`[GenerationGraph] Starting generation of patient fields...`);
   state.case.patient = await generatePatientFromOutline(
     state.diagnosis,
-    state.outline,
-    state.userInstructions
+    state.userInstructions,
+    state.outline
   ).catch((error) => {
     emitTrace(`[GenerationGraph] Error generating patient: ${error}`, {
       category: "error",
@@ -89,8 +89,8 @@ async function generateChiefComplaint(
   emitTrace(`[GenerationGraph] Starting generation of chief complaint...`);
   state.case.chiefComplaint = await generateChiefComplaintFromOutline(
     state.diagnosis,
-    state.outline,
-    state.userInstructions
+    state.userInstructions,
+    state.outline
   ).catch((error) => {
     emitTrace(`[GenerationGraph] Error generating chief complaint: ${error}`, {
       category: "error",
@@ -109,9 +109,9 @@ async function generateAnamnesis(state: GenerationGraphState) {
   emitTrace(`[GenerationGraph] Starting generation of anamnesis fields...`);
   state.case.anamnesis = await generateAnamnesisFromOutline(
     state.diagnosis,
-    state.outline,
     state.userInstructions,
-    state.anamnesisCategories
+    state.anamnesisCategories,
+    state.outline
   ).catch((error) => {
     emitTrace(`[GenerationGraph] Error generating anamnesis: ${error}`, {
       category: "error",
@@ -130,8 +130,9 @@ async function generateProcedures(state: GenerationGraphState) {
   emitTrace(`[GenerationGraph] Starting generation of procedures...`);
   state.case.procedures = await generateProceduresFromOutline(
     state.diagnosis,
-    state.outline,
-    state.userInstructions
+    state.userInstructions,
+    undefined,
+    state.outline
   ).catch((error) => {
     emitTrace(`[GenerationGraph] Error generating procedures: ${error}`, {
       category: "error",
@@ -159,12 +160,22 @@ export const generationGraph = new StateGraph(GenerationGraphStateSchema)
   .addConditionalEdges(
     "case_outline_generate",
     (state): Send[] => {
-      return [
-        new Send("patient_generate", state),
-        new Send("chief_complaint_generate", state),
-        new Send("anamnesis_generate", state),
-        new Send("procedures_generate", state),
-      ];
+      const sends: Send[] = [];
+
+      if (state.generationFlags.includes("patient")) {
+        sends.push(new Send("patient_generate", state));
+      }
+      if (state.generationFlags.includes("chiefComplaint")) {
+        sends.push(new Send("chief_complaint_generate", state));
+      }
+      if (state.generationFlags.includes("anamnesis")) {
+        sends.push(new Send("anamnesis_generate", state));
+      }
+      if (state.generationFlags.includes("procedures")) {
+        sends.push(new Send("procedures_generate", state));
+      }
+
+      return sends;
     },
     [
       "patient_generate",

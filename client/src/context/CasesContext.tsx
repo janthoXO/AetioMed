@@ -95,10 +95,8 @@ export function CasesProvider({ children }: { children: ReactNode }) {
           // 4. Merge response with placeholder and save to DB
           ({
             ...placeholderCase,
+            ...res,
             createdAt: new Date(),
-            chiefComplaint: res.chiefComplaint,
-            anamnesis: res.anamnesis,
-            procedures: res.procedures,
           })
         )
         .catch((error) => ({

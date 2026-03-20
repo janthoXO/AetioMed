@@ -18,7 +18,6 @@ export function TraceViewer({ caseId, isCompleted }: TraceViewerProps) {
           <Badge variant="destructive">{warning}</Badge>
         </div>
       )}
-      <ScrollArea className="flex-1 pr-4">
         <div className="flex flex-col gap-2 pb-4">
           {traces.length === 0 ? (
             <span className="text-muted-foreground">
@@ -30,11 +29,11 @@ export function TraceViewer({ caseId, isCompleted }: TraceViewerProps) {
                 <span className="text-muted-foreground shrink-0">
                   {new Date(t.timestamp).toLocaleTimeString()}
                 </span>
-                <span
-                  className={`${t.category === "error" ? "text-destructive" : t.category === "warn" ? "text-warning" : ""}`}
+                <div
+                  className={`prose dark:prose-invert ${t.category === "error" ? "text-destructive" : t.category === "warn" ? "text-warning" : ""}`}
                 >
                   <ReactMarkdown>{t.message}</ReactMarkdown>
-                </span>
+                </div>
               </div>
             ))
           )}
@@ -46,7 +45,6 @@ export function TraceViewer({ caseId, isCompleted }: TraceViewerProps) {
             </div>
           )}
         </div>
-      </ScrollArea>
     </div>
   );
 }

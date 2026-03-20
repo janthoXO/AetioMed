@@ -9,26 +9,39 @@ import {
   type AnamnesisCategory,
 } from "@/models/Anamnesis.js";
 import type { Diagnosis } from "@/models/Diagnosis.js";
-import { generationGraph } from "./02generation/index.js";
-import { inconsistencyGraph } from "./03inconsistency/index.js";
 import { symptomsGraph } from "./01symptom/index.js";
+import { singleFieldGraph } from "./02singlefield/index.js";
+import { multiFieldGraph } from "./02multifield/index.js";
 
 /**
  * Build and compile the Council-Consistency-Refinement graph
  */
-export function buildCaseParallelGraph() {
+export function buildCaseGraph() {
   // Create the state graph with our annotation schema
   const graph = new StateGraph(GlobalStateSchema, {
     input: GraphInputSchema,
   })
     .addNode("symptom_phase", symptomsGraph)
-    .addNode("generation_phase", generationGraph)
-    .addNode("inconsistency_phase", inconsistencyGraph)
+    .addNode("single_field_phase", singleFieldGraph)
+    .addNode("multi_field_phase", multiFieldGraph)
 
     .addEdge(START, "symptom_phase")
-    .addEdge("symptom_phase", "generation_phase")
-    .addEdge("generation_phase", "inconsistency_phase")
-    .addEdge("inconsistency_phase", END);
+    .addConditionalEdges(
+      "symptom_phase",
+      (state) => {
+        if (state.generationFlags.length === 1) {
+          return "single";
+        }
+
+        return "multi";
+      },
+      {
+        single: "single_field_phase",
+        multi: "multi_field_phase",
+      }
+    )
+    .addEdge("single_field_phase", END)
+    .addEdge("multi_field_phase", END);
   const compiledGraph = graph.compile();
 
   console.log("[GraphBuilder] Case Parallel graph compiled");
@@ -45,7 +58,7 @@ export async function generateCase(
   context?: string,
   anamnesisCategories?: AnamnesisCategory[]
 ): Promise<Case> {
-  const graph = buildCaseParallelGraph();
+  const graph = buildCaseGraph();
 
   anamnesisCategories = anamnesisCategories ?? AnamnesisCategoryDefaults;
 

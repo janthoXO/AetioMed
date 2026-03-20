@@ -9,7 +9,7 @@ import { registry } from "@langchain/langgraph/zod";
 export const GraphInputSchema = z.object({
   diagnosis: DiagnosisSchema,
   userInstructions: z.string().optional(),
-  generationFlags: z.array(GenerationFlagSchema),
+  generationFlags: z.array(GenerationFlagSchema).min(1),
   anamnesisCategories: z.array(AnamnesisCategorySchema).optional(),
 });
 
@@ -32,11 +32,6 @@ export const GlobalStateSchema = GraphInputSchema.extend({
    * Retrieved symptoms for the diagnosis.
    */
   symptoms: SymptomSchema.array().default([]),
-
-  /**
-   * Generated outline for the case.
-   */
-  outline: z.string(),
 });
 
 /**

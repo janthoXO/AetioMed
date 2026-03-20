@@ -80,7 +80,7 @@ ${JSON.stringify(state.case.patient, null, 2)}
 \`\`\``
   );
 
-  throw new Error("Patient refinement not implemented yet");
+  return { case: { patient: state.case.patient } };
 }
 
 async function refineChiefComplaint(

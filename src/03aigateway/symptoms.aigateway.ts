@@ -49,7 +49,7 @@ Requirements:
     });
 
     const symptoms: Symptom[] = await retry(
-      async (attempt: number) => {
+      async () => {
         const result = await getDeterministicLLM()
           .withStructuredOutput(SymptomArrayWrapperSchema)
           .invoke([
@@ -59,11 +59,6 @@ Requirements:
           .catch((error) => {
             handleLangchainError(error);
           });
-
-        console.debug(
-          `[GenerateSymptomsOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
-          JSON.stringify(result)
-        );
 
         return result.symptoms;
       },

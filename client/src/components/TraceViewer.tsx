@@ -1,4 +1,3 @@
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { useTraces } from "@/hooks/useTraces";
 import ReactMarkdown from "react-markdown";
@@ -18,33 +17,31 @@ export function TraceViewer({ caseId, isCompleted }: TraceViewerProps) {
           <Badge variant="destructive">{warning}</Badge>
         </div>
       )}
-        <div className="flex flex-col gap-2 pb-4">
-          {traces.length === 0 ? (
-            <span className="text-muted-foreground">
-              {isCompleted ? "No history available." : "Waiting for traces..."}
-            </span>
-          ) : (
-            traces.map((t, i) => (
-              <div key={i} className="flex gap-4">
-                <span className="text-muted-foreground shrink-0">
-                  {new Date(t.timestamp).toLocaleTimeString()}
-                </span>
-                <div
-                  className={`prose dark:prose-invert ${t.category === "error" ? "text-destructive" : t.category === "warn" ? "text-warning" : ""}`}
-                >
-                  <ReactMarkdown>{t.message}</ReactMarkdown>
-                </div>
-              </div>
-            ))
-          )}
-          {isCompleted && traces.length > 0 && (
-            <div className="flex gap-4 mt-2">
-              <span className="text-success leading-none">
-                ✓ Trace finished.
+      <div className="flex flex-col gap-2 pb-4">
+        {traces.length === 0 ? (
+          <span className="text-muted-foreground">
+            {isCompleted ? "No history available." : "Waiting for traces..."}
+          </span>
+        ) : (
+          traces.map((t, i) => (
+            <div key={i} className="flex gap-4">
+              <span className="text-muted-foreground shrink-0">
+                {new Date(t.timestamp).toLocaleTimeString()}
               </span>
+              <div
+                className={`prose dark:prose-invert ${t.category === "error" ? "text-destructive" : t.category === "warn" ? "text-warning" : ""}`}
+              >
+                <ReactMarkdown>{t.message}</ReactMarkdown>
+              </div>
             </div>
-          )}
-        </div>
+          ))
+        )}
+        {isCompleted && traces.length > 0 && (
+          <div className="flex gap-4 mt-2">
+            <span className="text-success leading-none">✓ Trace finished.</span>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

@@ -176,11 +176,15 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
                     setSelectedFlags(new Set());
                     setFlagContexts({});
                   } else {
-                    setSelectedFlags(new Set(GENERATION_FLAGS.map(f => f.value)));
+                    setSelectedFlags(
+                      new Set(GENERATION_FLAGS.map((f) => f.value))
+                    );
                   }
                 }}
               >
-                {selectedFlags.size === GENERATION_FLAGS.length ? "Deselect All" : "Select All"}
+                {selectedFlags.size === GENERATION_FLAGS.length
+                  ? "Deselect All"
+                  : "Select All"}
               </Button>
             </div>
             <div className="space-y-4">

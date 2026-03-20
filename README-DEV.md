@@ -114,6 +114,14 @@ The application is structured into several key components:
   - **Consistency**: Final checks.
 - **`src/domain-models`**: TypeScript interfaces and classes defining the data structure (e.g., `Anamnesis`, `Case`).
 
+### Graph Structure
+
+before generating the graph png, you have to bind a chrome instance to mermaid
+
+```bash
+pnpm exec puppeteer browsers install chrome
+```
+
 ## Additional Tools
 
 - **Bruno**: API collection files are provided in the `docs/bruno` folder for testing endpoints.

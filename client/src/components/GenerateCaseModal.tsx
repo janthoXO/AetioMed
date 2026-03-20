@@ -19,6 +19,7 @@ import type { GenerationFlag } from "@/models/GenerationFlags";
 import { ICDCodePattern } from "@/models/Diagnosis";
 
 const GENERATION_FLAGS: { value: GenerationFlag; label: string }[] = [
+  { value: "patient", label: "Patient" },
   { value: "chiefComplaint", label: "Chief Complaint" },
   { value: "anamnesis", label: "Anamnesis" },
   { value: "procedures", label: "Procedures" },
@@ -163,7 +164,29 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
 
           {/* Generation Flags */}
           <div className="space-y-3">
-            <Label>Sections to Generate</Label>
+            <div className="flex items-center justify-between">
+              <Label>Sections to Generate</Label>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="h-8 text-xs"
+                onClick={() => {
+                  if (selectedFlags.size === GENERATION_FLAGS.length) {
+                    setSelectedFlags(new Set());
+                    setFlagContexts({});
+                  } else {
+                    setSelectedFlags(
+                      new Set(GENERATION_FLAGS.map((f) => f.value))
+                    );
+                  }
+                }}
+              >
+                {selectedFlags.size === GENERATION_FLAGS.length
+                  ? "Deselect All"
+                  : "Select All"}
+              </Button>
+            </div>
             <div className="space-y-4">
               {GENERATION_FLAGS.map(({ value, label }) => (
                 <div key={value} className="space-y-2">

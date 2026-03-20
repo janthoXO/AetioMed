@@ -3,11 +3,13 @@ import { type ChiefComplaint } from "./ChiefComplaint";
 import { type Diagnosis } from "./Diagnosis";
 import type { GenerationFlag } from "./GenerationFlags";
 import { type Procedure } from "./Procedure";
+import { type Patient } from "./Patient";
 
 export type Case = {
   id: string;
   diagnosis: Diagnosis;
   createdAt?: Date;
+  patient?: Patient;
   chiefComplaint?: ChiefComplaint;
   anamnesis?: Anamnesis[];
   procedures?: Procedure[];

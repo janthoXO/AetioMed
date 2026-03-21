@@ -3,7 +3,7 @@ import { getJetStreamClient, getNatsConnection } from "./client.js";
 import { AckPolicy, jetstreamManager, type JsMsg } from "@nats-io/jetstream";
 import { generateCase } from "@/02services/cases.service.js";
 import { publishCaseGenerationResponse } from "./cases.publisher.js";
-import { IcdToDiseaseName } from "@/02services/diseases.service.js";
+import { IcdToDiseaseName } from "@/03repo/diseases.repo.js";
 import { AppError } from "@/errors/AppError.js";
 
 const STREAM_NAME = "cases";
@@ -14,7 +14,7 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
   try {
     console.debug(`[NATS] Received message on ${SUBJECT}:`, msg.json());
     const data = CaseGenerationRequestSchema.parse(msg.json());
-    const { icd, context, generationFlags, language } = data;
+    const { icd, userInstructions, generationFlags, language } = data;
     let { diagnosis } = data;
 
     // fill diagnosis and icdCode - zod makes sure that at least one is filled
@@ -32,7 +32,7 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
     const generatedCase = await generateCase(
       { name: diagnosis, icd: icd },
       generationFlags,
-      context,
+      userInstructions,
       language
     );
 

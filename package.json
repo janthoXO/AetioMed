@@ -12,8 +12,8 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "graph:export": "tsx src/ai/exportGraphs.ts",
-    "swagger": "tsx src/rest/swagger.ts"
+    "graph:export": "tsx src/02graphs/exportGraphs.ts",
+    "swagger": "tsx src/01rest/swagger.ts"
   },
   "keywords": [],
   "author": "",
@@ -30,6 +30,7 @@
     "@nats-io/nats-core": "^3.3.1",
     "@nats-io/transport-node": "^3.3.1",
     "@toon-format/toon": "^2.1.0",
+    "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
     "fuse.js": "^7.1.0",
@@ -37,6 +38,7 @@
     "langchain": "^1.2.24",
     "morgan": "^1.10.1",
     "ollama": "^0.6.3",
+    "redis": "^5.11.0",
     "swagger-autogen": "^2.23.7",
     "swagger-ui-express": "^5.0.1",
     "uuid": "^13.0.0",
@@ -46,6 +48,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@mermaid-js/mermaid-cli": "^11.12.0",
+    "@types/cors": "^2.8.19",
     "@types/express": "^5.0.6",
     "@types/morgan": "^1.9.10",
     "@types/node": "^25.2.3",
@@ -53,6 +57,7 @@
     "eslint": "^10.0.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.1",
+    "puppeteer": "^24.40.0",
     "ts-node": "^10.9.2",
     "tsc-alias": "^1.8.16",
     "tsx": "^4.21.0",

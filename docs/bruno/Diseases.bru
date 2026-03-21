@@ -1,0 +1,16 @@
+meta {
+  name: Diseases
+  type: http
+  seq: 5
+}
+
+get {
+  url: {{base_url}}/api/diseases
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

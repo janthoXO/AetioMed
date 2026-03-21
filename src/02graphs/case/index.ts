@@ -12,6 +12,7 @@ import type { Diagnosis } from "@/models/Diagnosis.js";
 import { symptomsGraph } from "./01symptom/index.js";
 import { singleFieldGraph } from "./02singlefield/index.js";
 import { multiFieldGraph } from "./02multifield/index.js";
+import type { UserInstructions } from "@/models/UserInstructions.js";
 
 /**
  * Build and compile the Council-Consistency-Refinement graph
@@ -55,7 +56,7 @@ export function buildCaseGraph() {
 export async function generateCase(
   diagnosis: Diagnosis,
   generationFlags: GenerationFlag[],
-  context?: string,
+  userInstructions?: UserInstructions,
   anamnesisCategories?: AnamnesisCategory[]
 ): Promise<Case> {
   const graph = buildCaseGraph();
@@ -67,7 +68,7 @@ export async function generateCase(
     JSON.stringify(
       {
         diagnosis,
-        userInstructions: context,
+        userInstructions,
         generationFlags,
         anamnesisCategories,
       },
@@ -79,7 +80,7 @@ export async function generateCase(
   const result = await graph.invoke({
     diagnosis: diagnosis,
     generationFlags: generationFlags,
-    userInstructions: context,
+    userInstructions: userInstructions,
     anamnesisCategories: anamnesisCategories,
   });
 

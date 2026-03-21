@@ -31,7 +31,7 @@ async function generateInconsistencies(
     state.case,
     state.diagnosis,
     state.generationFlags,
-    state.userInstructions
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
     emitTrace(
       `[InconsistencyGraph] Error generating inconsistencies: ${error}`,
@@ -65,7 +65,7 @@ async function refinePatient(
       case: state.case, // provide the case to allow refinement on "old" case data
       inconsistencies: state.inconsistencies, //these should already be filtered by the send logic to fit only patient generation
     },
-    state.userInstructions
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining patient: ${error}`, {
       category: "error",
@@ -93,7 +93,7 @@ async function refineChiefComplaint(
       case: state.case, // provide the case to allow refinement on "old" case data
       inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
     },
-    state.userInstructions
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining chief complaint: ${error}`, {
       category: "error",
@@ -123,7 +123,7 @@ async function refineAnamnesis(
       case: state.case, // provide the case to allow refinement on "old" case data
       inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
     },
-    state.userInstructions,
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
     state.anamnesisCategories
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining anamnesis: ${error}`, {
@@ -156,7 +156,7 @@ async function refineProcedures(
       case: state.case, // provide the case to allow refinement on "old" case data
       inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
     },
-    state.userInstructions
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining procedures: ${error}`, {
       category: "error",
@@ -228,49 +228,65 @@ export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
 
       const sends: Send[] = [];
       if (state.inconsistencies.some((i) => i.field === "patient")) {
-        const filteredInconsistencies = state.inconsistencies.filter(
-          (i) => i.field === "patient"
-        );
         sends.push(
           new Send("patient_refine", {
             ...state,
-            inconsistencies: filteredInconsistencies,
+            inconsistencies: state.inconsistencies.filter(
+              (i) => i.field === "patient"
+            ),
+            userInstructions: state.userInstructions
+              ? Object.entries(state.userInstructions).filter(
+                  ([key]) => key === "patient" || key === "general"
+                )
+              : undefined,
           })
         );
       }
 
       if (state.inconsistencies.some((i) => i.field === "chiefComplaint")) {
-        const filteredInconsistencies = state.inconsistencies.filter(
-          (i) => i.field === "chiefComplaint"
-        );
         sends.push(
           new Send("chief_complaint_refine", {
             ...state,
-            inconsistencies: filteredInconsistencies,
+            inconsistencies: state.inconsistencies.filter(
+              (i) => i.field === "chiefComplaint"
+            ),
+            userInstructions: state.userInstructions
+              ? Object.entries(state.userInstructions).filter(
+                  ([key]) => key === "chiefComplaint" || key === "general"
+                )
+              : undefined,
           })
         );
       }
 
       if (state.inconsistencies.some((i) => i.field === "anamnesis")) {
-        const filteredInconsistencies = state.inconsistencies.filter(
-          (i) => i.field === "anamnesis"
-        );
         sends.push(
           new Send("anamnesis_refine", {
             ...state,
-            inconsistencies: filteredInconsistencies,
+            inconsistencies: state.inconsistencies.filter(
+              (i) => i.field === "anamnesis"
+            ),
+            userInstructions: state.userInstructions
+              ? Object.entries(state.userInstructions).filter(
+                  ([key]) => key === "anamnesis" || key === "general"
+                )
+              : undefined,
           })
         );
       }
 
       if (state.inconsistencies.some((i) => i.field === "procedures")) {
-        const filteredInconsistencies = state.inconsistencies.filter(
-          (i) => i.field === "procedures"
-        );
         sends.push(
           new Send("procedures_refine", {
             ...state,
-            inconsistencies: filteredInconsistencies,
+            inconsistencies: state.inconsistencies.filter(
+              (i) => i.field === "procedures"
+            ),
+            userInstructions: state.userInstructions
+              ? Object.entries(state.userInstructions).filter(
+                  ([key]) => key === "procedures" || key === "general"
+                )
+              : undefined,
           })
         );
       }

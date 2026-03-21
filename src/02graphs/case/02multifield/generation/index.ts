@@ -29,7 +29,7 @@ async function generateCaseCoT(
   state.cot = await generateCaseCoTGateway(
     state.diagnosis,
     state.generationFlags,
-    state.userInstructions
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
     emitTrace(`[GenerationGraph] Error generating case CoT: ${error}`, {
       category: "error",
@@ -51,7 +51,7 @@ async function generateCaseOutline(
     state.generationFlags,
     state.symptoms,
     state.cot,
-    state.userInstructions
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
     emitTrace(`[GenerationGraph] Error generating case outline: ${error}`, {
       category: "error",
@@ -74,7 +74,7 @@ async function generatePatient(state: GenerationGraphState) {
     {
       outline: state.outline,
     },
-    state.userInstructions
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
     emitTrace(`[GenerationGraph] Error generating patient: ${error}`, {
       category: "error",
@@ -101,7 +101,7 @@ async function generateChiefComplaint(
     {
       outline: state.outline,
     },
-    state.userInstructions
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
     emitTrace(`[GenerationGraph] Error generating chief complaint: ${error}`, {
       category: "error",
@@ -124,7 +124,7 @@ async function generateAnamnesis(state: GenerationGraphState) {
     {
       outline: state.outline,
     },
-    state.userInstructions,
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
     state.anamnesisCategories
   ).catch((error) => {
     emitTrace(`[GenerationGraph] Error generating anamnesis: ${error}`, {
@@ -152,6 +152,12 @@ async function generateProcedures(state: GenerationGraphState) {
       case: state.case,
     },
     state.userInstructions
+      ? JSON.stringify(
+          Object.entries(state.userInstructions).filter(
+            ([key]) => key === "procedures" || key === "general"
+          )
+        )
+      : undefined
   ).catch((error) => {
     emitTrace(`[GenerationGraph] Error generating procedures: ${error}`, {
       category: "error",
@@ -186,13 +192,40 @@ export const generationGraph = new StateGraph(GenerationGraphStateSchema)
       const sends: Send[] = [];
 
       if (state.generationFlags.includes("patient")) {
-        sends.push(new Send("patient_generate", state));
+        sends.push(
+          new Send("patient_generate", {
+            ...state,
+            userInstructions: state.userInstructions
+              ? Object.entries(state.userInstructions).filter(
+                  ([key]) => key === "patient" || key === "general"
+                )
+              : undefined,
+          })
+        );
       }
       if (state.generationFlags.includes("chiefComplaint")) {
-        sends.push(new Send("chief_complaint_generate", state));
+        sends.push(
+          new Send("chief_complaint_generate", {
+            ...state,
+            userInstructions: state.userInstructions
+              ? Object.entries(state.userInstructions).filter(
+                  ([key]) => key === "chiefComplaint" || key === "general"
+                )
+              : undefined,
+          })
+        );
       }
       if (state.generationFlags.includes("anamnesis")) {
-        sends.push(new Send("anamnesis_generate", state));
+        sends.push(
+          new Send("anamnesis_generate", {
+            ...state,
+            userInstructions: state.userInstructions
+              ? Object.entries(state.userInstructions).filter(
+                  ([key]) => key === "anamnesis" || key === "general"
+                )
+              : undefined,
+          })
+        );
       }
 
       return sends;

@@ -3,7 +3,7 @@ graph TD;
 	__start__([<p>__start__</p>]):::first
 	symptom_phase_symptoms_umls(symptoms_umls)
 	symptom_phase_symptoms_generate(symptoms_generate)
-	single_field_phase___start__(<p>__start__</p>)
+	single_field_phase_instructions_reduce(instructions_reduce)
 	single_field_phase_patient_cot(patient_cot)
 	single_field_phase_patient_generate(patient_generate)
 	single_field_phase_chiefComplaint_cot(chiefComplaint_cot)
@@ -34,7 +34,7 @@ graph TD;
 	__start__ --> symptom_phase_symptoms_umls;
 	multi_field_phase_inconsistency_phase___end__ --> __end__;
 	single_field_phase___end__ --> __end__;
-	symptom_phase_symptoms_generate -. &nbsp;single&nbsp; .-> single_field_phase___start__;
+	symptom_phase_symptoms_generate -. &nbsp;single&nbsp; .-> single_field_phase_instructions_reduce;
 	symptom_phase_symptoms_generate -. &nbsp;multi&nbsp; .-> multi_field_phase_generation_phase_case_cot_generate;
 	subgraph symptom_phase
 	symptom_phase_symptoms_umls --> symptom_phase_symptoms_generate;
@@ -48,10 +48,10 @@ graph TD;
 	single_field_phase_patient_generate --> single_field_phase___end__;
 	single_field_phase_procedures_cot --> single_field_phase_procedures_generate;
 	single_field_phase_procedures_generate --> single_field_phase___end__;
-	single_field_phase___start__ -. &nbsp;patient&nbsp; .-> single_field_phase_patient_cot;
-	single_field_phase___start__ -. &nbsp;chiefComplaint&nbsp; .-> single_field_phase_chiefComplaint_cot;
-	single_field_phase___start__ -. &nbsp;anamnesis&nbsp; .-> single_field_phase_anamnesis_cot;
-	single_field_phase___start__ -. &nbsp;procedures&nbsp; .-> single_field_phase_procedures_cot;
+	single_field_phase_instructions_reduce -. &nbsp;patient&nbsp; .-> single_field_phase_patient_cot;
+	single_field_phase_instructions_reduce -. &nbsp;chiefComplaint&nbsp; .-> single_field_phase_chiefComplaint_cot;
+	single_field_phase_instructions_reduce -. &nbsp;anamnesis&nbsp; .-> single_field_phase_anamnesis_cot;
+	single_field_phase_instructions_reduce -. &nbsp;procedures&nbsp; .-> single_field_phase_procedures_cot;
 	end
 	subgraph multi_field_phase
 	subgraph generation_phase

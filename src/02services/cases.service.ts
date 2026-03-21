@@ -6,11 +6,12 @@ import { generateCase as graphGenerateCase } from "@/02graphs/case/index.js";
 import { translateCase } from "@/02graphs/translation/index.js";
 import { translateAnamnesisCategoriesToEnglish } from "./anamnesis.service.js";
 import type { Diagnosis } from "@/models/Diagnosis.js";
+import type { UserInstructions } from "@/models/UserInstructions.js";
 
 export async function generateCase(
   diagnosis: Diagnosis,
   generationFlags: GenerationFlag[],
-  userInstructions?: string,
+  userInstructions?: UserInstructions,
   language?: Language,
   anamnesisCategories?: AnamnesisCategory[]
 ): Promise<Case> {

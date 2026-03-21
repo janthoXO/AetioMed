@@ -5,10 +5,11 @@ import { AnamnesisCategorySchema } from "@/models/Anamnesis.js";
 import { DiagnosisSchema } from "@/models/Diagnosis.js";
 import { SymptomSchema } from "@/models/Symptom.js";
 import { registry } from "@langchain/langgraph/zod";
+import { UserInstructionsSchema } from "@/models/UserInstructions.js";
 
 export const GraphInputSchema = z.object({
   diagnosis: DiagnosisSchema,
-  userInstructions: z.string().optional(),
+  userInstructions: UserInstructionsSchema.optional(),
   generationFlags: z.array(GenerationFlagSchema).min(1),
   anamnesisCategories: z.array(AnamnesisCategorySchema).optional(),
 });

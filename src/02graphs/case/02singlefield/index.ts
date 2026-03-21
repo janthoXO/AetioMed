@@ -130,6 +130,20 @@ ${JSON.stringify(state.case.procedures, null, 2)}
 }
 
 export const singleFieldGraph = new StateGraph(SingleFieldStateSchema)
+  .addNode("instructions_reduce", (state) => {
+    if (!state.userInstructions) {
+      return {};
+    }
+
+    // filter out all instructions except the one of the generation flag and general
+    const relevantInstructions = Object.entries(state.userInstructions).filter(
+      ([key]) => key === state.generationFlags[0] || key === "general"
+    );
+
+    return {
+      userInstructions: Object.fromEntries(relevantInstructions),
+    };
+  })
   .addNode("patient_cot", generatePatientCoT)
   .addNode("patient_generate", generatePatientField)
   .addNode("chiefComplaint_cot", generateChiefComplaintCoT)
@@ -139,8 +153,9 @@ export const singleFieldGraph = new StateGraph(SingleFieldStateSchema)
   .addNode("procedures_cot", generateProceduresCoT)
   .addNode("procedures_generate", generateProceduresField)
 
+  .addEdge(START, "instructions_reduce")
   .addConditionalEdges(
-    START,
+    "instructions_reduce",
     (state) => {
       switch (state.generationFlags[0]) {
         case "patient": // generation flag name

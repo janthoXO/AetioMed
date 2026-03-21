@@ -12,15 +12,16 @@ const ConfigSchema = z.object({
   DEBUG: z.coerce.boolean().default(false),
   LLM_API_KEY: z.string().optional(),
   LLM_PROVIDER: LLMProviderSchema.default("ollama"),
-  LLM_MODEL: z
-    .string()
-    .default("hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S"),
+  LLM_MODEL: z.string().default("llama3.1"),
   LLM_TEMPERATURE: z.coerce.number().min(0).max(1).default(0.7),
 
   // NATS
   NATS_URL: z.string().default("nats://localhost:4222"),
   NATS_USER: z.string().default("nats"),
   NATS_PASSWORD: z.string().default("nats"),
+
+  // Redis
+  REDIS_URL: z.string().optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

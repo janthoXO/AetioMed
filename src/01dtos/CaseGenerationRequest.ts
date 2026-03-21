@@ -1,10 +1,11 @@
 import {
   AllGenerationFlags,
   GenerationFlagSchema,
-} from "@/02domain-models/GenerationFlags.js";
-import { ICDCodeSchema } from "@/02domain-models/Diagnosis.js";
-import { LanguageSchema } from "@/02domain-models/Language.js";
+} from "@/models/GenerationFlags.js";
+import { ICDCodeSchema } from "@/models/Diagnosis.js";
+import { LanguageSchema } from "@/models/Language.js";
 import { z } from "zod/v4";
+import { UserInstructionsSchema } from "@/models/UserInstructions.js";
 
 export const CaseGenerationRequestSchema = z
   .object({
@@ -12,10 +13,9 @@ export const CaseGenerationRequestSchema = z
       "ICD-10 code of the disease to generate a case for"
     ),
     diagnosis: z.string().optional().describe("Name of the disease diagnosis"),
-    context: z
-      .string()
-      .optional()
-      .describe("Additional context for case generation"),
+    userInstructions: UserInstructionsSchema.optional().describe(
+      "Additional context for case generation"
+    ),
     generationFlags: z
       .array(GenerationFlagSchema)
       .default(AllGenerationFlags)
@@ -27,6 +27,10 @@ export const CaseGenerationRequestSchema = z
       .array(z.string())
       .optional()
       .describe("Categories of anamnesis to include in the case"),
+    requestId: z
+      .string()
+      .optional()
+      .describe("Optional unique ID to track generation progress via SSE"),
   })
   .refine((data) => data.icd || data.diagnosis, {
     message: "Either 'icd' or 'diagnosis' must be provided",

@@ -56,12 +56,8 @@ router.post(
     }
 
     let { diagnosis } = bodyResult.data;
-    const {
-      icd,
-      userInstructions,
-      generationFlags,
-      language,
-    } = bodyResult.data;
+    const { icd, userInstructions, generationFlags, language } =
+      bodyResult.data;
 
     // fill diagnosis and icdCode - zod makes sure that at least one is filled
     if (!diagnosis) {

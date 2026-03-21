@@ -42,7 +42,7 @@ async function generateSymptoms(
   emitTrace("[SymptomsGraph] Generating symptoms with LLM...");
   state.symptoms = await generateSymptomsOneShot(
     state.diagnosis,
-    state.userInstructions,
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
     state.symptoms
   );
 

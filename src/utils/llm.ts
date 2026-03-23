@@ -43,6 +43,10 @@ export function getLLM(llmConfig?: LLMConfig): BaseChatModel {
         ollamaConfig.format = "json";
       }
 
+      if (envConfig.LLM_URL) {
+        ollamaConfig.baseUrl = envConfig.LLM_URL;
+      }
+
       if (envConfig.LLM_API_KEY) {
         ollamaConfig.headers = {
           Authorization: "Bearer " + envConfig.LLM_API_KEY,

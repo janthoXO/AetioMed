@@ -2,8 +2,22 @@ import { END, START, StateGraph } from "@langchain/langgraph";
 import { GlobalStateSchema } from "../state.js";
 import z from "zod";
 import { emitTrace } from "@/utils/tracing.js";
-import type { Patient } from "@/models/Patient.js";
-import type { ChiefComplaint } from "@/models/ChiefComplaint.js";
+import {
+  generatePatientCoT as generatePatientCoTGateway,
+  generatePatient as generatePatientGateway,
+} from "@/03aigateway/patient.aigateway.js";
+import {
+  generateChiefComplaintCoT as generateChiefComplaintCoTGateway,
+  generateChiefComplaint as generateChiefComplaintGateway,
+} from "@/03aigateway/chiefComplaint.aigateway.js";
+import {
+  generateAnamnesisCoT as generateAnamnesisCoTGateway,
+  generateAnamnesis as generateAnamnesisGateway,
+} from "@/03aigateway/anamnesis.aigateway.js";
+import {
+  generateProceduresCoT as generateProceduresCoTGateway,
+  generateProcedures as generateProceduresGateway,
+} from "@/03aigateway/procedures.aigateway.js";
 
 const SingleFieldStateSchema = GlobalStateSchema.extend({
   cot: z.string(),
@@ -11,12 +25,21 @@ const SingleFieldStateSchema = GlobalStateSchema.extend({
 
 type SingleFieldState = z.infer<typeof SingleFieldStateSchema>;
 
-function generatePatientCoT(
+async function generatePatientCoT(
   state: SingleFieldState
-): Pick<SingleFieldState, "cot"> {
+): Promise<Pick<SingleFieldState, "cot">> {
   emitTrace(`[SingleFieldGraph] Generating CoT for patient field...`);
 
-  state.cot = "";
+  state.cot = await generatePatientCoTGateway(
+    state.diagnosis,
+    state.symptoms,
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+  ).catch((error) => {
+    emitTrace(`[SingleFieldGraph] Error generating patient CoT: ${error}`, {
+      category: "error",
+    });
+    throw error;
+  });
 
   emitTrace(
     `[SingleFieldGraph] Generated CoT for patient field:
@@ -29,7 +52,19 @@ async function generatePatientField(
   state: SingleFieldState
 ): Promise<Pick<SingleFieldState, "case">> {
   emitTrace("[SingleFieldGraph] Generating patient field...");
-  state.case.patient = {} as Patient;
+  state.case.patient = await generatePatientGateway(
+    state.diagnosis,
+    {
+      cot: state.cot,
+      symptoms: state.symptoms,
+    },
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+  ).catch((error) => {
+    emitTrace(`[SingleFieldGraph] Error generating patient field: ${error}`, {
+      category: "error",
+    });
+    throw error;
+  });
 
   emitTrace(
     `[SingleFieldGraph] Generated patient field:
@@ -41,12 +76,24 @@ ${state.case.patient}
   return { case: state.case };
 }
 
-function generateChiefComplaintCoT(
+async function generateChiefComplaintCoT(
   state: SingleFieldState
-): Pick<SingleFieldState, "cot"> {
+): Promise<Pick<SingleFieldState, "cot">> {
   emitTrace(`[SingleFieldGraph] Generating CoT for chief complaint field...`);
 
-  state.cot = "";
+  state.cot = await generateChiefComplaintCoTGateway(
+    state.diagnosis,
+    state.symptoms,
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+  ).catch((error) => {
+    emitTrace(
+      `[SingleFieldGraph] Error generating chief complaint CoT: ${error}`,
+      {
+        category: "error",
+      }
+    );
+    throw error;
+  });
 
   emitTrace(
     `[SingleFieldGraph] Generated CoT for chief complaint field:
@@ -59,7 +106,22 @@ async function generateChiefComplaintField(
   state: SingleFieldState
 ): Promise<Pick<SingleFieldState, "case">> {
   emitTrace("[SingleFieldGraph] Generating chief complaint field...");
-  state.case.chiefComplaint = {} as ChiefComplaint;
+  state.case.chiefComplaint = await generateChiefComplaintGateway(
+    state.diagnosis,
+    {
+      cot: state.cot,
+      symptoms: state.symptoms,
+    },
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+  ).catch((error) => {
+    emitTrace(
+      `[SingleFieldGraph] Error generating chief complaint field: ${error}`,
+      {
+        category: "error",
+      }
+    );
+    throw error;
+  });
 
   emitTrace(
     `[SingleFieldGraph] Generated chief complaint field:
@@ -69,12 +131,21 @@ ${state.case.chiefComplaint}`
   return { case: state.case };
 }
 
-function generateAnamnesisCoT(
+async function generateAnamnesisCoT(
   state: SingleFieldState
-): Pick<SingleFieldState, "cot"> {
+): Promise<Pick<SingleFieldState, "cot">> {
   emitTrace(`[SingleFieldGraph] Generating CoT for anamnesis field...`);
 
-  state.cot = "";
+  state.cot = await generateAnamnesisCoTGateway(
+    state.diagnosis,
+    state.symptoms,
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+  ).catch((error) => {
+    emitTrace(`[SingleFieldGraph] Error generating anamnesis CoT: ${error}`, {
+      category: "error",
+    });
+    throw error;
+  });
 
   emitTrace(
     `[SingleFieldGraph] Generated CoT for anamnesis field:
@@ -87,7 +158,19 @@ async function generateAnamnesisField(
   state: SingleFieldState
 ): Promise<Pick<SingleFieldState, "case">> {
   emitTrace("[SingleFieldGraph] Generating anamnesis field...");
-  state.case.anamnesis = [];
+  state.case.anamnesis = await generateAnamnesisGateway(
+    state.diagnosis,
+    {
+      cot: state.cot,
+      symptoms: state.symptoms,
+    },
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+  ).catch((error) => {
+    emitTrace(`[SingleFieldGraph] Error generating anamnesis field: ${error}`, {
+      category: "error",
+    });
+    throw error;
+  });
 
   emitTrace(
     `[SingleFieldGraph] Generated anamnesis field:
@@ -99,12 +182,21 @@ ${JSON.stringify(state.case.anamnesis, null, 2)}
   return { case: state.case };
 }
 
-function generateProceduresCoT(
+async function generateProceduresCoT(
   state: SingleFieldState
-): Pick<SingleFieldState, "cot"> {
+): Promise<Pick<SingleFieldState, "cot">> {
   emitTrace(`[SingleFieldGraph] Generating CoT for procedures field...`);
 
-  state.cot = "";
+  state.cot = await generateProceduresCoTGateway(
+    state.diagnosis,
+    state.symptoms,
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+  ).catch((error) => {
+    emitTrace(`[SingleFieldGraph] Error generating procedures CoT: ${error}`, {
+      category: "error",
+    });
+    throw error;
+  });
 
   emitTrace(
     `[SingleFieldGraph] Generated CoT for procedures field:
@@ -113,11 +205,23 @@ ${state.cot}`
   return { cot: state.cot };
 }
 
-function generateProceduresField(
+async function generateProceduresField(
   state: SingleFieldState
-): Pick<SingleFieldState, "case"> {
+): Promise<Pick<SingleFieldState, "case">> {
   emitTrace("[SingleFieldGraph] Generating procedures field...");
-  state.case.procedures = [];
+  state.case.procedures = await generateProceduresGateway(
+    state.diagnosis,
+    {
+      cot: state.cot,
+      symptoms: state.symptoms,
+    },
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+  ).catch((error) => {
+    emitTrace(`[SingleFieldGraph] Error generating procedures field: ${error}`, {
+      category: "error",
+    });
+    throw error;
+  });
 
   emitTrace(
     `[SingleFieldGraph] Generated procedures field:

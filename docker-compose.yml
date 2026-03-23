@@ -6,15 +6,20 @@ services:
     environment:
       - DEBUG=${DEBUG:-true}
       - PORT=${PORT:-3030}
-      - LLM_FORMAT=${LLM_FORMAT:-JSON}
+
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_PROVIDER=${LLM_PROVIDER:-ollama}
+      - LLM_MODEL=${LLM_MODEL:-llama3.1}
+      - LLM_URL=${LLM_URL:-http://ollama:11434}
+      - LLM_TEMPERATURE=${LLM_TEMPERATURE}
+
       - NATS_URL=${NATS_URL:-nats://nats:4222}
       - NATS_USER=${NATS_USER:-nats}
       - NATS_PASSWORD=${NATS_PASSWORD:-nats}
+
       - REDIS_URL=${REDIS_URL:-redis://redis:6379}
     depends_on:
-      - nats
       - ollama
-      - redis
     restart: unless-stopped
 
   ollama:
@@ -26,6 +31,8 @@ services:
       - ./pull-medical-llm.sh:/entrypoint.sh
     restart: unless-stopped
     entrypoint: ["/usr/bin/bash", "/entrypoint.sh"]
+    environment:
+      - MODEL_NAME=${LLM_MODEL:-llama3.1}
 
   nats:
     image: nats:2.12.1

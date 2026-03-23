@@ -13,17 +13,21 @@ function preloadAnamnesisCategoryDefaults(): AnamnesisCategory[] | undefined {
     "../data/anamnesisCategories.yml"
   );
 
-  const categoryObject = YAML.parse(fs.readFileSync(filepath, "utf-8")) as
-    | {
-        categories: AnamnesisCategory[];
-      }
-    | undefined;
+  const categoryObject = z
+    .object({
+      categories: z.array(AnamnesisCategorySchema),
+    })
+    .safeParse(YAML.parse(fs.readFileSync(filepath, "utf-8")));
+
+  if (!categoryObject.success) {
+    console.error("[Anamnesis] Failed to load default categories from YAML");
+    return undefined;
+  }
 
   console.info(
-    "[Anamnesis] Loaded default categories from YAML:",
-    categoryObject?.categories
+    `[Anamnesis] Loaded ${categoryObject.data.categories.length} default categories from YAML:`
   );
-  return categoryObject?.categories;
+  return categoryObject.data.categories;
 }
 
 export const AnamnesisCategoryDefaults: AnamnesisCategory[] | undefined =

@@ -10,7 +10,7 @@ export type LLMProvider = z.infer<typeof LLMProviderSchema>;
 const ConfigSchema = z.object({
   DEBUG: z.coerce.boolean().default(false),
   PORT: z.coerce.number().default(3030),
-  
+
   LLM_API_KEY: z.string().optional(),
   LLM_PROVIDER: LLMProviderSchema.default("ollama"),
   LLM_MODEL: z.string().default("llama3.1"),

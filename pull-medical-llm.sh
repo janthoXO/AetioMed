@@ -1,6 +1,6 @@
 #!/bin/bash
 
-MODEL="${MODEL_NAME:-hf.co/mradermacher/JSL-MedQwen-14b-reasoning-i1-GGUF:Q4_K_S}"
+MODEL="${MODEL_NAME:-llama3.1}"
 
 # Start Ollama in the background.
 /bin/ollama serve &

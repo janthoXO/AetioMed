@@ -1,38 +1,25 @@
 import { END, Send, START, StateGraph } from "@langchain/langgraph";
-import { registry } from "@langchain/langgraph/zod";
-import { GlobalStateSchema } from "../state.js";
+import { GlobalStateSchema } from "../../state.js";
 import z from "zod";
 import { InconsistencySchema } from "@/models/Inconsistency.js";
-import { generateAnamnesisOneShot } from "@/03aigateway/anamnesis.aigateway.js";
-import { generateChiefComplaintOneShot } from "@/03aigateway/chiefComplaint.aigateway.js";
-import { generateInconsistenciesOneShot } from "@/03aigateway/consistency.aigateway.js";
-import { generateProceduresOneShot } from "@/03aigateway/procedures.aigateway.js";
+import { generateAnamnesis } from "@/03aigateway/anamnesis.aigateway.js";
+import { generateChiefComplaint } from "@/03aigateway/chiefComplaint.aigateway.js";
+import { generateInconsistenciesFromOutline } from "@/03aigateway/consistency.aigateway.js";
+import { generateProcedures } from "@/03aigateway/procedures.aigateway.js";
 import { passthrough } from "@/02graphs/graph.utils.js";
 import { emitTrace } from "@/utils/tracing.js";
+import { generatePatient } from "@/03aigateway/patient.aigateway.js";
 
 const InconsistencyGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
   generationFlags: true,
   case: true,
-  symptoms: true,
   anamnesisCategories: true,
-})
-  .required({
-    case: true,
-  })
-  .extend({
-    case: GlobalStateSchema.shape.case.nonoptional().register(registry, {
-      reducer: {
-        fn: (prev, next) => ({
-          ...prev,
-          ...next,
-        }),
-      },
-    }),
-    refinementIterationsRemaining: z.number().default(2),
-    inconsistencies: z.array(InconsistencySchema).default([]),
-  });
+}).extend({
+  refinementIterationsRemaining: z.number().default(2),
+  inconsistencies: z.array(InconsistencySchema).default([]),
+});
 
 type InconsistencyGraphState = z.infer<typeof InconsistencyGraphStateSchema>;
 
@@ -40,12 +27,11 @@ async function generateInconsistencies(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "inconsistencies">> {
   emitTrace("[InconsistencyGraph] Starting generation of inconsistencies...");
-  state.inconsistencies = await generateInconsistenciesOneShot(
+  state.inconsistencies = await generateInconsistenciesFromOutline(
     state.case,
     state.diagnosis,
     state.generationFlags,
-    state.symptoms,
-    state.userInstructions
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
     emitTrace(
       `[InconsistencyGraph] Error generating inconsistencies: ${error}`,
@@ -60,27 +46,54 @@ async function generateInconsistencies(
   );
 
   emitTrace(
-    `[InconsistencyGraph] Successfully generated inconsistencies:\n${state.inconsistencies
-      .map((i) => `- ${i.field}: ${i.description}`)
-      .join("\n")}`
+    `[InconsistencyGraph] Successfully generated inconsistencies:
+${state.inconsistencies
+  .map((i) => `- ${i.field}: ${i.description}`)
+  .join("\n")}`
   );
 
   return { inconsistencies: state.inconsistencies };
+}
+
+async function refinePatient(
+  state: InconsistencyGraphState
+): Promise<Pick<InconsistencyGraphState, "case">> {
+  emitTrace(`[InconsistencyGraph] Starting refinement of patient fields...`);
+  state.case.patient = await generatePatient(
+    state.diagnosis,
+    {
+      case: state.case, // provide the case to allow refinement on "old" case data
+      inconsistencies: state.inconsistencies, //these should already be filtered by the send logic to fit only patient generation
+    },
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+  ).catch((error) => {
+    emitTrace(`[InconsistencyGraph] Error refining patient: ${error}`, {
+      category: "error",
+    });
+    throw error;
+  });
+
+  emitTrace(
+    `[InconsistencyGraph] Successfully refined patient:
+\`\`\`json
+${JSON.stringify(state.case.patient, null, 2)}
+\`\`\``
+  );
+
+  return { case: { patient: state.case.patient } };
 }
 
 async function refineChiefComplaint(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "case">> {
   emitTrace("[InconsistencyGraph] Starting refinement of chief complaint...");
-  state.case.chiefComplaint = await generateChiefComplaintOneShot(
+  state.case.chiefComplaint = await generateChiefComplaint(
     state.diagnosis,
-    state.symptoms,
     {
-      chiefComplaint: state.case.chiefComplaint,
-    }, // do not provide the case to avoid refinement on "old" case data
-    undefined, // CoT only needed for initial generation, not refinement
-    state.userInstructions,
-    state.inconsistencies //these should already be filtered by the send logic
+      case: state.case, // provide the case to allow refinement on "old" case data
+      inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
+    },
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining chief complaint: ${error}`, {
       category: "error",
@@ -89,7 +102,8 @@ async function refineChiefComplaint(
   });
 
   emitTrace(
-    `[InconsistencyGraph] Successfully refined chief complaint: ${state.case.chiefComplaint}`
+    `[InconsistencyGraph] Successfully refined chief complaint:
+${state.case.chiefComplaint}`
   );
 
   return {
@@ -103,16 +117,14 @@ async function refineAnamnesis(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "case">> {
   emitTrace("[InconsistencyGraph] Starting refinement of anamnesis...");
-  state.case.anamnesis = await generateAnamnesisOneShot(
+  state.case.anamnesis = await generateAnamnesis(
     state.diagnosis,
-    state.symptoms,
     {
-      anamnesis: state.case.anamnesis,
-    }, // do not provide the case to avoid refinement on "old" case data
-    undefined, // CoT only needed for initial generation, not refinement
-    state.userInstructions,
-    state.anamnesisCategories,
-    state.inconsistencies //these should already be filtered by the send logic
+      case: state.case, // provide the case to allow refinement on "old" case data
+      inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
+    },
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
+    state.anamnesisCategories
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining anamnesis: ${error}`, {
       category: "error",
@@ -121,7 +133,10 @@ async function refineAnamnesis(
   });
 
   emitTrace(
-    `[InconsistencyGraph] Successfully refined anamnesis: ${JSON.stringify(state.case.anamnesis, null, 2)}`
+    `[InconsistencyGraph] Successfully refined anamnesis:
+\`\`\`json
+${JSON.stringify(state.case.anamnesis, null, 2)}
+\`\`\``
   );
 
   return {
@@ -135,16 +150,13 @@ async function refineProcedures(
   state: InconsistencyGraphState
 ): Promise<Pick<InconsistencyGraphState, "case">> {
   emitTrace("[InconsistencyGraph] Starting refinement of procedures...");
-  state.case.procedures = await generateProceduresOneShot(
+  state.case.procedures = await generateProcedures(
     state.diagnosis,
-    state.symptoms,
     {
-      procedures: state.case.procedures,
-    }, // do not provide the case to avoid refinement on "old" case data
-    undefined, // CoT only needed for initial generation, not refinement
-    state.userInstructions,
-    undefined,
-    state.inconsistencies //these should already be filtered by the send logic
+      case: state.case, // provide the case to allow refinement on "old" case data
+      inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
+    },
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
     emitTrace(`[InconsistencyGraph] Error refining procedures: ${error}`, {
       category: "error",
@@ -153,7 +165,10 @@ async function refineProcedures(
   });
 
   emitTrace(
-    `[InconsistencyGraph] Successfully refined procedures: ${JSON.stringify(state.case.procedures, null, 2)}`
+    `[InconsistencyGraph] Successfully refined procedures:
+\`\`\`json
+${JSON.stringify(state.case.procedures, null, 2)}
+\`\`\``
   );
 
   return {
@@ -166,6 +181,7 @@ async function refineProcedures(
 export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
   .addNode("loop_entry", passthrough<InconsistencyGraphState>)
   .addNode("inconsistencies_generate", generateInconsistencies)
+  .addNode("patient_refine", refinePatient)
   .addNode("chief_complaint_refine", refineChiefComplaint)
   .addNode("anamnesis_refine", refineAnamnesis)
   .addNode("procedures_refine", refineProcedures)
@@ -194,7 +210,7 @@ export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
   .addEdge(START, "loop_entry")
   .addConditionalEdges(
     "loop_entry",
-    (state: InconsistencyGraphState) => {
+    (state) => {
       return state.refinementIterationsRemaining > 0 ? "continue" : "end";
     },
     {
@@ -211,38 +227,66 @@ export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
       }
 
       const sends: Send[] = [];
-      if (state.inconsistencies.some((i) => i.field === "chiefComplaint")) {
-        const filteredInconsistencies = state.inconsistencies.filter(
-          (i) => i.field === "chiefComplaint"
+      if (state.inconsistencies.some((i) => i.field === "patient")) {
+        sends.push(
+          new Send("patient_refine", {
+            ...state,
+            inconsistencies: state.inconsistencies.filter(
+              (i) => i.field === "patient"
+            ),
+            userInstructions: state.userInstructions
+              ? Object.entries(state.userInstructions).filter(
+                  ([key]) => key === "patient" || key === "general"
+                )
+              : undefined,
+          })
         );
+      }
+
+      if (state.inconsistencies.some((i) => i.field === "chiefComplaint")) {
         sends.push(
           new Send("chief_complaint_refine", {
             ...state,
-            inconsistencies: filteredInconsistencies,
+            inconsistencies: state.inconsistencies.filter(
+              (i) => i.field === "chiefComplaint"
+            ),
+            userInstructions: state.userInstructions
+              ? Object.entries(state.userInstructions).filter(
+                  ([key]) => key === "chiefComplaint" || key === "general"
+                )
+              : undefined,
           })
         );
       }
 
       if (state.inconsistencies.some((i) => i.field === "anamnesis")) {
-        const filteredInconsistencies = state.inconsistencies.filter(
-          (i) => i.field === "anamnesis"
-        );
         sends.push(
           new Send("anamnesis_refine", {
             ...state,
-            inconsistencies: filteredInconsistencies,
+            inconsistencies: state.inconsistencies.filter(
+              (i) => i.field === "anamnesis"
+            ),
+            userInstructions: state.userInstructions
+              ? Object.entries(state.userInstructions).filter(
+                  ([key]) => key === "anamnesis" || key === "general"
+                )
+              : undefined,
           })
         );
       }
 
       if (state.inconsistencies.some((i) => i.field === "procedures")) {
-        const filteredInconsistencies = state.inconsistencies.filter(
-          (i) => i.field === "procedures"
-        );
         sends.push(
           new Send("procedures_refine", {
             ...state,
-            inconsistencies: filteredInconsistencies,
+            inconsistencies: state.inconsistencies.filter(
+              (i) => i.field === "procedures"
+            ),
+            userInstructions: state.userInstructions
+              ? Object.entries(state.userInstructions).filter(
+                  ([key]) => key === "procedures" || key === "general"
+                )
+              : undefined,
           })
         );
       }
@@ -250,12 +294,14 @@ export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
       return sends;
     },
     [
+      "patient_refine",
       "chief_complaint_refine",
       "anamnesis_refine",
       "procedures_refine",
       "inconsistencies_none",
     ]
   )
+  .addEdge("patient_refine", "refinement_fan_in")
   .addEdge("chief_complaint_refine", "refinement_fan_in")
   .addEdge("anamnesis_refine", "refinement_fan_in")
   .addEdge("procedures_refine", "refinement_fan_in")

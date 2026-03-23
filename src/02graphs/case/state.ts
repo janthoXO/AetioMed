@@ -4,11 +4,13 @@ import { CaseSchema } from "@/models/Case.js";
 import { AnamnesisCategorySchema } from "@/models/Anamnesis.js";
 import { DiagnosisSchema } from "@/models/Diagnosis.js";
 import { SymptomSchema } from "@/models/Symptom.js";
+import { registry } from "@langchain/langgraph/zod";
+import { UserInstructionsSchema } from "@/models/UserInstructions.js";
 
 export const GraphInputSchema = z.object({
   diagnosis: DiagnosisSchema,
-  userInstructions: z.string().optional(),
-  generationFlags: z.array(GenerationFlagSchema),
+  userInstructions: UserInstructionsSchema.optional(),
+  generationFlags: z.array(GenerationFlagSchema).min(1),
   anamnesisCategories: z.array(AnamnesisCategorySchema).optional(),
 });
 
@@ -18,7 +20,14 @@ export const GlobalStateSchema = GraphInputSchema.extend({
   /**
    * Generated cases.
    */
-  case: CaseSchema.optional(),
+  case: CaseSchema.default({}).register(registry, {
+    reducer: {
+      fn: (prev, next) => ({
+        ...prev,
+        ...next,
+      }),
+    },
+  }),
 
   /**
    * Retrieved symptoms for the diagnosis.

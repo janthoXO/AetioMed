@@ -28,17 +28,19 @@ function preloadPredefinedDiagnoses(): Diagnosis[] | undefined {
     "../data/diseases_all.yml"
   );
 
-  const diseaseEntries = DiagnosisEntrySchema.array().safeParse(
-    yaml.parse(fs.readFileSync(filepath, "utf-8"))
-  );
+  const diseaseEntries = z
+    .array(DiagnosisEntrySchema.optional().catch(undefined))
+    .transform((entries) => entries.filter((e) => !!e))
+    .safeParse(yaml.parse(fs.readFileSync(filepath, "utf-8")));
 
   if (!diseaseEntries.success) {
-    console.error(
-      "[Diagnosis] Failed to load predefined diagnoses from YAML:",
-      diseaseEntries.error
-    );
+    console.error("[Diagnosis] Failed to load predefined diagnoses from YAML");
     return undefined;
   }
+
+  console.info(
+    `[Diagnosis] Loaded ${diseaseEntries.data.length} predefined diagnoses from YAML`
+  );
 
   return diseaseEntries.data.reduce((acc, entry) => {
     if (!entry.names || entry.names.length === 0) {

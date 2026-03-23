@@ -7,18 +7,213 @@ import {
 } from "@/models/Anamnesis.js";
 import type { Language } from "@/models/Language.js";
 import {
+  buildPrompt,
   getCreativeLLM,
   getDeterministicLLM,
   handleLangchainError,
 } from "@/utils/llm.js";
 import z from "zod";
-import type { Inconsistency } from "@/models/Inconsistency.js";
 import type { Diagnosis } from "@/models/Diagnosis.js";
-import type { Symptom } from "@/models/Symptom.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
-import type { Case } from "@/models/Case.js";
 import { emitTrace } from "@/utils/tracing.js";
+import type { Symptom } from "@/models/Symptom.js";
+import type { Case } from "@/models/Case.js";
+import type { Inconsistency } from "@/models/Inconsistency.js";
+
+export async function generateAnamnesisCoT(
+  diagnosis: Diagnosis,
+  symptoms: Symptom[],
+  userInstructions?: string,
+  anamnesisCategories:
+    | AnamnesisCategory[]
+    | undefined = AnamnesisCategoryDefaults
+): Promise<string> {
+  const systemPrompt = buildPrompt(
+    `You are an expert medical educator specializing in designing realistic clinical mock cases for medical students. 
+Your task is to generate a step-by-step logical reasoning process (Chain of Thought) detailing EXACTLY HOW to construct the Anamnesis (medical history)`,
+
+    `The following symptoms are typical for the diagnosis. You may use a subset of them:
+${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join("\n")}`,
+
+    `Instructions:
+1. The anamnesis data will be written from the perspective of the PATIENT filling out an intake form.
+2. DO NOT generate the actual anamnesis data yet. Only generate the thinking process which should be specific to the given diagnosis and a subset of symptoms.
+3. Outline a sequential thought process.
+4. Output ONLY the numbered reasoning steps, without any conversational filler.`
+  );
+
+  const userPrompt = buildPrompt(
+    `Target Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
+
+    userInstructions
+      ? `Additional Instructions: ${userInstructions}`
+      : undefined,
+
+    anamnesisCategories
+      ? `Required Intake Form Categories to fill: ${anamnesisCategories.join(", ")}`
+      : `Use standard patient intake categories (e.g., Current Symptoms, Past Illnesses, Family History, Lifestyle/Habits, Current Medications).`
+  );
+
+  console.debug(
+    `[GenerateAnamnesisCoT] Prompt:\n${systemPrompt}\n${userPrompt}`
+  );
+
+  try {
+    const stepsString: string = await retry(
+      async (attempt: number) => {
+        const text = await getDeterministicLLM({ outputFormat: "text" })
+          .invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(userPrompt),
+          ])
+          .catch((error) => {
+            handleLangchainError(error);
+          });
+        console.debug(
+          `[GenerateAnamnesisCoT] [Attempt ${attempt}] LLM raw Response:\n`,
+          text
+        );
+
+        return text.text;
+      },
+      2,
+      0,
+      (error, attempt) => {
+        emitTrace(
+          `[GenerateAnamnesisCoT] Attempt ${attempt} failed with error: ${error.message}`,
+          { category: "error" }
+        );
+      }
+    );
+
+    return stepsString;
+  } catch (error) {
+    console.error(`[GenerateAnamnesisCoT] Error:`, error);
+    throw error;
+  }
+}
+
+export async function generateAnamnesis(
+  diagnosis: Diagnosis, // provided by the user
+  config:
+    | {
+        cot: string;
+        symptoms: Symptom[];
+      }
+    | {
+        outline: string;
+      }
+    | {
+        case: Case;
+        inconsistencies: Inconsistency[];
+      },
+  userInstructions?: string, // provided by the user
+  anamnesisCategories:
+    | AnamnesisCategory[]
+    | undefined = AnamnesisCategoryDefaults // provided by the user
+): Promise<Anamnesis> {
+  const systemPrompt = buildPrompt(
+    `You are an AI generating data for a medical training simulator.
+Your current task is to generate the Anamnesis (medical history) ${"outline" in config ? "based on the provided Case Outline" : ""}.`,
+
+    "cot" in config
+      ? `The following symptoms are typical for the diagnosis. You may use a subset of them:
+      ${config.symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join("\n")}
+
+Think step by step:
+    ${config.cot}`
+      : undefined,
+
+    "outline" in config
+      ? `Generate the anamnesis from scratch based on the approved outline with the given categories.`
+      : undefined,
+
+    "inconsistencies" in config
+      ? `The previous JSON generation contained inconsistencies. Regenerate the JSON, fixing the following issues while maintaining the patient's voice:
+
+Original Anamnesis:
+${JSON.stringify({ anamnesis: config.case.anamnesis })}
+
+Inconsistencies to Fix:
+${config.inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.description}\n   Suggested Fix: ${i.suggestion}`).join("\n")}`
+      : undefined,
+
+    `Return ONLY a valid JSON object matching the requested categories.
+Schema:
+${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
+
+    `Requirements:
+- The text inside the JSON must be written from the perspective of the PATIENT filling out an intake form.
+- Use the patient's subjective voice, layman's terms, and personal tone (e.g., "My chest feels heavy" instead of "Patient presents with angina").
+- Adapt the tone to fit the patient's age and demographic as defined in the outline.
+- Return ONLY the JSON object, no additional text like prefix or suffix.`
+  );
+
+  const userPrompt = buildPrompt(
+    `Target Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
+
+    "outline" in config ? `Case Outline: ${config.outline}` : undefined,
+
+    anamnesisCategories
+      ? `Required Intake Form Categories to fill: ${anamnesisCategories.join(", ")}`
+      : `Use standard patient intake categories (e.g., Current Symptoms, Past Illnesses, Family History, Lifestyle/Habits, Current Medications).`,
+
+    userInstructions
+      ? `Additional Instructions: ${userInstructions}`
+      : undefined
+  );
+
+  console.debug(
+    `[GenerateAnamnesisFromOutline] Prompt:\n${systemPrompt}\n${userPrompt}`
+  );
+
+  // Initialize cases to empty in case of failure
+  try {
+    const AnamnesisSchemaWrapper = z.object({
+      anamnesis: AnamnesisSchema.describe("Generated anamnesis"),
+    });
+
+    const anamnesis: Anamnesis = await retry(
+      async (attempt: number, previousError?: Error) => {
+        const result = await getCreativeLLM()
+          .withStructuredOutput(AnamnesisSchemaWrapper)
+          .invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(
+              userPrompt +
+                (previousError
+                  ? `\nPrevious generation error: ${previousError.message}`
+                  : "")
+            ),
+          ])
+          .catch((error) => {
+            handleLangchainError(error);
+          });
+
+        console.debug(
+          `[GenerateAnamnesisFromOutline] [Attempt ${attempt}] LLM raw Response:\n`,
+          JSON.stringify(result)
+        );
+
+        return result.anamnesis;
+      },
+      2,
+      0,
+      (error, attempt) => {
+        emitTrace(
+          `[GenerateAnamnesisFromOutline] Attempt ${attempt} failed with error: ${error.message}`,
+          { category: "error" }
+        );
+      }
+    );
+
+    return anamnesis;
+  } catch (error) {
+    console.error(`[GenerateAnamnesisFromOutline] Error:`, error);
+    throw error;
+  }
+}
 
 /**
  * Translates anamnesis categories from a provided language to English, using a combination of repository lookups and LLM generation for missing translations.
@@ -140,176 +335,4 @@ ${userPrompt}`
   }
 
   return result;
-}
-
-export async function generateAnamnesisCoT(
-  diagnosis: Diagnosis,
-  symptoms: Symptom[],
-  relatedCase?: Case,
-  userInstructions?: string,
-  anamnesisCategories:
-    | AnamnesisCategory[]
-    | undefined = AnamnesisCategoryDefaults
-): Promise<string> {
-  const systemPrompt = `You are a patient with these symptoms: 
-${symptoms.map((s) => s.name).join(", ")}
-Generate a step by step reasoning process ${anamnesisCategories ? "to answer the provided anamnesis categories." : "to generate an anamnesis."}
-Return the steps as a list of steps in markdown format.
-${
-  relatedCase
-    ? `The patient case has the following properties which might be relevant for the anamnesis generation:
-  ${JSON.stringify(relatedCase)}`
-    : ""
-}`;
-
-  const userPrompt = [
-    `Provided Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
-    userInstructions
-      ? `Additional provided instructions: ${userInstructions}`
-      : "",
-    anamnesisCategories
-      ? `Provided anamnesis categories: ${anamnesisCategories.join(", ")}`
-      : "",
-  ]
-    .filter((s) => s.length > 0)
-    .join("\n");
-
-  console.debug(
-    `[GenerateAnamnesisCoT] Prompt:\n${systemPrompt}\n${userPrompt}`
-  );
-
-  try {
-    const stepsString: string = await retry(
-      async (attempt: number) => {
-        const text = await getDeterministicLLM({ outputFormat: "text" })
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
-          ])
-          .catch((error) => {
-            handleLangchainError(error);
-          });
-        console.debug(
-          `[GenerateAnamnesisCoT] [Attempt ${attempt}] LLM raw Response:\n`,
-          text
-        );
-
-        return text.text;
-      },
-      2,
-      0,
-      (error, attempt) => {
-        emitTrace(
-          `[GenerateAnamnesisCoT] Attempt ${attempt} failed with error: ${error.message}`,
-          { category: "error" }
-        );
-      }
-    );
-
-    return stepsString;
-  } catch (error) {
-    console.error(`[GenerateAnamnesisCoT] Error:`, error);
-    throw error;
-  }
-}
-
-export async function generateAnamnesisOneShot(
-  diagnosis: Diagnosis, // provided by the user
-  symptoms: Symptom[], // generate by a chain step
-  relatedCase?: Case, // generated by a previous chain step
-  cot?: string, // generated by a previous chain step
-  userInstructions?: string, // provided by the user
-  anamnesisCategories:
-    | AnamnesisCategory[]
-    | undefined = AnamnesisCategoryDefaults, // provided by the user
-  inconsistencies?: Inconsistency[] // generated by a previous chain step
-): Promise<Anamnesis> {
-  const { anamnesis: previousAnamnesis, ...caseWithoutAnamnesis } =
-    relatedCase ?? {};
-  const systemPrompt = `You are a patient with these symptoms: 
-${symptoms.map((s) => s.name).join(", ")}
-Generate an anamnesis ${anamnesisCategories ? "answering the provided categories based on your symptoms." : "answering standard anamnesis categories."}
-${cot ? `Think step by step:\n${cot}` : ""}
-${
-  Object.keys(caseWithoutAnamnesis).length > 0
-    ? `The patient case has the following properties which might be relevant for the anamnesis generation:
-  ${JSON.stringify(caseWithoutAnamnesis)}`
-    : ""
-}
-${
-  previousAnamnesis
-    ? `Try to fix the inconsistencies from the previous anamnesis generated:\n${JSON.stringify({ anamnesis: previousAnamnesis })}
-with inconsistencies:
-${inconsistencies
-  ?.map((i, idx) => {
-    return `${idx + 1}. severity ${i.severity}: ${i.description}
-suggested fix: ${i.suggestion}`;
-  })
-  .join("\n")}`
-    : ``
-}
-Return your response in JSON with the provided anamnesis categories
-${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}
-
-Requirements:
-- Be medically accurate and realistic
-- Use standard medical terminology
-- Return ONLY the JSON object, no additional text`;
-
-  const userPrompt = [
-    `Provided Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
-    userInstructions
-      ? `Additional provided instructions: ${userInstructions}`
-      : "",
-    anamnesisCategories
-      ? `Provided anamnesis categories: ${anamnesisCategories.join(", ")}`
-      : "",
-  ]
-    .filter((s) => s.length > 0)
-    .join("\n");
-
-  console.debug(
-    `[GenerateAnamnesisOneShot] Prompt:\n${systemPrompt}\n${userPrompt}`
-  );
-
-  // Initialize cases to empty in case of failure
-  try {
-    const AnamnesisSchemaWrapper = z.object({
-      anamnesis: AnamnesisSchema.describe("Generated anamnesis"),
-    });
-
-    const anamnesis: Anamnesis = await retry(
-      async (attempt: number) => {
-        const result = await getCreativeLLM()
-          .withStructuredOutput(AnamnesisSchemaWrapper)
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
-          ])
-          .catch((error) => {
-            handleLangchainError(error);
-          });
-
-        console.debug(
-          `[GenerateAnamnesisOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
-          JSON.stringify(result)
-        );
-
-        return result.anamnesis;
-      },
-      2,
-      0,
-      (error, attempt) => {
-        emitTrace(
-          `[GenerateAnamnesisOneShot] Attempt ${attempt} failed with error: ${error.message}`,
-          { category: "error" }
-        );
-      }
-    );
-
-    return anamnesis;
-  } catch (error) {
-    console.error(`[GenerateAnamnesisOneShot] Error:`, error);
-    throw error;
-  }
 }

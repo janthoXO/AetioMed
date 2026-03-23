@@ -1,6 +1,7 @@
 import z from "zod";
 
 export const GenerationFlagSchema = z.enum([
+  "patient",
   "chiefComplaint",
   "anamnesis",
   "procedures",

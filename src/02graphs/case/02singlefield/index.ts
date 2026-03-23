@@ -217,9 +217,12 @@ async function generateProceduresField(
     },
     state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
   ).catch((error) => {
-    emitTrace(`[SingleFieldGraph] Error generating procedures field: ${error}`, {
-      category: "error",
-    });
+    emitTrace(
+      `[SingleFieldGraph] Error generating procedures field: ${error}`,
+      {
+        category: "error",
+      }
+    );
     throw error;
   });
 

@@ -6,6 +6,7 @@ import {
   Activity,
   ScrollText,
   Trash2,
+  User,
 } from "lucide-react";
 import {
   Card,
@@ -44,6 +45,7 @@ export function CaseDetail({ medicalCase }: Props) {
   };
   const {
     diagnosis,
+    patient,
     createdAt,
     chiefComplaint,
     anamnesis,
@@ -92,7 +94,7 @@ export function CaseDetail({ medicalCase }: Props) {
                     View Generation Traces
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="flex flex-col p-6 max-h-[80vh] w-fit sm:max-w-[80vw]">
+                <DialogContent className="flex flex-col p-6 max-h-[80vh] w-fit sm:max-w-[80vw] lg:max-w-4xl">
                   <DialogHeader className="shrink-0">
                     <DialogTitle>Generation Traces</DialogTitle>
                     <DialogDescription>
@@ -119,6 +121,38 @@ export function CaseDetail({ medicalCase }: Props) {
       </div>
 
       <Separator />
+
+      {/* Patient */}
+      {patient && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-lg">
+              <User className="h-5 w-5 text-primary" />
+              Patient Details
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
+              <div>
+                <span className="text-muted-foreground block">Age</span>
+                <span className="font-medium">{patient.age} years</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block">Gender</span>
+                <span className="font-medium capitalize">{patient.gender}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block">Height</span>
+                <span className="font-medium">{patient.height} cm</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground block">Weight</span>
+                <span className="font-medium">{patient.weight} kg</span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Chief Complaint */}
       {chiefComplaint && (
@@ -200,16 +234,14 @@ export function CaseDetail({ medicalCase }: Props) {
         </Card>
       )}
 
-      {/* Empty state if nothing generated yet */}
-      {!chiefComplaint &&
-        (!anamnesis || anamnesis.length === 0) &&
-        (!procedures || procedures.length === 0) && (
-          <Card>
-            <CardContent className="py-8 text-center text-muted-foreground">
-              No generated content for this case yet.
-            </CardContent>
-          </Card>
-        )}
+      {/* Error Display */}
+      {medicalCase.error && (
+        <Card>
+          <CardContent className="py-8 text-center text-destructive">
+            Error generating case: {medicalCase.error}
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

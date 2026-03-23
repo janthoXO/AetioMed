@@ -44,6 +44,7 @@ router.post(
     const bodyResult = CaseGenerationRequestSchema.safeParse(req.body);
 
     if (!bodyResult.success) {
+      console.error("Invalid request body", req.body);
       res.status(400).json({
         error: {
           code: "INVALID_REQUEST_BODY",
@@ -55,7 +56,8 @@ router.post(
     }
 
     let { diagnosis } = bodyResult.data;
-    const { icd, context, generationFlags, language } = bodyResult.data;
+    const { icd, userInstructions, generationFlags, language } =
+      bodyResult.data;
 
     // fill diagnosis and icdCode - zod makes sure that at least one is filled
     if (!diagnosis) {
@@ -84,7 +86,7 @@ router.post(
             icd: icd,
           },
           generationFlags,
-          context,
+          userInstructions,
           language
         )
       );

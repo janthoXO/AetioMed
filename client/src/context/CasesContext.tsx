@@ -71,50 +71,49 @@ export function CasesProvider({ children }: { children: ReactNode }) {
     async (request: CaseGenerationRequest): Promise<string> => {
       const caseId = crypto.randomUUID();
 
-      try {
-        // 1. Create a placeholder case with input params
-        const placeholderCase: Case = {
-          id: caseId,
-          diagnosis: {
-            name: request.diagnosis,
-            icd: request.icd,
-          },
-          generationFlags: request.generationFlags,
-          language: request.language ?? config.language,
-        };
+      // 1. Create a placeholder case with input params
+      const placeholderCase: Case = {
+        id: caseId,
+        diagnosis: {
+          name: request.diagnosis,
+          icd: request.icd,
+        },
+        generationFlags: request.generationFlags,
+        language: request.language ?? config.language,
+      };
 
-        // 2. Add placeholder to context array immediately (shows skeleton in sidebar)
-        setCases((prev) => [placeholderCase, ...prev]);
+      // 2. Add placeholder to context array immediately (shows skeleton in sidebar)
+      setCases((prev) => [placeholderCase, ...prev]);
 
-        // 3. Send generation request
-        const response = await casesApi.generateCase({
+      // 3. Send generation request
+      const completedCase = await casesApi
+        .generateCase({
           ...request,
           requestId: caseId,
-        });
-
-        // 4. Merge response with placeholder and save to DB
-        const completedCase: Case = {
+        })
+        .then((res) =>
+          // 4. Merge response with placeholder and save to DB
+          ({
+            ...placeholderCase,
+            ...res,
+            createdAt: new Date(),
+          })
+        )
+        .catch((error) => ({
           ...placeholderCase,
           createdAt: new Date(),
-          chiefComplaint: response.chiefComplaint,
-          anamnesis: response.anamnesis,
-          procedures: response.procedures,
-        };
+          error: error instanceof Error ? error.message : "Unknown error",
+        }));
 
-        await db.cases.put(completedCase, completedCase.id);
-        const savedCase = { ...completedCase };
+      await db.cases.put(completedCase, completedCase.id);
+      const savedCase = { ...completedCase };
 
-        // Replace the placeholder matched by requestId with the saved case
-        setCases((prev) =>
-          prev.map((c) => (c.id === savedCase.id ? savedCase : c))
-        );
+      // Replace the placeholder matched by requestId with the saved case
+      setCases((prev) =>
+        prev.map((c) => (c.id === savedCase.id ? savedCase : c))
+      );
 
-        return savedCase.id;
-      } catch (error) {
-        setCases((prev) => prev.filter((c) => c.id !== caseId));
-        console.error("Error generating case:", error);
-        throw error;
-      }
+      return savedCase.id;
     },
     []
   );

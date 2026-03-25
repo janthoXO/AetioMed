@@ -18,7 +18,7 @@ const ConfigSchema = z.object({
   LLM_TEMPERATURE: z.coerce.number().min(0).max(1).default(0.7),
 
   // NATS
-  NATS_URL: z.string().default("nats://localhost:4222"),
+  NATS_URL: z.string().optional(),
   NATS_USER: z.string().default("nats"),
   NATS_PASSWORD: z.string().default("nats"),
 

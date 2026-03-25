@@ -3,7 +3,11 @@ import { startCaseGenerationConsumer } from "./cases.handler.js";
 
 export async function initNats() {
   try {
-    await connectNats();
+    const connected = await connectNats();
+    if (!connected) {
+      return;
+    }
+    
     // Start consumers (without awaiting the loop so initNats returns)
     // Actually startCaseGenerationConsumer has a 'for await' loop so it blocks!
     // We should run it in background.

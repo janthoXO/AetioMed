@@ -5,8 +5,15 @@ import { jetstream, type JetStreamClient } from "@nats-io/jetstream";
 let nc: NatsConnection | undefined;
 let js: JetStreamClient | undefined;
 
-export async function connectNats() {
-  if (nc) return;
+export async function connectNats(): Promise<boolean> {
+  if (nc) return true;
+
+  if (!config.NATS_URL) {
+    console.warn(
+      "[NATS] ⚠️ NATS_URL not configured. Skipping NATS connection."
+    );
+    return false;
+  }
 
   console.log(`[NATS] Connecting to ${config.NATS_URL}...`);
   nc = await connect({
@@ -17,6 +24,7 @@ export async function connectNats() {
   console.log(`[NATS] Connected to ${config.NATS_URL}`);
 
   js = jetstream(nc);
+  return true;
 }
 
 export function getJetStreamClient(): JetStreamClient {

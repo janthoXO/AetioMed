@@ -15,8 +15,8 @@ export type TraceEvent = z.infer<typeof TraceEventSchema>;
 
 const activeBuses = new Map<string, TraceBus>();
 
-export function getTraceBus(requestId: string): TraceBus | undefined {
-  return activeBuses.get(requestId);
+export function getTraceBus(traceId: string): TraceBus | undefined {
+  return activeBuses.get(traceId);
 }
 
 export const TraceUtilsSchema = z.object({

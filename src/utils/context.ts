@@ -14,14 +14,14 @@ export const requestContext = new AsyncLocalStorage<RequestContext>();
 
 export function runWithContext<T>(
   fn: () => T,
-  requestId?: string,
+  traceId?: string,
   llmConfig?: LLMConfig
 ): T {
   let traceUtils = undefined;
   let cleanup = undefined;
 
-  if (requestId) {
-    ({ traceUtils, cleanup } = setupTracing(requestId));
+  if (traceId) {
+    ({ traceUtils, cleanup } = setupTracing(traceId));
   }
 
   try {

@@ -89,7 +89,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
       const completedCase = await casesApi
         .generateCase({
           ...request,
-          requestId: caseId,
+          traceId: caseId,
         })
         .then((res) =>
           // 4. Merge response with placeholder and save to DB
@@ -108,7 +108,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
       await db.cases.put(completedCase, completedCase.id);
       const savedCase = { ...completedCase };
 
-      // Replace the placeholder matched by requestId with the saved case
+      // Replace the placeholder matched by traceId with the saved case
       setCases((prev) =>
         prev.map((c) => (c.id === savedCase.id ? savedCase : c))
       );

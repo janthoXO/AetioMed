@@ -3,7 +3,7 @@ import { config } from "./config.js";
 import { initNats, closeNats } from "./01nats/index.js";
 import { getRedisClient } from "./utils/redis.js";
 
-console.log("Environment variables loaded.", config);
+console.log("Environment variables loaded.", JSON.stringify(config, null, 2));
 
 // Initialize NATS
 initNats().catch(console.error);

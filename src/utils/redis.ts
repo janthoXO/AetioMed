@@ -9,14 +9,14 @@ export function getRedisClient(): Promise<RedisClientType | null> {
   }
 
   redisClientPromise = (async () => {
-    if (!config.REDIS_URL) {
+    if (!config.redis?.url) {
       console.log(
         "[Redis] REDIS_URL not configured. Traces will not be persisted."
       );
       return null;
     }
 
-    const client = createClient({ url: config.REDIS_URL });
+    const client = createClient({ url: config.redis?.url });
 
     await client.connect();
     console.log("[Redis] Connected to Redis successfully.");

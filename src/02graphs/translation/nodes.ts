@@ -1,4 +1,4 @@
-import { getLLM, parseStructuredResponse } from "@/utils/llm.js";
+import { getLLM } from "@/utils/llm.js";
 import { type GlobalState } from "./state.js";
 import { type AnamnesisCategory } from "@/models/Anamnesis.js";
 import { CaseJsonExampleString, CaseSchema } from "@/models/Case.js";
@@ -7,6 +7,8 @@ import { retry } from "@/utils/retry.js";
 import { GenerationError } from "@/errors/AppError.js";
 import { translateAnamnesisCategoriesFromEnglish } from "@/02services/anamnesis.service.js";
 import { translateProceduresFromEnglish } from "@/02services/procedures.service.js";
+import type { RequestContext } from "@/utils/context.js";
+import type { Runtime } from "@langchain/langgraph";
 
 type TranslateCaseOutput = Pick<GlobalState, "case">;
 
@@ -74,7 +76,8 @@ export async function translateProcedures(
 }
 
 export async function translateValues(
-  state: GlobalState
+  state: GlobalState,
+  runtime?: Runtime<RequestContext>
 ): Promise<TranslateCaseOutput> {
   console.debug(
     "[Translation: TranslateCase] Translating case to",
@@ -101,7 +104,7 @@ ${JSON.stringify(state.case)}`;
 
   try {
     // Direct LLM invoke (Chat Model)
-    const llm = getLLM();
+    const llm = getLLM(runtime?.context?.llmConfig);
     const messages = [
       new SystemMessage(systemPrompt),
       new HumanMessage(userPrompt),
@@ -114,14 +117,13 @@ ${JSON.stringify(state.case)}`;
           //   .withStructuredOutput(CaseSchemaWithLanguage(state.language))
           //   .invoke(messages);
 
-          const result = await llm.invoke(messages);
+          const result = await llm
+            .withStructuredOutput(CaseSchema)
+            .invoke(messages);
 
-          console.debug(
-            "[Translation: TranslateCase] LLM Response:",
-            result.text
-          );
+          console.debug("[Translation: TranslateCase] LLM Response:", result);
 
-          return parseStructuredResponse(result.text, CaseSchema);
+          return result;
         } catch {
           throw new GenerationError(
             `Failed to parse LLM response in JSON format`

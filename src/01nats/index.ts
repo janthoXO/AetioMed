@@ -7,7 +7,7 @@ export async function initNats() {
     if (!connected) {
       return;
     }
-    
+
     // Start consumers (without awaiting the loop so initNats returns)
     // Actually startCaseGenerationConsumer has a 'for await' loop so it blocks!
     // We should run it in background.

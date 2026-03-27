@@ -40,14 +40,14 @@ export function initRouter(): Promise<void> {
   const app = express();
 
   app.use(express.json());
-  if (config.DEBUG === true) {
+  if (config.debug === true) {
     app.use(cors());
     app.use(morgan("dev"));
   }
 
   app.use("/api", apiRouter);
-  app.listen(config.PORT, () => {
-    console.log(`[REST] Server is running on port ${config.PORT}`);
+  app.listen(config.port, () => {
+    console.log(`[REST] Server is running on port ${config.port}`);
   });
 
   return Promise.resolve();

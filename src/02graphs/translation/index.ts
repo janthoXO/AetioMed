@@ -7,12 +7,13 @@ import {
 } from "./nodes.js";
 import type { Case } from "@/models/Case.js";
 import type { Language } from "@/models/Language.js";
+import { getRequestContext, RequestContextSchema } from "@/utils/context.js";
 
 /**
  * Graph to translate a generated case
  */
 export function buildTranslationGraph() {
-  const graph = new StateGraph(GlobalStateSchema)
+  const graph = new StateGraph(GlobalStateSchema, RequestContextSchema)
     .addNode("translate_anamnesis_category", translateAnamnesisCategory)
     .addNode("translate_procedures", translateProcedures)
     .addNode("translate_values", translateValues)
@@ -34,11 +35,20 @@ export async function translateCase(
   }
 
   const graph = buildTranslationGraph();
+  const requestContext = getRequestContext();
 
-  const result = await graph.invoke({
-    case: caseToTranslate,
-    language: language,
-  });
+  const result = await graph.invoke(
+    {
+      case: caseToTranslate,
+      language: language,
+    },
+    {
+      context: {
+        llmConfig: requestContext?.llmConfig,
+        traceUtils: requestContext?.traceUtils,
+      },
+    }
+  );
 
   return result.case;
 }

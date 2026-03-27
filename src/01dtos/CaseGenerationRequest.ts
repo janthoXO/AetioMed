@@ -6,6 +6,8 @@ import { ICDCodeSchema } from "@/models/Diagnosis.js";
 import { LanguageSchema } from "@/models/Language.js";
 import { z } from "zod/v4";
 import { UserInstructionsSchema } from "@/models/UserInstructions.js";
+import { config } from "@/config.js";
+import { LLMConfigSchema } from "@/models/LLMConfig.js";
 
 export const CaseGenerationRequestSchema = z
   .object({
@@ -27,7 +29,10 @@ export const CaseGenerationRequestSchema = z
       .array(z.string())
       .optional()
       .describe("Categories of anamnesis to include in the case"),
-    requestId: z
+    llmConfig: LLMConfigSchema.optional().describe(
+      "Optional configuration for the LLM used in case generation"
+    ),
+    traceId: z
       .string()
       .optional()
       .describe("Optional unique ID to track generation progress via SSE"),
@@ -35,6 +40,14 @@ export const CaseGenerationRequestSchema = z
   .refine((data) => data.icd || data.diagnosis, {
     message: "Either 'icd' or 'diagnosis' must be provided",
     path: ["icd"],
+  })
+  .refine((data) => !(data.llmConfig && config.llm), {
+    message: "LLM config is not allowed when a global LLM is configured",
+    path: ["llmConfig"],
+  })
+  .refine((data) => data.llmConfig || config.llm, {
+    message: "LLM config is required when no global LLM is configured",
+    path: ["llmConfig"],
   });
 
 export type CaseGenerationRequest = z.infer<typeof CaseGenerationRequestSchema>;

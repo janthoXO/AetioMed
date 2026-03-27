@@ -3,7 +3,8 @@ import { GlobalStateSchema } from "../state.js";
 import z from "zod";
 import { SymptomsRelatedToDiseaseIcd } from "@/03repo/symptoms.repo.js";
 import { generateSymptomsOneShot } from "@/03aigateway/symptoms.aigateway.js";
-import { emitTrace } from "@/utils/tracing.js";
+import { RequestContextSchema, type RequestContext } from "@/utils/context.js";
+import type { Runtime } from "@langchain/langgraph";
 
 const SymptomsGraphStateSchema = GlobalStateSchema.pick({
   diagnosis: true,
@@ -14,19 +15,20 @@ const SymptomsGraphStateSchema = GlobalStateSchema.pick({
 type SymptomsGraphState = z.infer<typeof SymptomsGraphStateSchema>;
 
 function retrieveSymptomsUMLS(
-  state: SymptomsGraphState
+  state: SymptomsGraphState,
+  runtime?: Runtime<RequestContext>
 ): Pick<SymptomsGraphState, "symptoms"> {
   if (!state.diagnosis.icd) {
     return { symptoms: state.symptoms };
   }
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[SymptomsGraph] Retrieving symptoms from UMLS for ICD ${state.diagnosis.icd}...`
   );
 
   state.symptoms = SymptomsRelatedToDiseaseIcd(state.diagnosis.icd);
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[SymptomsGraph] Retrieved symptoms from UMLS:\n${
       state.symptoms.length > 0
         ? state.symptoms.map((s) => s.name).join(", ")
@@ -37,16 +39,20 @@ function retrieveSymptomsUMLS(
 }
 
 async function generateSymptoms(
-  state: SymptomsGraphState
+  state: SymptomsGraphState,
+  runtime?: Runtime<RequestContext>
 ): Promise<Pick<SymptomsGraphState, "symptoms">> {
-  emitTrace("[SymptomsGraph] Generating symptoms with LLM...");
+  runtime?.context?.traceUtils?.emitTrace(
+    "[SymptomsGraph] Generating symptoms with LLM..."
+  );
   state.symptoms = await generateSymptomsOneShot(
     state.diagnosis,
     state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
-    state.symptoms
+    state.symptoms,
+    runtime?.context
   );
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[SymptomsGraph] Generated symptoms with LLM:\n${state.symptoms
       .map((s) => s.name)
       .join(", ")}`
@@ -54,7 +60,10 @@ async function generateSymptoms(
   return { symptoms: state.symptoms };
 }
 
-export const symptomsGraph = new StateGraph(SymptomsGraphStateSchema)
+export const symptomsGraph = new StateGraph(
+  SymptomsGraphStateSchema,
+  RequestContextSchema
+)
   .addNode("symptoms_umls", retrieveSymptomsUMLS)
   .addNode("symptoms_generate", generateSymptoms)
 

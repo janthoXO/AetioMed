@@ -1,13 +1,6 @@
-import {
-  ChatOllama,
-  type ChatOllamaInput,
-  OllamaEmbeddings,
-} from "@langchain/ollama";
+import { ChatOllama, type ChatOllamaInput } from "@langchain/ollama";
 import { ChatGoogle, type ChatGoogleParams } from "@langchain/google";
-import { GoogleGenerativeAIEmbeddings } from "@langchain/google-genai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { EmbeddingsInterface } from "@langchain/core/embeddings";
-import { config as envConfig } from "@/config.js";
 import {
   JsonOutputParser,
   StructuredOutputParser,
@@ -18,38 +11,37 @@ import z from "zod";
 import { Ollama } from "ollama";
 import type { Message } from "@langchain/core/messages";
 import { jsonrepair } from "jsonrepair";
-
-type LLMConfig = {
-  temperature: number;
-  outputFormat?: "json" | "text";
-};
+import { LLMConfigSchema, type LLMConfig } from "@/models/LLMConfig.js";
+import { config } from "@/config.js";
 
 /**
  * Get an LLM instance based on current configuration.
  * Easily extendable to support cloud providers.
  */
-export function getLLM(llmConfig?: LLMConfig): BaseChatModel {
-  const temperature = llmConfig?.temperature ?? envConfig.LLM_TEMPERATURE;
+export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
+  const fullConfig = LLMConfigSchema.parse({ ...config.llm, ...llmConfig });
+
+  console.debug("LLM Configuration:", fullConfig);
 
   let chat: BaseChatModel;
-  switch (envConfig.LLM_PROVIDER) {
+  switch (fullConfig.provider) {
     case "ollama": {
       const ollamaConfig: ChatOllamaInput = {
-        model: envConfig.LLM_MODEL,
-        temperature,
+        model: fullConfig.model,
+        temperature: fullConfig.temperature,
       };
 
-      if (!llmConfig || llmConfig?.outputFormat === "json") {
+      if (!fullConfig || fullConfig?.outputFormat === "json") {
         ollamaConfig.format = "json";
       }
 
-      if (envConfig.LLM_URL) {
-        ollamaConfig.baseUrl = envConfig.LLM_URL;
+      if (fullConfig.url) {
+        ollamaConfig.baseUrl = fullConfig.url;
       }
 
-      if (envConfig.LLM_API_KEY) {
+      if (fullConfig.apiKey) {
         ollamaConfig.headers = {
-          Authorization: "Bearer " + envConfig.LLM_API_KEY,
+          Authorization: "Bearer " + fullConfig.apiKey,
         };
       }
 
@@ -57,44 +49,22 @@ export function getLLM(llmConfig?: LLMConfig): BaseChatModel {
       break;
     }
     case "google": {
-      if (!envConfig.LLM_API_KEY) {
+      if (!fullConfig.apiKey) {
         throw new ModelUnreachableError("Google API key is not configured");
       }
       const googleConfig: ChatGoogleParams = {
-        apiKey: envConfig.LLM_API_KEY,
-        model: envConfig.LLM_MODEL,
-        temperature,
+        apiKey: fullConfig.apiKey,
+        model: fullConfig.model,
+        temperature: fullConfig.temperature,
       };
       chat = new ChatGoogle(googleConfig);
       break;
     }
     default:
-      throw new Error(`Unsupported LLM Provider: ${envConfig.LLM_PROVIDER}`);
+      throw new Error(`Unsupported LLM Provider: ${fullConfig.provider}`);
   }
 
   return chat;
-}
-
-/**
- * Get an Embeddings instance based on current configuration.
- * Used for vector-based similarity search.
- */
-export function getEmbeddings(): EmbeddingsInterface {
-  switch (envConfig.LLM_PROVIDER) {
-    case "ollama": {
-      return new OllamaEmbeddings();
-    }
-    case "google": {
-      if (!envConfig.LLM_API_KEY) {
-        throw new ModelUnreachableError("Google API key is not configured");
-      }
-      return new GoogleGenerativeAIEmbeddings({
-        apiKey: envConfig.LLM_API_KEY,
-      });
-    }
-    default:
-      throw new Error(`Unsupported LLM Provider: ${envConfig.LLM_PROVIDER}`);
-  }
 }
 
 /**
@@ -104,14 +74,14 @@ export function buildPrompt(...parts: (string | undefined)[]): string {
   return parts.filter((s): s is string => !!s).join("\n");
 }
 
-export function getSearchTool() {
-  switch (envConfig.LLM_PROVIDER) {
+export function getSearchTool(llmConfig: LLMConfig) {
+  switch (llmConfig.provider) {
     case "ollama": {
       return tool(
         async ({ query }: { query: string }) => {
           return await new Ollama({
             headers: {
-              Authorization: "Bearer " + envConfig.LLM_API_KEY,
+              Authorization: "Bearer " + llmConfig.apiKey,
             },
           }).webSearch({ query: query });
         },
@@ -130,7 +100,7 @@ export function getSearchTool() {
       };
     }
     default:
-      throw new Error(`Unsupported LLM Provider: ${envConfig.LLM_PROVIDER}`);
+      throw new Error(`Unsupported LLM Provider: ${llmConfig.provider}`);
   }
 }
 
@@ -138,18 +108,18 @@ export function getSearchTool() {
  * Get a low-temperature LLM for deterministic tasks (consistency checks, etc.)
  */
 export function getDeterministicLLM(
-  config?: Omit<LLMConfig, "temperature">
+  config: Partial<Omit<LLMConfig, "temperature">> = {}
 ): BaseChatModel {
-  return getLLM({ temperature: 0.1, ...config });
+  return getLLM({ ...config, temperature: 0.1 });
 }
 
 /**
  * Get a creative LLM for generation tasks
  */
 export function getCreativeLLM(
-  config?: Omit<LLMConfig, "temperature">
+  config: Partial<Omit<LLMConfig, "temperature">> = {}
 ): BaseChatModel {
-  return getLLM({ temperature: 0.8, ...config });
+  return getLLM({ ...config, temperature: 0.8 });
 }
 
 /**

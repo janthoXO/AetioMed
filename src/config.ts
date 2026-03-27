@@ -1,35 +1,89 @@
 import dotenv from "dotenv";
 import z from "zod";
+import { LLMProviderSchema, type LLMConfig } from "./models/LLMConfig.js";
 
 dotenv.config();
 
-export const LLMProviderSchema = z.enum(["ollama", "google"]);
+const EnvSchema = z
+  .object({
+    DEBUG: z.coerce.boolean().default(false),
+    PORT: z.coerce.number().default(3030),
 
-export type LLMProvider = z.infer<typeof LLMProviderSchema>;
+    LLM_PROVIDER: LLMProviderSchema.optional(),
+    LLM_MODEL: z.string().optional(),
+    LLM_API_KEY: z.string().optional(),
+    LLM_URL: z.url().optional(),
+    LLM_TEMPERATURE: z.coerce.number().min(0).max(1).default(0.7),
 
-const ConfigSchema = z.object({
-  DEBUG: z.coerce.boolean().default(false),
-  PORT: z.coerce.number().default(3030),
+    // NATS
+    NATS_URL: z.url().optional(),
+    NATS_USER: z.string().default("nats"),
+    NATS_PASSWORD: z.string().default("nats"),
 
-  LLM_API_KEY: z.string().optional(),
-  LLM_PROVIDER: LLMProviderSchema.default("ollama"),
-  LLM_MODEL: z.string().default("llama3.1"),
-  LLM_URL: z.string().optional(),
-  LLM_TEMPERATURE: z.coerce.number().min(0).max(1).default(0.7),
+    // Redis
+    REDIS_URL: z.url().optional(),
+  })
+  .transform((env) => {
+    let transformedEnv: Config = {
+      port: env.PORT,
+      debug: env.DEBUG,
+    };
 
-  // NATS
-  NATS_URL: z.string().optional(),
-  NATS_USER: z.string().default("nats"),
-  NATS_PASSWORD: z.string().default("nats"),
+    if (env.LLM_PROVIDER && env.LLM_MODEL) {
+      transformedEnv = {
+        ...transformedEnv,
+        llm: {
+          provider: env.LLM_PROVIDER,
+          model: env.LLM_MODEL,
+          apiKey: env.LLM_API_KEY,
+          url: env.LLM_URL,
+          temperature: env.LLM_TEMPERATURE,
+          outputFormat: "json",
+        },
+      };
+    }
 
-  // Redis
-  REDIS_URL: z.string().optional(),
-});
+    if (env.NATS_URL) {
+      transformedEnv = {
+        ...transformedEnv,
+        nats: {
+          url: env.NATS_URL,
+          user: env.NATS_USER,
+          password: env.NATS_PASSWORD,
+        },
+      };
+    }
 
-export type Config = z.infer<typeof ConfigSchema>;
+    if (env.REDIS_URL) {
+      transformedEnv = {
+        ...transformedEnv,
+        redis: {
+          url: env.REDIS_URL,
+        },
+      };
+    }
 
-const parsed = ConfigSchema.safeParse(process.env);
+    return transformedEnv;
+  });
 
+export type Config = {
+  debug: boolean;
+  port: number;
+
+  llm?: LLMConfig;
+
+  nats?: {
+    url: string;
+    user: string;
+    password: string;
+  };
+
+  redis?: {
+    url: string;
+  };
+};
+
+const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
   console.error(
     "❌ Invalid environment variables:",
@@ -37,4 +91,5 @@ if (!parsed.success) {
   );
   process.exit(1);
 }
+
 export const config = parsed.data;

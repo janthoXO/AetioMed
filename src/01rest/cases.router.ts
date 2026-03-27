@@ -14,7 +14,8 @@ import {
   translateAnamnesisCategoriesFromEnglish,
   translateAnamnesisCategoriesToEnglish,
 } from "@/02services/anamnesis.service.js";
-import { getTraceBus, runWithTracing } from "@/utils/tracing.js";
+import { getTraceBus } from "@/utils/traceManager.js";
+import { runWithContext } from "@/utils/context.js";
 import { getRedisClient } from "@/utils/redis.js";
 
 const router = express.Router();
@@ -75,24 +76,26 @@ router.post(
       }
     }
 
-    const generationRequestId =
-      bodyResult.data.requestId || crypto.randomUUID();
+    const generationRequestId = bodyResult.data.traceId ?? crypto.randomUUID();
 
     try {
-      const caseData = await runWithTracing(generationRequestId, () =>
-        generateCase(
-          {
-            name: diagnosis!,
-            icd: icd,
-          },
-          generationFlags,
-          userInstructions,
-          language
-        )
+      const caseData = await runWithContext(
+        () =>
+          generateCase(
+            {
+              name: diagnosis!,
+              icd: icd,
+            },
+            generationFlags,
+            userInstructions,
+            language
+          ),
+        generationRequestId,
+        bodyResult.data.llmConfig
       );
       const response = CaseGenerationResponseSchema.parse({
         ...caseData,
-        requestId: generationRequestId,
+        traceId: generationRequestId,
       });
 
       /* #swagger.responses[200] = {

@@ -13,6 +13,10 @@ import { symptomsGraph } from "./01symptom/index.js";
 import { singleFieldGraph } from "./02singlefield/index.js";
 import { multiFieldGraph } from "./02multifield/index.js";
 import type { UserInstructions } from "@/models/UserInstructions.js";
+import {
+  getRequiredRequestContext,
+  RequestContextSchema,
+} from "@/utils/context.js";
 
 /**
  * Build and compile the Council-Consistency-Refinement graph
@@ -20,6 +24,7 @@ import type { UserInstructions } from "@/models/UserInstructions.js";
 export function buildCaseGraph() {
   // Create the state graph with our annotation schema
   const graph = new StateGraph(GlobalStateSchema, {
+    context: RequestContextSchema,
     input: GraphInputSchema,
   })
     .addNode("symptom_phase", symptomsGraph)
@@ -77,12 +82,17 @@ export async function generateCase(
     )
   );
 
-  const result = await graph.invoke({
-    diagnosis: diagnosis,
-    generationFlags: generationFlags,
-    userInstructions: userInstructions,
-    anamnesisCategories: anamnesisCategories,
-  });
+  const { llmConfig, traceUtils } = getRequiredRequestContext();
+
+  const result = await graph.invoke(
+    {
+      diagnosis: diagnosis,
+      generationFlags: generationFlags,
+      userInstructions: userInstructions,
+      anamnesisCategories: anamnesisCategories,
+    },
+    { context: { llmConfig, traceUtils } }
+  );
 
   console.log(
     "[CaseParallelGraph] Generation complete",

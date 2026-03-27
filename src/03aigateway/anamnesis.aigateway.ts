@@ -16,7 +16,7 @@ import z from "zod";
 import type { Diagnosis } from "@/models/Diagnosis.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
-import { emitTrace } from "@/utils/tracing.js";
+import type { RequestContext } from "@/utils/context.js";
 import type { Symptom } from "@/models/Symptom.js";
 import type { Case } from "@/models/Case.js";
 import type { Inconsistency } from "@/models/Inconsistency.js";
@@ -27,7 +27,8 @@ export async function generateAnamnesisCoT(
   userInstructions?: string,
   anamnesisCategories:
     | AnamnesisCategory[]
-    | undefined = AnamnesisCategoryDefaults
+    | undefined = AnamnesisCategoryDefaults,
+  context?: RequestContext
 ): Promise<string> {
   const systemPrompt = buildPrompt(
     `You are an expert medical educator specializing in designing realistic clinical mock cases for medical students. 
@@ -56,13 +57,16 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
   );
 
   console.debug(
-    `[GenerateAnamnesisCoT] Prompt:\n${systemPrompt}\n${userPrompt}`
+    `[GenerateAnamnesisCoT] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   try {
     const stepsString: string = await retry(
       async (attempt: number) => {
-        const text = await getDeterministicLLM({ outputFormat: "text" })
+        const text = await getDeterministicLLM({
+          ...context?.llmConfig,
+          outputFormat: "text",
+        })
           .invoke([
             new SystemMessage(systemPrompt),
             new HumanMessage(userPrompt),
@@ -72,7 +76,7 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
           });
         console.debug(
           `[GenerateAnamnesisCoT] [Attempt ${attempt}] LLM raw Response:\n`,
-          text
+          text.text
         );
 
         return text.text;
@@ -80,10 +84,9 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
       2,
       0,
       (error, attempt) => {
-        emitTrace(
-          `[GenerateAnamnesisCoT] Attempt ${attempt} failed with error: ${error.message}`,
-          { category: "error" }
-        );
+        const msg = `[GenerateAnamnesisCoT] Attempt ${attempt} failed with error: ${error.message}`;
+        console.error(msg);
+        context?.traceUtils?.emitTrace(msg, { category: "error" });
       }
     );
 
@@ -111,7 +114,8 @@ export async function generateAnamnesis(
   userInstructions?: string, // provided by the user
   anamnesisCategories:
     | AnamnesisCategory[]
-    | undefined = AnamnesisCategoryDefaults // provided by the user
+    | undefined = AnamnesisCategoryDefaults, // provided by the user
+  context?: RequestContext
 ): Promise<Anamnesis> {
   const systemPrompt = buildPrompt(
     `You are an AI generating data for a medical training simulator.
@@ -165,7 +169,7 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
   );
 
   console.debug(
-    `[GenerateAnamnesisFromOutline] Prompt:\n${systemPrompt}\n${userPrompt}`
+    `[GenerateAnamnesisFromOutline] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   // Initialize cases to empty in case of failure
@@ -176,7 +180,7 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
 
     const anamnesis: Anamnesis = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM()
+        const result = await getCreativeLLM(context?.llmConfig)
           .withStructuredOutput(AnamnesisSchemaWrapper)
           .invoke([
             new SystemMessage(systemPrompt),
@@ -193,7 +197,7 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
 
         console.debug(
           `[GenerateAnamnesisFromOutline] [Attempt ${attempt}] LLM raw Response:\n`,
-          JSON.stringify(result)
+          JSON.stringify(result, null, 2)
         );
 
         return result.anamnesis;
@@ -201,10 +205,9 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
       2,
       0,
       (error, attempt) => {
-        emitTrace(
-          `[GenerateAnamnesisFromOutline] Attempt ${attempt} failed with error: ${error.message}`,
-          { category: "error" }
-        );
+        const msg = `[GenerateAnamnesisFromOutline] Attempt ${attempt} failed with error: ${error.message}`;
+        console.error(msg);
+        context?.traceUtils?.emitTrace(msg, { category: "error" });
       }
     );
 
@@ -223,7 +226,8 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
  */
 export async function generateAnamnesisCategoriesToEnglish(
   categories: AnamnesisCategory[],
-  language: Language
+  language: Language,
+  context?: RequestContext
 ): Promise<Record<AnamnesisCategory, AnamnesisCategory>> {
   const systemPrompt = `Translate the provided anamnesis categories from the provided language to English:
 
@@ -239,9 +243,7 @@ Categories to translate:
 ${categories.join("\n")}`;
 
   console.debug(
-    `[Anamnesis Service] Generating anamnesis category translations with prompt: 
-${systemPrompt}
-${userPrompt}`
+    `[GenerateAnamnesisCategoriesToEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   const prompt = [
@@ -249,11 +251,10 @@ ${userPrompt}`
     { role: "user", content: userPrompt },
   ];
 
-  const response = await getDeterministicLLM().invoke(prompt);
+  const response = await getDeterministicLLM(context?.llmConfig).invoke(prompt);
 
   console.debug(
-    "[Anamnesis Service] Generated anamnesis category translations:",
-    response.text
+    `[GenerateAnamnesisCategoriesToEnglish] Generated anamnesis category translations:\n${response.text}`
   );
 
   const responseSchema = z.record(z.string(), z.string());
@@ -284,7 +285,8 @@ ${userPrompt}`
  */
 export async function generateAnamnesisCategoriesFromEnglish(
   categories: AnamnesisCategory[],
-  language: Language
+  language: Language,
+  context?: RequestContext
 ): Promise<Record<AnamnesisCategory, AnamnesisCategory>> {
   const systemPrompt = `Translate the provided anamnesis categories from English to a target language:
 
@@ -300,9 +302,7 @@ Categories to translate:
 ${categories.join("\n")}`;
 
   console.debug(
-    `[Anamnesis Service] Generating anamnesis category translations with prompt: 
-${systemPrompt}
-${userPrompt}`
+    `[GenerateAnamnesisCategoriesFromEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   const prompt = [
@@ -310,11 +310,10 @@ ${userPrompt}`
     { role: "user", content: userPrompt },
   ];
 
-  const response = await getDeterministicLLM().invoke(prompt);
+  const response = await getDeterministicLLM(context?.llmConfig).invoke(prompt);
 
   console.debug(
-    "[Anamnesis Service] Generated anamnesis category translations:",
-    response.text
+    `[GenerateAnamnesisCategoriesFromEnglish] Generated anamnesis category translations:\n${response.text}`
   );
 
   const responseSchema = z.record(z.string(), z.string());

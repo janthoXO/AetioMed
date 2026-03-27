@@ -8,20 +8,20 @@ let js: JetStreamClient | undefined;
 export async function connectNats(): Promise<boolean> {
   if (nc) return true;
 
-  if (!config.NATS_URL) {
+  if (!config.nats?.url) {
     console.warn(
       "[NATS] ⚠️ NATS_URL not configured. Skipping NATS connection."
     );
     return false;
   }
 
-  console.log(`[NATS] Connecting to ${config.NATS_URL}...`);
+  console.log(`[NATS] Connecting to ${config.nats?.url}...`);
   nc = await connect({
-    servers: config.NATS_URL,
-    user: config.NATS_USER,
-    pass: config.NATS_PASSWORD,
+    servers: config.nats?.url,
+    user: config.nats?.user,
+    pass: config.nats?.password,
   });
-  console.log(`[NATS] Connected to ${config.NATS_URL}`);
+  console.log(`[NATS] Connected to ${config.nats?.url}`);
 
   js = jetstream(nc);
   return true;

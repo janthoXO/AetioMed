@@ -5,6 +5,7 @@ import {
   saveProcedureTranslation,
 } from "@/03repo/procedures.repo.js";
 import { generateProceduresFromEnglish } from "@/03aigateway/procedures.aigateway.js";
+import { getRequiredRequestContext } from "@/utils/context.js";
 
 export async function translateProceduresFromEnglish(
   procedures: Procedure[],
@@ -28,7 +29,8 @@ export async function translateProceduresFromEnglish(
   if (failedTranslations.length > 0) {
     const englishProcedures = await generateProceduresFromEnglish(
       failedTranslations.map((t) => t.procedure),
-      language
+      language,
+      getRequiredRequestContext()
     );
 
     for (const { index, procedure } of failedTranslations) {

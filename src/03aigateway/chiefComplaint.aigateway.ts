@@ -13,14 +13,15 @@ import {
   ChiefComplaintJsonSchema,
   type ChiefComplaint,
 } from "@/models/ChiefComplaint.js";
-import { emitTrace } from "@/utils/tracing.js";
+import type { RequestContext } from "@/utils/context.js";
 import type { Case } from "@/models/Case.js";
 import type { Inconsistency } from "@/models/Inconsistency.js";
 
 export async function generateChiefComplaintCoT(
   diagnosis: Diagnosis,
   symptoms: Symptom[],
-  userInstructions?: string
+  userInstructions?: string,
+  context?: RequestContext
 ): Promise<string> {
   const systemPrompt = buildPrompt(
     `You are an expert medical educator specializing in designing realistic clinical mock cases for medical students. 
@@ -45,13 +46,16 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
   );
 
   console.debug(
-    `[GenerateChiefComplaintCoT] Prompt:\n${systemPrompt}\n${userPrompt}`
+    `[GenerateChiefComplaintCoT] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   try {
     const stepsString: string = await retry(
       async (attempt: number) => {
-        const text = await getDeterministicLLM({ outputFormat: "text" })
+        const text = await getDeterministicLLM({
+          ...context?.llmConfig,
+          outputFormat: "text",
+        })
           .invoke([
             new SystemMessage(systemPrompt),
             new HumanMessage(userPrompt),
@@ -61,7 +65,7 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
           });
         console.debug(
           `[GenerateChiefComplaintCoT] [Attempt ${attempt}] LLM raw Response:\n`,
-          text
+          text.text
         );
 
         return text.text;
@@ -69,10 +73,9 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
       2,
       0,
       (error, attempt) => {
-        emitTrace(
-          `[GenerateChiefComplaintCoT] Attempt ${attempt} failed with error: ${error.message}`,
-          { category: "error" }
-        );
+        const msg = `[GenerateChiefComplaintCoT] Attempt ${attempt} failed with error: ${error.message}`;
+        console.error(msg);
+        context?.traceUtils?.emitTrace(msg, { category: "error" });
       }
     );
 
@@ -97,7 +100,8 @@ export async function generateChiefComplaint(
         case: Case;
         inconsistencies: Inconsistency[];
       },
-  userInstructions?: string // provided by the user
+  userInstructions?: string, // provided by the user | undefined
+  context?: RequestContext
 ): Promise<ChiefComplaint> {
   const systemPrompt = buildPrompt(
     `You are an expert attending physician documenting a patient's presentation for a medical training simulator.
@@ -147,14 +151,14 @@ ${JSON.stringify(ChiefComplaintJsonExample())}`,
   );
 
   console.debug(
-    `[GenerateChiefComplaintFromOutline] Prompt:\n${systemPrompt}\n${userPrompt}`
+    `[GenerateChiefComplaintFromOutline] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   // Initialize cases to empty in case of failure
   try {
     const chiefComplaint: ChiefComplaint = await retry(
       async (attempt: number) => {
-        const result = await getCreativeLLM()
+        const result = await getCreativeLLM(context?.llmConfig)
           .withStructuredOutput(ChiefComplaintJsonSchema)
           .invoke([
             new SystemMessage(systemPrompt),
@@ -165,7 +169,7 @@ ${JSON.stringify(ChiefComplaintJsonExample())}`,
           });
         console.debug(
           `[GenerateChiefComplaintFromOutline] [Attempt ${attempt}] LLM raw Response:\n`,
-          JSON.stringify(result)
+          JSON.stringify(result, null, 2)
         );
 
         return result.chiefComplaint;
@@ -173,10 +177,9 @@ ${JSON.stringify(ChiefComplaintJsonExample())}`,
       2,
       0,
       (error, attempt) => {
-        emitTrace(
-          `[GenerateChiefComplaintFromOutline] Attempt ${attempt} failed with error: ${error.message}`,
-          { category: "error" }
-        );
+        const msg = `[GenerateChiefComplaintFromOutline] Attempt ${attempt} failed with error: ${error.message}`;
+        console.error(msg);
+        context?.traceUtils?.emitTrace(msg, { category: "error" });
       }
     );
 

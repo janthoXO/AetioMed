@@ -6,7 +6,7 @@ import z from "zod";
 export class TraceBus extends EventEmitter {}
 
 export interface TraceContextPayload {
-  requestId: string;
+  traceId: string;
   bus: TraceBus;
 }
 
@@ -23,14 +23,14 @@ export const traceContext = new AsyncLocalStorage<TraceContextPayload>();
 
 const activeBuses = new Map<string, TraceBus>();
 
-export function runWithTracing<T>(requestId: string, fn: () => T): T {
+export function runWithTracing<T>(traceId: string, fn: () => T): T {
   const bus = new TraceBus();
-  activeBuses.set(requestId, bus);
+  activeBuses.set(traceId, bus);
 
   const cleanup = () => {
     // Wait a bit before cleaning up to ensure all events are sent
     setTimeout(() => {
-      activeBuses.delete(requestId);
+      activeBuses.delete(traceId);
       bus.removeAllListeners();
     }, 10000);
   };
@@ -39,7 +39,7 @@ export function runWithTracing<T>(requestId: string, fn: () => T): T {
     getRedisClient()
       .then((redis) => {
         if (redis) {
-          const key = `traces:${requestId}`;
+          const key = `traces:${traceId}`;
           const serializedTrace = JSON.stringify(traceEvent);
           redis
             .rPush(key, serializedTrace)
@@ -55,7 +55,7 @@ export function runWithTracing<T>(requestId: string, fn: () => T): T {
   bus.on("trace", persistTrace);
 
   try {
-    const result = traceContext.run({ requestId, bus }, fn);
+    const result = traceContext.run({ traceId: traceId, bus }, fn);
     if (result instanceof Promise) {
       result.finally(cleanup);
     } else {
@@ -68,8 +68,8 @@ export function runWithTracing<T>(requestId: string, fn: () => T): T {
   }
 }
 
-export function getTraceBus(requestId: string): TraceBus | undefined {
-  return activeBuses.get(requestId);
+export function getTraceBus(traceId: string): TraceBus | undefined {
+  return activeBuses.get(traceId);
 }
 
 export function emitTrace(

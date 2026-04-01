@@ -1,4 +1,5 @@
 import type { GenerationFlag } from "../../models/GenerationFlags";
+import type { LLMConfig } from "../../models/Case";
 
 export type CaseGenerationRequest = {
   icd?: string;
@@ -6,5 +7,6 @@ export type CaseGenerationRequest = {
   context?: Record<GenerationFlag & "general", string>;
   generationFlags: GenerationFlag[];
   language?: string;
-  requestId?: string;
+  traceId?: string;
+  llmConfig?: LLMConfig;
 };

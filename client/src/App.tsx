@@ -3,8 +3,9 @@ import { CasesProvider } from "@/context/CasesContext";
 import Layout from "@/pages/Layout";
 import HomePage from "@/pages/HomePage";
 import CaseDetailPage from "@/pages/CaseDetailPage";
-import { GeneratingCaseView } from "@/pages/GeneratingCaseView";
 import { ThemeProvider } from "./context/ThemeProvider";
+import RunResultPage from "@/pages/RunResultPage";
+import RunTracesPage from "./pages/RunTracesPage";
 
 function App() {
   return (
@@ -15,8 +16,12 @@ function App() {
             <Route index element={<HomePage />} />
             <Route path="cases/:caseId" element={<CaseDetailPage />} />
             <Route
-              path="cases/:caseId/generating"
-              element={<GeneratingCaseView />}
+              path="cases/:caseId/runs/:runId"
+              element={<RunResultPage />}
+            />
+            <Route
+              path="cases/:caseId/runs/:runId/traces"
+              element={<RunTracesPage />}
             />
           </Route>
         </Routes>

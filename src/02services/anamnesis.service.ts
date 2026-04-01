@@ -1,3 +1,5 @@
+import { getRequiredRequestContext } from "@/utils/context.js";
+
 import { type AnamnesisCategory } from "@/models/Anamnesis.js";
 import type { Language } from "@/models/Language.js";
 import {
@@ -32,7 +34,8 @@ export async function translateAnamnesisCategoriesToEnglish(
   if (failedTranslations.length > 0) {
     const generatedTranslations = await generateAnamnesisCategoriesToEnglish(
       failedTranslations,
-      language
+      language,
+      getRequiredRequestContext()
     );
 
     Object.assign(translations, generatedTranslations);
@@ -73,7 +76,8 @@ export async function translateAnamnesisCategoriesFromEnglish(
   if (failedTranslations.length > 0) {
     const generatedTranslations = await generateAnamnesisCategoriesFromEnglish(
       failedTranslations,
-      language
+      language,
+      getRequiredRequestContext()
     );
 
     Object.assign(translations, generatedTranslations);

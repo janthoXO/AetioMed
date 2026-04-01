@@ -5,15 +5,36 @@ import type { GenerationFlag } from "./GenerationFlags";
 import { type Procedure } from "./Procedure";
 import { type Patient } from "./Patient";
 
-export type Case = {
-  id: string;
-  diagnosis: Diagnosis;
-  createdAt?: Date;
+export type BackendCase = {
   patient?: Patient;
   chiefComplaint?: ChiefComplaint;
   anamnesis?: Anamnesis[];
   procedures?: Procedure[];
+};
+
+export type LLMProvider = "ollama" | "google";
+
+export type LLMConfig = {
+  provider: LLMProvider;
+  model: string;
+  apiKey?: string;
+  url?: string;
+};
+
+export type CaseRun = {
+  runId: number;
+  llmConfig?: LLMConfig;
+  status: "generating" | "complete" | "error";
+  error?: string;
+  traceId?: string;
+  caseId: number;
+} & BackendCase;
+
+export type Case = {
+  id: number;
+  diagnosis: Diagnosis;
+  createdAt: Date;
   generationFlags: GenerationFlag[];
   language: string;
-  error?: string;
+  runs: CaseRun[];
 };

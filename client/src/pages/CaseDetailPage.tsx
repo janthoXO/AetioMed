@@ -16,7 +16,7 @@ export default function CaseDetailPage() {
     );
   }
 
-  const medicalCase = caseId ? getCase(caseId) : undefined;
+  const medicalCase = getCase(Number(caseId));
 
   if (!medicalCase) {
     return (

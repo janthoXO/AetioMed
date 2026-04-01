@@ -1,20 +1,6 @@
-import {
-  Calendar,
-  Tag,
-  Stethoscope,
-  ClipboardList,
-  Activity,
-  ScrollText,
-  Trash2,
-  User,
-} from "lucide-react";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { useState } from "react";
+import { Calendar, Tag, Trash2, Plus } from "lucide-react";
+
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Button } from "@/components/ui/button";
@@ -24,34 +10,44 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
+  DialogFooter,
 } from "@/components/ui/dialog";
 import type { Case } from "@/models/Case";
-import { TraceViewer } from "./TraceViewer";
+import { RunDetail } from "./RunDetail";
 import { useCases } from "@/hooks/useCases";
+import { useFeatures } from "@/hooks/useFeatures";
 import { useNavigate } from "react-router-dom";
+import { LLMConfigForm } from "./LLMConfigForm";
+import { useLLMConfig } from "@/hooks/useLLMConfig";
 
 type Props = {
   medicalCase: Case;
 };
 
+const MAX_COMPARISON_RUNS = 3;
+
 export function CaseDetail({ medicalCase }: Props) {
   const { deleteCase } = useCases();
+  const { hasCustomLLM } = useFeatures();
   const navigate = useNavigate();
+  const [modalOpen, setModalOpen] = useState(false);
+  const [caseToDelete, setCaseToDelete] = useState<number | null>(null);
 
-  const handleDelete = async () => {
-    await deleteCase(medicalCase.id);
-    navigate("/");
+  const handleDelete = () => {
+    setCaseToDelete(medicalCase.id!);
   };
-  const {
-    diagnosis,
-    patient,
-    createdAt,
-    chiefComplaint,
-    anamnesis,
-    procedures,
-    generationFlags,
-  } = medicalCase;
+
+  const confirmDelete = async () => {
+    if (caseToDelete === null) return;
+    await deleteCase(caseToDelete);
+    navigate("/");
+    setCaseToDelete(null);
+  };
+
+  const { diagnosis, createdAt, generationFlags, runs = [] } = medicalCase;
+
+  // We only show + add run if we have custom LLM enabled, and we aren't at the limit
+  const canAddRun = hasCustomLLM && runs.length < MAX_COMPARISON_RUNS;
 
   return (
     <div className="space-y-6">
@@ -63,7 +59,7 @@ export function CaseDetail({ medicalCase }: Props) {
           </h1>
           {diagnosis.icd && (
             <Badge variant="secondary" className="text-sm">
-              <Tag className="h-3 w-3" />
+              <Tag className="h-3 w-3 mr-1" />
               {diagnosis.icd}
             </Badge>
           )}
@@ -82,30 +78,13 @@ export function CaseDetail({ medicalCase }: Props) {
         <div className="flex items-center gap-2 text-sm text-muted-foreground flex-wrap justify-between">
           <div className="flex items-center gap-2">
             <Calendar className="h-4 w-4" />
-            <span>{(createdAt ?? new Date()).toLocaleString()}</span>
+            <span>
+              {(createdAt ? new Date(createdAt) : new Date()).toLocaleString()}
+            </span>
           </div>
 
-          {medicalCase.createdAt && (
+          {createdAt && (
             <div className="flex gap-2 items-center">
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8">
-                    <ScrollText className="mr-2 h-4 w-4" />
-                    View Generation Traces
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="flex flex-col p-6 max-h-[80vh] w-fit sm:max-w-[80vw] lg:max-w-4xl">
-                  <DialogHeader className="shrink-0">
-                    <DialogTitle>Generation Traces</DialogTitle>
-                    <DialogDescription>
-                      Execution logs for {diagnosis.name}
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="flex-1 overflow-auto pt-4 flex flex-col w-full">
-                    <TraceViewer caseId={medicalCase.id} isCompleted={true} />
-                  </div>
-                </DialogContent>
-              </Dialog>
               <Button
                 variant="destructive"
                 size="sm"
@@ -122,126 +101,134 @@ export function CaseDetail({ medicalCase }: Props) {
 
       <Separator />
 
-      {/* Patient */}
-      {patient && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <User className="h-5 w-5 text-primary" />
-              Patient Details
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-              <div>
-                <span className="text-muted-foreground block">Age</span>
-                <span className="font-medium">{patient.age} years</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block">Gender</span>
-                <span className="font-medium capitalize">{patient.gender}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block">Height</span>
-                <span className="font-medium">{patient.height} cm</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground block">Weight</span>
-                <span className="font-medium">{patient.weight} kg</span>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      {/* Grid of Runs */}
+      <div className="flex flex-row overflow-x-auto gap-4 min-h-[50vh]">
+        {runs.map((run, idx) => (
+          <RunDetail key={run.runId} run={run} index={idx} />
+        ))}
 
-      {/* Chief Complaint */}
-      {chiefComplaint && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Stethoscope className="h-5 w-5 text-primary" />
-              Chief Complaint
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm leading-relaxed">{chiefComplaint}</p>
-          </CardContent>
-        </Card>
-      )}
+        {canAddRun && (
+          <div
+            className="min-w-87.5 max-w-200 flex flex-col justify-center items-center border-2 border-dashed rounded-xl p-8 hover:bg-muted/50 cursor-pointer transition-colors"
+            onClick={() => setModalOpen(true)}
+          >
+            <Plus className="h-10 w-10 text-muted-foreground mb-4" />
+            <p className="text-muted-foreground font-medium">
+              Add Comparison Run
+            </p>
+            <p className="text-xs text-muted-foreground mt-2 text-center max-w-50">
+              Generate another variation with different LLM configurations.
+            </p>
+          </div>
+        )}
+      </div>
 
-      {/* Anamnesis */}
-      {anamnesis && anamnesis.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <ClipboardList className="h-5 w-5 text-primary" />
-              Anamnesis
-            </CardTitle>
-            <CardDescription>
-              {anamnesis.length} {anamnesis.length === 1 ? "entry" : "entries"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {anamnesis.map((entry, index) => (
-                <div key={index} className="space-y-1">
-                  <h4 className="text-sm font-semibold text-foreground">
-                    {entry.category}
-                  </h4>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    {entry.answer}
-                  </p>
-                  {index < anamnesis.length - 1 && (
-                    <Separator className="mt-3" />
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
+      <AddRunModal
+        open={modalOpen}
+        onOpenChange={setModalOpen}
+        medicalCase={medicalCase}
+      />
 
-      {/* Procedures */}
-      {procedures && procedures.length > 0 && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-lg">
-              <Activity className="h-5 w-5 text-primary" />
-              Procedures
-            </CardTitle>
-            <CardDescription>
-              {procedures.length}{" "}
-              {procedures.length === 1 ? "procedure" : "procedures"}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {procedures.map((proc, index) => (
-                <div key={index} className="space-y-1">
-                  <h4 className="text-sm font-semibold text-foreground">
-                    {proc.name}
-                  </h4>
-                  <p className="text-sm text-muted-foreground leading-relaxed">
-                    {proc.relevance}
-                  </p>
-                  {index < procedures.length - 1 && (
-                    <Separator className="mt-3" />
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      {/* Error Display */}
-      {medicalCase.error && (
-        <Card>
-          <CardContent className="py-8 text-center text-destructive">
-            Error generating case: {medicalCase.error}
-          </CardContent>
-        </Card>
-      )}
+      <Dialog
+        open={caseToDelete !== null}
+        onOpenChange={(open) => !open && setCaseToDelete(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Case</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this case? This action cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCaseToDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+// Very similar to GenerateCaseModal but tied to an existing case specification
+function AddRunModal({
+  open,
+  onOpenChange,
+  medicalCase,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  medicalCase: Case;
+}) {
+  const { addRunToCase } = useCases();
+  const llmConfigState = useLLMConfig("");
+
+  const resetForm = () => {
+    llmConfigState.reset();
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!llmConfigState.model.trim()) return;
+
+    const request = {
+      diagnosis: medicalCase.diagnosis.name,
+      icd: medicalCase.diagnosis.icd,
+      generationFlags: medicalCase.generationFlags,
+      language: medicalCase.language,
+    };
+
+    const llmConfig = llmConfigState.getLLMConfig();
+
+    resetForm();
+    onOpenChange(false);
+
+    try {
+      await addRunToCase(medicalCase.id!, request, llmConfig);
+    } catch (error) {
+      console.error("Addition failed:", error);
+    }
+  };
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(val) => {
+        onOpenChange(val);
+        if (!val) resetForm();
+      }}
+    >
+      <DialogContent className="sm:max-w-106.25">
+        <DialogHeader>
+          <DialogTitle>Add Comparison Run</DialogTitle>
+          <DialogDescription>
+            Specify a new LLM configuration to run alongside the existing
+            generations.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit} className="space-y-4 pt-4">
+          <div className="space-y-4">
+            <LLMConfigForm config={llmConfigState} />
+          </div>
+          <DialogFooter className="mt-6">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={!llmConfigState.model.trim()}>
+              Start Run
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
   );
 }

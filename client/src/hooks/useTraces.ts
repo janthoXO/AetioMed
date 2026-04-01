@@ -2,17 +2,23 @@ import { useEffect, useState } from "react";
 import { fetchTraceHistory, createTraceEventSource } from "@/api/traces.api";
 import type { TraceEvent } from "@/models/TraceEvent";
 
-export function useTraces(caseId: string, isCompleted: boolean) {
+export function useTraces(traceId: string | undefined, isCompleted: boolean) {
   const [traces, setTraces] = useState<TraceEvent[]>([]);
   const [warning, setWarning] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [reconnectTrigger, setReconnectTrigger] = useState(0);
+
+  const reconnect = () => setReconnectTrigger((prev) => prev + 1);
 
   useEffect(() => {
+    if (!traceId) return;
+
     let eventSource: EventSource | null = null;
     let isMounted = true;
 
     async function loadTraces() {
       try {
-        const result = await fetchTraceHistory(caseId);
+        const result = await fetchTraceHistory(traceId!);
         if (!isMounted) return;
 
         if (result.warning) {
@@ -23,11 +29,12 @@ export function useTraces(caseId: string, isCompleted: boolean) {
         }
       } catch (err) {
         console.error("Failed to fetch trace history", err);
+        if (isMounted) setError("Failed to fetch trace history.");
       }
 
       if (isCompleted || !isMounted) return;
 
-      eventSource = createTraceEventSource(caseId);
+      eventSource = createTraceEventSource(traceId!);
 
       eventSource.addEventListener("trace", (event) => {
         try {
@@ -44,6 +51,9 @@ export function useTraces(caseId: string, isCompleted: boolean) {
 
       eventSource.onerror = (err) => {
         console.error("EventSource failed:", err);
+        if (isMounted) {
+          setError("Connection to trace stream lost.");
+        }
         eventSource?.close();
       };
     }
@@ -56,7 +66,7 @@ export function useTraces(caseId: string, isCompleted: boolean) {
         eventSource.close();
       }
     };
-  }, [caseId, isCompleted]);
+  }, [traceId, isCompleted, reconnectTrigger]);
 
-  return { traces, warning };
+  return { traces, warning, error, reconnect };
 }

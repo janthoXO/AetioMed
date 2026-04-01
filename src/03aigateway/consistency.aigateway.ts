@@ -14,13 +14,14 @@ import type { Symptom } from "@/models/Symptom.js";
 import { retry } from "@/utils/retry.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import type { GenerationFlag } from "@/models/GenerationFlags.js";
-import { emitTrace } from "@/utils/tracing.js";
+import type { RequestContext } from "@/utils/context.js";
 
 export async function generateInconsistenciesFromOutline(
   caseToCheck: Case,
   diagnosis: Diagnosis,
   generationFlags: GenerationFlag[],
-  userInstructions?: string
+  userInstructions?: string,
+  context?: RequestContext
 ): Promise<Inconsistency[]> {
   const systemPrompt = buildPrompt(
     `You are an expert Medical Quality Assurance Reviewer evaluating a generated clinical mock case for a medical training simulator. Your task is to identify clinical, logical, or pedagogical inconsistencies across the generated fields.`,
@@ -57,13 +58,13 @@ ${JSON.stringify({ inconsistencies: [] })} `,
   );
 
   console.debug(
-    `[Consistency: GenerateInconsistencies] Prompt:\n${systemPrompt}\n${userPrompt}`
+    `[Consistency: GenerateInconsistencies] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   try {
     const parsedInconsistencies: Inconsistency[] = await retry(
       async (attempt: number) => {
-        const result = await getDeterministicLLM()
+        const result = await getDeterministicLLM(context?.llmConfig)
           .withStructuredOutput(InconsistencyArrayJsonFormatZod)
           .invoke([
             new SystemMessage(systemPrompt),
@@ -75,7 +76,7 @@ ${JSON.stringify({ inconsistencies: [] })} `,
 
         console.debug(
           `[GenerateInconsistenciesOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
-          JSON.stringify(result)
+          JSON.stringify(result, null, 2)
         );
 
         return result.inconsistencies;
@@ -83,10 +84,9 @@ ${JSON.stringify({ inconsistencies: [] })} `,
       2,
       0,
       (error, attempt) => {
-        emitTrace(
-          `[GenerateInconsistenciesOneShot] Attempt ${attempt} failed with error: ${error.message}`,
-          { category: "error" }
-        );
+        const msg = `[GenerateInconsistenciesOneShot] Attempt ${attempt} failed with error: ${error.message}`;
+        console.error(msg);
+        context?.traceUtils?.emitTrace(msg, { category: "error" });
       }
     );
 
@@ -107,7 +107,8 @@ export async function generateInconsistenciesOneShot(
   diagnosis: Diagnosis,
   generationFlags: GenerationFlag[],
   symptoms: Symptom[] = [],
-  userInstructions?: string
+  userInstructions?: string,
+  context?: RequestContext
 ): Promise<Inconsistency[]> {
   const systemPrompt = `You are a medical quality assurance expert validating a patient case for educational use with a provided diagnosis and additional user instructions.
 
@@ -144,13 +145,13 @@ Requirements:
     .join("\n");
 
   console.debug(
-    `[Consistency: GenerateInconsistencies] Prompt:\n${systemPrompt}\n${userPrompt}`
+    `[Consistency: GenerateInconsistencies] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   try {
     const parsedInconsistencies: Inconsistency[] = await retry(
       async (attempt: number) => {
-        const result = await getDeterministicLLM()
+        const result = await getDeterministicLLM(context?.llmConfig)
           .withStructuredOutput(InconsistencyArrayJsonFormatZod)
           .invoke([
             new SystemMessage(systemPrompt),
@@ -162,7 +163,7 @@ Requirements:
 
         console.debug(
           `[GenerateInconsistenciesOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
-          JSON.stringify(result)
+          JSON.stringify(result, null, 2)
         );
 
         return result.inconsistencies;
@@ -170,10 +171,9 @@ Requirements:
       2,
       0,
       (error, attempt) => {
-        emitTrace(
-          `[GenerateInconsistenciesOneShot] Attempt ${attempt} failed with error: ${error.message}`,
-          { category: "error" }
-        );
+        const msg = `[GenerateInconsistenciesOneShot] Attempt ${attempt} failed with error: ${error.message}`;
+        console.error(msg);
+        context?.traceUtils?.emitTrace(msg, { category: "error" });
       }
     );
 

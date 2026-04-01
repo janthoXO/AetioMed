@@ -6,18 +6,29 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Case } from "@/models/Case";
+import type { BackendCase, Case, CaseRun, LLMConfig } from "@/models/Case";
 import type { CaseGenerationRequest } from "@/api/dto/case-generation-request";
 import { config } from "@/config";
 import { db } from "@/db/db";
+import { toast } from "sonner";
 import * as casesApi from "@/api/cases.api";
 
 export type CasesContextType = {
   cases: Case[];
   isLoading: boolean;
-  generateCase: (request: CaseGenerationRequest) => Promise<string>;
-  getCase: (id: string) => Case | undefined;
-  deleteCase: (id: string) => Promise<void>;
+  generateCase: (
+    request: CaseGenerationRequest,
+    llmConfig?: LLMConfig
+  ) => Promise<number>;
+  addRunToCase: (
+    caseId: number,
+    request: CaseGenerationRequest,
+    llmConfig?: LLMConfig
+  ) => Promise<void>;
+  retryRun: (caseId: number, runId: number) => Promise<void>;
+  getCase: (id: number) => Case | undefined;
+  getRun: (caseId: number, runId: number) => CaseRun | undefined;
+  deleteCase: (id: number) => Promise<void>;
 };
 
 export const CasesContext = createContext<CasesContextType | null>(null);
@@ -26,108 +37,247 @@ export function CasesProvider({ children }: { children: ReactNode }) {
   const [cases, setCases] = useState<Case[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load cases on mount: try server first, fallback to IndexedDB
+  // Load cases on mount
   useEffect(() => {
-    async function loadCases() {
+    const loadCases = async () => {
+      setIsLoading(true);
       try {
-        const serverCases = await casesApi.fetchCases();
-
-        if (serverCases && serverCases.length > 0) {
-          // Upsert server cases into IndexedDB
-          await db.cases.bulkPut(serverCases);
-
-          const now = new Date();
-          setCases(
-            serverCases.sort(
-              (a, b) =>
-                new Date(b.createdAt ?? now).getTime() -
-                new Date(a.createdAt ?? now).getTime()
-            )
-          );
-        } else {
-          // Fallback to IndexedDB
-          const localCases = await db.cases
-            .orderBy("createdAt")
-            .reverse()
-            .toArray();
-          setCases(localCases);
-        }
-      } catch {
-        // On any error, fallback to IndexedDB
         const localCases = await db.cases
           .orderBy("createdAt")
           .reverse()
           .toArray();
-        setCases(localCases);
+        const localRuns = await db.runs.toArray();
+
+        const mappedCases = localCases.map((c) => ({
+          ...c,
+          runs: localRuns.filter((r) => r.caseId === c.id),
+        }));
+
+        setCases(mappedCases);
+      } catch (error) {
+        console.error("Failed to load cases from DB:", error);
+        toast.error("Failed to load local database", {
+          description:
+            "IndexedDB might be blocked or unsupported in your browser.",
+        });
       } finally {
         setIsLoading(false);
       }
-    }
+    };
 
     loadCases();
   }, []);
 
-  const generateCase = useCallback(
-    async (request: CaseGenerationRequest): Promise<string> => {
-      const caseId = crypto.randomUUID();
+  const addRunToCase = useCallback(
+    async (
+      caseId: number,
+      request: CaseGenerationRequest,
+      llmConfig?: LLMConfig
+    ): Promise<void> => {
+      const traceId = crypto.randomUUID(); // still use string for tracing
+      const runId = await db.runs.add({
+        caseId,
+        llmConfig,
+        status: "generating",
+        traceId,
+      });
 
-      // 1. Create a placeholder case with input params
-      const placeholderCase: Case = {
-        id: caseId,
-        diagnosis: {
-          name: request.diagnosis,
-          icd: request.icd,
-        },
-        generationFlags: request.generationFlags,
-        language: request.language ?? config.language,
+      const placeholderRun: CaseRun = {
+        runId,
+        caseId,
+        llmConfig,
+        status: "generating",
+        traceId,
       };
 
-      // 2. Add placeholder to context array immediately (shows skeleton in sidebar)
-      setCases((prev) => [placeholderCase, ...prev]);
-
-      // 3. Send generation request
-      const completedCase = await casesApi
-        .generateCase({
-          ...request,
-          requestId: caseId,
-        })
-        .then((res) =>
-          // 4. Merge response with placeholder and save to DB
-          ({
-            ...placeholderCase,
-            ...res,
-            createdAt: new Date(),
-          })
-        )
-        .catch((error) => ({
-          ...placeholderCase,
-          createdAt: new Date(),
-          error: error instanceof Error ? error.message : "Unknown error",
-        }));
-
-      await db.cases.put(completedCase, completedCase.id);
-      const savedCase = { ...completedCase };
-
-      // Replace the placeholder matched by requestId with the saved case
       setCases((prev) =>
-        prev.map((c) => (c.id === savedCase.id ? savedCase : c))
+        prev.map((c) =>
+          c.id === caseId ? { ...c, runs: [...c.runs, placeholderRun] } : c
+        )
       );
 
-      return savedCase.id;
+      let completedRun: CaseRun;
+      try {
+        const res = (await casesApi.generateCase({
+          ...request,
+          llmConfig,
+          traceId,
+        })) as BackendCase;
+
+        completedRun = {
+          runId,
+          caseId,
+          llmConfig,
+          status: "complete",
+          traceId,
+          patient: res.patient,
+          chiefComplaint: res.chiefComplaint,
+          anamnesis: res.anamnesis,
+          procedures: res.procedures,
+        };
+      } catch (error) {
+        completedRun = {
+          runId,
+          caseId,
+          llmConfig,
+          status: "error",
+          traceId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+
+      await db.runs.put({ ...completedRun, caseId });
+
+      setCases((prev) =>
+        prev.map((c) =>
+          c.id === caseId
+            ? {
+                ...c,
+                runs: c.runs.map((r) => (r.runId === runId ? completedRun : r)),
+              }
+            : c
+        )
+      );
     },
     []
   );
 
+  const generateCase = useCallback(
+    async (
+      request: CaseGenerationRequest,
+      llmConfig?: LLMConfig
+    ): Promise<number> => {
+      const insertionCase = {
+        diagnosis: {
+          name: request.diagnosis,
+          icd: request.icd,
+        },
+        createdAt: new Date(),
+        generationFlags: request.generationFlags,
+        language: request.language ?? config.language,
+      };
+
+      // 1. create the Case in the db (without runs) to get autoincremented id
+      const id = await db.cases.add(insertionCase);
+      const createdCase: Case = { ...insertionCase, id, runs: [] };
+
+      setCases((prev) => [createdCase, ...prev]);
+
+      // 2. add the first run to it async
+      addRunToCase(id, request, llmConfig);
+
+      return id;
+    },
+    [addRunToCase]
+  );
+
+  const retryRun = useCallback(
+    async (caseId: number, runId: number): Promise<void> => {
+      const existingCase = cases.find((c) => c.id === caseId);
+      if (!existingCase) return;
+      const existingRun = existingCase.runs.find((r) => r.runId === runId);
+      if (!existingRun) return;
+
+      const request: CaseGenerationRequest = {
+        diagnosis: existingCase.diagnosis.name,
+        icd: existingCase.diagnosis.icd,
+        generationFlags: existingCase.generationFlags,
+        language: existingCase.language,
+      };
+
+      const traceId = crypto.randomUUID();
+      const placeholderRun: CaseRun = {
+        runId,
+        caseId,
+        llmConfig: existingRun.llmConfig,
+        status: "generating",
+        traceId,
+      };
+
+      await db.runs.put({ ...placeholderRun, caseId });
+
+      setCases((prev) =>
+        prev.map((c) =>
+          c.id === caseId
+            ? {
+                ...c,
+                runs: c.runs.map((r) =>
+                  r.runId === runId ? placeholderRun : r
+                ),
+              }
+            : c
+        )
+      );
+
+      let completedRun: CaseRun;
+      try {
+        const res = (await casesApi.generateCase({
+          ...request,
+          llmConfig: existingRun.llmConfig,
+          traceId,
+        })) as BackendCase;
+
+        completedRun = {
+          runId,
+          caseId,
+          llmConfig: existingRun.llmConfig,
+          status: "complete",
+          traceId,
+          patient: res.patient,
+          chiefComplaint: res.chiefComplaint,
+          anamnesis: res.anamnesis,
+          procedures: res.procedures,
+        };
+      } catch (error) {
+        completedRun = {
+          runId,
+          caseId,
+          llmConfig: existingRun.llmConfig,
+          status: "error",
+          traceId,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+
+      await db.runs.put({ ...completedRun, caseId });
+
+      setCases((prev) =>
+        prev.map((c) =>
+          c.id === caseId
+            ? {
+                ...c,
+                runs: c.runs.map((r) => (r.runId === runId ? completedRun : r)),
+              }
+            : c
+        )
+      );
+    },
+    [cases]
+  );
+
   const getCase = useCallback(
-    (id: string) => {
+    (id: number) => {
       return cases.find((c) => c.id === id);
     },
     [cases]
   );
 
-  const deleteCase = useCallback(async (id: string) => {
+  const getRun = useCallback(
+    (caseId: number, runId: number) => {
+      return cases
+        .find((c) => c.id === caseId)
+        ?.runs.find((r) => r.runId === runId);
+    },
+    [cases]
+  );
+
+  const deleteCase = useCallback(async (id: number) => {
     try {
-      await db.cases.delete(id);
+      await db.transaction("rw", db.cases, db.runs, async () => {
+        await db.cases.delete(id);
+        const runsToDelete = await db.runs.where({ caseId: id }).primaryKeys();
+        await db.runs.bulkDelete(runsToDelete);
+      });
       setCases((prev) => prev.filter((c) => c.id !== id));
     } catch (error) {
       console.error("Error deleting case:", error);
@@ -137,7 +287,16 @@ export function CasesProvider({ children }: { children: ReactNode }) {
 
   return (
     <CasesContext.Provider
-      value={{ cases, isLoading, generateCase, getCase, deleteCase }}
+      value={{
+        cases,
+        isLoading,
+        generateCase,
+        addRunToCase,
+        retryRun,
+        getCase,
+        getRun,
+        deleteCase,
+      }}
     >
       {children}
     </CasesContext.Provider>

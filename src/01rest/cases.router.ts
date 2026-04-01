@@ -14,7 +14,8 @@ import {
   translateAnamnesisCategoriesFromEnglish,
   translateAnamnesisCategoriesToEnglish,
 } from "@/02services/anamnesis.service.js";
-import { getTraceBus, runWithTracing } from "@/utils/tracing.js";
+import { getTraceBus } from "@/utils/traceManager.js";
+import { runWithContext } from "@/utils/context.js";
 import { getRedisClient } from "@/utils/redis.js";
 
 const router = express.Router();
@@ -75,24 +76,26 @@ router.post(
       }
     }
 
-    const generationRequestId =
-      bodyResult.data.requestId || crypto.randomUUID();
+    const traceId = bodyResult.data.traceId ?? crypto.randomUUID();
 
     try {
-      const caseData = await runWithTracing(generationRequestId, () =>
-        generateCase(
-          {
-            name: diagnosis!,
-            icd: icd,
-          },
-          generationFlags,
-          userInstructions,
-          language
-        )
+      const caseData = await runWithContext(
+        () =>
+          generateCase(
+            {
+              name: diagnosis!,
+              icd: icd,
+            },
+            generationFlags,
+            userInstructions,
+            language
+          ),
+        traceId,
+        bodyResult.data.llmConfig
       );
       const response = CaseGenerationResponseSchema.parse({
         ...caseData,
-        requestId: generationRequestId,
+        traceId: traceId,
       });
 
       /* #swagger.responses[200] = {
@@ -157,15 +160,15 @@ router.get("/anamnesis/translate", async (req, res) => {
   }
 });
 
-router.get("/:requestId/traces/stream", (req, res) => {
-  const { requestId } = req.params;
+router.get("/traces/:traceId/stream", (req, res) => {
+  const { traceId } = req.params;
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
   res.flushHeaders(); // flush the headers to establish SSE
 
-  const bus = getTraceBus(requestId);
+  const bus = getTraceBus(traceId);
 
   if (!bus) {
     // If bus not found (maybe finished or invalid), just close the stream
@@ -189,8 +192,8 @@ router.get("/:requestId/traces/stream", (req, res) => {
   });
 });
 
-router.get("/:requestId/traces", async (req, res) => {
-  const { requestId } = req.params;
+router.get("/traces/:traceId", async (req, res) => {
+  const { traceId } = req.params;
   const redis = await getRedisClient();
 
   if (!redis) {
@@ -204,12 +207,12 @@ router.get("/:requestId/traces", async (req, res) => {
   }
 
   try {
-    const key = `traces:${requestId}`;
+    const key = `traces:${traceId}`;
     const rawTraces = await redis.lRange(key, 0, -1);
     const traces = rawTraces.map((t) => JSON.parse(t));
     res.status(200).json({ traces });
   } catch (err) {
-    console.error(`[Redis] Failed to fetch traces for ${requestId}`, err);
+    console.error(`[Redis] Failed to fetch traces for ${traceId}`, err);
     res.status(500).json({
       error: {
         code: "INTERNAL_SERVER_ERROR",

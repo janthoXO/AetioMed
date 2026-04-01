@@ -23,6 +23,7 @@ import { useCases } from "@/hooks/useCases";
 import { useFeatures } from "@/hooks/useFeatures";
 import type { GenerationFlag } from "@/models/GenerationFlags";
 import { ICDCodePattern } from "@/models/Diagnosis";
+import type { LLMConfig, LLMProvider } from "@/models/Case";
 
 const GENERATION_FLAGS: { value: GenerationFlag; label: string }[] = [
   { value: "patient", label: "Patient" },
@@ -52,7 +53,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
   const [generalContext, setGeneralContext] = useState("");
   const [icdError, setIcdError] = useState("");
 
-  const [llmProvider, setLLMProvider] = useState<"ollama" | "google">("ollama");
+  const [llmProvider, setLLMProvider] = useState<LLMProvider>("ollama");
   const [llmModel, setLLMModel] = useState("llama3.1");
   const [llmApiKey, setLLMApiKey] = useState("");
   const [llmUrl, setLLMUrl] = useState("");
@@ -118,7 +119,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
       context: Object.keys(context).length > 0 ? context : undefined,
     };
 
-    const llmConfig: any = {
+    const llmConfig: LLMConfig = {
       provider: llmProvider,
       model: llmModel.trim(),
       ...(llmApiKey.trim() ? { apiKey: llmApiKey.trim() } : {}),
@@ -143,7 +144,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
         if (!value) resetForm();
       }}
     >
-      <DialogContent className="sm:max-w-[550px] max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-137.5 max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="text-xl">Generate New Case</DialogTitle>
           <DialogDescription>
@@ -276,7 +277,9 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
                       <select
                         className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
                         value={llmProvider}
-                        onChange={(e) => setLLMProvider(e.target.value as any)}
+                        onChange={(e) =>
+                          setLLMProvider(e.target.value as LLMProvider)
+                        }
                       >
                         <option value="ollama">Ollama</option>
                         <option value="google">Google</option>

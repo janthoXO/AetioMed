@@ -13,7 +13,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
-import type { Case } from "@/models/Case";
+import type { Case, LLMConfig, LLMProvider } from "@/models/Case";
 import { RunDetail } from "./RunDetail";
 import { useCases } from "@/hooks/useCases";
 import { useFeatures } from "@/hooks/useFeatures";
@@ -135,7 +135,7 @@ function AddRunModal({
   medicalCase: Case;
 }) {
   const { addRunToCase } = useCases();
-  const [llmProvider, setLLMProvider] = useState<"ollama" | "google">("ollama");
+  const [llmProvider, setLLMProvider] = useState<LLMProvider>("ollama");
   const [llmModel, setLLMModel] = useState("");
   const [llmApiKey, setLLMApiKey] = useState("");
   const [llmUrl, setLLMUrl] = useState("");
@@ -158,7 +158,7 @@ function AddRunModal({
       language: medicalCase.language,
     };
 
-    const llmConfig: any = {
+    const llmConfig: LLMConfig = {
       provider: llmProvider,
       model: llmModel.trim(),
       ...(llmApiKey.trim() ? { apiKey: llmApiKey.trim() } : {}),
@@ -198,7 +198,7 @@ function AddRunModal({
               <select
                 className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
                 value={llmProvider}
-                onChange={(e) => setLLMProvider(e.target.value as any)}
+                onChange={(e) => setLLMProvider(e.target.value as LLMProvider)}
               >
                 <option value="ollama">Ollama</option>
                 <option value="google">Google</option>

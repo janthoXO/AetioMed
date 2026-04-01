@@ -39,6 +39,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
   // Load cases on mount
   useEffect(() => {
     const loadCases = async () => {
+      setIsLoading(true);
       const localCases = await db.cases
         .orderBy("createdAt")
         .reverse()
@@ -53,38 +54,8 @@ export function CasesProvider({ children }: { children: ReactNode }) {
       setCases(mappedCases);
     };
 
-    setIsLoading(true);
     loadCases().finally(() => setIsLoading(false));
   }, []);
-
-  const generateCase = useCallback(
-    async (
-      request: CaseGenerationRequest,
-      llmConfig?: LLMConfig
-    ): Promise<number> => {
-      const insertionCase = {
-        diagnosis: {
-          name: request.diagnosis,
-          icd: request.icd,
-        },
-        createdAt: new Date(),
-        generationFlags: request.generationFlags,
-        language: request.language ?? config.language,
-      };
-
-      // 1. create the Case in the db (without runs) to get autoincremented id
-      const id = await db.cases.add(insertionCase);
-      const createdCase: Case = { ...insertionCase, id, runs: [] };
-
-      setCases((prev) => [createdCase, ...prev]);
-
-      // 2. add the first run to it async
-      addRunToCase(id, request, llmConfig);
-
-      return id;
-    },
-    []
-  );
 
   const addRunToCase = useCallback(
     async (
@@ -158,6 +129,35 @@ export function CasesProvider({ children }: { children: ReactNode }) {
       );
     },
     []
+  );
+
+  const generateCase = useCallback(
+    async (
+      request: CaseGenerationRequest,
+      llmConfig?: LLMConfig
+    ): Promise<number> => {
+      const insertionCase = {
+        diagnosis: {
+          name: request.diagnosis,
+          icd: request.icd,
+        },
+        createdAt: new Date(),
+        generationFlags: request.generationFlags,
+        language: request.language ?? config.language,
+      };
+
+      // 1. create the Case in the db (without runs) to get autoincremented id
+      const id = await db.cases.add(insertionCase);
+      const createdCase: Case = { ...insertionCase, id, runs: [] };
+
+      setCases((prev) => [createdCase, ...prev]);
+
+      // 2. add the first run to it async
+      addRunToCase(id, request, llmConfig);
+
+      return id;
+    },
+    [addRunToCase]
   );
 
   const retryRun = useCallback(

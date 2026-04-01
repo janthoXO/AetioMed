@@ -12,11 +12,13 @@ export type BackendCase = {
   procedures?: Procedure[];
 };
 
+export type LLMProvider = "ollama" | "google";
+
 export type LLMConfig = {
-  provider: string;
+  provider: LLMProvider;
   model: string;
-  apiKey: string;
-  url: string;
+  apiKey?: string;
+  url?: string;
 };
 
 export type CaseRun = {

@@ -2,17 +2,19 @@ import { useEffect, useState } from "react";
 import { fetchTraceHistory, createTraceEventSource } from "@/api/traces.api";
 import type { TraceEvent } from "@/models/TraceEvent";
 
-export function useTraces(caseId: string, isCompleted: boolean) {
+export function useTraces(traceId: string | undefined, isCompleted: boolean) {
   const [traces, setTraces] = useState<TraceEvent[]>([]);
   const [warning, setWarning] = useState<string | null>(null);
 
   useEffect(() => {
+    if (!traceId) return;
+
     let eventSource: EventSource | null = null;
     let isMounted = true;
 
     async function loadTraces() {
       try {
-        const result = await fetchTraceHistory(caseId);
+        const result = await fetchTraceHistory(traceId!);
         if (!isMounted) return;
 
         if (result.warning) {
@@ -27,7 +29,7 @@ export function useTraces(caseId: string, isCompleted: boolean) {
 
       if (isCompleted || !isMounted) return;
 
-      eventSource = createTraceEventSource(caseId);
+      eventSource = createTraceEventSource(traceId!);
 
       eventSource.addEventListener("trace", (event) => {
         try {
@@ -56,7 +58,7 @@ export function useTraces(caseId: string, isCompleted: boolean) {
         eventSource.close();
       }
     };
-  }, [caseId, isCompleted]);
+  }, [traceId, isCompleted]);
 
   return { traces, warning };
 }

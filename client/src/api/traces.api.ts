@@ -2,9 +2,9 @@ import { config } from "@/config";
 import type { TraceEvent } from "@/models/TraceEvent";
 
 export async function fetchTraceHistory(
-  caseId: string
+  traceId: string
 ): Promise<{ traces: TraceEvent[]; warning?: string }> {
-  const historyUrl = `${config.generationUrl}/${caseId}/traces`;
+  const historyUrl = `${config.generationUrl}/traces/${traceId}`;
   const response = await fetch(historyUrl);
 
   if (response.status === 404) {
@@ -24,7 +24,7 @@ export async function fetchTraceHistory(
   throw new Error("Failed to fetch trace history");
 }
 
-export function createTraceEventSource(caseId: string) {
-  const sseUrl = `${config.generationUrl}/${caseId}/traces/stream`;
+export function createTraceEventSource(traceId: string) {
+  const sseUrl = `${config.generationUrl}/traces/${traceId}/stream`;
   return new EventSource(sseUrl);
 }

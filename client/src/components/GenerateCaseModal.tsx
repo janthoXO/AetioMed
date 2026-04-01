@@ -13,8 +13,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Separator } from "@/components/ui/separator";
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { useCases } from "@/hooks/useCases";
+import { useFeatures } from "@/hooks/useFeatures";
 import type { GenerationFlag } from "@/models/GenerationFlags";
 import { ICDCodePattern } from "@/models/Diagnosis";
 
@@ -25,6 +31,8 @@ const GENERATION_FLAGS: { value: GenerationFlag; label: string }[] = [
   { value: "procedures", label: "Procedures" },
 ];
 
+const ALL_FLAGS = new Set(GENERATION_FLAGS.map((f) => f.value));
+
 type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -32,25 +40,34 @@ type Props = {
 
 export function GenerateCaseModal({ open, onOpenChange }: Props) {
   const { generateCase } = useCases();
+  const { hasCustomLLM } = useFeatures();
 
   const [diagnosis, setDiagnosis] = useState("");
   const [icdCode, setIcdCode] = useState("");
-  const [selectedFlags, setSelectedFlags] = useState<Set<GenerationFlag>>(
-    new Set()
-  );
+  const [selectedFlags, setSelectedFlags] =
+    useState<Set<GenerationFlag>>(ALL_FLAGS);
   const [flagContexts, setFlagContexts] = useState<
     Partial<Record<GenerationFlag, string>>
   >({});
   const [generalContext, setGeneralContext] = useState("");
   const [icdError, setIcdError] = useState("");
 
+  const [llmProvider, setLLMProvider] = useState<"ollama" | "google">("ollama");
+  const [llmModel, setLLMModel] = useState("llama3.1");
+  const [llmApiKey, setLLMApiKey] = useState("");
+  const [llmUrl, setLLMUrl] = useState("");
+
   function resetForm() {
     setDiagnosis("");
     setIcdCode("");
-    setSelectedFlags(new Set());
+    setSelectedFlags(ALL_FLAGS);
     setFlagContexts({});
     setGeneralContext("");
     setIcdError("");
+    setLLMProvider("ollama");
+    setLLMModel("llama3.1");
+    setLLMApiKey("");
+    setLLMUrl("");
   }
 
   function toggleFlag(flag: GenerationFlag) {
@@ -58,7 +75,6 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
       const next = new Set(prev);
       if (next.has(flag)) {
         next.delete(flag);
-        // Clear per-flag context when unchecked
         setFlagContexts((fc) => {
           const updated = { ...fc };
           delete updated[flag];
@@ -78,9 +94,8 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
 
-    // Validate ICD code if provided
     if (icdCode && !ICDCodePattern.test(icdCode)) {
-      setIcdError("Invalid ICD code format (e.g. A00, A00.0)");
+      setIcdError("Invalid format (e.g. A00, A00.0)");
       return;
     }
 
@@ -103,12 +118,18 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
       context: Object.keys(context).length > 0 ? context : undefined,
     };
 
-    // Close modal immediately — skeleton in sidebar will show progress
+    const llmConfig: any = {
+      provider: llmProvider,
+      model: llmModel.trim(),
+      ...(llmApiKey.trim() ? { apiKey: llmApiKey.trim() } : {}),
+      ...(llmUrl.trim() ? { url: llmUrl.trim() } : {}),
+    };
+
     resetForm();
     onOpenChange(false);
 
     try {
-      await generateCase(request);
+      await generateCase(request, llmConfig);
     } catch (error) {
       console.error("Generation failed:", error);
     }
@@ -126,123 +147,183 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
         <DialogHeader>
           <DialogTitle className="text-xl">Generate New Case</DialogTitle>
           <DialogDescription>
-            Specify the diagnosis and select which sections to generate.
+            Specify the diagnosis and configure the generation details.
           </DialogDescription>
         </DialogHeader>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Diagnosis */}
-          <div className="space-y-2">
-            <Label htmlFor="diagnosis">
-              Disease / Diagnosis <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="diagnosis"
-              placeholder="e.g. Acute Appendicitis"
-              value={diagnosis}
-              onChange={(e) => setDiagnosis(e.target.value)}
-              required
-            />
-          </div>
-
-          {/* ICD Code */}
-          <div className="space-y-2">
-            <Label htmlFor="icd-code">ICD Code (optional)</Label>
-            <Input
-              id="icd-code"
-              placeholder="e.g. K35.8"
-              value={icdCode}
-              onChange={(e) => {
-                setIcdCode(e.target.value);
-                setIcdError("");
-              }}
-            />
-            {icdError && <p className="text-sm text-destructive">{icdError}</p>}
-          </div>
-
-          <Separator />
-
-          {/* Generation Flags */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <Label>Sections to Generate</Label>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                className="h-8 text-xs"
-                onClick={() => {
-                  if (selectedFlags.size === GENERATION_FLAGS.length) {
-                    setSelectedFlags(new Set());
-                    setFlagContexts({});
-                  } else {
-                    setSelectedFlags(
-                      new Set(GENERATION_FLAGS.map((f) => f.value))
-                    );
-                  }
-                }}
-              >
-                {selectedFlags.size === GENERATION_FLAGS.length
-                  ? "Deselect All"
-                  : "Select All"}
-              </Button>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="diagnosis">
+                Disease / Diagnosis <span className="text-destructive">*</span>
+              </Label>
+              <Input
+                id="diagnosis"
+                placeholder="e.g. Acute Appendicitis"
+                value={diagnosis}
+                onChange={(e) => setDiagnosis(e.target.value)}
+                required
+              />
             </div>
-            <div className="space-y-4">
-              {GENERATION_FLAGS.map(({ value, label }) => (
-                <div key={value} className="space-y-2">
-                  <div className="flex items-center space-x-2">
-                    <Checkbox
-                      id={`flag-${value}`}
-                      checked={selectedFlags.has(value)}
-                      onCheckedChange={() => toggleFlag(value)}
-                    />
-                    <Label
-                      htmlFor={`flag-${value}`}
-                      className="cursor-pointer font-normal"
-                    >
-                      {label}
-                    </Label>
-                  </div>
+            <div className="space-y-2 col-span-1">
+              <Label htmlFor="icd-code">ICD Code</Label>
+              <Input
+                id="icd-code"
+                placeholder="e.g. K35.8"
+                value={icdCode}
+                onChange={(e) => {
+                  setIcdCode(e.target.value);
+                  setIcdError("");
+                }}
+              />
+              {icdError && (
+                <p className="text-xs text-destructive">{icdError}</p>
+              )}
+            </div>
+          </div>
 
-                  {/* Per-flag context input */}
-                  {selectedFlags.has(value) && (
-                    <div className="ml-6">
-                      <Input
-                        placeholder={`Additional context for ${label}...`}
-                        value={flagContexts[value] || ""}
-                        onChange={(e) =>
-                          updateFlagContext(value, e.target.value)
+          <Accordion type="multiple" className="w-full">
+            <AccordionItem value="sections">
+              <AccordionTrigger className="text-base">
+                Fields to Generate
+              </AccordionTrigger>
+              <AccordionContent className="space-y-4 pt-2 px-1">
+                <div className="space-y-2">
+                  <div className="flex flex-row justify-between">
+                    <Label
+                      htmlFor="general-context"
+                      className="text-muted-foreground"
+                    >
+                      General Context (optional)
+                    </Label>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      className="h-8 text-xs"
+                      onClick={() => {
+                        if (selectedFlags.size === GENERATION_FLAGS.length) {
+                          setSelectedFlags(new Set());
+                          setFlagContexts({});
+                        } else {
+                          setSelectedFlags(ALL_FLAGS);
                         }
-                        className="text-sm"
+                      }}
+                    >
+                      {selectedFlags.size === GENERATION_FLAGS.length
+                        ? "Deselect All"
+                        : "Select All"}
+                    </Button>
+                  </div>
+                  <Textarea
+                    id="general-context"
+                    placeholder="Additional context that applies to all generated sections..."
+                    value={generalContext}
+                    onChange={(e) => setGeneralContext(e.target.value)}
+                  />
+                </div>
+
+                <div className="space-y-4">
+                  {GENERATION_FLAGS.map(({ value, label }) => (
+                    <div key={value} className="space-y-2">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`flag-${value}`}
+                          checked={selectedFlags.has(value)}
+                          onCheckedChange={() => toggleFlag(value)}
+                        />
+                        <Label
+                          htmlFor={`flag-${value}`}
+                          className="cursor-pointer font-normal"
+                        >
+                          {label}
+                        </Label>
+                      </div>
+
+                      {selectedFlags.has(value) && (
+                        <div className="ml-6">
+                          <Textarea
+                            placeholder={`Additional context for ${label}...`}
+                            value={flagContexts[value] || ""}
+                            onChange={(e) =>
+                              updateFlagContext(value, e.target.value)
+                            }
+                            className="text-sm h-8"
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {selectedFlags.size === 0 && (
+                  <p className="text-sm text-muted-foreground">
+                    Select at least one section to generate.
+                  </p>
+                )}
+              </AccordionContent>
+            </AccordionItem>
+
+            {hasCustomLLM && (
+              <AccordionItem value="llm">
+                <AccordionTrigger className="text-base">
+                  LLM Model Specification
+                </AccordionTrigger>
+                <AccordionContent className="space-y-4 pt-2 px-1">
+                  <div className="space-y-4">
+                    <div className="space-y-2">
+                      <Label className="text-xs">Provider</Label>
+                      <select
+                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
+                        value={llmProvider}
+                        onChange={(e) => setLLMProvider(e.target.value as any)}
+                      >
+                        <option value="ollama">Ollama</option>
+                        <option value="google">Google</option>
+                      </select>
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label className="text-xs">
+                        Model <span className="text-destructive">*</span>
+                      </Label>
+                      <Input
+                        placeholder="e.g. llama3.1"
+                        value={llmModel}
+                        onChange={(e) => setLLMModel(e.target.value)}
+                        required
+                        className="h-9"
                       />
                     </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
 
-          {selectedFlags.size === 0 && (
-            <p className="text-sm text-muted-foreground">
-              Select at least one section to generate.
-            </p>
-          )}
+                    <div className="space-y-2">
+                      <Label className="text-xs">API Key (optional)</Label>
+                      <Input
+                        type="password"
+                        placeholder="Leave blank if not needed"
+                        value={llmApiKey}
+                        onChange={(e) => setLLMApiKey(e.target.value)}
+                        className="h-9"
+                      />
+                    </div>
 
-          <Separator />
+                    <div className="space-y-2">
+                      <Label className="text-xs">API URL (optional)</Label>
+                      <Input
+                        type="url"
+                        placeholder="e.g. http://localhost:11434"
+                        value={llmUrl}
+                        onChange={(e) => setLLMUrl(e.target.value)}
+                        className="h-9"
+                      />
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            )}
+          </Accordion>
 
-          {/* General Context */}
-          <div className="space-y-2">
-            <Label htmlFor="general-context">General Context (optional)</Label>
-            <Textarea
-              id="general-context"
-              placeholder="Additional context that applies to all generated sections..."
-              value={generalContext}
-              onChange={(e) => setGeneralContext(e.target.value)}
-              rows={3}
-            />
-          </div>
-
-          <DialogFooter>
+          <DialogFooter className="pt-2">
             <Button
               type="button"
               variant="outline"
@@ -256,7 +337,11 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
             </Button>
             <Button
               type="submit"
-              disabled={!diagnosis.trim() || selectedFlags.size === 0}
+              disabled={
+                !diagnosis.trim() ||
+                selectedFlags.size === 0 ||
+                !llmModel.trim()
+              }
             >
               Generate Case
             </Button>

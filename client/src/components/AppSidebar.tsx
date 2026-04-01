@@ -1,13 +1,13 @@
-import { useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
   Plus,
   FileText,
   Stethoscope,
   Trash2,
-  ScrollText,
   Moon,
   Sun,
+  PanelLeftClose,
+  PanelRightClose,
 } from "lucide-react";
 import {
   Sidebar,
@@ -21,6 +21,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarMenuSkeleton,
+  useSidebar,
 } from "@/components/ui/sidebar";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -36,38 +37,76 @@ import { GenerateCaseModal } from "./GenerateCaseModal";
 import { Spinner } from "./ui/spinner";
 import { Switch } from "./ui/switch";
 import { useTheme } from "@/context/ThemeProvider";
+import { useState } from "react";
 
 export function AppSidebar() {
   const { cases, isLoading, deleteCase } = useCases();
   const [modalOpen, setModalOpen] = useState(false);
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
+  const { state, toggleSidebar } = useSidebar();
+  const isCollapsed = state === "collapsed";
 
-  const handleDelete = async (e: React.MouseEvent, id: string) => {
+  const handleDelete = async (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     e.preventDefault();
     await deleteCase(id);
-    if (window.location.pathname.includes(id)) {
+    if (window.location.pathname.includes(id.toString())) {
       navigate("/");
     }
   };
 
   return (
     <>
-      <Sidebar>
-        <SidebarHeader className="p-4">
-          <div className="flex items-center gap-2">
-            <Stethoscope className="h-6 w-6 text-primary" />
-            <h1 className="text-lg font-semibold tracking-tight">AetioMed</h1>
+      <Sidebar collapsible="icon">
+        <SidebarHeader
+          className={isCollapsed ? "p-2 items-center flex-col gap-4" : "p-4"}
+        >
+          <div
+            className={`flex w-full ${isCollapsed ? "flex-col items-center gap-4" : "items-center justify-between"}`}
+          >
+            <Button
+              variant="ghost"
+              onClick={() => navigate("/")}
+              className={`flex items-center gap-2 hover:opacity-80 transition-opacity ${isCollapsed ? "justify-center" : ""}`}
+              title="Go to homepage"
+            >
+              <Stethoscope className="h-6 w-6 text-primary shrink-0" />
+              {!isCollapsed && (
+                <h1 className="text-lg font-semibold tracking-tight">
+                  AetioMed
+                </h1>
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={toggleSidebar}
+              title={isCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+              className={isCollapsed ? "" : "-mr-2"}
+            >
+              {isCollapsed ? (
+                <PanelRightClose className="h-4 w-4" />
+              ) : (
+                <PanelLeftClose className="h-4 w-4" />
+              )}
+            </Button>
           </div>
-          <Separator className="my-2" />
+          {!isCollapsed && <Separator className="my-2" />}
           <Button
             onClick={() => setModalOpen(true)}
-            className="w-full cursor-pointer"
-            size="sm"
+            className={`w-full cursor-pointer ${isCollapsed ? "h-6 w-6 p-0 rounded-md flex items-center justify-center shrink-0" : ""}`}
+            size={isCollapsed ? "icon" : "sm"}
+            title="New Case"
           >
-            <Plus className="mr-2 h-4 w-4" />
-            New Case
+            {isCollapsed ? (
+              <Plus className="h-3 w-3" />
+            ) : (
+              <>
+                <Plus className="mr-2 h-4 w-4" />
+                New Case
+              </>
+            )}
           </Button>
         </SidebarHeader>
 
@@ -87,8 +126,10 @@ export function AppSidebar() {
 
                   {/* Case list */}
                   {!isLoading &&
-                    cases.map((c, index) =>
-                      c.createdAt ? (
+                    cases.map((c) => {
+                      const isGenerating =
+                        c.runs && c.runs.some((r) => r.status === "generating");
+                      return (
                         <ContextMenu key={c.id}>
                           <ContextMenuTrigger asChild>
                             <SidebarMenuItem>
@@ -99,14 +140,22 @@ export function AppSidebar() {
                                     isActive ? "bg-sidebar-accent" : ""
                                   }
                                 >
-                                  <FileText className="shrink-0" />
+                                  {isGenerating ? (
+                                    <Spinner className="shrink-0" />
+                                  ) : isCollapsed ? (
+                                    <span className="shrink-0 flex items-center justify-center font-semibold w-4 h-4">
+                                      {(
+                                        c.diagnosis?.name?.[0] ?? "U"
+                                      ).toUpperCase()}
+                                    </span>
+                                  ) : (
+                                    <FileText className="shrink-0" />
+                                  )}
                                   <div className="flex flex-col overflow-hidden">
                                     <span className="truncate text-sm font-medium">
                                       {c.diagnosis?.name ?? "Untitled Case"}
                                     </span>
                                     <span className="truncate text-xs text-muted-foreground">
-                                      {c.diagnosis?.icd &&
-                                        `${c.diagnosis.icd} · `}
                                       {new Date(
                                         c.createdAt
                                       ).toLocaleDateString()}
@@ -118,15 +167,7 @@ export function AppSidebar() {
                           </ContextMenuTrigger>
                           <ContextMenuContent className="w-48">
                             <ContextMenuItem
-                              onClick={() =>
-                                navigate(`/cases/${c.id}/generating`)
-                              }
-                            >
-                              <ScrollText className="mr-2 h-4 w-4" />
-                              <span>View Traces</span>
-                            </ContextMenuItem>
-                            <ContextMenuItem
-                              onClick={(e) => handleDelete(e, c.id)}
+                              onClick={(e) => handleDelete(e, c.id!)}
                               className="text-destructive focus:text-destructive"
                             >
                               <Trash2 className="mr-2 h-4 w-4" />
@@ -134,30 +175,8 @@ export function AppSidebar() {
                             </ContextMenuItem>
                           </ContextMenuContent>
                         </ContextMenu>
-                      ) : (
-                        // Case is currently generating
-                        <SidebarMenuItem key={`generating-${index}`}>
-                          <SidebarMenuButton asChild>
-                            <NavLink
-                              to={`/cases/${c.id}/generating`}
-                              className={({ isActive }) =>
-                                isActive ? "bg-sidebar-accent" : ""
-                              }
-                            >
-                              <Spinner className="shrink-0" />
-                              <div className="flex flex-col overflow-hidden">
-                                <span className="truncate text-sm font-medium">
-                                  {c.diagnosis?.name ?? "Untitled Case"}
-                                </span>
-                                <span className="truncate text-xs text-muted-foreground">
-                                  View Progress
-                                </span>
-                              </div>
-                            </NavLink>
-                          </SidebarMenuButton>
-                        </SidebarMenuItem>
-                      )
-                    )}
+                      );
+                    })}
 
                   {/* Empty state */}
                   {!isLoading && cases.length === 0 && (
@@ -173,13 +192,17 @@ export function AppSidebar() {
           </ScrollArea>
         </SidebarContent>
 
-        <SidebarFooter className="p-4 flex flex-row ">
-          <p className="text-xs text-muted-foreground text-center">
-            AetioMed Case Generator
-          </p>
+        <SidebarFooter
+          className={`p-4 flex ${isCollapsed ? "flex-col items-center justify-center gap-4 border-t-0 p-2" : "flex-row items-center"} `}
+        >
+          {!isCollapsed && (
+            <p className="text-xs text-muted-foreground text-center">
+              AetioMed Case Generator
+            </p>
+          )}
           <Switch
             id="dark-mode-toggle"
-            className="ml-auto"
+            className={isCollapsed ? "" : "ml-auto"}
             checked={theme === "dark"}
             onCheckedChange={() =>
               setTheme(theme === "dark" ? "light" : "dark")

@@ -1,17 +1,18 @@
 import { Badge } from "@/components/ui/badge";
 import { useTraces } from "@/hooks/useTraces";
 import ReactMarkdown from "react-markdown";
+import type { CaseRun } from "@/models/Case";
 
 type TraceViewerProps = {
-  caseId: string;
-  isCompleted: boolean;
+  run: CaseRun;
 };
 
-export function TraceViewer({ caseId, isCompleted }: TraceViewerProps) {
-  const { traces, warning } = useTraces(caseId, isCompleted);
+export function TraceViewer({ run }: TraceViewerProps) {
+  const isCompleted = run.status !== "generating";
+  const { traces, warning } = useTraces(run.traceId, isCompleted);
 
   return (
-    <div className="flex-1 bg-card text-card-foreground rounded-md border p-4 font-mono text-sm shadow-inner flex flex-col">
+    <div className="flex-1 bg-card text-card-foreground rounded-md border p-4 font-mono text-sm shadow-inner flex flex-col overflow-auto">
       {warning && (
         <div className="mb-4 whitespace-normal">
           <Badge variant="destructive">{warning}</Badge>

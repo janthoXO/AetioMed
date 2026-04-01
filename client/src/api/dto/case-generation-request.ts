@@ -1,4 +1,5 @@
 import type { GenerationFlag } from "../../models/GenerationFlags";
+import type { LLMConfig } from "../../models/Case";
 
 export type CaseGenerationRequest = {
   icd?: string;
@@ -7,4 +8,5 @@ export type CaseGenerationRequest = {
   generationFlags: GenerationFlag[];
   language?: string;
   traceId?: string;
+  llmConfig?: LLMConfig;
 };

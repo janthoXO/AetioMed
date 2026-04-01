@@ -102,6 +102,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
 
       const placeholderRun: CaseRun = {
         runId,
+        caseId,
         llmConfig,
         status: "generating",
         traceId,
@@ -123,6 +124,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
 
         completedRun = {
           runId,
+          caseId,
           llmConfig,
           status: "complete",
           traceId,
@@ -134,6 +136,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         completedRun = {
           runId,
+          caseId,
           llmConfig,
           status: "error",
           traceId,
@@ -174,6 +177,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
       const traceId = crypto.randomUUID();
       const placeholderRun: CaseRun = {
         runId,
+        caseId,
         llmConfig: existingRun.llmConfig,
         status: "generating",
         traceId,
@@ -204,6 +208,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
 
         completedRun = {
           runId,
+          caseId,
           llmConfig: existingRun.llmConfig,
           status: "complete",
           traceId,
@@ -215,6 +220,7 @@ export function CasesProvider({ children }: { children: ReactNode }) {
       } catch (error) {
         completedRun = {
           runId,
+          caseId,
           llmConfig: existingRun.llmConfig,
           status: "error",
           traceId,

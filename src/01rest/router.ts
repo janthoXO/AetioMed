@@ -12,14 +12,14 @@ import { config } from "@/config.js";
 export function initRouter(): Promise<void> {
   const apiRouter = express.Router();
 
-  apiRouter.get("/hello", async (_req, res) => {
+  apiRouter.get("/health", async (_req, res) => {
     /* #swagger.responses[200] = {
             content: {
                 "application/json": {
                     schema:{
                         type: "object",
                         properties: {
-                            msg: {
+                            status: {
                                 type: "string"
                             }
                         }
@@ -28,7 +28,33 @@ export function initRouter(): Promise<void> {
             }
         }   
     */
-    res.status(200).json({ msg: "Hello World" });
+    res.status(200).json({ status: "OK" });
+  });
+
+  apiRouter.get("/features", async (_req, res) => {
+    /* #swagger.responses[200] = {
+            content: {
+                "application/json": {
+                    schema:{
+                        type: "object",
+                        properties: {
+                            features: {
+                                type: "array",
+                                items: {
+                                    type: "string"
+                                }
+                            }
+                        }
+                    }
+                }           
+            }
+        }   
+    */
+    const features = [];
+    if (config.nats) features.push("nats");
+    if (config.redis) features.push("tracePersistence");
+    if (!config.llm) features.push("customLLM");
+    res.status(200).json({ features });
   });
 
   apiRouter.use("/cases", casesRouter);

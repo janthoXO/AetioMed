@@ -15,7 +15,6 @@ export function useTraces(traceId: string | undefined, isCompleted: boolean) {
 
     let eventSource: EventSource | null = null;
     let isMounted = true;
-    
 
     async function loadTraces() {
       try {

@@ -12,12 +12,13 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import type { Case, LLMConfig, LLMProvider } from "@/models/Case";
+import type { Case } from "@/models/Case";
 import { RunDetail } from "./RunDetail";
 import { useCases } from "@/hooks/useCases";
 import { useFeatures } from "@/hooks/useFeatures";
 import { useNavigate } from "react-router-dom";
+import { LLMConfigForm } from "./LLMConfigForm";
+import { useLLMConfig } from "@/hooks/useLLMConfig";
 
 type Props = {
   medicalCase: Case;
@@ -30,10 +31,17 @@ export function CaseDetail({ medicalCase }: Props) {
   const { hasCustomLLM } = useFeatures();
   const navigate = useNavigate();
   const [modalOpen, setModalOpen] = useState(false);
+  const [caseToDelete, setCaseToDelete] = useState<number | null>(null);
 
-  const handleDelete = async () => {
-    await deleteCase(medicalCase.id!);
+  const handleDelete = () => {
+    setCaseToDelete(medicalCase.id!);
+  };
+
+  const confirmDelete = async () => {
+    if (caseToDelete === null) return;
+    await deleteCase(caseToDelete);
     navigate("/");
+    setCaseToDelete(null);
   };
 
   const { diagnosis, createdAt, generationFlags, runs = [] } = medicalCase;
@@ -120,6 +128,29 @@ export function CaseDetail({ medicalCase }: Props) {
         onOpenChange={setModalOpen}
         medicalCase={medicalCase}
       />
+
+      <Dialog
+        open={caseToDelete !== null}
+        onOpenChange={(open) => !open && setCaseToDelete(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Case</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this case? This action cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCaseToDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -135,21 +166,15 @@ function AddRunModal({
   medicalCase: Case;
 }) {
   const { addRunToCase } = useCases();
-  const [llmProvider, setLLMProvider] = useState<LLMProvider>("ollama");
-  const [llmModel, setLLMModel] = useState("");
-  const [llmApiKey, setLLMApiKey] = useState("");
-  const [llmUrl, setLLMUrl] = useState("");
+  const llmConfigState = useLLMConfig("");
 
   const resetForm = () => {
-    setLLMProvider("ollama");
-    setLLMModel("");
-    setLLMApiKey("");
-    setLLMUrl("");
+    llmConfigState.reset();
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!llmModel.trim()) return;
+    if (!llmConfigState.model.trim()) return;
 
     const request = {
       diagnosis: medicalCase.diagnosis.name,
@@ -158,12 +183,7 @@ function AddRunModal({
       language: medicalCase.language,
     };
 
-    const llmConfig: LLMConfig = {
-      provider: llmProvider,
-      model: llmModel.trim(),
-      ...(llmApiKey.trim() ? { apiKey: llmApiKey.trim() } : {}),
-      ...(llmUrl.trim() ? { url: llmUrl.trim() } : {}),
-    };
+    const llmConfig = llmConfigState.getLLMConfig();
 
     resetForm();
     onOpenChange(false);
@@ -193,49 +213,7 @@ function AddRunModal({
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4 pt-4">
           <div className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Provider</label>
-              <select
-                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background"
-                value={llmProvider}
-                onChange={(e) => setLLMProvider(e.target.value as LLMProvider)}
-              >
-                <option value="ollama">Ollama</option>
-                <option value="google">Google</option>
-              </select>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">
-                Model <span className="text-destructive">*</span>
-              </label>
-              <Input
-                placeholder="e.g. llama3"
-                value={llmModel}
-                onChange={(e) => setLLMModel(e.target.value)}
-                required
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">API Key (optional)</label>
-              <Input
-                type="password"
-                placeholder="Leave blank if not needed"
-                value={llmApiKey}
-                onChange={(e) => setLLMApiKey(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-sm font-medium">API URL (optional)</label>
-              <Input
-                type="url"
-                placeholder="e.g. http://localhost:11434"
-                value={llmUrl}
-                onChange={(e) => setLLMUrl(e.target.value)}
-              />
-            </div>
+            <LLMConfigForm config={llmConfigState} />
           </div>
           <DialogFooter className="mt-6">
             <Button
@@ -245,7 +223,7 @@ function AddRunModal({
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={!llmModel.trim()}>
+            <Button type="submit" disabled={!llmConfigState.model.trim()}>
               Start Run
             </Button>
           </DialogFooter>

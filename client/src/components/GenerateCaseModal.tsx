@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { X } from "lucide-react";
+import { X, User, Stethoscope, ClipboardList, Activity } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -8,11 +8,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Accordion,
   AccordionContent,
@@ -23,16 +23,43 @@ import { useCases } from "@/hooks/useCases";
 import { useFeatures } from "@/hooks/useFeatures";
 import type { GenerationFlag } from "@/models/GenerationFlags";
 import { ICDCodePattern } from "@/models/Diagnosis";
-import type { LLMConfig, LLMProvider } from "@/models/Case";
 
-const GENERATION_FLAGS: { value: GenerationFlag; label: string }[] = [
-  { value: "patient", label: "Patient" },
-  { value: "chiefComplaint", label: "Chief Complaint" },
-  { value: "anamnesis", label: "Anamnesis" },
-  { value: "procedures", label: "Procedures" },
+const GENERATION_FLAGS: {
+  value: GenerationFlag;
+  label: string;
+  description: string;
+  icon: React.ElementType;
+}[] = [
+  {
+    value: "patient",
+    label: "Patient Info",
+    description: "Demographics, age, weight, and general health status.",
+    icon: User,
+  },
+  {
+    value: "chiefComplaint",
+    label: "Chief Complaint",
+    description: "Primary problem and initial symptoms reported.",
+    icon: Stethoscope,
+  },
+  {
+    value: "anamnesis",
+    label: "Anamnesis",
+    description: "Detailed medical history and system review.",
+    icon: ClipboardList,
+  },
+  {
+    value: "procedures",
+    label: "Procedures",
+    description: "Recommended clinical tests and diagnostic actions.",
+    icon: Activity,
+  },
 ];
 
 const ALL_FLAGS = new Set(GENERATION_FLAGS.map((f) => f.value));
+
+import { LLMConfigForm } from "./LLMConfigForm";
+import { useLLMConfig } from "@/hooks/useLLMConfig";
 
 type Props = {
   open: boolean;
@@ -53,10 +80,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
   const [generalContext, setGeneralContext] = useState("");
   const [icdError, setIcdError] = useState("");
 
-  const [llmProvider, setLLMProvider] = useState<LLMProvider>("ollama");
-  const [llmModel, setLLMModel] = useState("llama3.1");
-  const [llmApiKey, setLLMApiKey] = useState("");
-  const [llmUrl, setLLMUrl] = useState("");
+  const llmConfigState = useLLMConfig("llama3.1");
 
   function resetForm() {
     setDiagnosis("");
@@ -65,10 +89,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
     setFlagContexts({});
     setGeneralContext("");
     setIcdError("");
-    setLLMProvider("ollama");
-    setLLMModel("llama3.1");
-    setLLMApiKey("");
-    setLLMUrl("");
+    llmConfigState.reset();
   }
 
   function toggleFlag(flag: GenerationFlag) {
@@ -119,12 +140,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
       context: Object.keys(context).length > 0 ? context : undefined,
     };
 
-    const llmConfig: LLMConfig = {
-      provider: llmProvider,
-      model: llmModel.trim(),
-      ...(llmApiKey.trim() ? { apiKey: llmApiKey.trim() } : {}),
-      ...(llmUrl.trim() ? { url: llmUrl.trim() } : {}),
-    };
+    const llmConfig = llmConfigState.getLLMConfig();
 
     resetForm();
     onOpenChange(false);
@@ -188,34 +204,87 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
               <AccordionTrigger className="text-base">
                 Fields to Generate
               </AccordionTrigger>
-              <AccordionContent className="space-y-4 pt-2 px-1">
+              <AccordionContent className="space-y-4 px-1">
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => {
+                      if (selectedFlags.size === GENERATION_FLAGS.length) {
+                        setSelectedFlags(new Set());
+                        setFlagContexts({});
+                      } else {
+                        setSelectedFlags(ALL_FLAGS);
+                      }
+                    }}
+                  >
+                    {selectedFlags.size === GENERATION_FLAGS.length
+                      ? "Deselect All"
+                      : "Select All"}
+                  </Button>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {GENERATION_FLAGS.map(
+                    ({ value, label, description, icon: Icon }) => {
+                      const isSelected = selectedFlags.has(value);
+                      return (
+                        <div key={value} className="flex flex-col gap-3">
+                          <Card
+                            className={`cursor-pointer transition-colors relative flex-1 ${
+                              isSelected
+                                ? "border-primary ring-1 ring-primary bg-primary/5"
+                                : "hover:bg-muted/50"
+                            }`}
+                            onClick={() => toggleFlag(value)}
+                          >
+                            <div className="p-2 flex flex-col gap-3 h-full">
+                              <div className="flex items-center gap-2">
+                                <div
+                                  className={`p-2 w-10 h-10 rounded-lg flex items-center justify-center ${
+                                    isSelected
+                                      ? "bg-primary/20 text-primary"
+                                      : "bg-muted text-muted-foreground"
+                                  }`}
+                                >
+                                  <Icon className="h-5 w-5" />
+                                </div>
+                                <h3 className="font-medium leading-none mb-2">
+                                  {label}
+                                </h3>
+                              </div>
+                              <p className="text-xs text-muted-foreground leading-relaxed">
+                                {description}
+                              </p>
+                            </div>
+                          </Card>
+
+                          {isSelected && (
+                            <div className="animate-in fade-in zoom-in duration-200">
+                              <Textarea
+                                placeholder={`Custom instruction for ${label}...`}
+                                value={flagContexts[value] || ""}
+                                onChange={(e) =>
+                                  updateFlagContext(value, e.target.value)
+                                }
+                                className="text-sm min-h-20 bg-background"
+                              />
+                            </div>
+                          )}
+                        </div>
+                      );
+                    }
+                  )}
+                </div>
+
                 <div className="space-y-2">
-                  <div className="flex flex-row justify-between">
-                    <Label
-                      htmlFor="general-context"
-                      className="text-muted-foreground"
-                    >
-                      General Context (optional)
-                    </Label>
-                    <Button
-                      type="button"
-                      variant="secondary"
-                      size="sm"
-                      className="h-8 text-xs"
-                      onClick={() => {
-                        if (selectedFlags.size === GENERATION_FLAGS.length) {
-                          setSelectedFlags(new Set());
-                          setFlagContexts({});
-                        } else {
-                          setSelectedFlags(ALL_FLAGS);
-                        }
-                      }}
-                    >
-                      {selectedFlags.size === GENERATION_FLAGS.length
-                        ? "Deselect All"
-                        : "Select All"}
-                    </Button>
-                  </div>
+                  <Label
+                    htmlFor="general-context"
+                    className="text-muted-foreground"
+                  >
+                    General Context (optional)
+                  </Label>
                   <Textarea
                     id="general-context"
                     placeholder="Additional context that applies to all generated sections..."
@@ -224,41 +293,8 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
                   />
                 </div>
 
-                <div className="space-y-4">
-                  {GENERATION_FLAGS.map(({ value, label }) => (
-                    <div key={value} className="space-y-2">
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id={`flag-${value}`}
-                          checked={selectedFlags.has(value)}
-                          onCheckedChange={() => toggleFlag(value)}
-                        />
-                        <Label
-                          htmlFor={`flag-${value}`}
-                          className="cursor-pointer font-normal"
-                        >
-                          {label}
-                        </Label>
-                      </div>
-
-                      {selectedFlags.has(value) && (
-                        <div className="ml-6">
-                          <Textarea
-                            placeholder={`Additional context for ${label}...`}
-                            value={flagContexts[value] || ""}
-                            onChange={(e) =>
-                              updateFlagContext(value, e.target.value)
-                            }
-                            className="text-sm h-8"
-                          />
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-
                 {selectedFlags.size === 0 && (
-                  <p className="text-sm text-muted-foreground">
+                  <p className="text-sm text-warning">
                     Select at least one section to generate.
                   </p>
                 )}
@@ -271,56 +307,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
                   LLM Model Specification
                 </AccordionTrigger>
                 <AccordionContent className="space-y-4 pt-2 px-1">
-                  <div className="space-y-4">
-                    <div className="space-y-2">
-                      <Label className="text-xs">Provider</Label>
-                      <select
-                        className="flex h-9 w-full rounded-md border border-input bg-background px-3 py-1 text-sm shadow-sm transition-colors file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50"
-                        value={llmProvider}
-                        onChange={(e) =>
-                          setLLMProvider(e.target.value as LLMProvider)
-                        }
-                      >
-                        <option value="ollama">Ollama</option>
-                        <option value="google">Google</option>
-                      </select>
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-xs">
-                        Model <span className="text-destructive">*</span>
-                      </Label>
-                      <Input
-                        placeholder="e.g. llama3.1"
-                        value={llmModel}
-                        onChange={(e) => setLLMModel(e.target.value)}
-                        required
-                        className="h-9"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-xs">API Key (optional)</Label>
-                      <Input
-                        type="password"
-                        placeholder="Leave blank if not needed"
-                        value={llmApiKey}
-                        onChange={(e) => setLLMApiKey(e.target.value)}
-                        className="h-9"
-                      />
-                    </div>
-
-                    <div className="space-y-2">
-                      <Label className="text-xs">API URL (optional)</Label>
-                      <Input
-                        type="url"
-                        placeholder="e.g. http://localhost:11434"
-                        value={llmUrl}
-                        onChange={(e) => setLLMUrl(e.target.value)}
-                        className="h-9"
-                      />
-                    </div>
-                  </div>
+                  <LLMConfigForm config={llmConfigState} size="sm" />
                 </AccordionContent>
               </AccordionItem>
             )}
@@ -343,7 +330,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
               disabled={
                 !diagnosis.trim() ||
                 selectedFlags.size === 0 ||
-                !llmModel.trim()
+                (hasCustomLLM && !llmConfigState.model.trim())
               }
             >
               Generate Case

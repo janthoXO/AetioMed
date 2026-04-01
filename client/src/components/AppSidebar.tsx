@@ -32,6 +32,14 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { useCases } from "@/hooks/useCases";
 import { GenerateCaseModal } from "./GenerateCaseModal";
 import { Spinner } from "./ui/spinner";
@@ -42,18 +50,25 @@ import { useState } from "react";
 export function AppSidebar() {
   const { cases, isLoading, deleteCase } = useCases();
   const [modalOpen, setModalOpen] = useState(false);
+  const [caseToDelete, setCaseToDelete] = useState<number | null>(null);
   const { theme, setTheme } = useTheme();
   const navigate = useNavigate();
   const { state, toggleSidebar } = useSidebar();
   const isCollapsed = state === "collapsed";
 
-  const handleDelete = async (e: React.MouseEvent, id: number) => {
+  const handleDelete = (e: React.MouseEvent, id: number) => {
     e.stopPropagation();
     e.preventDefault();
-    await deleteCase(id);
-    if (window.location.pathname.includes(id.toString())) {
+    setCaseToDelete(id);
+  };
+
+  const confirmDelete = async () => {
+    if (caseToDelete === null) return;
+    await deleteCase(caseToDelete);
+    if (window.location.pathname.includes(caseToDelete.toString())) {
       navigate("/");
     }
+    setCaseToDelete(null);
   };
 
   return (
@@ -214,6 +229,29 @@ export function AppSidebar() {
       </Sidebar>
 
       <GenerateCaseModal open={modalOpen} onOpenChange={setModalOpen} />
+
+      <Dialog
+        open={caseToDelete !== null}
+        onOpenChange={(open) => !open && setCaseToDelete(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Case</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this case? This action cannot be
+              undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCaseToDelete(null)}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={confirmDelete}>
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

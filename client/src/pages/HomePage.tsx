@@ -11,8 +11,16 @@ import {
 import { Badge } from "@/components/ui/badge";
 
 export default function HomePage() {
-  const { cases } = useCases();
+  const { cases, isLoading } = useCases();
   const navigate = useNavigate();
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+      </div>
+    );
+  }
 
   if (cases.length === 0) {
     return (

@@ -10,6 +10,7 @@ import type { BackendCase, Case, CaseRun, LLMConfig } from "@/models/Case";
 import type { CaseGenerationRequest } from "@/api/dto/case-generation-request";
 import { config } from "@/config";
 import { db } from "@/db/db";
+import { toast } from "sonner";
 import * as casesApi from "@/api/cases.api";
 
 export type CasesContextType = {
@@ -40,21 +41,31 @@ export function CasesProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const loadCases = async () => {
       setIsLoading(true);
-      const localCases = await db.cases
-        .orderBy("createdAt")
-        .reverse()
-        .toArray();
-      const localRuns = await db.runs.toArray();
+      try {
+        const localCases = await db.cases
+          .orderBy("createdAt")
+          .reverse()
+          .toArray();
+        const localRuns = await db.runs.toArray();
 
-      const mappedCases = localCases.map((c) => ({
-        ...c,
-        runs: localRuns.filter((r) => r.caseId === c.id),
-      }));
+        const mappedCases = localCases.map((c) => ({
+          ...c,
+          runs: localRuns.filter((r) => r.caseId === c.id),
+        }));
 
-      setCases(mappedCases);
+        setCases(mappedCases);
+      } catch (error) {
+        console.error("Failed to load cases from DB:", error);
+        toast.error("Failed to load local database", {
+          description:
+            "IndexedDB might be blocked or unsupported in your browser.",
+        });
+      } finally {
+        setIsLoading(false);
+      }
     };
 
-    loadCases().finally(() => setIsLoading(false));
+    loadCases();
   }, []);
 
   const addRunToCase = useCallback(

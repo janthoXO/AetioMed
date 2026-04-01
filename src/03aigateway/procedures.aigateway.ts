@@ -17,14 +17,15 @@ import {
 } from "@/models/Procedure.js";
 import type { Symptom } from "@/models/Symptom.js";
 import { HumanMessage, SystemMessage } from "langchain";
-import { emitTrace } from "@/utils/tracing.js";
+import type { RequestContext } from "@/utils/context.js";
 import type { Case } from "@/models/Case.js";
 import type { Inconsistency } from "@/models/Inconsistency.js";
 
 export async function generateProceduresCoT(
   diagnosis: Diagnosis,
   symptoms: Symptom[],
-  userInstructions?: string
+  userInstructions?: string,
+  context?: RequestContext
 ): Promise<string> {
   const systemPrompt = buildPrompt(
     `You are an expert medical educator specializing in designing realistic clinical mock cases for medical students. 
@@ -48,13 +49,16 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
   );
 
   console.debug(
-    `[GenerateProceduresCoT] Prompt:\n${systemPrompt}\n${userPrompt}`
+    `[GenerateProceduresCoT] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   try {
     const stepsString: string = await retry(
       async (attempt: number) => {
-        const text = await getDeterministicLLM({ outputFormat: "text" })
+        const result = await getDeterministicLLM({
+          ...context?.llmConfig,
+          outputFormat: "text",
+        })
           .invoke([
             new SystemMessage(systemPrompt),
             new HumanMessage(userPrompt),
@@ -64,18 +68,17 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
           });
         console.debug(
           `[GenerateProceduresCoT] [Attempt ${attempt}] LLM raw Response:\n`,
-          text
+          result.text
         );
 
-        return text.text;
+        return result.text;
       },
       2,
       0,
       (error, attempt) => {
-        emitTrace(
-          `[GenerateProceduresCoT] Attempt ${attempt} failed with error: ${error.message}`,
-          { category: "error" }
-        );
+        const msg = `[GenerateProceduresCoT] Attempt ${attempt} failed with error: ${error.message}`;
+        console.error(msg);
+        context?.traceUtils?.emitTrace(msg, { category: "error" });
       }
     );
 
@@ -102,7 +105,8 @@ export async function generateProcedures(
         inconsistencies: Inconsistency[];
       },
   userInstructions?: string, // provided by the user
-  procedureList: Procedure[] | undefined = PredefinedProcedures
+  procedureList: Procedure[] | undefined = PredefinedProcedures,
+  context?: RequestContext
 ): Promise<ProcedureGeneration[]> {
   const systemPrompt = buildPrompt(
     `You are an expert attending physician designing the diagnostic workup for a medical training simulator.
@@ -160,7 +164,7 @@ ${`{ "procedures": ${ProcedureGenerationArrayJsonExampleString()} }`}`,
   );
 
   console.debug(
-    `[GenerateProceduresFromOutline] Prompt:\n${systemPrompt}\n${userPrompt}`
+    `[GenerateProceduresFromOutline] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   // Initialize cases to empty in case of failure
@@ -173,7 +177,7 @@ ${`{ "procedures": ${ProcedureGenerationArrayJsonExampleString()} }`}`,
 
     const procedures: ProcedureGeneration[] = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM()
+        const result = await getCreativeLLM(context?.llmConfig)
           .withStructuredOutput(ProcedureSchemaWrapper)
           .invoke([
             new SystemMessage(systemPrompt),
@@ -190,7 +194,7 @@ ${`{ "procedures": ${ProcedureGenerationArrayJsonExampleString()} }`}`,
 
         console.debug(
           `[GenerateProceduresFromOutline] [Attempt ${attempt}] LLM raw Response:\n`,
-          JSON.stringify(result)
+          JSON.stringify(result, null, 2)
         );
 
         const filteredProcedures = result.procedures.filter((p) =>
@@ -214,10 +218,9 @@ ${`{ "procedures": ${ProcedureGenerationArrayJsonExampleString()} }`}`,
       2,
       0,
       (error, attempt) => {
-        emitTrace(
-          `[GenerateProceduresFromOutline] Attempt ${attempt} failed with error: ${error.message}`,
-          { category: "error" }
-        );
+        const msg = `[GenerateProceduresFromOutline] Attempt ${attempt} failed with error: ${error.message}`;
+        console.error(msg);
+        context?.traceUtils?.emitTrace(msg, { category: "error" });
       }
     );
 
@@ -230,7 +233,8 @@ ${`{ "procedures": ${ProcedureGenerationArrayJsonExampleString()} }`}`,
 
 export async function generateProceduresFromEnglish(
   procedures: Procedure[],
-  language: Language
+  language: Language,
+  context?: RequestContext
 ): Promise<(Procedure | undefined)[]> {
   const systemPrompt = `Translate the provided procedures from English to a target language:
   
@@ -247,9 +251,7 @@ Procedures to translate:
 ${procedures.map((p) => p.name.toLowerCase()).join("\n")}`;
 
   console.debug(
-    `[Procedures Service] Generating procedure translations with prompt: 
-  ${systemPrompt}
-  ${userPrompt}`
+    `[GenerateProcedureTranslations] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   const prompt = [
@@ -259,7 +261,9 @@ ${procedures.map((p) => p.name.toLowerCase()).join("\n")}`;
 
   const parsed = await retry(
     async () => {
-      const response = await getDeterministicLLM().invoke(prompt);
+      const response = await getDeterministicLLM(context?.llmConfig).invoke(
+        prompt
+      );
 
       console.debug(
         "[Procedures Service] Generated procedure translations:",

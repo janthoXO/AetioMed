@@ -1,4 +1,10 @@
-import { END, Send, START, StateGraph } from "@langchain/langgraph";
+import {
+  END,
+  Send,
+  START,
+  StateGraph,
+  type Runtime,
+} from "@langchain/langgraph";
 import { GlobalStateSchema } from "../../state.js";
 import z from "zod";
 import { InconsistencySchema } from "@/models/Inconsistency.js";
@@ -7,7 +13,7 @@ import { generateChiefComplaint } from "@/03aigateway/chiefComplaint.aigateway.j
 import { generateInconsistenciesFromOutline } from "@/03aigateway/consistency.aigateway.js";
 import { generateProcedures } from "@/03aigateway/procedures.aigateway.js";
 import { passthrough } from "@/02graphs/graph.utils.js";
-import { emitTrace } from "@/utils/tracing.js";
+import { RequestContextSchema, type RequestContext } from "@/utils/context.js";
 import { generatePatient } from "@/03aigateway/patient.aigateway.js";
 
 const InconsistencyGraphStateSchema = GlobalStateSchema.pick({
@@ -24,16 +30,20 @@ const InconsistencyGraphStateSchema = GlobalStateSchema.pick({
 type InconsistencyGraphState = z.infer<typeof InconsistencyGraphStateSchema>;
 
 async function generateInconsistencies(
-  state: InconsistencyGraphState
+  state: InconsistencyGraphState,
+  runtime?: Runtime<RequestContext>
 ): Promise<Pick<InconsistencyGraphState, "inconsistencies">> {
-  emitTrace("[InconsistencyGraph] Starting generation of inconsistencies...");
+  runtime?.context?.traceUtils?.emitTrace(
+    "[InconsistencyGraph] Starting generation of inconsistencies..."
+  );
   state.inconsistencies = await generateInconsistenciesFromOutline(
     state.case,
     state.diagnosis,
     state.generationFlags,
-    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
+    runtime?.context
   ).catch((error) => {
-    emitTrace(
+    runtime?.context?.traceUtils?.emitTrace(
       `[InconsistencyGraph] Error generating inconsistencies: ${error}`,
       { category: "error" }
     );
@@ -45,7 +55,7 @@ async function generateInconsistencies(
     state.generationFlags.some((f) => f === i.field)
   );
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[InconsistencyGraph] Successfully generated inconsistencies:
 ${state.inconsistencies
   .map((i) => `- ${i.field}: ${i.description}`)
@@ -56,24 +66,31 @@ ${state.inconsistencies
 }
 
 async function refinePatient(
-  state: InconsistencyGraphState
+  state: InconsistencyGraphState,
+  runtime?: Runtime<RequestContext>
 ): Promise<Pick<InconsistencyGraphState, "case">> {
-  emitTrace(`[InconsistencyGraph] Starting refinement of patient fields...`);
+  runtime?.context?.traceUtils?.emitTrace(
+    `[InconsistencyGraph] Starting refinement of patient fields...`
+  );
   state.case.patient = await generatePatient(
     state.diagnosis,
     {
       case: state.case, // provide the case to allow refinement on "old" case data
       inconsistencies: state.inconsistencies, //these should already be filtered by the send logic to fit only patient generation
     },
-    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
+    runtime?.context
   ).catch((error) => {
-    emitTrace(`[InconsistencyGraph] Error refining patient: ${error}`, {
-      category: "error",
-    });
+    runtime?.context?.traceUtils?.emitTrace(
+      `[InconsistencyGraph] Error refining patient: ${error}`,
+      {
+        category: "error",
+      }
+    );
     throw error;
   });
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[InconsistencyGraph] Successfully refined patient:
 \`\`\`json
 ${JSON.stringify(state.case.patient, null, 2)}
@@ -84,24 +101,31 @@ ${JSON.stringify(state.case.patient, null, 2)}
 }
 
 async function refineChiefComplaint(
-  state: InconsistencyGraphState
+  state: InconsistencyGraphState,
+  runtime?: Runtime<RequestContext>
 ): Promise<Pick<InconsistencyGraphState, "case">> {
-  emitTrace("[InconsistencyGraph] Starting refinement of chief complaint...");
+  runtime?.context?.traceUtils?.emitTrace(
+    "[InconsistencyGraph] Starting refinement of chief complaint..."
+  );
   state.case.chiefComplaint = await generateChiefComplaint(
     state.diagnosis,
     {
       case: state.case, // provide the case to allow refinement on "old" case data
       inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
     },
-    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
+    runtime?.context
   ).catch((error) => {
-    emitTrace(`[InconsistencyGraph] Error refining chief complaint: ${error}`, {
-      category: "error",
-    });
+    runtime?.context?.traceUtils?.emitTrace(
+      `[InconsistencyGraph] Error refining chief complaint: ${error}`,
+      {
+        category: "error",
+      }
+    );
     throw error;
   });
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[InconsistencyGraph] Successfully refined chief complaint:
 ${state.case.chiefComplaint}`
   );
@@ -114,9 +138,12 @@ ${state.case.chiefComplaint}`
 }
 
 async function refineAnamnesis(
-  state: InconsistencyGraphState
+  state: InconsistencyGraphState,
+  runtime?: Runtime<RequestContext>
 ): Promise<Pick<InconsistencyGraphState, "case">> {
-  emitTrace("[InconsistencyGraph] Starting refinement of anamnesis...");
+  runtime?.context?.traceUtils?.emitTrace(
+    "[InconsistencyGraph] Starting refinement of anamnesis..."
+  );
   state.case.anamnesis = await generateAnamnesis(
     state.diagnosis,
     {
@@ -124,15 +151,19 @@ async function refineAnamnesis(
       inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
     },
     state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
-    state.anamnesisCategories
+    state.anamnesisCategories,
+    runtime?.context
   ).catch((error) => {
-    emitTrace(`[InconsistencyGraph] Error refining anamnesis: ${error}`, {
-      category: "error",
-    });
+    runtime?.context?.traceUtils?.emitTrace(
+      `[InconsistencyGraph] Error refining anamnesis: ${error}`,
+      {
+        category: "error",
+      }
+    );
     throw error;
   });
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[InconsistencyGraph] Successfully refined anamnesis:
 \`\`\`json
 ${JSON.stringify(state.case.anamnesis, null, 2)}
@@ -147,24 +178,32 @@ ${JSON.stringify(state.case.anamnesis, null, 2)}
 }
 
 async function refineProcedures(
-  state: InconsistencyGraphState
+  state: InconsistencyGraphState,
+  runtime?: Runtime<RequestContext>
 ): Promise<Pick<InconsistencyGraphState, "case">> {
-  emitTrace("[InconsistencyGraph] Starting refinement of procedures...");
+  runtime?.context?.traceUtils?.emitTrace(
+    "[InconsistencyGraph] Starting refinement of procedures..."
+  );
   state.case.procedures = await generateProcedures(
     state.diagnosis,
     {
       case: state.case, // provide the case to allow refinement on "old" case data
       inconsistencies: state.inconsistencies, //these should already be filtered by the send logic
     },
-    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
+    undefined,
+    runtime?.context
   ).catch((error) => {
-    emitTrace(`[InconsistencyGraph] Error refining procedures: ${error}`, {
-      category: "error",
-    });
+    runtime?.context?.traceUtils?.emitTrace(
+      `[InconsistencyGraph] Error refining procedures: ${error}`,
+      {
+        category: "error",
+      }
+    );
     throw error;
   });
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[InconsistencyGraph] Successfully refined procedures:
 \`\`\`json
 ${JSON.stringify(state.case.procedures, null, 2)}
@@ -178,7 +217,10 @@ ${JSON.stringify(state.case.procedures, null, 2)}
   };
 }
 
-export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
+export const inconsistencyGraph = new StateGraph(
+  InconsistencyGraphStateSchema,
+  RequestContextSchema
+)
   .addNode("loop_entry", passthrough<InconsistencyGraphState>)
   .addNode("inconsistencies_generate", generateInconsistencies)
   .addNode("patient_refine", refinePatient)
@@ -238,7 +280,7 @@ export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
               ? Object.entries(state.userInstructions).filter(
                   ([key]) => key === "patient" || key === "general"
                 )
-              : undefined,
+              : "",
           })
         );
       }
@@ -254,7 +296,7 @@ export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
               ? Object.entries(state.userInstructions).filter(
                   ([key]) => key === "chiefComplaint" || key === "general"
                 )
-              : undefined,
+              : "",
           })
         );
       }
@@ -270,7 +312,7 @@ export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
               ? Object.entries(state.userInstructions).filter(
                   ([key]) => key === "anamnesis" || key === "general"
                 )
-              : undefined,
+              : "",
           })
         );
       }
@@ -286,7 +328,7 @@ export const inconsistencyGraph = new StateGraph(InconsistencyGraphStateSchema)
               ? Object.entries(state.userInstructions).filter(
                   ([key]) => key === "procedures" || key === "general"
                 )
-              : undefined,
+              : "",
           })
         );
       }

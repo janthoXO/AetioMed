@@ -3,7 +3,9 @@ import { CaseSchema } from "@/models/Case.js";
 import { ErrorResponseSchema } from "./ErrorResponse.js";
 
 export const CaseGenerationResponseSchema = z.union([
-  CaseSchema,
+  CaseSchema.extend({
+    traceId: z.string().optional(),
+  }),
   ErrorResponseSchema,
 ]);
 

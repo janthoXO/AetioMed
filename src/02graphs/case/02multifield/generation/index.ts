@@ -1,4 +1,10 @@
-import { END, Send, START, StateGraph } from "@langchain/langgraph";
+import {
+  END,
+  Send,
+  START,
+  StateGraph,
+  type Runtime,
+} from "@langchain/langgraph";
 import { GlobalStateSchema } from "../../state.js";
 import z from "zod";
 import { generateChiefComplaint as generateChiefComplaintGateway } from "@/03aigateway/chiefComplaint.aigateway.js";
@@ -6,7 +12,7 @@ import {
   generateCaseCoT as generateCaseCoTGateway,
   generateCaseOutline as generateCaseOutlineGateway,
 } from "@/03aigateway/case.aigateway.js";
-import { emitTrace } from "@/utils/tracing.js";
+import { RequestContextSchema, type RequestContext } from "@/utils/context.js";
 import { generatePatient as generatePatientGateway } from "@/03aigateway/patient.aigateway.js";
 import { generateAnamnesis as generateAnamnesisGateway } from "@/03aigateway/anamnesis.aigateway.js";
 import { generateProcedures as generateProceduresGateway } from "@/03aigateway/procedures.aigateway.js";
@@ -24,42 +30,53 @@ const GenerationGraphStateSchema = GlobalStateSchema.extend({
 type GenerationGraphState = z.infer<typeof GenerationGraphStateSchema>;
 
 async function generateCaseCoT(
-  state: GenerationGraphState
+  state: GenerationGraphState,
+  runtime?: Runtime<RequestContext>
 ): Promise<Pick<GenerationGraphState, "cot">> {
   state.cot = await generateCaseCoTGateway(
     state.diagnosis,
     state.generationFlags,
-    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
+    runtime?.context
   ).catch((error) => {
-    emitTrace(`[GenerationGraph] Error generating case CoT: ${error}`, {
-      category: "error",
-    });
+    runtime?.context?.traceUtils?.emitTrace(
+      `[GenerationGraph] Error generating case CoT: ${error}`,
+      {
+        category: "error",
+      }
+    );
     throw error;
   });
 
-  emitTrace(`[GenerationGraph] Successfully generated case CoT:
+  runtime?.context?.traceUtils
+    ?.emitTrace(`[GenerationGraph] Successfully generated case CoT:
 ${state.cot}`);
 
   return { cot: state.cot };
 }
 
 async function generateCaseOutline(
-  state: GenerationGraphState
+  state: GenerationGraphState,
+  runtime?: Runtime<RequestContext>
 ): Promise<Pick<GenerationGraphState, "outline">> {
   state.outline = await generateCaseOutlineGateway(
     state.diagnosis,
     state.generationFlags,
     state.symptoms,
     state.cot,
-    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
+    runtime?.context
   ).catch((error) => {
-    emitTrace(`[GenerationGraph] Error generating case outline: ${error}`, {
-      category: "error",
-    });
+    runtime?.context?.traceUtils?.emitTrace(
+      `[GenerationGraph] Error generating case outline: ${error}`,
+      {
+        category: "error",
+      }
+    );
     throw error;
   });
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[GenerationGraph] Successfully generated case outline:
 ${state.outline}`
   );
@@ -67,22 +84,31 @@ ${state.outline}`
   return { outline: state.outline };
 }
 
-async function generatePatient(state: GenerationGraphState) {
-  emitTrace(`[GenerationGraph] Starting generation of patient fields...`);
+async function generatePatient(
+  state: GenerationGraphState,
+  runtime?: Runtime<RequestContext>
+) {
+  runtime?.context?.traceUtils?.emitTrace(
+    `[GenerationGraph] Starting generation of patient fields...`
+  );
   state.case.patient = await generatePatientGateway(
     state.diagnosis,
     {
       outline: state.outline,
     },
-    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
+    runtime?.context
   ).catch((error) => {
-    emitTrace(`[GenerationGraph] Error generating patient: ${error}`, {
-      category: "error",
-    });
+    runtime?.context?.traceUtils?.emitTrace(
+      `[GenerationGraph] Error generating patient: ${error}`,
+      {
+        category: "error",
+      }
+    );
     throw error;
   });
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[GenerationGraph] Successfully generated patient:
 \`\`\`json
 ${JSON.stringify(state.case.patient, null, 2)}
@@ -93,23 +119,30 @@ ${JSON.stringify(state.case.patient, null, 2)}
 }
 
 async function generateChiefComplaint(
-  state: GenerationGraphState
+  state: GenerationGraphState,
+  runtime?: Runtime<RequestContext>
 ): Promise<Pick<GenerationGraphState, "case">> {
-  emitTrace(`[GenerationGraph] Starting generation of chief complaint...`);
+  runtime?.context?.traceUtils?.emitTrace(
+    `[GenerationGraph] Starting generation of chief complaint...`
+  );
   state.case.chiefComplaint = await generateChiefComplaintGateway(
     state.diagnosis,
     {
       outline: state.outline,
     },
-    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined
+    state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
+    runtime?.context
   ).catch((error) => {
-    emitTrace(`[GenerationGraph] Error generating chief complaint: ${error}`, {
-      category: "error",
-    });
+    runtime?.context?.traceUtils?.emitTrace(
+      `[GenerationGraph] Error generating chief complaint: ${error}`,
+      {
+        category: "error",
+      }
+    );
     throw error;
   });
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[GenerationGraph] Successfully generated chief complaint:
 ${state.case.chiefComplaint}`
   );
@@ -117,23 +150,32 @@ ${state.case.chiefComplaint}`
   return { case: state.case };
 }
 
-async function generateAnamnesis(state: GenerationGraphState) {
-  emitTrace(`[GenerationGraph] Starting generation of anamnesis fields...`);
+async function generateAnamnesis(
+  state: GenerationGraphState,
+  runtime?: Runtime<RequestContext>
+) {
+  runtime?.context?.traceUtils?.emitTrace(
+    `[GenerationGraph] Starting generation of anamnesis fields...`
+  );
   state.case.anamnesis = await generateAnamnesisGateway(
     state.diagnosis,
     {
       outline: state.outline,
     },
     state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
-    state.anamnesisCategories
+    state.anamnesisCategories,
+    runtime?.context
   ).catch((error) => {
-    emitTrace(`[GenerationGraph] Error generating anamnesis: ${error}`, {
-      category: "error",
-    });
+    runtime?.context?.traceUtils?.emitTrace(
+      `[GenerationGraph] Error generating anamnesis: ${error}`,
+      {
+        category: "error",
+      }
+    );
     throw error;
   });
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[GenerationGraph] Successfully generated anamnesis:
 \`\`\`json
 ${JSON.stringify(state.case.anamnesis, null, 2)}
@@ -143,8 +185,13 @@ ${JSON.stringify(state.case.anamnesis, null, 2)}
   return { case: state.case };
 }
 
-async function generateProcedures(state: GenerationGraphState) {
-  emitTrace(`[GenerationGraph] Starting generation of procedures...`);
+async function generateProcedures(
+  state: GenerationGraphState,
+  runtime?: Runtime<RequestContext>
+) {
+  runtime?.context?.traceUtils?.emitTrace(
+    `[GenerationGraph] Starting generation of procedures...`
+  );
   state.case.procedures = await generateProceduresGateway(
     state.diagnosis,
     {
@@ -157,15 +204,20 @@ async function generateProcedures(state: GenerationGraphState) {
             ([key]) => key === "procedures" || key === "general"
           )
         )
-      : undefined
+      : undefined,
+    undefined,
+    runtime?.context
   ).catch((error) => {
-    emitTrace(`[GenerationGraph] Error generating procedures: ${error}`, {
-      category: "error",
-    });
+    runtime?.context?.traceUtils?.emitTrace(
+      `[GenerationGraph] Error generating procedures: ${error}`,
+      {
+        category: "error",
+      }
+    );
     throw error;
   });
 
-  emitTrace(
+  runtime?.context?.traceUtils?.emitTrace(
     `[GenerationGraph] Successfully generated procedures:
 \`\`\`json
 ${JSON.stringify(state.case.procedures, null, 2)}
@@ -175,7 +227,10 @@ ${JSON.stringify(state.case.procedures, null, 2)}
   return { case: state.case };
 }
 
-export const generationGraph = new StateGraph(GenerationGraphStateSchema)
+export const generationGraph = new StateGraph(
+  GenerationGraphStateSchema,
+  RequestContextSchema
+)
   .addNode("case_cot_generate", generateCaseCoT)
   .addNode("case_outline_generate", generateCaseOutline)
   .addNode("patient_generate", generatePatient)
@@ -199,7 +254,7 @@ export const generationGraph = new StateGraph(GenerationGraphStateSchema)
               ? Object.entries(state.userInstructions).filter(
                   ([key]) => key === "patient" || key === "general"
                 )
-              : undefined,
+              : "",
           })
         );
       }
@@ -211,7 +266,7 @@ export const generationGraph = new StateGraph(GenerationGraphStateSchema)
               ? Object.entries(state.userInstructions).filter(
                   ([key]) => key === "chiefComplaint" || key === "general"
                 )
-              : undefined,
+              : "",
           })
         );
       }
@@ -223,7 +278,7 @@ export const generationGraph = new StateGraph(GenerationGraphStateSchema)
               ? Object.entries(state.userInstructions).filter(
                   ([key]) => key === "anamnesis" || key === "general"
                 )
-              : undefined,
+              : "",
           })
         );
       }

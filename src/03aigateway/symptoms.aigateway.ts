@@ -8,12 +8,13 @@ import { getDeterministicLLM, handleLangchainError } from "@/utils/llm.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import z from "zod";
 import { retry } from "@/utils/retry.js";
-import { emitTrace } from "@/utils/tracing.js";
+import type { RequestContext } from "@/utils/context.js";
 
 export async function generateSymptomsOneShot(
   diagnosis: Diagnosis,
   userInstructions?: string,
-  symptomsToExclude: Symptom[] = []
+  symptomsToExclude: Symptom[] = [],
+  context?: RequestContext
 ): Promise<Symptom[]> {
   const systemPrompt = `You are a medical expert tasked with generating symptoms for a given diagnosis.
 ${
@@ -39,7 +40,7 @@ Requirements:
     .join("\n");
 
   console.debug(
-    `[GenerateSymptomsOneShot] Prompt:\n${systemPrompt}\n${userPrompt}`
+    `[GenerateSymptomsOneShot] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   // Initialize cases to empty in case of failure
@@ -50,7 +51,7 @@ Requirements:
 
     const symptoms: Symptom[] = await retry(
       async () => {
-        const result = await getDeterministicLLM()
+        const result = await getDeterministicLLM(context?.llmConfig)
           .withStructuredOutput(SymptomArrayWrapperSchema)
           .invoke([
             new SystemMessage(systemPrompt),
@@ -60,15 +61,19 @@ Requirements:
             handleLangchainError(error);
           });
 
+        console.debug(
+          `[GenerateSymptomsOneShot] LLM raw Response:\n`,
+          JSON.stringify(result, null, 2)
+        );
+
         return result.symptoms;
       },
       2,
       0,
       (error, attempt) => {
-        emitTrace(
-          `[GenerateSymptomsOneShot] Attempt ${attempt} failed with error: ${error.message}`,
-          { category: "error" }
-        );
+        const msg = `[GenerateSymptomsOneShot] Attempt ${attempt} failed with error: ${error.message}`;
+        console.error(msg);
+        context?.traceUtils?.emitTrace(msg, { category: "error" });
       }
     );
 

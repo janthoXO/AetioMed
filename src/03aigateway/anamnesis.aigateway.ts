@@ -279,59 +279,76 @@ ${categories.join("\n")}`;
 
 /**
  * Generates translations of anamnesis categories from English to a target language using an LLM.
- * @param categories the anamnesis categories in English to translate
+ * @param englishCategories the anamnesis categories in English to translate
  * @param language the target language to translate the categories into
  * @returns a record mapping English categories to their translations in the target language
  */
 export async function generateAnamnesisCategoriesFromEnglish(
-  categories: AnamnesisCategory[],
+  englishCategories: AnamnesisCategory[],
   language: Language,
   context?: RequestContext
 ): Promise<Record<AnamnesisCategory, AnamnesisCategory>> {
-  const systemPrompt = `Translate the provided anamnesis categories from English to a target language:
+  const systemPrompt = buildPrompt(
+    `Translate the provided anamnesis categories from English to a target language:`,
 
-Return the categories mapped to their translated part in a JSON
-{
-  "provided category1": "translated category1",
-  "provided category2": "translated category2",
+    `Return the categories mapped to their translated part in a JSON
+{ "translations": 
+  [
+  "translated category1",
+  "translated category2",
   ...
-}`;
+  ]
+}`
+  );
 
-  const userPrompt = `Target language: ${language}
-Categories to translate:
-${categories.join("\n")}`;
+  const userPrompt = buildPrompt(
+    `Target language: ${language}`,
+    `Categories to translate:
+${englishCategories.join("\n")}`
+  );
 
   console.debug(
     `[GenerateAnamnesisCategoriesFromEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const prompt = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userPrompt },
-  ];
+  return retry(
+    async (attempt: number, previousError?: Error) => {
+      const response = await getDeterministicLLM(context?.llmConfig)
+        .withStructuredOutput(z.object({ translations: z.array(z.string()) }))
+        .invoke([
+          new SystemMessage(systemPrompt),
+          new HumanMessage(
+            userPrompt +
+              (previousError
+                ? `\nPrevious generation error: ${previousError.message}`
+                : "")
+          ),
+        ]);
 
-  const response = await getDeterministicLLM(context?.llmConfig).invoke(prompt);
+      console.debug(
+        `[GenerateAnamnesisCategoriesFromEnglish] [Attempt ${attempt}] Generated anamnesis category translations:`,
+        response
+      );
 
-  console.debug(
-    `[GenerateAnamnesisCategoriesFromEnglish] Generated anamnesis category translations:\n${response.text}`
-  );
+      if (response.translations.length !== englishCategories.length) {
+        throw new Error(
+          `The number of translated categories does not match the number of English categories. Expected ${englishCategories.length} but got ${response.translations.length}.`
+        );
+      }
 
-  const responseSchema = z.record(z.string(), z.string());
-  const parsed = responseSchema.parse(JSON.parse(response.text));
+      const result: Record<string, string> = {};
+      englishCategories.forEach((engCat, idx) => {
+        result[engCat] = response.translations[idx]!;
+      });
 
-  // Filter only the requested categories
-  const result: Record<AnamnesisCategory, AnamnesisCategory> = {};
-  for (const [original, translated] of Object.entries(parsed)) {
-    if (categories.includes(original as AnamnesisCategory)) {
-      result[original as AnamnesisCategory] = translated as AnamnesisCategory;
+      return result;
+    },
+    2,
+    0,
+    (error, attempt) => {
+      const msg = `[GenerateAnamnesisCategoriesFromEnglish] [Attempt ${attempt}] failed with error: ${error.message}`;
+      console.error(msg);
+      context?.traceUtils?.emitTrace(msg, { category: "error" });
     }
-  }
-
-  if (Object.keys(result).length !== categories.length) {
-    throw new Error(
-      `Not all categories were translated successfully to ${language}.`
-    );
-  }
-
-  return result;
+  );
 }

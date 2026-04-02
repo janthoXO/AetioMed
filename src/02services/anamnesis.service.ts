@@ -1,7 +1,7 @@
 import { getRequiredRequestContext } from "@/utils/context.js";
 
 import { type AnamnesisCategory } from "@/models/Anamnesis.js";
-import type { Language } from "@/models/Language.js";
+import type { ForeignLanguage } from "@/models/Language.js";
 import {
   generateAnamnesisCategoriesFromEnglish,
   generateAnamnesisCategoriesToEnglish,
@@ -14,7 +14,7 @@ import {
 
 export async function translateAnamnesisCategoriesToEnglish(
   categories: AnamnesisCategory[],
-  language: Language
+  language: ForeignLanguage
 ): Promise<Record<AnamnesisCategory, AnamnesisCategory>> {
   const translations: Record<AnamnesisCategory, AnamnesisCategory> = {};
   const failedTranslations: AnamnesisCategory[] = [];
@@ -54,12 +54,20 @@ export async function translateAnamnesisCategoriesToEnglish(
   return translations;
 }
 
+/**
+ * Translates anamnesis categories from English to the specified language
+ * @param categories in english to translate
+ * @param language to translate to
+ * @returns a record mapping english categories to translated categories
+ */
 export async function translateAnamnesisCategoriesFromEnglish(
   categories: AnamnesisCategory[],
-  language: Language
+  language: ForeignLanguage
 ): Promise<Record<AnamnesisCategory, AnamnesisCategory>> {
   const translations: Record<AnamnesisCategory, AnamnesisCategory> = {};
   const failedTranslations: AnamnesisCategory[] = [];
+
+  // 1. Try to get translations from the repo
   for (const category of categories) {
     const translatedCategory = getAnamnesisCategoryTranslationFromEnglish(
       category,
@@ -73,6 +81,7 @@ export async function translateAnamnesisCategoriesFromEnglish(
     }
   }
 
+  // 2. For categories that are not in the repo, use the LLM to translate
   if (failedTranslations.length > 0) {
     const generatedTranslations = await generateAnamnesisCategoriesFromEnglish(
       failedTranslations,
@@ -82,6 +91,7 @@ export async function translateAnamnesisCategoriesFromEnglish(
 
     Object.assign(translations, generatedTranslations);
 
+    // 2.2 Save the generated translations in the repo for future use
     saveAnamnesisCategoryTranslations(generatedTranslations, language);
   }
 

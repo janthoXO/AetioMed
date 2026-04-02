@@ -1,12 +1,12 @@
 import { END, START, StateGraph } from "@langchain/langgraph";
-import { GlobalStateSchema } from "../state.js";
+import { CaseGenerationStateSchema } from "../state.js";
 import z from "zod";
 import { SymptomsRelatedToDiseaseIcd } from "@/03repo/symptoms.repo.js";
 import { generateSymptomsOneShot } from "@/03aigateway/symptoms.aigateway.js";
 import { RequestContextSchema, type RequestContext } from "@/utils/context.js";
 import type { Runtime } from "@langchain/langgraph";
 
-const SymptomsGraphStateSchema = GlobalStateSchema.pick({
+const SymptomsGraphStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
   symptoms: true,

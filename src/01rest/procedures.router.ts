@@ -1,5 +1,5 @@
 import express from "express";
-import { PredefinedProcedures } from "@/models/Procedure.js";
+import { PredefinedProcedureNames } from "@/models/Procedure.js";
 
 const router = express.Router();
 
@@ -9,7 +9,7 @@ router.use((_req, _res, next) => {
 });
 
 router.get("/", async (_, res) => {
-  res.status(200).json(PredefinedProcedures);
+  res.status(200).json(PredefinedProcedureNames);
 });
 
 export default router;

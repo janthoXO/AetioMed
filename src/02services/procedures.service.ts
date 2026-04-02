@@ -1,51 +1,44 @@
-import { type Procedure } from "@/models/Procedure.js";
-import type { Language } from "@/models/Language.js";
+import { type ProcedureName } from "@/models/Procedure.js";
+import type { ForeignLanguage } from "@/models/Language.js";
 import {
-  getProcedureTranslationFromEnglish,
-  saveProcedureTranslation,
+  getProcedureNameTranslationFromEnglish,
+  saveProcedureNameTranslation,
 } from "@/03repo/procedures.repo.js";
 import { generateProceduresFromEnglish } from "@/03aigateway/procedures.aigateway.js";
 import { getRequiredRequestContext } from "@/utils/context.js";
 
-export async function translateProceduresFromEnglish(
-  procedures: Procedure[],
-  language: Language
-): Promise<Procedure[]> {
-  const translations: Procedure[] = [];
-  const failedTranslations: { index: number; procedure: Procedure }[] = [];
-  for (let i = 0; i < procedures.length; i++) {
-    const englishProcedure = getProcedureTranslationFromEnglish(
-      procedures[i]!,
+export async function translateProcedureNamesFromEnglish(
+  procedureNames: ProcedureName[],
+  language: ForeignLanguage
+): Promise<Record<ProcedureName, ProcedureName>> {
+  const translations: Record<ProcedureName, ProcedureName> = {};
+  const failedTranslations: ProcedureName[] = [];
+
+  // 1. Try to get translations from the repo
+  for (const procedureName of procedureNames) {
+    const englishProcedure = getProcedureNameTranslationFromEnglish(
+      procedureName,
       language
     );
 
     if (englishProcedure) {
-      translations[i] = englishProcedure;
+      translations[procedureName] = englishProcedure;
     } else {
-      failedTranslations.push({ index: i, procedure: procedures[i]! });
+      failedTranslations.push(procedureName);
     }
   }
 
+  // 2. For procedures that are not in the repo, use the LLM to translate
   if (failedTranslations.length > 0) {
-    const englishProcedures = await generateProceduresFromEnglish(
-      failedTranslations.map((t) => t.procedure),
+    const generatedTranslations = await generateProceduresFromEnglish(
+      failedTranslations,
       language,
       getRequiredRequestContext()
     );
 
-    for (const { index, procedure } of failedTranslations) {
-      // add to translations
-      translations[index] = englishProcedures[index] ?? procedure;
+    Object.assign(translations, generatedTranslations);
 
-      // save the translation to the memory cache for future use (only if translation successful)
-      if (englishProcedures[index]) {
-        saveProcedureTranslation(
-          englishProcedures[index]!,
-          procedure,
-          language
-        );
-      }
-    }
+    saveProcedureNameTranslation(generatedTranslations, language);
   }
 
   return translations;

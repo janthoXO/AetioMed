@@ -5,7 +5,7 @@ import {
   StateGraph,
   type Runtime,
 } from "@langchain/langgraph";
-import { GlobalStateSchema } from "../../state.js";
+import { CaseGenerationStateSchema } from "../../state.js";
 import z from "zod";
 import { InconsistencySchema } from "@/models/Inconsistency.js";
 import { generateAnamnesis } from "@/03aigateway/anamnesis.aigateway.js";
@@ -15,8 +15,9 @@ import { generateProcedures } from "@/03aigateway/procedures.aigateway.js";
 import { passthrough } from "@/02graphs/graph.utils.js";
 import { RequestContextSchema, type RequestContext } from "@/utils/context.js";
 import { generatePatient } from "@/03aigateway/patient.aigateway.js";
+import type { PickNested } from "@/utils/pickNested.js";
 
-const InconsistencyGraphStateSchema = GlobalStateSchema.pick({
+const InconsistencyGraphStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
   generationFlags: true,
@@ -68,11 +69,11 @@ ${state.inconsistencies
 async function refinePatient(
   state: InconsistencyGraphState,
   runtime?: Runtime<RequestContext>
-): Promise<Pick<InconsistencyGraphState, "case">> {
+): Promise<PickNested<InconsistencyGraphState, "case", "patient">> {
   runtime?.context?.traceUtils?.emitTrace(
     `[InconsistencyGraph] Starting refinement of patient fields...`
   );
-  state.case.patient = await generatePatient(
+  const generatedPatient = await generatePatient(
     state.diagnosis,
     {
       case: state.case, // provide the case to allow refinement on "old" case data
@@ -97,17 +98,17 @@ ${JSON.stringify(state.case.patient, null, 2)}
 \`\`\``
   );
 
-  return { case: { patient: state.case.patient } };
+  return { case: { patient: generatedPatient } };
 }
 
 async function refineChiefComplaint(
   state: InconsistencyGraphState,
   runtime?: Runtime<RequestContext>
-): Promise<Pick<InconsistencyGraphState, "case">> {
+): Promise<PickNested<InconsistencyGraphState, "case", "chiefComplaint">> {
   runtime?.context?.traceUtils?.emitTrace(
     "[InconsistencyGraph] Starting refinement of chief complaint..."
   );
-  state.case.chiefComplaint = await generateChiefComplaint(
+  const generatedChiefComplaint = await generateChiefComplaint(
     state.diagnosis,
     {
       case: state.case, // provide the case to allow refinement on "old" case data
@@ -132,7 +133,7 @@ ${state.case.chiefComplaint}`
 
   return {
     case: {
-      chiefComplaint: state.case.chiefComplaint,
+      chiefComplaint: generatedChiefComplaint,
     },
   };
 }
@@ -140,11 +141,11 @@ ${state.case.chiefComplaint}`
 async function refineAnamnesis(
   state: InconsistencyGraphState,
   runtime?: Runtime<RequestContext>
-): Promise<Pick<InconsistencyGraphState, "case">> {
+): Promise<PickNested<InconsistencyGraphState, "case", "anamnesis">> {
   runtime?.context?.traceUtils?.emitTrace(
     "[InconsistencyGraph] Starting refinement of anamnesis..."
   );
-  state.case.anamnesis = await generateAnamnesis(
+  const generatedAnamnesis = await generateAnamnesis(
     state.diagnosis,
     {
       case: state.case, // provide the case to allow refinement on "old" case data
@@ -172,7 +173,7 @@ ${JSON.stringify(state.case.anamnesis, null, 2)}
 
   return {
     case: {
-      anamnesis: state.case.anamnesis,
+      anamnesis: generatedAnamnesis,
     },
   };
 }
@@ -180,11 +181,11 @@ ${JSON.stringify(state.case.anamnesis, null, 2)}
 async function refineProcedures(
   state: InconsistencyGraphState,
   runtime?: Runtime<RequestContext>
-): Promise<Pick<InconsistencyGraphState, "case">> {
+): Promise<PickNested<InconsistencyGraphState, "case", "procedures">> {
   runtime?.context?.traceUtils?.emitTrace(
     "[InconsistencyGraph] Starting refinement of procedures..."
   );
-  state.case.procedures = await generateProcedures(
+  const generatedProcedures = await generateProcedures(
     state.diagnosis,
     {
       case: state.case, // provide the case to allow refinement on "old" case data
@@ -212,7 +213,7 @@ ${JSON.stringify(state.case.procedures, null, 2)}
 
   return {
     case: {
-      procedures: state.case.procedures,
+      procedures: generatedProcedures,
     },
   };
 }

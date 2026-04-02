@@ -1,84 +1,82 @@
+import { START, StateGraph, END } from "@langchain/langgraph";
+import { CaseTranslationStateSchema } from "./state.js";
+import { RequestContextSchema } from "@/utils/context.js";
 import { getLLM } from "@/utils/llm.js";
-import { type GlobalState } from "./state.js";
-import { type AnamnesisCategory } from "@/models/Anamnesis.js";
+import { type CaseTranslationState } from "./state.js";
 import { CaseJsonExampleString, CaseSchema } from "@/models/Case.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/utils/retry.js";
 import { GenerationError } from "@/errors/AppError.js";
 import { translateAnamnesisCategoriesFromEnglish } from "@/02services/anamnesis.service.js";
-import { translateProceduresFromEnglish } from "@/02services/procedures.service.js";
+import { translateProcedureNamesFromEnglish } from "@/02services/procedures.service.js";
 import type { RequestContext } from "@/utils/context.js";
-import type { Runtime } from "@langchain/langgraph";
-
-type TranslateCaseOutput = Pick<GlobalState, "case">;
+import { type Runtime, Send } from "@langchain/langgraph";
+import type { PickNested } from "@/utils/pickNested.js";
 
 export async function translateAnamnesisCategory(
-  state: GlobalState
-): Promise<TranslateCaseOutput> {
+  state: CaseTranslationState
+): Promise<PickNested<CaseTranslationState, "case", "anamnesis"> | undefined> {
   console.debug(
     "[Translation: TranslateCase] Translating anamnesis category to",
     state.language
   );
 
-  const anamnesisCategories =
-    state.case.anamnesis?.map(
-      (anamnesis) => anamnesis.category as AnamnesisCategory
-    ) ?? [];
-
-  if (anamnesisCategories.length === 0) {
+  if (!state.case.anamnesis?.length) {
     console.debug(
       "[Translation: TranslateCase] No anamnesis categories to translate."
     );
-    return { case: state.case };
+    return undefined;
   }
 
   const categoryTranslations = await translateAnamnesisCategoriesFromEnglish(
-    anamnesisCategories,
+    state.case.anamnesis.map((anamnesis) => anamnesis.category),
     state.language
   );
 
-  state.case.anamnesis = state.case.anamnesis?.map((anamnesis) => {
+  const updatedAnamnesis = state.case.anamnesis.map((anamnesis) => {
     return {
       ...anamnesis,
-      category: categoryTranslations[anamnesis.category as AnamnesisCategory]!,
+      category: categoryTranslations[anamnesis.category]!,
     };
   });
 
-  return { case: state.case };
+  return { case: { anamnesis: updatedAnamnesis } };
 }
 
-export async function translateProcedures(
-  state: GlobalState
-): Promise<TranslateCaseOutput> {
+export async function translateProcedureNames(
+  state: CaseTranslationState
+): Promise<PickNested<CaseTranslationState, "case", "procedures"> | undefined> {
   console.debug(
-    "[Translation: TranslateCase] Translating procedures to",
+    "[Translation: TranslateCase] Translating procedure names to",
     state.language
   );
 
   if (!state.case.procedures?.length) {
-    console.debug("[Translation: TranslateCase] No procedures to translate.");
-    return { case: state.case };
+    console.debug(
+      "[Translation: TranslateCase] No procedure names to translate."
+    );
+    return undefined;
   }
 
-  const englishProcedures = await translateProceduresFromEnglish(
-    state.case.procedures,
+  const englishProcedures = await translateProcedureNamesFromEnglish(
+    state.case.procedures.map((p) => p.name),
     state.language
   );
 
-  state.case.procedures = state.case.procedures?.map((procedure, index) => {
+  const updatedProcedures = state.case.procedures.map((procedure) => {
     return {
       ...procedure,
-      ...englishProcedures[index],
+      name: englishProcedures[procedure.name] ?? procedure.name,
     };
   });
 
-  return { case: state.case };
+  return { case: { procedures: updatedProcedures } };
 }
 
 export async function translateValues(
-  state: GlobalState,
+  state: CaseTranslationState,
   runtime?: Runtime<RequestContext>
-): Promise<TranslateCaseOutput> {
+): Promise<Pick<CaseTranslationState, "case">> {
   console.debug(
     "[Translation: TranslateCase] Translating case to",
     state.language
@@ -142,3 +140,30 @@ ${JSON.stringify(state.case)}`;
     throw error;
   }
 }
+
+export const caseTranslationGraph = new StateGraph(
+  CaseTranslationStateSchema,
+  RequestContextSchema
+)
+  .addNode("translate_anamnesis_category", translateAnamnesisCategory)
+  .addNode("translate_procedures_names", translateProcedureNames)
+  .addNode("translate_values", translateValues)
+
+  .addConditionalEdges(START, (state): Send[] => {
+    const sends: Send[] = [];
+    if (state.case.anamnesis?.length) {
+      sends.push(new Send("translate_anamnesis_category", state));
+    }
+    if (state.case.procedures?.length) {
+      sends.push(new Send("translate_procedures_names", state));
+    }
+
+    if (sends.length === 0) {
+      sends.push(new Send(END, state));
+    }
+    return sends;
+  })
+  .addEdge("translate_anamnesis_category", "translate_values")
+  .addEdge("translate_procedures_names", "translate_values")
+  .addEdge("translate_values", END)
+  .compile();

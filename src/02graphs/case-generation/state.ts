@@ -7,16 +7,11 @@ import { SymptomSchema } from "@/models/Symptom.js";
 import { registry } from "@langchain/langgraph/zod";
 import { UserInstructionsSchema } from "@/models/UserInstructions.js";
 
-export const GraphInputSchema = z.object({
+export const CaseGenerationStateSchema = z.object({
   diagnosis: DiagnosisSchema,
   userInstructions: UserInstructionsSchema.optional(),
   generationFlags: z.array(GenerationFlagSchema).min(1),
   anamnesisCategories: z.array(AnamnesisCategorySchema).optional(),
-});
-
-export type GraphInput = z.infer<typeof GraphInputSchema>;
-
-export const GlobalStateSchema = GraphInputSchema.extend({
   /**
    * Generated cases.
    */
@@ -38,4 +33,4 @@ export const GlobalStateSchema = GraphInputSchema.extend({
 /**
  * Type alias for the state shape
  */
-export type GlobalState = z.infer<typeof GlobalStateSchema>;
+export type CaseGenerationState = z.infer<typeof CaseGenerationStateSchema>;

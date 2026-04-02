@@ -1,7 +1,7 @@
 meta {
   name: Generate Case
   type: http
-  seq: 1
+  seq: 4
 }
 
 post {
@@ -13,8 +13,17 @@ post {
 body:json {
   {
     "diagnosis": "diabetes",
-    "generationFlags": ["chiefComplaint", "anamnesis"],
-    "language": "German"
+    "generationFlags": [
+      "patient",
+      "chiefComplaint",
+      "anamnesis",
+      "procedures"
+    ],
+    "language": "German",
+    "llmConfig": {
+      "provider": "ollama",
+      "model": "llama3.1"
+    }
   }
 }
 

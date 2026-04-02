@@ -1,11 +1,14 @@
 import { type AnamnesisCategory } from "@/models/Anamnesis.js";
-import type { Language } from "@/models/Language.js";
+import {
+  ForeignLanguageSchema,
+  type ForeignLanguage,
+} from "@/models/Language.js";
 import z from "zod";
 import YAML from "yaml";
 import fs from "fs";
 
 const LanguageAnamnesisCategoryMappingSchema = z.partialRecord(
-  z.enum(["English", "German"]),
+  ForeignLanguageSchema,
   z.record(z.string(), z.string())
 );
 
@@ -26,7 +29,7 @@ function preloadAnamnesisCategoryTranslations(): LanguageAnamnesisCategoryMappin
 
   if (!fs.existsSync(dataPath)) {
     console.warn(
-      "[Anamnesis Service] No anamnesisCategoriesTranslations.yml found, skipping preload."
+      "[Anamnesis Repo] No anamnesisCategoriesTranslations.yml found, skipping preload."
     );
     return {};
   }
@@ -37,18 +40,22 @@ function preloadAnamnesisCategoryTranslations(): LanguageAnamnesisCategoryMappin
     );
     if (!parsed.success) {
       console.warn(
-        "[Anamnesis Service] Parsed YAML is not an object, skipping preload."
+        "[Anamnesis Repo] Parsed YAML is not an object, skipping preload."
       );
       return {};
     }
 
     console.info(
-      `[Anamnesis Service] Preloaded ${Object.keys(parsed.data).length} anamnesis categories translations from YAML.`
+      `[Anamnesis Repo] Preloaded ${
+        Object.keys(parsed.data).flatMap((k) =>
+          Object.keys(parsed.data[k as keyof typeof parsed.data] || {})
+        ).length
+      } anamnesis categories translations from YAML.`
     );
     return parsed.data;
   } catch (err) {
     console.warn(
-      "[Anamnesis Service] Failed to preload anamnesis categories translations:",
+      "[Anamnesis Repo] Failed to preload anamnesis categories translations:",
       err
     );
     return {};
@@ -66,7 +73,7 @@ const AnamnesisCategoryFromEnglish: LanguageAnamnesisCategoryMapping =
  */
 export function getAnamnesisCategoryTranslationToEnglish(
   category: AnamnesisCategory,
-  language: Language
+  language: ForeignLanguage
 ): AnamnesisCategory | undefined {
   const translations = AnamnesisCategoryFromEnglish[language];
   if (!translations) return undefined;
@@ -90,7 +97,7 @@ export function getAnamnesisCategoryTranslationToEnglish(
  */
 export function getAnamnesisCategoryTranslationFromEnglish(
   category: AnamnesisCategory,
-  language: Language
+  language: ForeignLanguage
 ): AnamnesisCategory | undefined {
   return AnamnesisCategoryFromEnglish[language]?.[category];
 }
@@ -102,7 +109,7 @@ export function getAnamnesisCategoryTranslationFromEnglish(
  */
 export function saveAnamnesisCategoryTranslations(
   englishToTarget: Record<AnamnesisCategory, AnamnesisCategory>,
-  language: Language
+  language: ForeignLanguage
 ) {
   if (!AnamnesisCategoryFromEnglish[language]) {
     AnamnesisCategoryFromEnglish[language] = {};

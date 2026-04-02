@@ -5,7 +5,7 @@ import {
   StateGraph,
   type Runtime,
 } from "@langchain/langgraph";
-import { GlobalStateSchema } from "../../state.js";
+import { CaseGenerationStateSchema } from "../../state.js";
 import z from "zod";
 import { generateChiefComplaint as generateChiefComplaintGateway } from "@/03aigateway/chiefComplaint.aigateway.js";
 import {
@@ -17,8 +17,9 @@ import { generatePatient as generatePatientGateway } from "@/03aigateway/patient
 import { generateAnamnesis as generateAnamnesisGateway } from "@/03aigateway/anamnesis.aigateway.js";
 import { generateProcedures as generateProceduresGateway } from "@/03aigateway/procedures.aigateway.js";
 import { passthrough } from "@/02graphs/graph.utils.js";
+import type { PickNested } from "@/utils/pickNested.js";
 
-const GenerationGraphStateSchema = GlobalStateSchema.extend({
+const GenerationGraphStateSchema = CaseGenerationStateSchema.extend({
   cot: z.string(),
 
   /**
@@ -87,11 +88,11 @@ ${state.outline}`
 async function generatePatient(
   state: GenerationGraphState,
   runtime?: Runtime<RequestContext>
-) {
+): Promise<PickNested<GenerationGraphState, "case", "patient">> {
   runtime?.context?.traceUtils?.emitTrace(
     `[GenerationGraph] Starting generation of patient fields...`
   );
-  state.case.patient = await generatePatientGateway(
+  const generatedPatient = await generatePatientGateway(
     state.diagnosis,
     {
       outline: state.outline,
@@ -115,17 +116,17 @@ ${JSON.stringify(state.case.patient, null, 2)}
 \`\`\``
   );
 
-  return { case: state.case };
+  return { case: { patient: generatedPatient } };
 }
 
 async function generateChiefComplaint(
   state: GenerationGraphState,
   runtime?: Runtime<RequestContext>
-): Promise<Pick<GenerationGraphState, "case">> {
+): Promise<PickNested<GenerationGraphState, "case", "chiefComplaint">> {
   runtime?.context?.traceUtils?.emitTrace(
     `[GenerationGraph] Starting generation of chief complaint...`
   );
-  state.case.chiefComplaint = await generateChiefComplaintGateway(
+  const generatedChiefComplaint = await generateChiefComplaintGateway(
     state.diagnosis,
     {
       outline: state.outline,
@@ -147,17 +148,17 @@ async function generateChiefComplaint(
 ${state.case.chiefComplaint}`
   );
 
-  return { case: state.case };
+  return { case: { chiefComplaint: generatedChiefComplaint } };
 }
 
 async function generateAnamnesis(
   state: GenerationGraphState,
   runtime?: Runtime<RequestContext>
-) {
+): Promise<PickNested<GenerationGraphState, "case", "anamnesis">> {
   runtime?.context?.traceUtils?.emitTrace(
     `[GenerationGraph] Starting generation of anamnesis fields...`
   );
-  state.case.anamnesis = await generateAnamnesisGateway(
+  const generatedAnamnesis = await generateAnamnesisGateway(
     state.diagnosis,
     {
       outline: state.outline,
@@ -182,17 +183,17 @@ ${JSON.stringify(state.case.anamnesis, null, 2)}
 \`\`\``
   );
 
-  return { case: state.case };
+  return { case: { anamnesis: generatedAnamnesis } };
 }
 
 async function generateProcedures(
   state: GenerationGraphState,
   runtime?: Runtime<RequestContext>
-) {
+): Promise<PickNested<GenerationGraphState, "case", "procedures">> {
   runtime?.context?.traceUtils?.emitTrace(
     `[GenerationGraph] Starting generation of procedures...`
   );
-  state.case.procedures = await generateProceduresGateway(
+  const generatedProcedures = await generateProceduresGateway(
     state.diagnosis,
     {
       outline: state.outline,
@@ -224,10 +225,10 @@ ${JSON.stringify(state.case.procedures, null, 2)}
 \`\`\``
   );
 
-  return { case: state.case };
+  return { case: { procedures: generatedProcedures } };
 }
 
-export const generationGraph = new StateGraph(
+export const fieldGenerationGraph = new StateGraph(
   GenerationGraphStateSchema,
   RequestContextSchema
 )

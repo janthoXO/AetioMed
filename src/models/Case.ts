@@ -6,8 +6,8 @@ import {
 } from "./ChiefComplaint.js";
 import { AllGenerationFlags, type GenerationFlag } from "./GenerationFlags.js";
 import {
-  ProcedureGenerationArrayJsonExampleString,
-  ProcedureGenerationSchema,
+  ProcedureArrayJsonExampleString,
+  ProcedureSchema,
 } from "./Procedure.js";
 import { PatientSchema } from "./Patient.js";
 
@@ -18,7 +18,7 @@ export const CaseSchema = z.object({
   patient: PatientSchema.optional(),
   chiefComplaint: ChiefComplaintSchema.optional(),
   anamnesis: AnamnesisSchema.optional(),
-  procedures: z.array(ProcedureGenerationSchema).optional(),
+  procedures: z.array(ProcedureSchema).optional(),
 });
 
 export type Case = z.infer<typeof CaseSchema>;
@@ -34,7 +34,7 @@ export function CaseJsonExampleString(
         case "anamnesis":
           return `anamnesis: ${AnamnesisJsonExampleString()}`;
         case "procedures":
-          return `procedures: ${ProcedureGenerationArrayJsonExampleString()}`;
+          return `procedures: ${ProcedureArrayJsonExampleString()}`;
         default:
           return "";
       }

@@ -1,12 +1,15 @@
-import { type Procedure } from "@/models/Procedure.js";
+import { type ProcedureName } from "@/models/Procedure.js";
 import path from "node:path";
 import YAML from "yaml";
 import fs from "fs";
 import z from "zod";
-import type { Language } from "@/models/Language.js";
+import {
+  ForeignLanguageSchema,
+  type ForeignLanguage,
+} from "@/models/Language.js";
 
 const LanguageProcedureTranslationSchema = z.partialRecord(
-  z.enum(["English", "German"]),
+  ForeignLanguageSchema,
   z.record(z.string(), z.string())
 );
 
@@ -14,7 +17,7 @@ type LanguageProcedureTranslationMapping = z.infer<
   typeof LanguageProcedureTranslationSchema
 >;
 
-function preloadProcedureTranslations(): LanguageProcedureTranslationMapping {
+function preloadProcedureNameTranslations(): LanguageProcedureTranslationMapping {
   const filepath = path.resolve(
     import.meta.dirname,
     "../data/proceduresTranslations.yml"
@@ -30,7 +33,11 @@ function preloadProcedureTranslations(): LanguageProcedureTranslationMapping {
   }
 
   console.info(
-    `[Procedures] Loaded ${Object.keys(parseResult.data).length} procedure translations from YAML`
+    `[Procedures Repo] Loaded ${
+      Object.keys(parseResult.data).flatMap((k) =>
+        Object.keys(parseResult.data[k as keyof typeof parseResult.data] || {})
+      ).length
+    } procedure translations from YAML`
   );
   return parseResult.data;
 }
@@ -41,7 +48,7 @@ function preloadProcedureTranslations(): LanguageProcedureTranslationMapping {
  * e.g. { German: { "Blood Test": "Bluttest", ... } }
  */
 const ProcedureTranslations: LanguageProcedureTranslationMapping =
-  preloadProcedureTranslations();
+  preloadProcedureNameTranslations();
 
 /**
  * Get the translation of a procedure from English to the target language
@@ -49,27 +56,25 @@ const ProcedureTranslations: LanguageProcedureTranslationMapping =
  * @param language
  * @returns
  */
-export function getProcedureTranslationFromEnglish(
-  procedure: Procedure,
-  language: Language
-): Procedure | undefined {
-  const translatedName = ProcedureTranslations[language]?.[procedure.name];
+export function getProcedureNameTranslationFromEnglish(
+  procedureName: ProcedureName,
+  language: ForeignLanguage
+): ProcedureName | undefined {
+  const translatedName = ProcedureTranslations[language]?.[procedureName];
   if (translatedName) {
-    return { name: translatedName };
+    return translatedName;
   }
 
   return undefined;
 }
 
-export function saveProcedureTranslation(
-  englishProcedure: Procedure,
-  translatedProcedure: Procedure,
-  language: Language
+export function saveProcedureNameTranslation(
+  englishToTarget: Record<ProcedureName, ProcedureName>,
+  language: ForeignLanguage
 ) {
   if (!ProcedureTranslations[language]) {
     ProcedureTranslations[language] = {};
   }
 
-  ProcedureTranslations[language][englishProcedure.name] =
-    translatedProcedure.name;
+  Object.assign(ProcedureTranslations[language], englishToTarget);
 }

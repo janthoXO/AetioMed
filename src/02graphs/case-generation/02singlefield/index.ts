@@ -1,5 +1,5 @@
 import { END, START, StateGraph, type Runtime } from "@langchain/langgraph";
-import { GlobalStateSchema } from "../state.js";
+import { CaseGenerationStateSchema } from "../state.js";
 import z from "zod";
 import { RequestContextSchema, type RequestContext } from "@/utils/context.js";
 import {
@@ -19,7 +19,7 @@ import {
   generateProcedures as generateProceduresGateway,
 } from "@/03aigateway/procedures.aigateway.js";
 
-const SingleFieldStateSchema = GlobalStateSchema.extend({
+const SingleFieldStateSchema = CaseGenerationStateSchema.extend({
   cot: z.string(),
 });
 

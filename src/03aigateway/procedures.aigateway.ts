@@ -1,5 +1,4 @@
-import type { Language } from "@/models/Language.js";
-import type { Procedure } from "@/models/Procedure.js";
+import type { ForeignLanguage } from "@/models/Language.js";
 import { retry } from "@/utils/retry.js";
 import z from "zod";
 import {
@@ -10,10 +9,11 @@ import {
 } from "@/utils/llm.js";
 import type { Diagnosis } from "@/models/Diagnosis.js";
 import {
-  PredefinedProcedures,
-  ProcedureGenerationArrayJsonExampleString,
-  ProcedureGenerationSchema,
-  type ProcedureGeneration,
+  PredefinedProcedureNames,
+  ProcedureArrayJsonExampleString,
+  ProcedureSchema,
+  type Procedure,
+  type ProcedureName,
 } from "@/models/Procedure.js";
 import type { Symptom } from "@/models/Symptom.js";
 import { HumanMessage, SystemMessage } from "langchain";
@@ -105,9 +105,9 @@ export async function generateProcedures(
         inconsistencies: Inconsistency[];
       },
   userInstructions?: string, // provided by the user
-  procedureList: Procedure[] | undefined = PredefinedProcedures,
+  procedureNameList: ProcedureName[] | undefined = PredefinedProcedureNames,
   context?: RequestContext
-): Promise<ProcedureGeneration[]> {
+): Promise<Procedure[]> {
   const systemPrompt = buildPrompt(
     `You are an expert attending physician designing the diagnostic workup for a medical training simulator.
 Your current task is to order the required Procedures ${"outline" in config ? "based on the provided Case Outline" : ""}.`,
@@ -136,15 +136,15 @@ Inconsistencies to Fix:
 ${config.inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.description}\n   Suggested Fix: ${i.suggestion}`).join("\n")}`
       : undefined,
 
-    procedureList?.length
+    procedureNameList?.length
       ? `[RESTRICTED WORKUP]
 You MUST ONLY select the necessary diagnostic procedures from the following approved list. Do not invent or recommend any procedures that are not explicitly listed below:
-${procedureList.map((p) => `- ${p.name}`).join("\n")}`
+${procedureNameList.map((p) => `- ${p}`).join("\n")}`
       : `Generate a realistic list of standard procedures that should be performed to appropriately work up the patient and confirm the diagnosis.`,
 
     `Return ONLY a valid JSON object matching the schema below.
 Schema:
-${`{ "procedures": ${ProcedureGenerationArrayJsonExampleString()} }`}`,
+${`{ "procedures": ${ProcedureArrayJsonExampleString()} }`}`,
 
     `Requirements:
 - Workup Logic: The procedures must represent a realistic, standard-of-care diagnostic pathway (e.g., starting with baseline labs/imaging before moving to invasive confirmatory tests) to arrive at the Target Diagnosis.
@@ -170,12 +170,10 @@ ${`{ "procedures": ${ProcedureGenerationArrayJsonExampleString()} }`}`,
   // Initialize cases to empty in case of failure
   try {
     const ProcedureSchemaWrapper = z.object({
-      procedures: z
-        .array(ProcedureGenerationSchema)
-        .describe("Generated procedures"),
+      procedures: z.array(ProcedureSchema).describe("Generated procedures"),
     });
 
-    const procedures: ProcedureGeneration[] = await retry(
+    const procedures: Procedure[] = await retry(
       async (attempt: number, previousError?: Error) => {
         const result = await getCreativeLLM(context?.llmConfig)
           .withStructuredOutput(ProcedureSchemaWrapper)
@@ -197,23 +195,25 @@ ${`{ "procedures": ${ProcedureGenerationArrayJsonExampleString()} }`}`,
           JSON.stringify(result, null, 2)
         );
 
-        const filteredProcedures = result.procedures.filter((p) =>
-          procedureList
-            ? procedureList.some((inputP) =>
-                inputP.name.toLowerCase().includes(p.name.toLowerCase())
-              )
-            : true
-        );
+        // const filteredProcedures = result.procedures.filter((p) =>
+        //   procedureList
+        //     ? procedureList.some((inputP) =>
+        //         inputP.name.toLowerCase().includes(p.name.toLowerCase())
+        //       )
+        //     : true
+        // );
 
-        if (filteredProcedures.length === 0) {
-          throw new Error(
-            `No generated procedures could be mapped to provided procedure list. Generated procedures: ${result.procedures
-              .map((p) => p.name)
-              .join(", ")}`
-          );
-        }
+        // if (filteredProcedures.length === 0) {
+        //   throw new Error(
+        //     `No generated procedures could be mapped to provided procedure list. Generated procedures: ${result.procedures
+        //       .map((p) => p.name)
+        //       .join(", ")}`
+        //   );
+        // }
 
-        return filteredProcedures;
+        // return filteredProcedures;
+
+        return result.procedures;
       },
       2,
       0,
@@ -232,67 +232,71 @@ ${`{ "procedures": ${ProcedureGenerationArrayJsonExampleString()} }`}`,
 }
 
 export async function generateProceduresFromEnglish(
-  procedures: Procedure[],
-  language: Language,
+  procedureNames: string[],
+  language: ForeignLanguage,
   context?: RequestContext
-): Promise<(Procedure | undefined)[]> {
-  const systemPrompt = `Translate the provided procedures from English to a target language:
-  
-Return the procedures mapped to their translated part in a JSON
-{
-  "provided procedure1": "translated procedure1",
-  "provided procedure2": "translated procedure2",
+): Promise<Record<string, string>> {
+  const systemPrompt = buildPrompt(
+    `Translate the provided procedures from English to a target language:`,
+    `Return the procedures mapped to their translated part in a JSON
+{ "translations": 
+  [
+  "translated procedure1",
+  "translated procedure2",
   ...
+  ]
 }
-ONLY return the JSON object, no additional text.`;
+ONLY return the JSON object, no additional text.`
+  );
 
-  const userPrompt = `Target language: ${language}
-Procedures to translate:
-${procedures.map((p) => p.name.toLowerCase()).join("\n")}`;
+  const userPrompt = buildPrompt(
+    `Target language: ${language}`,
+    `Procedures to translate:
+${procedureNames.map((p) => p.toLowerCase()).join("\n")}`
+  );
 
   console.debug(
     `[GenerateProcedureTranslations] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const prompt = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userPrompt },
-  ];
-
-  const parsed = await retry(
-    async () => {
-      const response = await getDeterministicLLM(context?.llmConfig).invoke(
-        prompt
-      );
+  return await retry(
+    async (attempt: number, previousError?: Error) => {
+      const response = await getDeterministicLLM(context?.llmConfig)
+        .withStructuredOutput(z.object({ translations: z.array(z.string()) }))
+        .invoke([
+          new SystemMessage(systemPrompt),
+          new HumanMessage(
+            userPrompt +
+              (previousError
+                ? `\nPrevious generation error: ${previousError.message}`
+                : "")
+          ),
+        ]);
 
       console.debug(
-        "[Procedures Service] Generated procedure translations:",
-        response.text
+        `[GenerateProceduresFromEnglish] [Attempt ${attempt}] Generated procedure translations:`,
+        response
       );
 
-      const responseSchema = z.record(z.string(), z.string());
-      return responseSchema.parse(JSON.parse(response.text));
+      if (response.translations.length !== procedureNames.length) {
+        throw new Error(
+          `The number of translated procedures does not match the number of English procedures. Expected ${procedureNames.length} but got ${response.translations.length}.`
+        );
+      }
+
+      const result: Record<string, string> = {};
+      procedureNames.forEach((engProc, idx) => {
+        result[engProc] = response.translations[idx]!;
+      });
+
+      return result;
     },
     2,
-    0
-  );
-
-  // Filter only the requested procedures
-  const sortedTranslation: (Procedure | undefined)[] = procedures.map(
-    () => undefined
-  );
-  for (const [original, translated] of Object.entries(parsed)) {
-    const index = procedures
-      .map((p) => p.name.toLowerCase())
-      .indexOf(original.toLowerCase());
-    if (index === -1) {
-      continue; // keep the original procedure if no translation was provided
-      // throw new Error(
-      //   `The procedure "${original}" was not in the list of procedures to translate.`
-      // );
+    0,
+    (error, attempt) => {
+      const msg = `[GenerateProceduresFromEnglish] Attempt ${attempt} failed with error: ${error.message}`;
+      console.error(msg);
+      context?.traceUtils?.emitTrace(msg, { category: "error" });
     }
-    sortedTranslation[index] = { name: translated };
-  }
-
-  return sortedTranslation;
+  );
 }

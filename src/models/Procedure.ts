@@ -3,18 +3,18 @@ import fs from "node:fs";
 import YAML from "yaml";
 import path from "node:path";
 
-export const ProcedureSchema = z.object({
-  name: z.string().describe("Procedure name"),
-});
+export const ProcedureNameSchema = z
+  .string()
+  .describe("Name of the medical procedure");
 
-export type Procedure = z.infer<typeof ProcedureSchema>;
+export type ProcedureName = z.infer<typeof ProcedureNameSchema>;
 
-function preloadPredefinedProcedures(): Procedure[] | undefined {
+function preloadPredefinedProcedures(): ProcedureName[] | undefined {
   const filepath = path.resolve(import.meta.dirname, "../data/procedures.yml");
 
   const procedureEntries = z
     .object({
-      procedures: ProcedureSchema.array(),
+      procedures: ProcedureNameSchema.array(),
     })
     .safeParse(YAML.parse(fs.readFileSync(filepath, "utf-8")));
 
@@ -30,7 +30,7 @@ function preloadPredefinedProcedures(): Procedure[] | undefined {
   return procedureEntries.data.procedures;
 }
 
-export const PredefinedProcedures: Procedure[] | undefined =
+export const PredefinedProcedureNames: ProcedureName[] | undefined =
   preloadPredefinedProcedures();
 
 export const ProcedureRelevanceSchema = z.enum([
@@ -40,16 +40,17 @@ export const ProcedureRelevanceSchema = z.enum([
 ]);
 export type ProcedureRelevance = z.infer<typeof ProcedureRelevanceSchema>;
 
-export const ProcedureGenerationSchema = ProcedureSchema.extend({
+export const ProcedureSchema = z.object({
+  name: ProcedureNameSchema,
   relevance: ProcedureRelevanceSchema.describe(
     "Relevance of the procedure to the diagnosis"
   ),
   result: z.string().describe("Result of the procedure, if applicable"),
 });
 
-export type ProcedureGeneration = z.infer<typeof ProcedureGenerationSchema>;
+export type Procedure = z.infer<typeof ProcedureSchema>;
 
-export function ProcedureGenerationArrayJsonExampleString(): string {
+export function ProcedureArrayJsonExampleString(): string {
   return `[
     {
       "name": "Blood Test",

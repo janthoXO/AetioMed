@@ -28,6 +28,7 @@ async function onGenerationFailure({ error }: GenerationFailureEventPayload) {
 
 registry.register({
   name: "DebugLogger",
+  flags: new Set(),
   initialize() {
     if (!config.debug) {
       return;

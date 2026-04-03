@@ -1,15 +1,11 @@
 import { connectNats, closeNats } from "./client.js";
 import { startCaseGenerationConsumer } from "./cases.handler.js";
 import { registry } from "@/extension/registry.js";
-import { config } from "@/config.js";
 
 registry.register({
   name: "Nats",
+  flags: new Set(["NATS"]),
   async initialize() {
-    if (!config.features.has("NATS")) {
-      return;
-    }
-
     try {
       const connected = await connectNats();
       if (!connected) {

@@ -23,10 +23,7 @@ function preloadPredefinedDiagnoses(): Diagnosis[] | undefined {
     names: z.array(z.string()),
   });
 
-  const filepath = path.resolve(
-    process.cwd(),
-    "data/diseases_all.yml"
-  );
+  const filepath = path.resolve(process.cwd(), "data/diseases_all.yml");
 
   const diseaseEntries = z
     .array(DiagnosisEntrySchema.optional().catch(undefined))

@@ -1,0 +1,16 @@
+meta {
+  name: AllowedLlms
+  type: http
+  seq: 10
+}
+
+get {
+  url: {{base_url}}/api/allowedLlms
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

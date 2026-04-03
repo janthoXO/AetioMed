@@ -70,6 +70,12 @@ if (config.debug === true) {
 }
 
 // Initialize Features
+if (config.features.has("ALLOW_LLMS")) {
+  apiRouter.get("/allowedLlms", async (_req, res) => {
+    res.status(200).json(config.allowedLlms);
+  });
+}
+
 if (config.features.has("NATS")) {
   initNats();
 }

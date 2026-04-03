@@ -1,15 +1,12 @@
 import { config } from "./config.js";
-import { initNats } from "./nats/index.js";
-import { initPersistency } from "./persistency/index.js";
-import { initTracing } from "./tracing/index.js";
 import express from "express";
 import morgan from "morgan";
 import cors from "cors";
 import coreRouter from "./core/01rest/index.js";
 import swaggerRouter from "./swagger/router.js";
-import traceRouter from "./tracing/router.js";
-import persistencyRouter from "./persistency/router.js";
-import { initDebugLogger } from "./debugLogger/index.js";
+import { registry } from "./extension/registry.js";
+
+import "./extension/index.js"; // Import all extensions to register them
 
 console.log("Environment variables loaded.", JSON.stringify(config, null, 2));
 
@@ -66,7 +63,6 @@ app.use(express.json());
 if (config.debug === true) {
   app.use(cors());
   app.use(morgan("dev")); // for logging HTTP requests in debug mode
-  initDebugLogger();
 }
 
 // Initialize Features
@@ -76,19 +72,8 @@ if (config.features.has("ALLOW_LLMS")) {
   });
 }
 
-if (config.features.has("NATS")) {
-  initNats();
-}
-
-if (config.features.has("PERSISTENCY")) {
-  initPersistency();
-  apiRouter.use("/", persistencyRouter);
-}
-
-if (config.features.has("TRACING")) {
-  initTracing();
-  apiRouter.use("/", traceRouter);
-}
+// Load and initialize all registered extensions
+registry.initializeAll(apiRouter);
 
 app.use("/api", apiRouter);
 app.listen(config.port, () => {

@@ -3,6 +3,9 @@ import {
   type GenerationCompletedEventPayload,
 } from "@/core/eventBus/index.js";
 import { getRedisClient } from "@/core/03repo/redis.js";
+import persistencyRouter from "./router.js";
+import { registry } from "@/extension/registry.js";
+import { config } from "@/config.js";
 
 function onGenerationCompleted({
   case: generatedCase,
@@ -23,3 +26,15 @@ function onGenerationCompleted({
 export function initPersistency() {
   eventBus.on("Generation Completed", onGenerationCompleted);
 }
+
+registry.register({
+  name: "Persistency",
+  initialize(router) {
+    if (!config.features.has("PERSISTENCY")) {
+      return;
+    }
+
+    eventBus.on("Generation Completed", onGenerationCompleted);
+    router.use("/", persistencyRouter);
+  },
+});

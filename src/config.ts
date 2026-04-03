@@ -11,13 +11,6 @@ const allowedLlmsRegex = new RegExp(
   `^(${providersPattern}):([^,\\s]+)(,(${providersPattern}):([^,\\s]+))*$`
 );
 
-const FeatureFlagSchema = z.enum([
-  "ALLOW_LLMS",
-  "NATS",
-  "TRACING",
-  "PERSISTENCY",
-]);
-
 const EnvSchema = z
   .object({
     DEBUG: z.coerce.boolean().default(false),
@@ -31,9 +24,6 @@ const EnvSchema = z
           new Set(
             val
               .split(",")
-              .map((featureString) =>
-                FeatureFlagSchema.parse(featureString.trim())
-              )
           )
       ),
 
@@ -70,14 +60,6 @@ const EnvSchema = z
           {} as Record<PossibleProviders, string[]>
         );
       }),
-
-    // NATS
-    NATS_URL: z.url().optional(),
-    NATS_USER: z.string().default("nats"),
-    NATS_PASSWORD: z.string().default("nats"),
-
-    // Redis
-    REDIS_URL: z.url().optional(),
   })
   .transform((env) => {
     if (env.FEATURES.has("ALLOW_LLMS") && !env.ALLOWED_LLMS) {
@@ -114,44 +96,6 @@ const EnvSchema = z
             url: LLM_URL,
             temperature: LLM_TEMPERATURE,
             outputFormat: "json" as const,
-          }
-        : undefined,
-    };
-  })
-  .transform((env) => {
-    if (env.FEATURES.has("NATS") && !env.NATS_URL) {
-      throw new Error(
-        "NATS_URL must be specified when NATS feature is enabled"
-      );
-    }
-
-    const { NATS_URL, NATS_USER, NATS_PASSWORD, ...rest } = env;
-
-    return {
-      ...rest,
-      nats: env.FEATURES.has("NATS")
-        ? {
-            url: NATS_URL as string,
-            user: NATS_USER,
-            password: NATS_PASSWORD,
-          }
-        : undefined,
-    };
-  })
-  .transform((env) => {
-    if (env.FEATURES.has("PERSISTENCY") && !env.REDIS_URL) {
-      throw new Error(
-        "REDIS_URL must be specified when PERSISTENCY feature is enabled"
-      );
-    }
-
-    const { REDIS_URL, ...rest } = env;
-
-    return {
-      ...rest,
-      redis: env.FEATURES.has("PERSISTENCY")
-        ? {
-            url: REDIS_URL as string,
           }
         : undefined,
     };

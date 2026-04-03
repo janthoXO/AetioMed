@@ -1,5 +1,5 @@
 import { connect, type NatsConnection } from "@nats-io/transport-node";
-import { config } from "../config.js";
+import { natsConfig } from "./config.js";
 import { jetstream, type JetStreamClient } from "@nats-io/jetstream";
 
 let nc: NatsConnection | undefined;
@@ -8,20 +8,13 @@ let js: JetStreamClient | undefined;
 export async function connectNats(): Promise<boolean> {
   if (nc) return true;
 
-  if (!config.nats?.url) {
-    console.warn(
-      "[NATS] ⚠️ NATS_URL not configured. Skipping NATS connection."
-    );
-    return false;
-  }
-
-  console.log(`[NATS] Connecting to ${config.nats?.url}...`);
+  console.log(`[NATS] Connecting to ${natsConfig.url}...`);
   nc = await connect({
-    servers: config.nats?.url,
-    user: config.nats?.user,
-    pass: config.nats?.password,
+    servers: natsConfig.url,
+    user: natsConfig.user,
+    pass: natsConfig.password,
   });
-  console.log(`[NATS] Connected to ${config.nats?.url}`);
+  console.log(`[NATS] Connected to ${natsConfig.url}`);
 
   js = jetstream(nc);
   return true;

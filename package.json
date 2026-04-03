@@ -13,7 +13,7 @@
     "format": "prettier --write .",
     "format:check": "prettier --check .",
     "graph:export": "tsx src/02graphs/exportGraphs.ts",
-    "swagger": "tsx src/01rest/swagger.ts"
+    "swagger": "tsx src/swagger/swagger.ts"
   },
   "keywords": [],
   "author": "",

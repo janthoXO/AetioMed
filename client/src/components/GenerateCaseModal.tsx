@@ -137,7 +137,7 @@ export function GenerateCaseModal({ open, onOpenChange }: Props) {
       diagnosis: diagnosis.trim(),
       icd: icdCode.trim() || undefined,
       generationFlags: Array.from(selectedFlags),
-      context: Object.keys(context).length > 0 ? context : undefined,
+      userInstructions: Object.keys(context).length > 0 ? context : undefined,
     };
 
     const llmConfig = llmConfigState.getLLMConfig();

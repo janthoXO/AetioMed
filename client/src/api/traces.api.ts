@@ -4,19 +4,25 @@ import type { TraceEvent } from "@/models/TraceEvent";
 export async function fetchTraceHistory(
   traceId: string
 ): Promise<{ traces: TraceEvent[]; warning?: string }> {
-  const historyUrl = `${config.generationUrl}/traces/${traceId}`;
+  const features = await fetch(`${config.serverUrl}/features`)
+    .then((res) => res.json())
+    .then((data) => data.features);
+  if (!features.includes("PERSISTENCY")) {
+    return {
+      traces: [],
+      warning:
+        "Persistency is not enabled. Only live events are being displayed.",
+    };
+  }
+
+  const historyUrl = `${config.serverUrl}/traces/${traceId}`;
   const response = await fetch(historyUrl);
 
   if (response.status === 404) {
-    const data = await response.json();
-    if (data.error?.code === "REDIS_DISABLED") {
-      return {
-        traces: [],
-        warning: "Redis is not enabled. Only live events are being displayed.",
-      };
-    }
     return { traces: [] };
-  } else if (response.ok) {
+  }
+
+  if (response.ok) {
     const data = await response.json();
     return { traces: data.traces || [] };
   }
@@ -25,6 +31,6 @@ export async function fetchTraceHistory(
 }
 
 export function createTraceEventSource(traceId: string) {
-  const sseUrl = `${config.generationUrl}/traces/${traceId}/stream`;
+  const sseUrl = `${config.serverUrl}/traces/${traceId}/stream`;
   return new EventSource(sseUrl);
 }

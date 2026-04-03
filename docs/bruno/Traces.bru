@@ -1,0 +1,16 @@
+meta {
+  name: Traces
+  type: http
+  seq: 8
+}
+
+get {
+  url: {{base_url}}/api/traces
+  body: none
+  auth: inherit
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

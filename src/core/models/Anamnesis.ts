@@ -10,6 +10,13 @@ export type AnamnesisCategory = z.infer<typeof AnamnesisCategorySchema>;
 function preloadAnamnesisCategoryDefaults(): AnamnesisCategory[] | undefined {
   const filepath = path.resolve(process.cwd(), "data/anamnesisCategories.yml");
 
+  if (!fs.existsSync(filepath)) {
+    console.warn(
+      "[Anamnesis Repo] No anamnesisCategories.yml found, skipping preload."
+    );
+    return undefined;
+  }
+
   const categoryObject = z
     .object({
       categories: z.array(AnamnesisCategorySchema),

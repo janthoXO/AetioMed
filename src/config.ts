@@ -19,13 +19,7 @@ const EnvSchema = z
     FEATURES: z
       .string()
       .default("")
-      .transform(
-        (val) =>
-          new Set(
-            val
-              .split(",")
-          )
-      ),
+      .transform((val) => new Set(val.split(","))),
 
     LLM_PROVIDER: PossibleProvidersSchema.optional(),
     LLM_MODEL: z.string().optional(),

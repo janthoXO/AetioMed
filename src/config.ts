@@ -1,13 +1,17 @@
 import dotenv from "dotenv";
 import z from "zod";
-import {
-  LLMProviderSchema,
-  type LLMProvider,
-} from "./core/models/LLMConfig.js";
 
 dotenv.config();
 
-export const FeatureFlagSchema = z.enum([
+const PossibleProvidersSchema = z.enum(["ollama", "google"]);
+type PossibleProviders = z.infer<typeof PossibleProvidersSchema>;
+
+const providersPattern = PossibleProvidersSchema.options.join("|");
+const allowedLlmsRegex = new RegExp(
+  `^(${providersPattern}):([^,\\s]+)(,(${providersPattern}):([^,\\s]+))*$`
+);
+
+const FeatureFlagSchema = z.enum([
   "ALLOW_LLMS",
   "NATS",
   "TRACING",
@@ -22,9 +26,18 @@ const EnvSchema = z
     FEATURES: z
       .string()
       .default("")
-      .transform((val) => new Set(String(val).split(","))),
+      .transform(
+        (val) =>
+          new Set(
+            val
+              .split(",")
+              .map((featureString) =>
+                FeatureFlagSchema.parse(featureString.trim())
+              )
+          )
+      ),
 
-    LLM_PROVIDER: LLMProviderSchema.optional(),
+    LLM_PROVIDER: PossibleProvidersSchema.optional(),
     LLM_MODEL: z.string().optional(),
     LLM_API_KEY: z.string().optional(),
     LLM_URL: z.url().optional(),
@@ -32,7 +45,7 @@ const EnvSchema = z
 
     ALLOWED_LLMS: z
       .string()
-      .regex(/^([^:\s]+):([^,\s]+)(,([^:\s]+):([^,\s]+))*$/)
+      .regex(allowedLlmsRegex)
       .optional()
       .transform((val) => {
         if (!val) return undefined;
@@ -47,14 +60,14 @@ const EnvSchema = z
               );
             }
 
-            if (!acc[provider as LLMProvider]) {
-              acc[provider as LLMProvider] = [];
+            if (!acc[provider as PossibleProviders]) {
+              acc[provider as PossibleProviders] = [];
             }
 
-            acc[provider as LLMProvider].push(model);
+            acc[provider as PossibleProviders].push(model);
             return acc;
           },
-          {} as Record<LLMProvider, string[]>
+          {} as Record<PossibleProviders, string[]>
         );
       }),
 
@@ -95,7 +108,7 @@ const EnvSchema = z
       ...rest,
       llm: !env.FEATURES.has("ALLOW_LLMS")
         ? {
-            provider: LLM_PROVIDER as LLMProvider,
+            provider: LLM_PROVIDER as PossibleProviders,
             model: LLM_MODEL as string,
             apiKey: LLM_API_KEY,
             url: LLM_URL,

@@ -1,8 +1,10 @@
+import { config } from "@/config.js";
 import {
   eventBus,
   type GenerationFailureEventPayload,
   type GenerationLogEventPayload,
 } from "@/core/eventBus/index.js";
+import { registry } from "@/extension/registry.js";
 
 async function onGenerationLog({ msg, logLevel }: GenerationLogEventPayload) {
   switch (logLevel) {
@@ -24,8 +26,14 @@ async function onGenerationFailure({ error }: GenerationFailureEventPayload) {
   console.error(msg);
 }
 
-export function initDebugLogger() {
-  eventBus.on("Generation Log", onGenerationLog);
+registry.register({
+  name: "DebugLogger",
+  initialize() {
+    if (!config.debug) {
+      return;
+    }
 
-  eventBus.on("Generation Failure", onGenerationFailure);
-}
+    eventBus.on("Generation Log", onGenerationLog);
+    eventBus.on("Generation Failure", onGenerationFailure);
+  },
+});

@@ -5,6 +5,9 @@ import {
 } from "@/core/eventBus/index.js";
 import { getTraceBus } from "@/tracing/traceManager.js";
 import { getRequestContext } from "@/core/utils/context.js";
+import traceRouter from "./router.js";
+import { registry } from "@/extension/registry.js";
+import { config } from "@/config.js";
 
 async function onGenerationLog({ msg, logLevel }: GenerationLogEventPayload) {
   const context = getRequestContext();
@@ -39,8 +42,16 @@ async function onGenerationFailure({ error }: GenerationFailureEventPayload) {
   }
 }
 
-export function initTracing() {
-  eventBus.on("Generation Log", onGenerationLog);
+registry.register({
+  name: "Tracing",
+  initialize(router) {
+    if (!config.features.has("TRACING")) {
+      return;
+    }
 
-  eventBus.on("Generation Failure", onGenerationFailure);
-}
+    eventBus.on("Generation Log", onGenerationLog);
+    eventBus.on("Generation Failure", onGenerationFailure);
+
+    router.use("/", traceRouter);
+  },
+});

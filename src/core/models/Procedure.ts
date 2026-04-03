@@ -12,6 +12,13 @@ export type ProcedureName = z.infer<typeof ProcedureNameSchema>;
 function preloadPredefinedProcedures(): ProcedureName[] | undefined {
   const filepath = path.resolve(process.cwd(), "data/procedures.yml");
 
+  if (!fs.existsSync(filepath)) {
+    console.warn(
+      "[Procedure Repo] No procedures.yml found, skipping preload."
+    );
+    return undefined;
+  }
+
   const procedureEntries = z
     .object({
       procedures: ProcedureNameSchema.array(),

@@ -3,6 +3,8 @@ services:
     image: ghcr.io/janthoXO/AetioMed/server:latest
     ports:
       - "3030:3030"
+    volumes:
+      - ./data:/app/data
     environment:
       - DEBUG=${DEBUG:-false}
       - PORT=${PORT:-3030}

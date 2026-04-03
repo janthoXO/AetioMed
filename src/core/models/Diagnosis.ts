@@ -25,6 +25,13 @@ function preloadPredefinedDiagnoses(): Diagnosis[] | undefined {
 
   const filepath = path.resolve(process.cwd(), "data/diseases_all.yml");
 
+  if (!fs.existsSync(filepath)) {
+    console.warn(
+      "[Diagnosis Repo] No diseases_all.yml found, skipping preload."
+    );
+    return undefined;
+  }
+
   const diseaseEntries = z
     .array(DiagnosisEntrySchema.optional().catch(undefined))
     .transform((entries) => entries.filter((e) => !!e))

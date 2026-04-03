@@ -7,7 +7,6 @@ import { getTraceBus } from "@/tracing/traceManager.js";
 import { getRequestContext } from "@/core/utils/context.js";
 import traceRouter from "./router.js";
 import { registry } from "@/extension/registry.js";
-import { config } from "@/config.js";
 
 async function onGenerationLog({ msg, logLevel }: GenerationLogEventPayload) {
   const context = getRequestContext();
@@ -44,11 +43,8 @@ async function onGenerationFailure({ error }: GenerationFailureEventPayload) {
 
 registry.register({
   name: "Tracing",
+  flags: new Set(["TRACING"]),
   initialize(router) {
-    if (!config.features.has("TRACING")) {
-      return;
-    }
-
     eventBus.on("Generation Log", onGenerationLog);
     eventBus.on("Generation Failure", onGenerationFailure);
 

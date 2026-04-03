@@ -1,5 +1,5 @@
 import { createClient, type RedisClientType } from "redis";
-import { config } from "../../config.js";
+import { persistencyConfig } from "@/persistency/config.js";
 
 let redisClientPromise: Promise<RedisClientType | null> | null = null;
 
@@ -9,14 +9,7 @@ export function getRedisClient(): Promise<RedisClientType | null> {
   }
 
   redisClientPromise = (async () => {
-    if (!config.redis?.url) {
-      console.log(
-        "[Redis] REDIS_URL not configured. Traces will not be persisted."
-      );
-      return null;
-    }
-
-    const client = createClient({ url: config.redis?.url });
+    const client = createClient({ url: persistencyConfig.url });
 
     await client.connect();
     console.log("[Redis] Connected to Redis successfully.");

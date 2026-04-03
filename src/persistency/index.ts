@@ -5,11 +5,13 @@ import {
 import { getRedisClient } from "@/core/03repo/redis.js";
 import persistencyRouter from "./router.js";
 import { registry } from "@/extension/registry.js";
-import { config } from "@/config.js";
+import { loadConfig } from "./config.js";
 
 function onGenerationCompleted({
   case: generatedCase,
 }: GenerationCompletedEventPayload) {
+  loadConfig();
+
   getRedisClient().then((redis) => {
     if (!redis) {
       return;
@@ -29,11 +31,8 @@ export function initPersistency() {
 
 registry.register({
   name: "Persistency",
+  flags: new Set(["PERSISTENCY"]),
   initialize(router) {
-    if (!config.features.has("PERSISTENCY")) {
-      return;
-    }
-
     eventBus.on("Generation Completed", onGenerationCompleted);
     router.use("/", persistencyRouter);
   },

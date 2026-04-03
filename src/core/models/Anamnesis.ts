@@ -8,10 +8,7 @@ export const AnamnesisCategorySchema = z.string();
 export type AnamnesisCategory = z.infer<typeof AnamnesisCategorySchema>;
 
 function preloadAnamnesisCategoryDefaults(): AnamnesisCategory[] | undefined {
-  const filepath = path.resolve(
-    process.cwd(),
-    "data/anamnesisCategories.yml"
-  );
+  const filepath = path.resolve(process.cwd(), "data/anamnesisCategories.yml");
 
   const categoryObject = z
     .object({

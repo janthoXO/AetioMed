@@ -1,0 +1,24 @@
+meta {
+  name: TraceById
+  type: http
+  seq: 9
+}
+
+get {
+  url: {{base_url}}/api/traces/:traceId
+  body: none
+  auth: inherit
+}
+
+params:query {
+  ~categories: error
+}
+
+params:path {
+  traceId: 42476807-5184-4ff5-85c6-17fec6b7f97b
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

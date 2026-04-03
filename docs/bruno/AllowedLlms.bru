@@ -1,11 +1,11 @@
 meta {
-  name: Status
+  name: AllowedLlms
   type: http
-  seq: 1
+  seq: 10
 }
 
 get {
-  url: {{base_url}}/api/health
+  url: {{base_url}}/api/allowedLlms
   body: none
   auth: inherit
 }

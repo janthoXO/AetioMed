@@ -23,6 +23,13 @@ function preloadProcedureNameTranslations(): LanguageProcedureTranslationMapping
     "data/proceduresTranslations.yml"
   );
 
+  if (!fs.existsSync(filepath)) {
+    console.warn(
+      "[Procedures Repo] No proceduresTranslations.yml found, skipping preload."
+    );
+    return {};
+  }
+
   const translationsObject = YAML.parse(fs.readFileSync(filepath, "utf-8"));
 
   const parseResult =

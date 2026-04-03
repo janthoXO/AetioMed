@@ -19,9 +19,6 @@ FROM base AS build
 RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm run build
 
-# Make sure all data files (json, yml) are in dist/data
-RUN cp -r src/data dist/
-
 # Stage 2: Production image using Distroless
 FROM gcr.io/distroless/nodejs20-debian12 AS runner
 WORKDIR /app

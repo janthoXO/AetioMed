@@ -4,7 +4,6 @@ import {
   LLMProviderSchema,
   type LLMProvider,
 } from "./core/models/LLMConfig.js";
-import { debug } from "node:console";
 
 dotenv.config();
 

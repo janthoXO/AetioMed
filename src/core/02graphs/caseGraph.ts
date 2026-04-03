@@ -37,10 +37,11 @@ export function buildCaseGraph() {
 
     .addEdge(START, "generation_phase")
     .addConditionalEdges("generation_phase", (state) => {
-      if (state.language) {
+      if (state.language && state.language !== "English") {
         return "translation_phase";
       }
-      return "generation_phase";
+
+      return END;
     })
     .addEdge("translation_phase", END);
 

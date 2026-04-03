@@ -1,0 +1,46 @@
+import {
+  eventBus,
+  type GenerationFailureEventPayload,
+  type GenerationLogEventPayload,
+} from "@/core/eventBus/index.js";
+import { getTraceBus } from "@/tracing/traceManager.js";
+import { getRequestContext } from "@/core/utils/context.js";
+
+async function onGenerationLog({ msg, logLevel }: GenerationLogEventPayload) {
+  const context = getRequestContext();
+  const traceId = context?.traceId;
+  if (!traceId) return;
+
+  // Emit via active trace bus if one corresponds to the current traceId
+  const traceBus = getTraceBus(traceId);
+  if (traceBus) {
+    traceBus.emit("trace", {
+      message: msg,
+      category: logLevel,
+    });
+  }
+}
+
+async function onGenerationFailure({ error }: GenerationFailureEventPayload) {
+  const context = getRequestContext();
+  const traceId = context?.traceId;
+  if (!traceId) return;
+
+  const msg = error instanceof Error ? error.message : String(error);
+
+  // Emit via active trace bus if one corresponds to the current traceId
+  const traceBus = getTraceBus(traceId);
+  if (traceBus) {
+    traceBus.emit("trace", {
+      message: msg,
+      category: "error",
+      data: error,
+    });
+  }
+}
+
+export function initTracing() {
+  eventBus.on("Generation Log", onGenerationLog);
+
+  eventBus.on("Generation Failure", onGenerationFailure);
+}

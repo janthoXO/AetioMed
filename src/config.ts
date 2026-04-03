@@ -1,19 +1,63 @@
 import dotenv from "dotenv";
 import z from "zod";
-import { LLMProviderSchema, type LLMConfig } from "./models/LLMConfig.js";
+import {
+  LLMProviderSchema,
+  type LLMProvider,
+} from "./core/models/LLMConfig.js";
+import { debug } from "node:console";
 
 dotenv.config();
+
+export const FeatureFlagSchema = z.enum([
+  "ALLOW_LLMS",
+  "NATS",
+  "TRACING",
+  "PERSISTENCY",
+]);
 
 const EnvSchema = z
   .object({
     DEBUG: z.coerce.boolean().default(false),
     PORT: z.coerce.number().default(3030),
 
+    FEATURES: z
+      .string()
+      .default("")
+      .transform((val) => new Set(String(val).split(","))),
+
     LLM_PROVIDER: LLMProviderSchema.optional(),
     LLM_MODEL: z.string().optional(),
     LLM_API_KEY: z.string().optional(),
     LLM_URL: z.url().optional(),
     LLM_TEMPERATURE: z.coerce.number().min(0).max(1).default(0.7),
+
+    ALLOWED_LLMS: z
+      .string()
+      .regex(/^([^:\s]+):([^,\s]+)(,([^:\s]+):([^,\s]+))*$/)
+      .optional()
+      .transform((val) => {
+        if (!val) return undefined;
+
+        const pairs = String(val).split(",");
+        return pairs.reduce(
+          (acc, pair) => {
+            const [provider, model] = pair.split(":", 2);
+            if (!provider || !model) {
+              throw new Error(
+                `Invalid ALLOWED_LLMS format for pair "${pair}". Expected format is "PROVIDER:MODEL".`
+              );
+            }
+
+            if (!acc[provider as LLMProvider]) {
+              acc[provider as LLMProvider] = [];
+            }
+
+            acc[provider as LLMProvider].push(model);
+            return acc;
+          },
+          {} as Record<LLMProvider, string[]>
+        );
+      }),
 
     // NATS
     NATS_URL: z.url().optional(),
@@ -24,72 +68,100 @@ const EnvSchema = z
     REDIS_URL: z.url().optional(),
   })
   .transform((env) => {
-    let transformedEnv: Config = {
-      port: env.PORT,
-      debug: env.DEBUG,
+    if (env.FEATURES.has("ALLOW_LLMS") && !env.ALLOWED_LLMS) {
+      throw new Error(
+        "ALLOWED_LLMS must be specified when ALLOW_LLMS feature is enabled"
+      );
+    }
+
+    if (
+      !env.FEATURES.has("ALLOW_LLMS") &&
+      (!env.LLM_PROVIDER || !env.LLM_MODEL)
+    ) {
+      throw new Error(
+        "LLM_PROVIDER and LLM_MODEL must be specified when ALLOW_LLMS feature is disabled"
+      );
+    }
+
+    const {
+      LLM_PROVIDER,
+      LLM_MODEL,
+      LLM_API_KEY,
+      LLM_URL,
+      LLM_TEMPERATURE,
+      ...rest
+    } = env;
+
+    return {
+      ...rest,
+      llm: !env.FEATURES.has("ALLOW_LLMS")
+        ? {
+            provider: LLM_PROVIDER as LLMProvider,
+            model: LLM_MODEL as string,
+            apiKey: LLM_API_KEY,
+            url: LLM_URL,
+            temperature: LLM_TEMPERATURE,
+            outputFormat: "json" as const,
+          }
+        : undefined,
     };
-
-    if (env.LLM_PROVIDER && env.LLM_MODEL) {
-      transformedEnv = {
-        ...transformedEnv,
-        llm: {
-          provider: env.LLM_PROVIDER,
-          model: env.LLM_MODEL,
-          apiKey: env.LLM_API_KEY,
-          url: env.LLM_URL,
-          temperature: env.LLM_TEMPERATURE,
-          outputFormat: "json",
-        },
-      };
+  })
+  .transform((env) => {
+    if (env.FEATURES.has("NATS") && !env.NATS_URL) {
+      throw new Error(
+        "NATS_URL must be specified when NATS feature is enabled"
+      );
     }
 
-    if (env.NATS_URL) {
-      transformedEnv = {
-        ...transformedEnv,
-        nats: {
-          url: env.NATS_URL,
-          user: env.NATS_USER,
-          password: env.NATS_PASSWORD,
-        },
-      };
+    const { NATS_URL, NATS_USER, NATS_PASSWORD, ...rest } = env;
+
+    return {
+      ...rest,
+      nats: env.FEATURES.has("NATS")
+        ? {
+            url: NATS_URL as string,
+            user: NATS_USER,
+            password: NATS_PASSWORD,
+          }
+        : undefined,
+    };
+  })
+  .transform((env) => {
+    if (env.FEATURES.has("PERSISTENCY") && !env.REDIS_URL) {
+      throw new Error(
+        "REDIS_URL must be specified when PERSISTENCY feature is enabled"
+      );
     }
 
-    if (env.REDIS_URL) {
-      transformedEnv = {
-        ...transformedEnv,
-        redis: {
-          url: env.REDIS_URL,
-        },
-      };
-    }
+    const { REDIS_URL, ...rest } = env;
 
-    return transformedEnv;
+    return {
+      ...rest,
+      redis: env.FEATURES.has("PERSISTENCY")
+        ? {
+            url: REDIS_URL as string,
+          }
+        : undefined,
+    };
+  })
+  .transform((env) => {
+    const { DEBUG, PORT, FEATURES, ...rest } = env;
+
+    return {
+      debug: DEBUG,
+      port: PORT,
+      features: FEATURES,
+      ...rest,
+    };
   });
 
-export type Config = {
-  debug: boolean;
-  port: number;
-
-  llm?: LLMConfig;
-
-  nats?: {
-    url: string;
-    user: string;
-    password: string;
-  };
-
-  redis?: {
-    url: string;
-  };
-};
+export type Config = z.output<typeof EnvSchema>;
 
 const parsed = EnvSchema.safeParse(process.env);
 if (!parsed.success) {
-  console.error(
-    "❌ Invalid environment variables:",
-    JSON.stringify(parsed.error, null, 2)
+  throw new Error(
+    `❌ Invalid environment variables: ${JSON.stringify(parsed.error, null, 2)}`
   );
-  process.exit(1);
 }
 
 export const config = parsed.data;

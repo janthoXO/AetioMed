@@ -144,12 +144,13 @@ const EnvSchema = z
     };
   })
   .transform((env) => {
-    const { DEBUG, PORT, FEATURES, ...rest } = env;
+    const { DEBUG, PORT, FEATURES, ALLOWED_LLMS, ...rest } = env;
 
     return {
       debug: DEBUG,
       port: PORT,
       features: FEATURES,
+      allowedLlms: ALLOWED_LLMS,
       ...rest,
     };
   });

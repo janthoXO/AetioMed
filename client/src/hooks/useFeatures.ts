@@ -9,12 +9,12 @@ export function useFeatures() {
   useEffect(() => {
     async function fetchFeatures() {
       try {
-        const response = await fetch(config.featuresUrl);
+        const response = await fetch(`${config.serverUrl}/features`);
         if (response.ok) {
           const data = await response.json();
           const featureList = data.features || [];
           setFeatures(featureList);
-          setHasCustomLLM(featureList.includes("customLLM"));
+          setHasCustomLLM(featureList.includes("ALLOW_LLMS"));
         }
       } catch (error) {
         console.error("Failed to fetch features", error);

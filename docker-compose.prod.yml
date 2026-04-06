@@ -6,7 +6,7 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      - DEBUG=${DEBUG:-false}
+      - FEATURES=${FEATURES:-NATS}
       - PORT=${PORT:-3030}
       - LLM_FORMAT=${LLM_FORMAT:-JSON}
       - NATS_URL=${NATS_URL:-nats://nats:4222}

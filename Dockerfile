@@ -10,6 +10,7 @@ COPY package.json pnpm-lock.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json ./
+COPY scripts ./scripts
 COPY src ./src
 
 FROM base AS prod-deps
@@ -30,5 +31,5 @@ COPY --from=build /app/dist ./dist
 
 EXPOSE 3030
 
-CMD ["dist/main.js"]
+CMD ["dist/index.js"]
 

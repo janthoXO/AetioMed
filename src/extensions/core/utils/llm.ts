@@ -11,7 +11,10 @@ import z from "zod";
 import { Ollama } from "ollama";
 import type { Message } from "@langchain/core/messages";
 import { jsonrepair } from "jsonrepair";
-import { LLMConfigSchema, type LLMConfig } from "@/extensions/core/models/LLMConfig.js";
+import {
+  LLMConfigSchema,
+  type LLMConfig,
+} from "@/extensions/core/models/LLMConfig.js";
 import { config } from "@/extensions/core/index.js";
 
 /**

@@ -1,21 +1,21 @@
-import { z } from 'zod'
-import { defineExtension } from '../../core/extension.js'
-import { extension as coreExtension } from '../core/index.js'
-import { getTraceBus, setupTracing } from './traceManager.js'
-import { getRequestContext } from '../core/utils/context.js'
-import traceRouter from './router.js'
+import { z } from "zod";
+import { defineExtension } from "../../core/extension.js";
+import { extension as coreExtension } from "../core/index.js";
+import { getTraceBus, setupTracing } from "./traceManager.js";
+import { getRequestContext } from "../core/utils/context.js";
+import traceRouter from "./router.js";
 
-export { setupTracing, getTraceBus }
+export { setupTracing, getTraceBus };
 
 export const extension = defineExtension({
-  name: 'tracing',
-  requiredFlags: ['TRACING'],
+  name: "tracing",
+  requiredFlags: ["TRACING"],
   dependsOn: [coreExtension] as const,
   envSchema: z.object({}),
   async setup({ bus, router }) {
-    console.log('[tracing] Initializing Tracing extension...')
+    console.log("[tracing] Initializing Tracing extension...");
 
-    bus.on('Generation Log', async ({ msg, logLevel }) => {
+    bus.on("Generation Log", async ({ msg, logLevel }) => {
       const context = getRequestContext();
       const traceId = context?.traceId;
       if (!traceId) return;
@@ -29,7 +29,7 @@ export const extension = defineExtension({
       }
     });
 
-    bus.on('Generation Failure', async ({ error }) => {
+    bus.on("Generation Failure", async ({ error }) => {
       const context = getRequestContext();
       const traceId = context?.traceId;
       if (!traceId) return;
@@ -46,6 +46,6 @@ export const extension = defineExtension({
       }
     });
 
-    router.use('/', traceRouter);
-  }
-})
+    router.use("/", traceRouter);
+  },
+});

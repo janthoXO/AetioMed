@@ -1,9 +1,9 @@
-import { z } from 'zod'
-import { defineExtension } from '../../core/extension.js'
-import { extension as coreExtension } from '../core/index.js'
+import { z } from "zod";
+import { defineExtension } from "../../core/extension.js";
+import { extension as coreExtension } from "../core/index.js";
 
 export const extension = defineExtension({
-  name: 'debugLogger',
+  name: "debugLogger",
   requiredFlags: ["DEBUG"],
   dependsOn: [coreExtension] as const,
   envSchema: z.object({
@@ -14,9 +14,9 @@ export const extension = defineExtension({
       return;
     }
 
-    console.log('[debugLogger] Initializing DebugLogger extension...')
+    console.log("[debugLogger] Initializing DebugLogger extension...");
 
-    bus.on('Generation Log', async ({ msg, logLevel }) => {
+    bus.on("Generation Log", async ({ msg, logLevel }) => {
       switch (logLevel) {
         case "error":
           console.error(msg);
@@ -30,9 +30,10 @@ export const extension = defineExtension({
       }
     });
 
-    bus.on('Generation Failure', async ({ error }) => {
-      const msg = error instanceof Error ? error.stack || error.message : String(error);
+    bus.on("Generation Failure", async ({ error }) => {
+      const msg =
+        error instanceof Error ? error.stack || error.message : String(error);
       console.error(msg);
     });
-  }
-})
+  },
+});

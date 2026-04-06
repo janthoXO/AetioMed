@@ -3,7 +3,10 @@ import { CaseTranslationStateSchema } from "./state.js";
 import { RequestContextSchema } from "@/extensions/core/utils/context.js";
 import { getLLM } from "@/extensions/core/utils/llm.js";
 import { type CaseTranslationState } from "./state.js";
-import { CaseJsonExampleString, CaseSchema } from "@/extensions/core/models/Case.js";
+import {
+  CaseJsonExampleString,
+  CaseSchema,
+} from "@/extensions/core/models/Case.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "@/extensions/core/utils/retry.js";
 import { GenerationError } from "@/extensions/core/errors/AppError.js";

@@ -57,31 +57,18 @@
             }
           },
           "generationFlags": {
-            "default": [
-              "patient",
-              "chiefComplaint",
-              "anamnesis",
-              "procedures"
-            ],
+            "default": ["patient", "chiefComplaint", "anamnesis", "procedures"],
             "description": "Generation flags to specify case fields to generate",
             "type": "array",
             "items": {
               "type": "string",
-              "enum": [
-                "patient",
-                "chiefComplaint",
-                "anamnesis",
-                "procedures"
-              ]
+              "enum": ["patient", "chiefComplaint", "anamnesis", "procedures"]
             }
           },
           "language": {
             "description": "Language to generate the case in",
             "type": "string",
-            "enum": [
-              "English",
-              "German"
-            ]
+            "enum": ["English", "German"]
           },
           "anamnesisCategories": {
             "description": "Categories of anamnesis to include in the case",
@@ -96,10 +83,7 @@
             "properties": {
               "provider": {
                 "type": "string",
-                "enum": [
-                  "ollama",
-                  "google"
-                ]
+                "enum": ["ollama", "google"]
               },
               "model": {
                 "type": "string"
@@ -120,16 +104,10 @@
               "outputFormat": {
                 "default": "json",
                 "type": "string",
-                "enum": [
-                  "json",
-                  "text"
-                ]
+                "enum": ["json", "text"]
               }
             },
-            "required": [
-              "temperature",
-              "outputFormat"
-            ],
+            "required": ["temperature", "outputFormat"],
             "additionalProperties": false
           },
           "traceId": {
@@ -137,9 +115,7 @@
             "type": "string"
           }
         },
-        "required": [
-          "generationFlags"
-        ],
+        "required": ["generationFlags"],
         "additionalProperties": false
       },
       "CaseGenerationResponse": {
@@ -168,22 +144,13 @@
                   },
                   "gender": {
                     "type": "string",
-                    "enum": [
-                      "male",
-                      "female"
-                    ]
+                    "enum": ["male", "female"]
                   },
                   "race": {
                     "type": "string"
                   }
                 },
-                "required": [
-                  "name",
-                  "age",
-                  "height",
-                  "weight",
-                  "gender"
-                ],
+                "required": ["name", "age", "height", "weight", "gender"],
                 "additionalProperties": false
               },
               "chiefComplaint": {
@@ -204,10 +171,7 @@
                       "description": "Patient's response or clinical finding"
                     }
                   },
-                  "required": [
-                    "category",
-                    "answer"
-                  ],
+                  "required": ["category", "answer"],
                   "additionalProperties": false
                 },
                 "description": "Medical history collected from patient"
@@ -223,11 +187,7 @@
                     },
                     "relevance": {
                       "type": "string",
-                      "enum": [
-                        "obligatory",
-                        "optional",
-                        "contraindicated"
-                      ],
+                      "enum": ["obligatory", "optional", "contraindicated"],
                       "description": "Relevance of the procedure to the diagnosis"
                     },
                     "result": {
@@ -235,11 +195,7 @@
                       "description": "Result of the procedure, if applicable"
                     }
                   },
-                  "required": [
-                    "name",
-                    "relevance",
-                    "result"
-                  ],
+                  "required": ["name", "relevance", "result"],
                   "additionalProperties": false
                 }
               },
@@ -265,16 +221,11 @@
                     "type": "string"
                   }
                 },
-                "required": [
-                  "code",
-                  "message"
-                ],
+                "required": ["code", "message"],
                 "additionalProperties": false
               }
             },
-            "required": [
-              "error"
-            ],
+            "required": ["error"],
             "additionalProperties": false
           }
         ]

@@ -232,24 +232,15 @@ export const inconsistencyGraph = new StateGraph(
   InconsistencyGraphStateSchema,
   RequestContextSchema
 )
-  .addNode("loop_entry", passthrough<InconsistencyGraphState>)
+  .addNode("iteration_check", passthrough<InconsistencyGraphState>)
   .addNode("inconsistencies_generate", generateInconsistencies)
   .addNode("patient_refine", refinePatient)
   .addNode("chief_complaint_refine", refineChiefComplaint)
   .addNode("anamnesis_refine", refineAnamnesis)
   .addNode("procedures_refine", refineProcedures)
-  .addNode("inconsistencies_none", () => {
+  .addNode("iteration_decrease", (state) => {
     console.debug(
-      "[InconsistencyGraph: inconsistencies_none] No inconsistencies found, ending refinement..."
-    );
-    // set iteration to 0 to break loop
-    return {
-      refinementIterationsRemaining: 0,
-    };
-  })
-  .addNode("refinement_fan_in", (state) => {
-    console.debug(
-      "[InconsistencyGraph: refinement_fan_in] Decreasing refinement iterations remaining..."
+      "[InconsistencyGraph: iteration_decrease] Decreasing refinement iterations remaining..."
     );
     state.refinementIterationsRemaining = Math.max(
       0,
@@ -260,9 +251,9 @@ export const inconsistencyGraph = new StateGraph(
     };
   })
 
-  .addEdge(START, "loop_entry")
+  .addEdge(START, "iteration_check")
   .addConditionalEdges(
-    "loop_entry",
+    "iteration_check",
     (state) => {
       return state.refinementIterationsRemaining > 0 ? "continue" : "end";
     },
@@ -276,7 +267,7 @@ export const inconsistencyGraph = new StateGraph(
     "inconsistencies_generate",
     (state): Send[] => {
       if (state.inconsistencies.length < 1) {
-        return [new Send("inconsistencies_none", state)];
+        return [new Send(END, state)];
       }
 
       const sends: Send[] = [];
@@ -351,13 +342,12 @@ export const inconsistencyGraph = new StateGraph(
       "chief_complaint_refine",
       "anamnesis_refine",
       "procedures_refine",
-      "inconsistencies_none",
+      END,
     ]
   )
-  .addEdge("patient_refine", "refinement_fan_in")
-  .addEdge("chief_complaint_refine", "refinement_fan_in")
-  .addEdge("anamnesis_refine", "refinement_fan_in")
-  .addEdge("procedures_refine", "refinement_fan_in")
-  .addEdge("inconsistencies_none", "refinement_fan_in")
-  .addEdge("refinement_fan_in", "loop_entry")
+  .addEdge("patient_refine", "iteration_decrease")
+  .addEdge("chief_complaint_refine", "iteration_decrease")
+  .addEdge("anamnesis_refine", "iteration_decrease")
+  .addEdge("procedures_refine", "iteration_decrease")
+  .addEdge("iteration_decrease", "iteration_check")
   .compile();

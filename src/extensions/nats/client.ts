@@ -1,11 +1,11 @@
 import { connect, type NatsConnection } from "@nats-io/transport-node";
-import { natsConfig } from "./config.js";
 import { jetstream, type JetStreamClient } from "@nats-io/jetstream";
+import type { Config } from "./config.js";
 
 let nc: NatsConnection | undefined;
 let js: JetStreamClient | undefined;
 
-export async function connectNats(): Promise<boolean> {
+export async function connectNats(natsConfig: Config): Promise<boolean> {
   if (nc) return true;
 
   console.log(`[NATS] Connecting to ${natsConfig.url}...`);

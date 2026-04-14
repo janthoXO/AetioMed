@@ -23,9 +23,7 @@ router.get("/traces", async (_req, res) => {
 
     const traceKeys = await redis.keys("traces:*");
 
-    res.json({
-      traces: traceKeys.map((key) => key.replace("traces:", "")),
-    });
+    res.json(traceKeys.map((key) => key.replace("traces:", "")));
   } catch (err) {
     console.error("Error fetching trace history from Redis:", err);
     res.status(500).json({
@@ -62,7 +60,7 @@ router.get("/traces/:traceId", async (req, res) => {
       traces = traces.filter((trace) => categories.includes(trace.category));
     }
 
-    res.status(200).json({ traces });
+    res.status(200).json(traces);
   } catch (err) {
     console.error(`[Redis] Failed to fetch traces for ${traceId}`, err);
     res.status(500).json({

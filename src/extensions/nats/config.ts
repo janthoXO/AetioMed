@@ -1,9 +1,9 @@
 import { z } from "zod";
 
 // is only loaded when NATS feature is enabled
-const NatsEnvSchema = z
+export const ConfigSchema = z
   .object({
-    NATS_URL: z.url(),
+    NATS_URL: z.url().default("nats://localhost:4222"),
     NATS_USER: z.string().default("nats"),
     NATS_PASSWORD: z.string().default("nats"),
   })
@@ -15,13 +15,4 @@ const NatsEnvSchema = z
     };
   });
 
-export let natsConfig: z.output<typeof NatsEnvSchema>;
-
-export function loadConfig() {
-  const parsed = NatsEnvSchema.safeParse(process.env);
-  if (!parsed.success) {
-    throw new Error(`❌ Invalid NATS environment variables`);
-  }
-
-  natsConfig = parsed.data;
-}
+export type Config = z.output<typeof ConfigSchema>;

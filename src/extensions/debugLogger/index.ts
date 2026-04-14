@@ -1,16 +1,14 @@
-import { z } from "zod";
 import { defineExtension } from "../../core/extension.js";
 import { extension as coreExtension } from "../core/index.js";
+import { EnvSchema } from "@/config.js";
 
 export const extension = defineExtension({
   name: "debugLogger",
   requiredFlags: ["DEBUG"],
   dependsOn: [coreExtension] as const,
-  envSchema: z.object({
-    DEBUG: z.coerce.boolean().default(false),
-  }),
+  envSchema: EnvSchema,
   async setup({ config, bus }) {
-    if (!config.DEBUG) {
+    if (!config.features.has("DEBUG")) {
       return;
     }
 

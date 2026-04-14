@@ -43,8 +43,9 @@ services:
       - "8222:8222" # monitoring http (server stats)
     # Enable JetStream and persist its store to a Docker volume. Credentials are optional.
     command: >
-      --js --store_dir /data/jetstream
+      --js --store_dir /data
       --user ${NATS_USER:-nats} --pass ${NATS_PASSWORD:-nats}
+      --http_port 8222
     volumes:
       - nats_data:/data
     restart: unless-stopped

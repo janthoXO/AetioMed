@@ -20,7 +20,6 @@ import type { Symptom } from "../models/Symptom.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import type { RequestContext } from "../utils/context.js";
 import type { Case } from "../models/Case.js";
-import type { Inconsistency } from "../models/Inconsistency.js";
 
 export async function generateProceduresCoT(
   diagnosis: Diagnosis,
@@ -102,12 +101,7 @@ export async function generateProcedures(
         symptoms: Symptom[];
       }
     | {
-        outline: string;
         case: Case;
-      }
-    | {
-        case: Case;
-        inconsistencies: Inconsistency[];
       },
   userInstructions?: string, // provided by the user
   procedureNameList: ProcedureName[] | undefined = PredefinedProcedureNames,
@@ -115,7 +109,7 @@ export async function generateProcedures(
 ): Promise<Procedure[]> {
   const systemPrompt = buildPrompt(
     `You are an expert attending physician designing the diagnostic workup for a medical training simulator.
-Your current task is to order the required Procedures ${"outline" in config ? "based on the provided Case Outline" : ""}.`,
+Your current task is to order the required Procedures ${"case" in config ? "based on the provided Case" : ""}.`,
 
     "cot" in config
       ? `The following symptoms are typical for the diagnosis. You may use a subset of them:
@@ -125,20 +119,10 @@ Think step by step:
     ${config.cot}`
       : undefined,
 
-    "outline" in config
-      ? `Order the procedures based on the approved outline.
-In addition take the previously generated fields into account and decide which procedures are necessary to confirm the diagnosis based on the patient's presentation in the outline.
+    "case" in config
+      ? `Order the procedures based on the provided case.
+In addition take the previously generated fields into account and decide which procedures are necessary to confirm the diagnosis based on the patient's presentation in the case.
 ${JSON.stringify(config.case)}`
-      : undefined,
-
-    "inconsistencies" in config
-      ? `The previous JSON generation contained clinical or logical inconsistencies. Regenerate the JSON, fixing the following issues while maintaining a realistic diagnostic pathway:
-
-Original Procedures:
-${JSON.stringify({ procedures: config.case.procedures })}
-
-Inconsistencies to Fix:
-${config.inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.description}\n   Suggested Fix: ${i.suggestion}`).join("\n")}`
       : undefined,
 
     procedureNameList?.length
@@ -161,7 +145,7 @@ ${`{ "procedures": ${ProcedureArrayJsonExampleString()} }`}`,
   const userPrompt = buildPrompt(
     `Target Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
 
-    "outline" in config ? `Case Outline: ${config.outline}` : undefined,
+    "case" in config ? `Case: ${JSON.stringify(config.case)}` : undefined,
 
     userInstructions
       ? `Additional Instructions: ${userInstructions}`

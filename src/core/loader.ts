@@ -104,7 +104,8 @@ export async function loadExtensions(opts: LoaderOptions): Promise<void> {
     console.log(`[loader] ✓  "${ext.name}"`);
   }
 
-  console.log("Config: ",
+  console.log(
+    "Config: ",
     Array.from(resolvedConfigs.values()).reduce(
       (c, v) => ({ ...c, ...v }),
       config

@@ -1,8 +1,8 @@
 import { START, StateGraph, END } from "@langchain/langgraph";
-import { CaseTranslationStateSchema } from "./state.js";
+import { CaseTranslationFromEnglishStateSchema } from "./state.js";
 import { RequestContextSchema } from "@/extensions/core/utils/context.js";
 import { getLLM } from "@/extensions/core/utils/llm.js";
-import { type CaseTranslationState } from "./state.js";
+import { type CaseTranslationFromEnglishState } from "./state.js";
 import {
   CaseJsonExampleString,
   CaseSchema,
@@ -17,8 +17,10 @@ import { type Runtime, Send } from "@langchain/langgraph";
 import type { PickNested } from "@/extensions/core/utils/pickNested.js";
 
 export async function translateAnamnesisCategory(
-  state: CaseTranslationState
-): Promise<PickNested<CaseTranslationState, "case", "anamnesis"> | undefined> {
+  state: CaseTranslationFromEnglishState
+): Promise<
+  PickNested<CaseTranslationFromEnglishState, "case", "anamnesis"> | undefined
+> {
   console.debug(
     "[Translation: TranslateCase] Translating anamnesis category to",
     state.language
@@ -47,8 +49,10 @@ export async function translateAnamnesisCategory(
 }
 
 export async function translateProcedureNames(
-  state: CaseTranslationState
-): Promise<PickNested<CaseTranslationState, "case", "procedures"> | undefined> {
+  state: CaseTranslationFromEnglishState
+): Promise<
+  PickNested<CaseTranslationFromEnglishState, "case", "procedures"> | undefined
+> {
   console.debug(
     "[Translation: TranslateCase] Translating procedure names to",
     state.language
@@ -77,9 +81,9 @@ export async function translateProcedureNames(
 }
 
 export async function translateValues(
-  state: CaseTranslationState,
+  state: CaseTranslationFromEnglishState,
   runtime?: Runtime<RequestContext>
-): Promise<Pick<CaseTranslationState, "case">> {
+): Promise<Pick<CaseTranslationFromEnglishState, "case">> {
   console.debug(
     "[Translation: TranslateCase] Translating case to",
     state.language
@@ -144,8 +148,8 @@ ${JSON.stringify(state.case)}`;
   }
 }
 
-export const caseTranslationGraph = new StateGraph(
-  CaseTranslationStateSchema,
+export const caseTranslationFromEnglishGraph = new StateGraph(
+  CaseTranslationFromEnglishStateSchema,
   RequestContextSchema
 )
   .addNode("translate_anamnesis_category", translateAnamnesisCategory)

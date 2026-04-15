@@ -32,10 +32,6 @@ export const CaseGenerationRequestSchema = z
     llmConfig: LLMConfigSchema.optional().describe(
       "Optional configuration for the LLM used in case generation"
     ),
-    traceId: z
-      .string()
-      .optional()
-      .describe("Optional unique ID to track generation progress via SSE"),
   })
   .refine((data) => data.icd || data.diagnosis, {
     message: "Either 'icd' or 'diagnosis' must be provided",

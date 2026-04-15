@@ -5,6 +5,7 @@ import { generateCase } from "@/extensions/core/02services/cases.service.js";
 import { publishCaseGenerationResponse } from "./cases.publisher.js";
 import { IcdToDiseaseName } from "@/extensions/core/03repo/diseases.repo.js";
 import { AppError } from "@/extensions/core/errors/AppError.js";
+import { runWithContext } from "../core/utils/context.js";
 
 const STREAM_NAME = "cases";
 const SUBJECT = "cases.generate";
@@ -14,7 +15,8 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
   try {
     console.debug(`[NATS] Received message on ${SUBJECT}:`, msg.json());
     const data = CaseGenerationRequestSchema.parse(msg.json());
-    const { icd, userInstructions, generationFlags, language } = data;
+    const { icd, userInstructions, generationFlags, language, llmConfig } =
+      data;
     let { diagnosis } = data;
 
     // fill diagnosis and icdCode - zod makes sure that at least one is filled
@@ -24,16 +26,25 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
       // verify that is set now, otherwise return error
       if (!diagnosis) {
         throw new Error("No diagnosis found for icd");
-        return;
       }
     }
 
+    const traceId = msg.headers?.get("Trace-Id") ?? crypto.randomUUID();
+
     console.log(`[NATS] Generating case for ${diagnosis}`);
-    const generatedCase = await generateCase(
-      { name: diagnosis, icd: icd },
-      generationFlags,
-      userInstructions,
-      language
+    const generatedCase = await runWithContext(
+      () =>
+        generateCase(
+          {
+            name: diagnosis,
+            icd: icd,
+          },
+          generationFlags,
+          userInstructions,
+          language
+        ),
+      traceId,
+      llmConfig
     );
 
     await publishCaseGenerationResponse(msg.headers, generatedCase);

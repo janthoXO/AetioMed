@@ -1,9 +1,6 @@
 import { START, StateGraph, END } from "@langchain/langgraph";
 import type { Case } from "../models/Case.js";
-import {
-  getRequiredRequestContext,
-  RequestContextSchema,
-} from "../utils/context.js";
+import { getRequestContext, RequestContextSchema } from "../utils/context.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { GenerationFlag } from "../models/GenerationFlags.js";
 import type { UserInstructions } from "../models/UserInstructions.js";
@@ -74,7 +71,7 @@ export async function generateCase(
     )
   );
 
-  const { llmConfig, traceId } = getRequiredRequestContext();
+  const context = getRequestContext();
 
   const result = await buildCaseGraph().invoke(
     {
@@ -84,7 +81,7 @@ export async function generateCase(
       anamnesisCategories: anamnesisCategories,
       language: language,
     },
-    { context: { llmConfig, traceId } }
+    { context: { llmConfig: context?.llmConfig, traceId: context?.traceId } }
   );
 
   console.log(

@@ -3,7 +3,7 @@ import { getJetStreamClient, getNatsConnection } from "./client.js";
 import { AckPolicy, jetstreamManager, type JsMsg } from "@nats-io/jetstream";
 import { generateCase } from "@/extensions/core/02services/cases.service.js";
 import { publishCaseGenerationResponse } from "./cases.publisher.js";
-import { IcdToDiseaseName } from "@/extensions/core/03repo/diseases.repo.js";
+import { IcdToDiagnosisName } from "@/extensions/core/03repo/diagnosis.repo.js";
 import { AppError } from "@/extensions/core/errors/AppError.js";
 import { runWithContext } from "../core/utils/context.js";
 
@@ -22,7 +22,7 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
     // fill diagnosis and icdCode - zod makes sure that at least one is filled
     if (!diagnosis) {
       // if diagnosis is missing, icd is provided
-      diagnosis = await IcdToDiseaseName(icd!);
+      diagnosis = await IcdToDiagnosisName(icd!);
       // verify that is set now, otherwise return error
       if (!diagnosis) {
         throw new Error("No diagnosis found for icd");

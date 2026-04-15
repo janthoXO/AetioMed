@@ -23,13 +23,13 @@
         "type": "object",
         "properties": {
           "icd": {
-            "description": "ICD-10 code of the disease to generate a case for",
+            "description": "ICD-11 code of the diagnosis to generate a case for",
             "type": "string",
             "format": "icd",
             "pattern": "([A-Z][0-9]{2})(\\.[0-9]{1,4})?"
           },
           "diagnosis": {
-            "description": "Name of the disease diagnosis",
+            "description": "Name of the  diagnosis",
             "type": "string"
           },
           "userInstructions": {

@@ -1,21 +1,45 @@
 %%{init: {'flowchart': {'curve': 'linear'}}}%%
 graph TD;
-	__start__([<p>__start__</p>]):::first
+	__start__(<p>__start__</p>)
+	translation_to_english_phase___start__(<p>__start__</p>)
+	translation_to_english_phase_translate_diagnosis(translate_diagnosis)
+	translation_to_english_phase_translate_anamnesis_category(translate_anamnesis_category)
+	translation_to_english_phase___end__(<p>__end__</p>)
 	generation_phase_symptom_phase(symptom_phase)
 	generation_phase_single_field_phase(single_field_phase)
 	generation_phase_multi_field_phase(multi_field_phase)
 	generation_phase___end__(<p>__end__</p>)
-	__end__([<p>__end__</p>]):::last
+	translation_from_english_phase___start__(<p>__start__</p>)
+	translation_from_english_phase_translate_anamnesis_category(translate_anamnesis_category)
+	translation_from_english_phase_translate_procedures_names(translate_procedures_names)
+	translation_from_english_phase_translate_values(translate_values)
+	__end__(<p>__end__</p>)
 	translation_phase(translation_phase)
-	__start__ --> generation_phase_symptom_phase;
-	translation_phase --> __end__;
-	generation_phase___end__ -.-> translation_phase;
-	generation_phase___end__ -.-> __end__;
+	translation_from_english_phase_translate_values --> __end__;
+	translation_to_english_phase___end__ --> generation_phase_symptom_phase;
+	__start__ -. &nbsp;translate&nbsp; .-> translation_to_english_phase___start__;
+	__start__ -. &nbsp;skip&nbsp; .-> generation_phase_symptom_phase;
+	generation_phase___end__ -. &nbsp;translate&nbsp; .-> translation_from_english_phase___start__;
+	generation_phase___end__ -. &nbsp;skip&nbsp; .-> __end__;
+	subgraph translation_to_english_phase
+	translation_to_english_phase_translate_anamnesis_category --> translation_to_english_phase___end__;
+	translation_to_english_phase_translate_diagnosis --> translation_to_english_phase___end__;
+	translation_to_english_phase___start__ -.-> translation_to_english_phase_translate_diagnosis;
+	translation_to_english_phase___start__ -.-> translation_to_english_phase_translate_anamnesis_category;
+	translation_to_english_phase___start__ -.-> translation_to_english_phase___end__;
+	end
 	subgraph generation_phase
 	generation_phase_multi_field_phase --> generation_phase___end__;
 	generation_phase_single_field_phase --> generation_phase___end__;
 	generation_phase_symptom_phase -. &nbsp;single&nbsp; .-> generation_phase_single_field_phase;
 	generation_phase_symptom_phase -. &nbsp;multi&nbsp; .-> generation_phase_multi_field_phase;
+	end
+	subgraph translation_from_english_phase
+	translation_from_english_phase_translate_anamnesis_category --> translation_from_english_phase_translate_values;
+	translation_from_english_phase_translate_procedures_names --> translation_from_english_phase_translate_values;
+	translation_from_english_phase___start__ -.-> translation_from_english_phase_translate_anamnesis_category;
+	translation_from_english_phase___start__ -.-> translation_from_english_phase_translate_procedures_names;
+	translation_from_english_phase___start__ -.-> translation_from_english_phase_translate_values;
 	end
 	classDef default fill:#f2f0ff,line-height:1.2;
 	classDef first fill-opacity:0;

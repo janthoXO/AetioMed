@@ -8,11 +8,12 @@ import {
   AnamnesisCategoryDefaults,
   type AnamnesisCategory,
 } from "../models/Anamnesis.js";
-import { caseGenerationGraph } from "./case-generation/index.js";
-import { CaseGenerationStateSchema } from "./case-generation/state.js";
-import { caseTranslationGraph } from "./case-translation/index.js";
+import { caseGenerationGraph } from "./02case-generation/index.js";
+import { CaseGenerationStateSchema } from "./02case-generation/state.js";
+import { caseTranslationFromEnglishGraph } from "./03case-translation-from-english/index.js";
 import { LanguageSchema, type Language } from "../models/Language.js";
 import { GenerationError } from "../errors/AppError.js";
+import { caseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
 
 const CaseStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
@@ -29,18 +30,41 @@ const CaseStateSchema = CaseGenerationStateSchema.pick({
  */
 export function buildCaseGraph() {
   const graph = new StateGraph(CaseStateSchema, RequestContextSchema)
+
+    .addNode("translation_to_english_phase", caseTranslationToEnglishGraph)
     .addNode("generation_phase", caseGenerationGraph)
-    .addNode("translation_phase", caseTranslationGraph)
+    .addNode("translation_from_english_phase", caseTranslationFromEnglishGraph)
 
-    .addEdge(START, "generation_phase")
-    .addConditionalEdges("generation_phase", (state) => {
-      if (state.language && state.language !== "English") {
-        return "translation_phase";
+    .addConditionalEdges(
+      START,
+      (state) => {
+        if (state.language && state.language !== "English") {
+          return "translate";
+        }
+
+        return "skip";
+      },
+      {
+        translate: "translation_to_english_phase",
+        skip: "generation_phase",
       }
+    )
+    .addEdge("translation_to_english_phase", "generation_phase")
+    .addConditionalEdges(
+      "generation_phase",
+      (state) => {
+        if (state.language && state.language !== "English") {
+          return "translate";
+        }
 
-      return END;
-    })
-    .addEdge("translation_phase", END);
+        return "skip";
+      },
+      {
+        translate: "translation_from_english_phase",
+        skip: END,
+      }
+    )
+    .addEdge("translation_from_english_phase", END);
 
   return graph.compile();
 }

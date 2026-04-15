@@ -15,8 +15,6 @@ import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import type { Symptom } from "../models/Symptom.js";
-import type { Case } from "../models/Case.js";
-import type { Inconsistency } from "../models/Inconsistency.js";
 
 export async function generatePatientCoT(
   diagnosis: Diagnosis, // provided by the user
@@ -99,10 +97,6 @@ export async function generatePatient(
       }
     | {
         outline: string;
-      }
-    | {
-        case: Case;
-        inconsistencies: Inconsistency[];
       },
   userInstructions?: string, // provided by the user | undefined
   context?: RequestContext
@@ -117,20 +111,6 @@ Your current task is to generate the Patient Demographics ${"outline" in config 
 
 Think step by step:
     ${config.cot}`
-      : undefined,
-
-    "outline" in config
-      ? `Generate the patient demographics from scratch based on the approved outline.`
-      : undefined,
-
-    "inconsistencies" in config
-      ? `The previous JSON generation contained clinical or logical inconsistencies. Regenerate the JSON, fixing the following issues:
-
-Original Patient:
-${JSON.stringify({ patient: config.case.patient })}
-
-Inconsistencies to Fix:
-${config.inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.description}\n   Suggested Fix: ${i.suggestion}`).join("\n")}`
       : undefined,
 
     `Return ONLY a valid JSON object matching the schema below.

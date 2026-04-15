@@ -4,20 +4,23 @@ import {
   handleLangchainError,
 } from "../utils/llm.js";
 import { bus } from "@/extensions/core/index.js";
-import type { Case } from "../models/Case.js";
+import {
+  CaseJsonExampleString,
+  CaseSchema,
+  type Case,
+} from "../models/Case.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import {
   InconsistencyArrayJsonFormatZod,
   InconsistencyJsonExampleString,
   type Inconsistency,
 } from "../models/Inconsistency.js";
-import type { Symptom } from "../models/Symptom.js";
 import { retry } from "../utils/retry.js";
 import { HumanMessage, SystemMessage } from "langchain";
 import type { GenerationFlag } from "../models/GenerationFlags.js";
 import type { RequestContext } from "../utils/context.js";
 
-export async function generateInconsistenciesFromOutline(
+export async function generateInconsistencies(
   caseToCheck: Case,
   diagnosis: Diagnosis,
   generationFlags: GenerationFlag[],
@@ -107,76 +110,68 @@ ${JSON.stringify({ inconsistencies: [] })} `,
   }
 }
 
-export async function generateInconsistenciesOneShot(
-  caseToCheck: Case,
-  diagnosis: Diagnosis,
+export async function fixCaseInconsistencies(
+  inconsistentCase: Case,
+  inconsistencies: Inconsistency[],
   generationFlags: GenerationFlag[],
-  symptoms: Symptom[] = [],
   userInstructions?: string,
   context?: RequestContext
-): Promise<Inconsistency[]> {
-  const systemPrompt = `You are a medical quality assurance expert validating a patient case for educational use with a provided diagnosis and additional user instructions.
+): Promise<Case> {
+  const systemPrompt = buildPrompt(
+    `You are an expert medical educator tasked with fixing a generated clinical mock case for a medical training simulator.`,
 
-Case to validate:
-${JSON.stringify(caseToCheck)}
+    `The previous case generation contained clinical or logical inconsistencies. Regenerate the JSON and fix the given issues.`,
 
-Check for these types of inconsistencies:
-1. Is the diagnosis not directly revealed in the case?
-2. Are all entries internally consistent and support each other?
+    `Return your response in same JSON schema as the original case.
+Schema:
+${CaseJsonExampleString(generationFlags)}`
+  );
 
-Return your response in JSON:
-${`{ inconsistencies: [
-${InconsistencyJsonExampleString(generationFlags)},
-...] }`}
-or an empty list if no inconsistencies are found.
-${JSON.stringify({ inconsistencies: [] })} 
+  const userPrompt = buildPrompt(
+    `Original Case:
+${JSON.stringify(inconsistentCase, null, 2)})}`,
 
-Requirements:
-- Be thorough but fair
-- Only flag genuine medical/logical inconsistencies
-- Don't be overly pedantic
-- Return ONLY the JSON content`;
+    `Inconsistencies to Fix:
+${inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.description}\n   Suggested Fix: ${i.suggestion}`).join("\n")}`,
 
-  const userPrompt = [
-    `Provided Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
-    symptoms && symptoms.length > 0
-      ? `Provided Symptoms: ${symptoms.map((s) => s.name).join(", ")}`
-      : "",
     userInstructions
-      ? `\nAdditional provided context: ${userInstructions}`
-      : "",
-  ]
-    .filter((s) => s.length > 0)
-    .join("\n");
+      ? `Additional Instructions: ${userInstructions}`
+      : undefined
+  );
 
   console.debug(
-    `[Consistency: GenerateInconsistencies] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+    `[Consistency: FixCaseInconsistencies] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   try {
-    const parsedInconsistencies: Inconsistency[] = await retry(
-      async (attempt: number) => {
+    const parsedCase: Case = await retry(
+      async (attempt: number, previousError?: Error) => {
         const result = await getDeterministicLLM(context?.llmConfig)
-          .withStructuredOutput(InconsistencyArrayJsonFormatZod)
+          .withStructuredOutput(CaseSchema)
           .invoke([
             new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
+            new HumanMessage(
+              userPrompt +
+                (previousError
+                  ? `\nPrevious attempt failed with error: ${previousError.message}`
+                  : "")
+            ),
           ])
           .catch((error) => {
             handleLangchainError(error);
           });
 
         console.debug(
-          `[GenerateInconsistenciesOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
+          `[FixCaseInconsistencies] [Attempt ${attempt}] LLM raw Response:\n`,
           JSON.stringify(result, null, 2)
         );
 
-        return result.inconsistencies;
+        return result;
       },
       2,
       0,
       (error, attempt) => {
-        const msg = `[GenerateInconsistenciesOneShot] Attempt ${attempt} failed with error: ${error.message}`;
+        const msg = `[FixCaseInconsistencies] Attempt ${attempt} failed with error: ${error.message}`;
         console.error(msg);
         bus.emit("Generation Log", {
           msg,
@@ -187,13 +182,13 @@ Requirements:
     );
 
     console.debug(
-      "[Consistency: GenerateInconsistencies] Parsed Inconsistencies:",
-      parsedInconsistencies
+      "[Consistency: FixCaseInconsistencies] Parsed Case:",
+      parsedCase
     );
 
-    return parsedInconsistencies.sort((a, b) => (a.field > b.field ? 1 : -1));
+    return parsedCase;
   } catch (error) {
-    console.error("[Consistency: GenerateInconsistencies] Error:", error);
+    console.error("[Consistency: FixCaseInconsistencies] Error:", error);
     throw error;
   }
 }

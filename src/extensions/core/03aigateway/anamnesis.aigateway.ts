@@ -19,8 +19,6 @@ import { HumanMessage, SystemMessage } from "langchain";
 import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
 import type { Symptom } from "../models/Symptom.js";
-import type { Case } from "../models/Case.js";
-import type { Inconsistency } from "../models/Inconsistency.js";
 
 export async function generateAnamnesisCoT(
   diagnosis: Diagnosis,
@@ -111,10 +109,6 @@ export async function generateAnamnesis(
       }
     | {
         outline: string;
-      }
-    | {
-        case: Case;
-        inconsistencies: Inconsistency[];
       },
   userInstructions?: string, // provided by the user
   anamnesisCategories:
@@ -132,20 +126,6 @@ Your current task is to generate the Anamnesis (medical history) ${"outline" in 
 
 Think step by step:
     ${config.cot}`
-      : undefined,
-
-    "outline" in config
-      ? `Generate the anamnesis from scratch based on the approved outline with the given categories.`
-      : undefined,
-
-    "inconsistencies" in config
-      ? `The previous JSON generation contained inconsistencies. Regenerate the JSON, fixing the following issues while maintaining the patient's voice:
-
-Original Anamnesis:
-${JSON.stringify({ anamnesis: config.case.anamnesis })}
-
-Inconsistencies to Fix:
-${config.inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.description}\n   Suggested Fix: ${i.suggestion}`).join("\n")}`
       : undefined,
 
     `Return ONLY a valid JSON object matching the requested categories.
@@ -255,23 +235,19 @@ ${categories.join("\n")}`;
     `[GenerateAnamnesisCategoriesToEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const prompt = [
-    { role: "system", content: systemPrompt },
-    { role: "user", content: userPrompt },
-  ];
+  const responseSchema = z.record(z.string(), z.string());
 
-  const response = await getDeterministicLLM(context?.llmConfig).invoke(prompt);
+  const response = await getDeterministicLLM(context?.llmConfig)
+    .withStructuredOutput(responseSchema)
+    .invoke([new SystemMessage(systemPrompt), new HumanMessage(userPrompt)]);
 
   console.debug(
-    `[GenerateAnamnesisCategoriesToEnglish] Generated anamnesis category translations:\n${response.text}`
+    `[GenerateAnamnesisCategoriesToEnglish] Generated anamnesis category translations:\n${JSON.stringify(response, null, 2)}`
   );
-
-  const responseSchema = z.record(z.string(), z.string());
-  const parsed = responseSchema.parse(JSON.parse(response.text));
 
   // Filter only the requested categories
   const result: Record<AnamnesisCategory, AnamnesisCategory> = {};
-  for (const [original, translated] of Object.entries(parsed)) {
+  for (const [original, translated] of Object.entries(response)) {
     if (categories.includes(original as AnamnesisCategory)) {
       result[original as AnamnesisCategory] = translated as AnamnesisCategory;
     }

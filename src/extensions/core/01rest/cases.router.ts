@@ -51,7 +51,7 @@ router.post(
     }
 
     let { diagnosis } = bodyResult.data;
-    const { icd, userInstructions, generationFlags, language } =
+    const { icd, userInstructions, generationFlags, language, llmConfig } =
       bodyResult.data;
 
     // fill diagnosis and icdCode - zod makes sure that at least one is filled
@@ -70,14 +70,14 @@ router.post(
       }
     }
 
-    const traceId = bodyResult.data.traceId ?? crypto.randomUUID();
+    const traceId = (req.query.traceId as string) ?? crypto.randomUUID();
 
     try {
       const caseData = await runWithContext(
         () =>
           generateCase(
             {
-              name: diagnosis!,
+              name: diagnosis,
               icd: icd,
             },
             generationFlags,
@@ -85,7 +85,7 @@ router.post(
             language
           ),
         traceId,
-        bodyResult.data.llmConfig
+        llmConfig
       );
       const response = CaseGenerationResponseSchema.parse({
         ...caseData,

@@ -8,7 +8,7 @@ import {
   CaseGenerationResponseSchema,
   type CaseGenerationResponse,
 } from "../01dtos/CaseGenerationResponse.js";
-import { IcdToDiseaseName } from "../03repo/diseases.repo.js";
+import { IcdToDiagnosisName } from "../03repo/diagnosis.repo.js";
 import { AppError } from "../errors/AppError.js";
 import { runWithContext } from "../utils/context.js";
 
@@ -51,13 +51,13 @@ router.post(
     }
 
     let { diagnosis } = bodyResult.data;
-    const { icd, userInstructions, generationFlags, language } =
+    const { icd, userInstructions, generationFlags, language, llmConfig } =
       bodyResult.data;
 
     // fill diagnosis and icdCode - zod makes sure that at least one is filled
     if (!diagnosis) {
       // if diagnosis is missing, icd is provided
-      diagnosis = await IcdToDiseaseName(icd!);
+      diagnosis = await IcdToDiagnosisName(icd!);
       // verify that is set now, otherwise return error
       if (!diagnosis) {
         res.status(400).json({
@@ -70,14 +70,14 @@ router.post(
       }
     }
 
-    const traceId = bodyResult.data.traceId ?? crypto.randomUUID();
+    const traceId = (req.query.traceId as string) ?? crypto.randomUUID();
 
     try {
       const caseData = await runWithContext(
         () =>
           generateCase(
             {
-              name: diagnosis!,
+              name: diagnosis,
               icd: icd,
             },
             generationFlags,
@@ -85,7 +85,7 @@ router.post(
             language
           ),
         traceId,
-        bodyResult.data.llmConfig
+        llmConfig
       );
       const response = CaseGenerationResponseSchema.parse({
         ...caseData,

@@ -12,9 +12,12 @@ import { LLMConfigSchema } from "@/extensions/core/models/LLMConfig.js";
 export const CaseGenerationRequestSchema = z
   .object({
     icd: ICDCodeSchema.optional().describe(
-      "ICD-10 code of the disease to generate a case for"
+      "ICD-11 code of the diagnosis to generate a case for"
     ),
-    diagnosis: z.string().optional().describe("Name of the disease diagnosis"),
+    diagnosis: z
+      .string()
+      .optional()
+      .describe("Name of the diagnosis diagnosis"),
     userInstructions: UserInstructionsSchema.optional().describe(
       "Additional context for case generation"
     ),
@@ -32,10 +35,6 @@ export const CaseGenerationRequestSchema = z
     llmConfig: LLMConfigSchema.optional().describe(
       "Optional configuration for the LLM used in case generation"
     ),
-    traceId: z
-      .string()
-      .optional()
-      .describe("Optional unique ID to track generation progress via SSE"),
   })
   .refine((data) => data.icd || data.diagnosis, {
     message: "Either 'icd' or 'diagnosis' must be provided",

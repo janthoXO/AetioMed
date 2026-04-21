@@ -40,7 +40,7 @@ async function generateCaseCoT(
 ): Promise<Pick<GenerationGraphState, "cot">> {
   const generatedCoT = await generateCaseCoTGateway(
     state.diagnosis,
-    state.generationFlags,
+    state.generationFlags.filter((f) => f !== "procedures"),
     state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
     runtime?.context
   ).catch((error) => {
@@ -55,7 +55,7 @@ async function generateCaseCoT(
   bus.emit("Generation Log", {
     logLevel: "info",
     timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Successfully generated case CoT:\n${generatedCoT}`,
+    msg: `[GenerationGraph] Successfully generated case CoT:\n\`\`\` ${generatedCoT}\`\`\``,
   });
 
   return { cot: generatedCoT };
@@ -67,7 +67,7 @@ async function generateCaseOutline(
 ): Promise<Pick<GenerationGraphState, "outline">> {
   const generatedOutline = await generateCaseOutlineGateway(
     state.diagnosis,
-    state.generationFlags,
+    state.generationFlags.filter((f) => f !== "procedures"),
     state.symptoms,
     state.cot,
     state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
@@ -84,7 +84,7 @@ async function generateCaseOutline(
   bus.emit("Generation Log", {
     logLevel: "info",
     timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Successfully generated case outline:\n${generatedOutline}`,
+    msg: `[GenerationGraph] Successfully generated case outline:\n\`\`\` ${generatedOutline}\`\`\``,
   });
 
   return { outline: generatedOutline };
@@ -152,7 +152,7 @@ async function generateChiefComplaint(
   bus.emit("Generation Log", {
     logLevel: "info",
     timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Successfully generated chief complaint:\n${generatedChiefComplaint}`,
+    msg: `[GenerationGraph] Successfully generated chief complaint:\n\`\`\` ${generatedChiefComplaint}\`\`\``,
   });
 
   return { case: { chiefComplaint: generatedChiefComplaint } };
@@ -205,7 +205,6 @@ async function generateProcedures(
   const generatedProcedures = await generateProceduresGateway(
     state.diagnosis,
     {
-      outline: state.outline,
       case: state.case,
     },
     state.userInstructions
@@ -244,7 +243,7 @@ export const fieldGenerationGraph = new StateGraph(
   .addNode("patient_generate", generatePatient)
   .addNode("chief_complaint_generate", generateChiefComplaint)
   .addNode("anamnesis_generate", generateAnamnesis)
-  .addNode("case_checkpoint", passthrough<GenerationGraphState>)
+  .addNode("case_fan_in", passthrough<GenerationGraphState>)
   .addNode("procedures_generate", generateProcedures)
 
   .addEdge(START, "case_cot_generate")
@@ -295,11 +294,11 @@ export const fieldGenerationGraph = new StateGraph(
     },
     ["patient_generate", "chief_complaint_generate", "anamnesis_generate"]
   )
-  .addEdge("patient_generate", "case_checkpoint")
-  .addEdge("chief_complaint_generate", "case_checkpoint")
-  .addEdge("anamnesis_generate", "case_checkpoint")
+  .addEdge("patient_generate", "case_fan_in")
+  .addEdge("chief_complaint_generate", "case_fan_in")
+  .addEdge("anamnesis_generate", "case_fan_in")
   .addConditionalEdges(
-    "case_checkpoint",
+    "case_fan_in",
     (state) => {
       if (state.generationFlags.includes("procedures")) {
         return "generate";

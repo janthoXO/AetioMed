@@ -50,6 +50,16 @@ services:
       - nats_data:/data
     restart: unless-stopped
 
+  # to debug nats
+  nats-box:
+    image: natsio/nats-box
+    # Tell nats-box to sleep so the container stays alive in the background
+    command: sleep infinity
+    environment:
+      - NATS_URL=nats://${NATS_USER:-nats}:${NATS_PASSWORD:-nats}@nats:4222
+    depends_on:
+      - nats
+
   redis:
     image: redis:alpine
     ports:

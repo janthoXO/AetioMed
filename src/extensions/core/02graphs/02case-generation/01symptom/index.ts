@@ -2,7 +2,7 @@ import { END, START, StateGraph } from "@langchain/langgraph";
 import { CaseGenerationStateSchema } from "../state.js";
 import z from "zod";
 import { bus } from "@/extensions/core/index.js";
-import { SymptomsRelatedToDiseaseIcd } from "@/extensions/core/03repo/symptoms.repo.js";
+import { SymptomsRelatedToDiagnosisIcd } from "@/extensions/core/03repo/symptoms.repo.js";
 import { generateSymptomsOneShot } from "@/extensions/core/03aigateway/symptoms.aigateway.js";
 import {
   RequestContextSchema,
@@ -31,7 +31,7 @@ function retrieveSymptomsUMLS(
     timestamp: new Date().toISOString(),
   });
 
-  const retrievedSymptoms = SymptomsRelatedToDiseaseIcd(state.diagnosis.icd);
+  const retrievedSymptoms = SymptomsRelatedToDiagnosisIcd(state.diagnosis.icd);
 
   bus.emit("Generation Log", {
     msg: `[SymptomsGraph] Retrieved symptoms from UMLS:\n${

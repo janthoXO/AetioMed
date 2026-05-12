@@ -15,8 +15,6 @@ import {
   type ChiefComplaint,
 } from "../models/ChiefComplaint.js";
 import type { RequestContext } from "../utils/context.js";
-import type { Case } from "../models/Case.js";
-import type { Inconsistency } from "../models/Inconsistency.js";
 
 export async function generateChiefComplaintCoT(
   diagnosis: Diagnosis,
@@ -100,10 +98,6 @@ export async function generateChiefComplaint(
       }
     | {
         outline: string;
-      }
-    | {
-        case: Case;
-        inconsistencies: Inconsistency[];
       },
   userInstructions?: string, // provided by the user | undefined
   context?: RequestContext
@@ -118,20 +112,6 @@ Your current task is to generate the Chief Complaint ${"outline" in config ? "ba
 
 Think step by step:
     ${config.cot}`
-      : undefined,
-
-    "outline" in config
-      ? `Generate the chief complaint from scratch based on the approved outline.`
-      : undefined,
-
-    "inconsistencies" in config
-      ? `The previous JSON generation contained clinical or logical inconsistencies. Regenerate the JSON, fixing the following issues while maintaining the professional medical tone:
-
-Original Chief Complaint:
-${JSON.stringify({ chiefComplaint: config.case.chiefComplaint })}
-
-Inconsistencies to Fix:
-${config.inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.description}\n   Suggested Fix: ${i.suggestion}`).join("\n")}`
       : undefined,
 
     `Return ONLY a valid JSON object matching the schema below.

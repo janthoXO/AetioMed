@@ -31,7 +31,7 @@ router.get("/cases", async (_req, res) => {
       .mGet(caseKeys)
       .then((cases) => cases.map((c) => JSON.parse(c as string)));
 
-    res.json({ cases });
+    res.json(cases);
   } catch (err) {
     console.error("Error fetching cases from Redis:", err);
     res.status(500).json({

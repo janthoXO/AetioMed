@@ -4,7 +4,7 @@ import express from "express";
 const router = express.Router();
 
 router.use((_req, _res, next) => {
-  /* #swagger.tags = ['Diseases'] */
+  /* #swagger.tags = ['Diagnosis'] */
   next();
 });
 

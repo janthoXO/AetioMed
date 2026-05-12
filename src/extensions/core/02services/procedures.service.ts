@@ -5,7 +5,7 @@ import {
   saveProcedureNameTranslation,
 } from "../03repo/procedures.repo.js";
 import { generateProceduresFromEnglish } from "../03aigateway/procedures.aigateway.js";
-import { getRequiredRequestContext } from "../utils/context.js";
+import { getRequestContext } from "../utils/context.js";
 
 export async function translateProcedureNamesFromEnglish(
   procedureNames: ProcedureName[],
@@ -33,7 +33,7 @@ export async function translateProcedureNamesFromEnglish(
     const generatedTranslations = await generateProceduresFromEnglish(
       failedTranslations,
       language,
-      getRequiredRequestContext()
+      getRequestContext()
     );
 
     Object.assign(translations, generatedTranslations);

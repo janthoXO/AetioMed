@@ -3,7 +3,7 @@ import path from "path";
 import yaml from "yaml";
 import z from "zod";
 
-export const ICDCodePattern = /([A-Z][0-9]{2})(\.[0-9]{1,4})?/;
+export const ICDCodePattern = /([0-9A-Z]{1,4})(\.[A-Z0-9]{1,2})?/;
 
 export const ICDCodeSchema = z.stringFormat("icd", ICDCodePattern);
 
@@ -23,30 +23,29 @@ function preloadPredefinedDiagnoses(): Diagnosis[] | undefined {
     names: z.array(z.string()),
   });
 
-  const filepath = path.resolve(process.cwd(), "data/diseases_all.yml");
+  const filepath = path.resolve(process.cwd(), "data/diagnosis.yml");
 
   if (!fs.existsSync(filepath)) {
-    console.warn(
-      "[Diagnosis Repo] No diseases_all.yml found, skipping preload."
-    );
+    console.warn("[Diagnosis Repo] No diagnosis.yml found, skipping preload.");
     return undefined;
   }
 
-  const diseaseEntries = z
-    .array(DiagnosisEntrySchema.optional().catch(undefined))
-    .transform((entries) => entries.filter((e) => !!e))
+  const diagnosisEntries = z
+    .record(ICDCodeSchema, DiagnosisEntrySchema.optional().catch(undefined))
+    .transform((entries) => Object.values(entries).filter((e) => !!e))
     .safeParse(yaml.parse(fs.readFileSync(filepath, "utf-8")));
 
-  if (!diseaseEntries.success) {
+  if (!diagnosisEntries.success) {
+    console.error(diagnosisEntries.error);
     console.error("[Diagnosis] Failed to load predefined diagnoses from YAML");
     return undefined;
   }
 
   console.info(
-    `[Diagnosis] Loaded ${diseaseEntries.data.length} predefined diagnoses from YAML`
+    `[Diagnosis] Loaded ${diagnosisEntries.data.length} predefined diagnoses from YAML`
   );
 
-  return diseaseEntries.data.reduce((acc, entry) => {
+  return diagnosisEntries.data.reduce((acc, entry) => {
     if (!entry.names || entry.names.length === 0) {
       console.warn(
         `[Diagnosis] Skipping entry with code ${entry.code} due to missing names`

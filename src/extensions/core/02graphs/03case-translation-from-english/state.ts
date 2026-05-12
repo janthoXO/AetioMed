@@ -6,7 +6,7 @@ import { ForeignLanguageSchema } from "@/extensions/core/models/Language.js";
 import { UserInstructionsSchema } from "@/extensions/core/models/UserInstructions.js";
 import { registry } from "@langchain/langgraph/zod";
 
-export const CaseTranslationStateSchema = z.object({
+export const CaseTranslationFromEnglishStateSchema = z.object({
   diagnosis: DiagnosisSchema,
 
   /**
@@ -40,4 +40,6 @@ export const CaseTranslationStateSchema = z.object({
 /**
  * Type alias for the state shape
  */
-export type CaseTranslationState = z.infer<typeof CaseTranslationStateSchema>;
+export type CaseTranslationFromEnglishState = z.infer<
+  typeof CaseTranslationFromEnglishStateSchema
+>;

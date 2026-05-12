@@ -11,14 +11,14 @@ const SymptomMapSchema = z.record(
   })
 );
 
-function preloadDiseaseAnamnesisMap(): z.infer<typeof SymptomMapSchema> {
-  const filepath = path.resolve(process.cwd(), "data/disease_symptoms.json");
+function preloadDiagnosisAnamnesisMap(): z.infer<typeof SymptomMapSchema> {
+  const filepath = path.resolve(process.cwd(), "data/diagnosis_symptoms.json");
 
   const translationsObject = JSON.parse(fs.readFileSync(filepath, "utf-8"));
 
   const parseResult = SymptomMapSchema.safeParse(translationsObject);
   if (!parseResult.success) {
-    console.error("Error parsing disease symptoms JSON");
+    console.error("Error parsing diagnosis symptoms JSON");
     return {}; // Return empty object on parsing failure
   }
 
@@ -32,8 +32,8 @@ function preloadDiseaseAnamnesisMap(): z.infer<typeof SymptomMapSchema> {
   return parseResult.data;
 }
 
-const symptomMap = preloadDiseaseAnamnesisMap();
+const symptomMap = preloadDiagnosisAnamnesisMap();
 
-export function SymptomsRelatedToDiseaseIcd(icdCode: ICDCode): Symptom[] {
+export function SymptomsRelatedToDiagnosisIcd(icdCode: ICDCode): Symptom[] {
   return symptomMap[icdCode]?.symptoms || [];
 }

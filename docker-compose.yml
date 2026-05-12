@@ -25,16 +25,15 @@ services:
     restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:0.12.0
+    image: ollama/ollama:0.21.2
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
-      - ./pull-medical-llm.sh:/entrypoint.sh
-    restart: unless-stopped
-    entrypoint: ["/usr/bin/bash", "/entrypoint.sh"]
     environment:
       - MODEL_NAME=${LLM_MODEL:-llama3.1}
+    entrypoint: >
+      sh -c "ollama serve & sleep 5 && ollama pull $$MODEL_NAME && wait"
 
   nats:
     image: nats:2.12.1
@@ -43,11 +42,22 @@ services:
       - "8222:8222" # monitoring http (server stats)
     # Enable JetStream and persist its store to a Docker volume. Credentials are optional.
     command: >
-      --js --store_dir /data/jetstream
+      --js --store_dir /data
       --user ${NATS_USER:-nats} --pass ${NATS_PASSWORD:-nats}
+      --http_port 8222
     volumes:
       - nats_data:/data
     restart: unless-stopped
+
+  # to debug nats
+  nats-box:
+    image: natsio/nats-box
+    # Tell nats-box to sleep so the container stays alive in the background
+    command: sleep infinity
+    environment:
+      - NATS_URL=nats://${NATS_USER:-nats}:${NATS_PASSWORD:-nats}@nats:4222
+    depends_on:
+      - nats
 
   redis:
     image: redis:alpine

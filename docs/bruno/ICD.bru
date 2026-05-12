@@ -1,0 +1,22 @@
+meta {
+  name: ICD
+  type: http
+  seq: 10
+}
+
+get {
+  url: http://localhost:3000/icd/release/11/2026-01/mms/1435254666
+  body: none
+  auth: inherit
+}
+
+headers {
+  API-Version: v2
+  Accept-Language: en
+  Accept: application/json
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

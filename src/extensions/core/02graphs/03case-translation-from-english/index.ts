@@ -166,7 +166,7 @@ export const caseTranslationFromEnglishGraph = new StateGraph(
     }
 
     if (sends.length === 0) {
-      sends.push(new Send(END, state));
+      sends.push(new Send("translate_values", state));
     }
     return sends;
   })

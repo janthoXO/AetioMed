@@ -1,6 +1,6 @@
 import z from "zod";
 
-const PossibleProvidersSchema = z.enum(["ollama", "google"]);
+const PossibleProvidersSchema = z.enum(["ollama", "google", "openai"]);
 type PossibleProviders = z.infer<typeof PossibleProvidersSchema>;
 
 const providersPattern = PossibleProvidersSchema.options.join("|");

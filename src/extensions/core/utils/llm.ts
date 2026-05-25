@@ -1,5 +1,6 @@
 import { ChatOllama, type ChatOllamaInput } from "@langchain/ollama";
 import { ChatGoogle, type ChatGoogleParams } from "@langchain/google";
+import { ChatOpenAI, type ChatOpenAIFields } from "@langchain/openai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import {
   JsonOutputParser,
@@ -30,7 +31,7 @@ export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
   switch (fullConfig.provider) {
     case "ollama": {
       const ollamaConfig: ChatOllamaInput = {
-        model: fullConfig.model as string,
+        model: fullConfig.model,
         temperature: fullConfig.temperature,
       };
 
@@ -57,10 +58,34 @@ export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
       }
       const googleConfig: ChatGoogleParams = {
         apiKey: fullConfig.apiKey,
-        model: fullConfig.model as string,
+        model: fullConfig.model,
         temperature: fullConfig.temperature,
       };
       chat = new ChatGoogle(googleConfig);
+      break;
+    }
+    case "openai": {
+      if (!fullConfig.apiKey) {
+        throw new ModelUnreachableError("OpenAI API key is not configured");
+      }
+
+      if (!fullConfig.model) {
+        throw new ModelUnreachableError("OpenAI model is not configured");
+      }
+
+      const openAIConfig: ChatOpenAIFields = {
+        apiKey: fullConfig.apiKey,
+        model: fullConfig.model,
+        temperature: fullConfig.temperature,
+      };
+
+      if (fullConfig.url) {
+        openAIConfig.configuration = {
+          baseURL: fullConfig.url,
+        };
+      }
+
+      chat = new ChatOpenAI(openAIConfig);
       break;
     }
     default:

@@ -13,6 +13,7 @@ import {
   PredefinedProcedureNames,
   ProcedureArrayJsonExampleString,
   ProcedureSchema,
+  ProcedureWithIdArrayJsonExampleString,
   type Procedure,
   type ProcedureName,
 } from "../models/Procedure.js";
@@ -159,7 +160,15 @@ ${`{ "procedures": ${ProcedureArrayJsonExampleString()} }`}`,
   // Initialize cases to empty in case of failure
   try {
     const ProcedureSchemaWrapper = z.object({
-      procedures: z.array(ProcedureSchema).describe("Generated procedures"),
+      procedures: z
+        .array(
+          procedureNameList
+            ? ProcedureSchema.extend({
+                name: z.literal(procedureNameList),
+              })
+            : ProcedureSchema
+        )
+        .describe("Generated procedures"),
     });
 
     const procedures: Procedure[] = await retry(
@@ -184,23 +193,24 @@ ${`{ "procedures": ${ProcedureArrayJsonExampleString()} }`}`,
           JSON.stringify(result, null, 2)
         );
 
-        // const filteredProcedures = result.procedures.filter((p) =>
-        //   procedureList
-        //     ? procedureList.some((inputP) =>
-        //         inputP.name.toLowerCase().includes(p.name.toLowerCase())
-        //       )
-        //     : true
-        // );
+        const filteredProcedures = result.procedures.filter((p) =>
+          procedureNameList
+            ? procedureNameList.some(
+                (procedureName) =>
+                  procedureName.toLowerCase() === p.name.toLowerCase()
+              )
+            : true
+        );
 
-        // if (filteredProcedures.length === 0) {
-        //   throw new Error(
-        //     `No generated procedures could be mapped to provided procedure list. Generated procedures: ${result.procedures
-        //       .map((p) => p.name)
-        //       .join(", ")}`
-        //   );
-        // }
+        if (filteredProcedures.length === 0) {
+          throw new Error(
+            `No generated procedures could be mapped to provided procedure list. Generated procedures: ${result.procedures
+              .map((p) => p.name)
+              .join(", ")}`
+          );
+        }
 
-        // return filteredProcedures;
+        return filteredProcedures;
 
         return result.procedures;
       },

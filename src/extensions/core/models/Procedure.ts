@@ -73,3 +73,24 @@ export function ProcedureArrayJsonExampleString(): string {
     },
   ]`;
 }
+
+export function ProcedureWithIdArrayJsonExampleString(): string {
+  return `[
+    {
+      "id": 32,
+      "name": "Blood Test",
+      "relevance": ${ProcedureRelevanceSchema.options
+        .map((option) => `"${option}"`)
+        .join(" | ")},
+      "result": "Normal"
+    },
+    {
+      "id": 68,
+      "name": "X-Ray",
+      "relevance": ${ProcedureRelevanceSchema.options
+        .map((option) => `"${option}"`)
+        .join(" | ")},
+      "result": "Abnormal shadow in the left lung"
+    },
+  ]`;
+}

@@ -71,7 +71,12 @@ export async function exportGraphOverviewPng(
   try {
     const mermaidDef = await graph
       .getGraphAsync({ xray: 1 })
-      .then((g) => collapseSubgraphs(g, ["translation_to_english_phase", "translation_from_english_phase"]))
+      .then((g) =>
+        collapseSubgraphs(g, [
+          "translation_to_english_phase",
+          "translation_from_english_phase",
+        ])
+      )
       .then((g) => g.drawMermaid());
     const mmdPath = `docs/${exportName}.mmd` as `${string}.mmd`;
     const pngPath = `docs/${exportName}.svg` as `${string}.svg`;

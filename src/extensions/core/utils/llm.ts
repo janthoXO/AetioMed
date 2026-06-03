@@ -56,6 +56,7 @@ export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
       if (!fullConfig.apiKey) {
         throw new ModelUnreachableError("Google API key is not configured");
       }
+
       const googleConfig: ChatGoogleParams = {
         apiKey: fullConfig.apiKey,
         model: fullConfig.model,
@@ -67,10 +68,6 @@ export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
     case "openai": {
       if (!fullConfig.apiKey) {
         throw new ModelUnreachableError("OpenAI API key is not configured");
-      }
-
-      if (!fullConfig.model) {
-        throw new ModelUnreachableError("OpenAI model is not configured");
       }
 
       const openAIConfig: ChatOpenAIFields = {

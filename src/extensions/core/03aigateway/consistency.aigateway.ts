@@ -151,7 +151,9 @@ ${inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.desc
     const parsedCase: Case = await retry(
       async (attempt: number, previousError?: Error) => {
         const result = await getDeterministicLLM(context?.llmConfig)
-          .withStructuredOutput(buildCaseSchema(anamnesisCategories, procedureNameList))
+          .withStructuredOutput(
+            buildCaseSchema(anamnesisCategories, procedureNameList)
+          )
           .invoke([
             new SystemMessage(systemPrompt),
             new HumanMessage(

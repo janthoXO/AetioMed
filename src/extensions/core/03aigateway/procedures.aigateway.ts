@@ -12,8 +12,7 @@ import type { Diagnosis } from "../models/Diagnosis.js";
 import {
   PredefinedProcedureNames,
   ProcedureArrayJsonExampleString,
-  ProcedureSchema,
-  ProcedureWithIdArrayJsonExampleString,
+  buildProcedureSchema,
   type Procedure,
   type ProcedureName,
 } from "../models/Procedure.js";
@@ -161,13 +160,7 @@ ${`{ "procedures": ${ProcedureArrayJsonExampleString()} }`}`,
   try {
     const ProcedureSchemaWrapper = z.object({
       procedures: z
-        .array(
-          procedureNameList
-            ? ProcedureSchema.extend({
-                name: z.literal(procedureNameList),
-              })
-            : ProcedureSchema
-        )
+        .array(buildProcedureSchema(procedureNameList))
         .describe("Generated procedures"),
     });
 
@@ -192,25 +185,6 @@ ${`{ "procedures": ${ProcedureArrayJsonExampleString()} }`}`,
           `[GenerateProceduresFromOutline] [Attempt ${attempt}] LLM raw Response:\n`,
           JSON.stringify(result, null, 2)
         );
-
-        const filteredProcedures = result.procedures.filter((p) =>
-          procedureNameList
-            ? procedureNameList.some(
-                (procedureName) =>
-                  procedureName.toLowerCase() === p.name.toLowerCase()
-              )
-            : true
-        );
-
-        if (filteredProcedures.length === 0) {
-          throw new Error(
-            `No generated procedures could be mapped to provided procedure list. Generated procedures: ${result.procedures
-              .map((p) => p.name)
-              .join(", ")}`
-          );
-        }
-
-        return filteredProcedures;
 
         return result.procedures;
       },

@@ -53,6 +53,23 @@ export const AnamnesisSchema = z
 
 export type Anamnesis = z.infer<typeof AnamnesisSchema>;
 
+export function buildAnamnesisFieldSchema(categories?: AnamnesisCategory[]) {
+  if (categories?.length) {
+    return AnamnesisFieldSchema.extend({
+      category: z
+        .literal(categories)
+        .describe("Category of the anamnesis field"),
+    });
+  }
+  return AnamnesisFieldSchema;
+}
+
+export function buildAnamnesisSchema(categories?: AnamnesisCategory[]) {
+  return z
+    .array(buildAnamnesisFieldSchema(categories))
+    .describe("Medical history collected from patient");
+}
+
 export function AnamnesisJsonExample(): Anamnesis {
   return [
     {

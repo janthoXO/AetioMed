@@ -1,7 +1,7 @@
 import {
   AnamnesisCategoryDefaults,
   AnamnesisJsonExample,
-  AnamnesisSchema,
+  buildAnamnesisSchema,
   type Anamnesis,
   type AnamnesisCategory,
 } from "../models/Anamnesis.js";
@@ -160,7 +160,7 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
   // Initialize cases to empty in case of failure
   try {
     const AnamnesisSchemaWrapper = z.object({
-      anamnesis: AnamnesisSchema.describe("Generated anamnesis"),
+      anamnesis: buildAnamnesisSchema(anamnesisCategories),
     });
 
     const anamnesis: Anamnesis = await retry(
@@ -218,6 +218,10 @@ export async function generateAnamnesisCategoriesToEnglish(
   language: Language,
   context?: RequestContext
 ): Promise<Record<AnamnesisCategory, AnamnesisCategory>> {
+  if (categories.length === 0) {
+    return {};
+  }
+
   const systemPrompt = `Translate the provided anamnesis categories from the provided language to English:
 
 Return the categories mapped to their translated part in a JSON
@@ -235,31 +239,58 @@ ${categories.join("\n")}`;
     `[GenerateAnamnesisCategoriesToEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const responseSchema = z.record(z.string(), z.string());
-
-  const response = await getDeterministicLLM(context?.llmConfig)
-    .withStructuredOutput(responseSchema)
-    .invoke([new SystemMessage(systemPrompt), new HumanMessage(userPrompt)]);
-
-  console.debug(
-    `[GenerateAnamnesisCategoriesToEnglish] Generated anamnesis category translations:\n${JSON.stringify(response, null, 2)}`
+  const responseSchema = z.object(
+    categories.reduce(
+      (acc, category) => {
+        acc[category] = z
+          .string()
+          .describe(`Translation for category: ${category}`);
+        return acc;
+      },
+      {} as Record<string, z.ZodString>
+    )
   );
 
-  // Filter only the requested categories
-  const result: Record<AnamnesisCategory, AnamnesisCategory> = {};
-  for (const [original, translated] of Object.entries(response)) {
-    if (categories.includes(original as AnamnesisCategory)) {
-      result[original as AnamnesisCategory] = translated as AnamnesisCategory;
-    }
-  }
+  const categoryTranslations: Record<AnamnesisCategory, AnamnesisCategory> =
+    await retry(
+      async (attempt: number, previousError?: Error) => {
+        const response = await getDeterministicLLM(context?.llmConfig)
+          .withStructuredOutput(responseSchema)
+          .invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(
+              userPrompt +
+                (previousError
+                  ? `\nPrevious generation error: ${previousError.message}`
+                  : "")
+            ),
+          ]);
 
-  if (Object.keys(result).length !== categories.length) {
-    throw new Error(
-      "Not all categories were translated successfully to English."
+        console.debug(
+          `[GenerateAnamnesisCategoriesToEnglish] [Attempt ${attempt}] Generated anamnesis category translations:`,
+          response
+        );
+
+        return response;
+      },
+      2,
+      0,
+      (error, attempt) => {
+        const msg = `[GenerateAnamnesisCategoriesToEnglish] Attempt ${attempt} failed with error: ${error.message}`;
+        console.error(msg);
+        bus.emit("Generation Log", {
+          msg,
+          logLevel: "error",
+          timestamp: new Date().toISOString(),
+        });
+      }
     );
-  }
 
-  return result;
+  console.debug(
+    `[GenerateAnamnesisCategoriesToEnglish] Generated anamnesis category translations:\n${JSON.stringify(categoryTranslations, null, 2)}`
+  );
+
+  return categoryTranslations;
 }
 
 /**

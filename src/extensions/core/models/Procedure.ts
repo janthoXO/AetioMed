@@ -55,6 +55,15 @@ export const ProcedureSchema = z.object({
 
 export type Procedure = z.infer<typeof ProcedureSchema>;
 
+export function buildProcedureSchema(procedureNames?: ProcedureName[]) {
+  if (procedureNames?.length) {
+    return ProcedureSchema.extend({
+      name: z.literal(procedureNames).describe("Name of the medical procedure"),
+    });
+  }
+  return ProcedureSchema;
+}
+
 export function ProcedureArrayJsonExampleString(): string {
   return `[
     {
@@ -65,6 +74,27 @@ export function ProcedureArrayJsonExampleString(): string {
       "result": "Normal"
     },
     {
+      "name": "X-Ray",
+      "relevance": ${ProcedureRelevanceSchema.options
+        .map((option) => `"${option}"`)
+        .join(" | ")},
+      "result": "Abnormal shadow in the left lung"
+    },
+  ]`;
+}
+
+export function ProcedureWithIdArrayJsonExampleString(): string {
+  return `[
+    {
+      "id": 32,
+      "name": "Blood Test",
+      "relevance": ${ProcedureRelevanceSchema.options
+        .map((option) => `"${option}"`)
+        .join(" | ")},
+      "result": "Normal"
+    },
+    {
+      "id": 68,
       "name": "X-Ray",
       "relevance": ${ProcedureRelevanceSchema.options
         .map((option) => `"${option}"`)

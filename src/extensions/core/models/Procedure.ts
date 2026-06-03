@@ -55,6 +55,15 @@ export const ProcedureSchema = z.object({
 
 export type Procedure = z.infer<typeof ProcedureSchema>;
 
+export function buildProcedureSchema(procedureNames?: ProcedureName[]) {
+  if (procedureNames?.length) {
+    return ProcedureSchema.extend({
+      name: z.literal(procedureNames).describe("Name of the medical procedure"),
+    });
+  }
+  return ProcedureSchema;
+}
+
 export function ProcedureArrayJsonExampleString(): string {
   return `[
     {

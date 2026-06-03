@@ -1,7 +1,7 @@
 import {
   AnamnesisCategoryDefaults,
   AnamnesisJsonExample,
-  AnamnesisSchema,
+  buildAnamnesisSchema,
   type Anamnesis,
   type AnamnesisCategory,
 } from "../models/Anamnesis.js";
@@ -160,7 +160,7 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
   // Initialize cases to empty in case of failure
   try {
     const AnamnesisSchemaWrapper = z.object({
-      anamnesis: AnamnesisSchema.describe("Generated anamnesis"),
+      anamnesis: buildAnamnesisSchema(anamnesisCategories),
     });
 
     const anamnesis: Anamnesis = await retry(

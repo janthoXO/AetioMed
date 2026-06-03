@@ -1,8 +1,8 @@
 import z from "zod";
 
 export const LLMConfigSchema = z.object({
-  provider: z.enum(["ollama", "google", "openai"]).optional(),
-  model: z.string().optional(),
+  provider: z.enum(["ollama", "google", "openai"]),
+  model: z.string(),
   apiKey: z.string().optional(),
   url: z.url().optional(),
   temperature: z.coerce.number().min(0).max(1).default(0.7),

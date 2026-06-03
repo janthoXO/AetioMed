@@ -1,5 +1,10 @@
 import { z } from "zod/v4";
-import { AnamnesisJsonExampleString, AnamnesisSchema } from "./Anamnesis.js";
+import {
+  AnamnesisJsonExampleString,
+  AnamnesisSchema,
+  buildAnamnesisSchema,
+  type AnamnesisCategory,
+} from "./Anamnesis.js";
 import {
   ChiefComplaintExample,
   ChiefComplaintSchema,
@@ -8,6 +13,8 @@ import { AllGenerationFlags, type GenerationFlag } from "./GenerationFlags.js";
 import {
   ProcedureArrayJsonExampleString,
   ProcedureSchema,
+  buildProcedureSchema,
+  type ProcedureName,
 } from "./Procedure.js";
 import { PatientSchema } from "./Patient.js";
 
@@ -22,6 +29,18 @@ export const CaseSchema = z.object({
 });
 
 export type Case = z.infer<typeof CaseSchema>;
+
+export function buildCaseSchema(
+  anamnesisCategories?: AnamnesisCategory[],
+  procedureNames?: ProcedureName[]
+) {
+  return z.object({
+    patient: PatientSchema.optional(),
+    chiefComplaint: ChiefComplaintSchema.optional(),
+    anamnesis: buildAnamnesisSchema(anamnesisCategories).optional(),
+    procedures: z.array(buildProcedureSchema(procedureNames)).optional(),
+  });
+}
 
 export function CaseJsonExampleString(
   generationFlags: GenerationFlag[] = AllGenerationFlags

@@ -7,6 +7,7 @@ import {
   fixCaseInconsistencies,
   generateInconsistencies as generateInconsistenciesGateway,
 } from "@/extensions/core/03aigateway/consistency.aigateway.js";
+import { PredefinedProcedureNames } from "@/extensions/core/models/Procedure.js";
 import { passthrough } from "@/extensions/core/02graphs/graph.utils.js";
 import {
   RequestContextSchema,
@@ -77,6 +78,8 @@ async function refineCase(
     state.case,
     state.inconsistencies,
     state.generationFlags,
+    state.anamnesisCategories,
+    PredefinedProcedureNames,
     state.userInstructions ? JSON.stringify(state.userInstructions) : undefined,
     runtime?.context
   ).catch((error) => {

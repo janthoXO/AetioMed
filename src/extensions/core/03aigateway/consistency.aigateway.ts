@@ -5,10 +5,12 @@ import {
 } from "../utils/llm.js";
 import { bus } from "@/extensions/core/index.js";
 import {
+  buildCaseSchema,
   CaseJsonExampleString,
-  CaseSchema,
   type Case,
 } from "../models/Case.js";
+import type { AnamnesisCategory } from "../models/Anamnesis.js";
+import type { ProcedureName } from "../models/Procedure.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import {
   InconsistencyArrayJsonFormatZod,
@@ -114,6 +116,8 @@ export async function fixCaseInconsistencies(
   inconsistentCase: Case,
   inconsistencies: Inconsistency[],
   generationFlags: GenerationFlag[],
+  anamnesisCategories?: AnamnesisCategory[],
+  procedureNameList?: ProcedureName[],
   userInstructions?: string,
   context?: RequestContext
 ): Promise<Case> {
@@ -129,7 +133,7 @@ ${CaseJsonExampleString(generationFlags)}`
 
   const userPrompt = buildPrompt(
     `Original Case:
-${JSON.stringify(inconsistentCase, null, 2)})}`,
+${JSON.stringify(inconsistentCase, null, 2)}`,
 
     `Inconsistencies to Fix:
 ${inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.description}\n   Suggested Fix: ${i.suggestion}`).join("\n")}`,
@@ -147,7 +151,9 @@ ${inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.desc
     const parsedCase: Case = await retry(
       async (attempt: number, previousError?: Error) => {
         const result = await getDeterministicLLM(context?.llmConfig)
-          .withStructuredOutput(CaseSchema)
+          .withStructuredOutput(
+            buildCaseSchema(anamnesisCategories, procedureNameList)
+          )
           .invoke([
             new SystemMessage(systemPrompt),
             new HumanMessage(

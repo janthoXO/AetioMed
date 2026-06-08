@@ -1,5 +1,5 @@
 import { getJetStreamClient } from "./client.js";
-import type { CaseGenerationResponse } from "@/extensions/core/01dtos/CaseGenerationResponse.js";
+import type { CaseGenerationResponse } from "@/extensions/api/CaseGenerationResponse.js";
 import type { MsgHdrs } from "@nats-io/transport-node";
 
 const SUBJECT = "cases.generated";

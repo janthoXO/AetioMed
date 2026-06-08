@@ -1,15 +1,15 @@
 import { z } from "zod";
 import { defineExtension } from "../../core/extension.js";
-import { extension as coreExtension } from "../core/index.js";
+import { extension as restExtension, apiRouter } from "../rest/index.js";
 import swaggerRouter from "./router.js";
 
 export const extension = defineExtension({
   name: "swagger",
-  requiredFlags: [], // Doesn't seem to have a flag requirement; can add if needed
-  dependsOn: [coreExtension] as const,
+  requiredFlags: [],
+  dependsOn: [restExtension] as const,
   envSchema: z.object({}),
-  async setup({ router }) {
+  async setup() {
     console.log("[swagger] Initializing Swagger UI...");
-    router.use("/", swaggerRouter);
+    apiRouter.use("/", swaggerRouter);
   },
 });

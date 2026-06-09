@@ -1,4 +1,3 @@
-import type { Router } from "express";
 import type { z } from "zod";
 import type { EventBus } from "./event-bus.js";
 
@@ -19,7 +18,6 @@ export interface ExtensionSetupCtx<
 > {
   config: TSchema extends z.ZodTypeAny ? z.infer<TSchema> : undefined;
   bus: EventBus;
-  router: Router;
   dep<D extends TDeps[number]>(ext: D): InferConfig<D>;
 }
 

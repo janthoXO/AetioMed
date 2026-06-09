@@ -1,17 +1,17 @@
 import { z } from "zod";
 import { defineExtension } from "../../core/extension.js";
-import { extension as coreExtension } from "../core/index.js";
-import { getRedisClient } from "../core/03repo/redis.js";
+import { extension as restExtension, apiRouter } from "../rest/index.js";
+import { getRedisClient } from "@/extensions/persistency/redis.js";
 import persistencyRouter from "./router.js";
 
 export const extension = defineExtension({
   name: "persistency",
   requiredFlags: ["PERSISTENCY"],
-  dependsOn: [coreExtension] as const,
+  dependsOn: [restExtension] as const,
   envSchema: z.object({
     REDIS_URL: z.string().optional(),
   }),
-  async setup({ bus, router }) {
+  async setup({ bus }) {
     console.log("[persistency] Initializing Persistency extension...");
 
     bus.on("Generation Completed", ({ case: generatedCase }) => {
@@ -20,7 +20,6 @@ export const extension = defineExtension({
           return;
         }
 
-        // make key with time first to make it sortable
         const caseKey = `case:${new Date().getTime()}-${crypto.randomUUID()}`;
         redis.set(caseKey, JSON.stringify(generatedCase)).catch((err) => {
           console.error("[persistency] Error saving case to Redis:", err);
@@ -28,6 +27,6 @@ export const extension = defineExtension({
       });
     });
 
-    router.use("/", persistencyRouter);
+    apiRouter.use("/", persistencyRouter);
   },
 });

@@ -66,10 +66,12 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
           ...context?.llmConfig,
           outputFormat: "text",
         })
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
-          ])
+          .invoke(
+            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
           .catch((error) => {
             handleLangchainError(error);
           });
@@ -167,15 +169,20 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
       async (attempt: number, previousError?: Error) => {
         const result = await getCreativeLLM(context?.llmConfig)
           .withStructuredOutput(AnamnesisSchemaWrapper)
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              userPrompt +
-                (previousError
-                  ? `\nPrevious generation error: ${previousError.message}`
-                  : "")
-            ),
-          ])
+          .invoke(
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(
+                userPrompt +
+                  (previousError
+                    ? `\nPrevious generation error: ${previousError.message}`
+                    : "")
+              ),
+            ],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
           .catch((error) => {
             handleLangchainError(error);
           });
@@ -222,56 +229,63 @@ export async function generateAnamnesisCategoriesToEnglish(
     return {};
   }
 
-  const systemPrompt = `Translate the provided anamnesis categories from the provided language to English:
-
-Return the categories mapped to their translated part in a JSON
-{
-  "provided category1": "translated category1",
-  "provided category2": "translated category2",
+  const systemPrompt = buildPrompt(
+    `Translate the provided anamnesis categories from the provided language to English:`,
+    `Return the translations as a JSON
+{ "translations": [
+  "translated category1",
+  "translated category2",
   ...
-}`;
+] }
+The order must match the input order exactly.`
+  );
 
-  const userPrompt = `Source language: ${language}
-Categories to translate:
-${categories.join("\n")}`;
+  const userPrompt = buildPrompt(
+    `Source language: ${language}`,
+    `Categories to translate:\n${categories.join("\n")}`
+  );
 
   console.debug(
     `[GenerateAnamnesisCategoriesToEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
-  );
-
-  const responseSchema = z.object(
-    categories.reduce(
-      (acc, category) => {
-        acc[category] = z
-          .string()
-          .describe(`Translation for category: ${category}`);
-        return acc;
-      },
-      {} as Record<string, z.ZodString>
-    )
   );
 
   const categoryTranslations: Record<AnamnesisCategory, AnamnesisCategory> =
     await retry(
       async (attempt: number, previousError?: Error) => {
         const response = await getDeterministicLLM(context?.llmConfig)
-          .withStructuredOutput(responseSchema)
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              userPrompt +
-                (previousError
-                  ? `\nPrevious generation error: ${previousError.message}`
-                  : "")
-            ),
-          ]);
+          .withStructuredOutput(z.object({ translations: z.array(z.string()) }))
+          .invoke(
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(
+                userPrompt +
+                  (previousError
+                    ? `\nPrevious generation error: ${previousError.message}`
+                    : "")
+              ),
+            ],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
+          .catch(handleLangchainError);
 
         console.debug(
           `[GenerateAnamnesisCategoriesToEnglish] [Attempt ${attempt}] Generated anamnesis category translations:`,
           response
         );
 
-        return response;
+        if (response.translations.length !== categories.length) {
+          throw new Error(
+            `The number of translated categories does not match the number of input categories. Expected ${categories.length} but got ${response.translations.length}.`
+          );
+        }
+
+        const result: Record<string, string> = {};
+        categories.forEach((cat, idx) => {
+          result[cat] = response.translations[idx]!;
+        });
+        return result;
       },
       2,
       0,
@@ -331,15 +345,18 @@ ${englishCategories.join("\n")}`
     async (attempt: number, previousError?: Error) => {
       const response = await getDeterministicLLM(context?.llmConfig)
         .withStructuredOutput(z.object({ translations: z.array(z.string()) }))
-        .invoke([
-          new SystemMessage(systemPrompt),
-          new HumanMessage(
-            userPrompt +
-              (previousError
-                ? `\nPrevious generation error: ${previousError.message}`
-                : "")
-          ),
-        ]);
+        .invoke(
+          [
+            new SystemMessage(systemPrompt),
+            new HumanMessage(
+              userPrompt +
+                (previousError
+                  ? `\nPrevious generation error: ${previousError.message}`
+                  : "")
+            ),
+          ],
+          context?.signal !== undefined ? { signal: context.signal } : undefined
+        );
 
       console.debug(
         `[GenerateAnamnesisCategoriesFromEnglish] [Attempt ${attempt}] Generated anamnesis category translations:`,

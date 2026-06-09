@@ -58,10 +58,12 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
           ...context?.llmConfig,
           outputFormat: "text",
         })
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
-          ])
+          .invoke(
+            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
           .catch((error) => {
             handleLangchainError(error);
           });
@@ -163,15 +165,20 @@ ${procedureNameList.map((p) => `- ${p}`).join("\n")}`
       async (attempt: number, previousError?: Error) => {
         const result = await getCreativeLLM(context?.llmConfig)
           .withStructuredOutput(ProcedureSchemaWrapper)
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              userPrompt +
-                (previousError
-                  ? `\nPrevious generation error: ${previousError.message}`
-                  : "")
-            ),
-          ])
+          .invoke(
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(
+                userPrompt +
+                  (previousError
+                    ? `\nPrevious generation error: ${previousError.message}`
+                    : "")
+              ),
+            ],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
           .catch((error) => {
             handleLangchainError(error);
           });
@@ -235,15 +242,18 @@ ${procedureNames.map((p) => p.toLowerCase()).join("\n")}`
     async (attempt: number, previousError?: Error) => {
       const response = await getDeterministicLLM(context?.llmConfig)
         .withStructuredOutput(z.object({ translations: z.array(z.string()) }))
-        .invoke([
-          new SystemMessage(systemPrompt),
-          new HumanMessage(
-            userPrompt +
-              (previousError
-                ? `\nPrevious generation error: ${previousError.message}`
-                : "")
-          ),
-        ]);
+        .invoke(
+          [
+            new SystemMessage(systemPrompt),
+            new HumanMessage(
+              userPrompt +
+                (previousError
+                  ? `\nPrevious generation error: ${previousError.message}`
+                  : "")
+            ),
+          ],
+          context?.signal !== undefined ? { signal: context.signal } : undefined
+        );
 
       console.debug(
         `[GenerateProceduresFromEnglish] [Attempt ${attempt}] Generated procedure translations:`,

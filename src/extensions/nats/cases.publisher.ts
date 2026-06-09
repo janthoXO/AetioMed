@@ -1,25 +1,19 @@
 import { getJetStreamClient } from "./client.js";
-import type { CaseGenerationResponse } from "@/extensions/api/CaseGenerationResponse.js";
-import type { MsgHdrs } from "@nats-io/transport-node";
+import { headers } from "@nats-io/transport-node";
 
 const SUBJECT = "cases.generated";
 
 export async function publishCaseGenerationResponse(
-  msgHeader: MsgHdrs | undefined,
-  generatedCaseResponse: CaseGenerationResponse
-) {
+  jobId: string,
+  response: Record<string, unknown>
+): Promise<void> {
   const js = getJetStreamClient();
+  const hdrs = headers();
+  hdrs.set("Nats-Msg-Id", `generated-${jobId}`);
 
-  console.log(
-    `[NATS] Publishing response ${msgHeader} case:`,
-    generatedCaseResponse
-  );
+  const payload = { jobId, ...response };
 
-  if (msgHeader) {
-    await js.publish(SUBJECT, JSON.stringify(generatedCaseResponse), {
-      headers: msgHeader,
-    });
-  } else {
-    await js.publish(SUBJECT, JSON.stringify(generatedCaseResponse));
-  }
+  console.log(`[NATS] Publishing response for jobId=${jobId}:`, payload);
+
+  await js.publish(SUBJECT, JSON.stringify(payload), { headers: hdrs });
 }

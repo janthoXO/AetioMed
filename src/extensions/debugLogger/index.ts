@@ -13,24 +13,27 @@ export const extension = defineExtension({
 
     console.log("[debugLogger] Initializing DebugLogger extension...");
 
-    bus.on("Generation Log", async ({ msg, logLevel }) => {
-      switch (logLevel) {
-        case "error":
-          console.error(msg);
-          break;
-        case "warn":
-          console.warn(msg);
-          break;
-        case "info":
-          console.info(msg);
-          break;
+    bus.onAny((name, payload) => {
+      if (name === "Generation Log") {
+        const { msg, logLevel } = payload as { msg: string; logLevel: string };
+        switch (logLevel) {
+          case "error":
+            console.error(`[bus] ${name}`, msg);
+            break;
+          case "warn":
+            console.warn(`[bus] ${name}`, msg);
+            break;
+          default:
+            console.info(`[bus] ${name}`, msg);
+        }
+      } else if (name === "Generation Failure") {
+        const { error } = payload as { error: unknown };
+        const msg =
+          error instanceof Error ? error.stack || error.message : String(error);
+        console.error(`[bus] ${name}`, msg);
+      } else {
+        console.log(`[bus] ${name}`, payload);
       }
-    });
-
-    bus.on("Generation Failure", async ({ error }) => {
-      const msg =
-        error instanceof Error ? error.stack || error.message : String(error);
-      console.error(msg);
     });
   },
 });

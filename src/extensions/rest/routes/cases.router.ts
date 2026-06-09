@@ -11,7 +11,7 @@ import {
 import { IcdToDiagnosisName } from "@/core/graph/03repo/diagnosis.repo.js";
 import { AppError } from "@/core/graph/errors/AppError.js";
 import { runWithContext } from "@/core/graph/utils/context.js";
-import { bus } from "@/core/graph/index.js";
+import { bus, cancelManager } from "@/core/graph/index.js";
 
 const router = express.Router();
 
@@ -52,8 +52,14 @@ router.post(
     }
 
     let { diagnosis } = bodyResult.data;
-    const { icd, userInstructions, generationFlags, language, llmConfig } =
-      bodyResult.data;
+    const {
+      icd,
+      userInstructions,
+      generationFlags,
+      language,
+      llmConfig,
+      anamnesisCategories,
+    } = bodyResult.data;
 
     if (!diagnosis) {
       diagnosis = await IcdToDiagnosisName(icd!);
@@ -70,6 +76,13 @@ router.post(
 
     const jobId = (req.query.jobId as string) ?? crypto.randomUUID();
 
+    // Abort generation when the HTTP client disconnects before completion
+    req.on("close", () => {
+      if (!res.writableEnded) {
+        cancelManager.abort(jobId);
+      }
+    });
+
     try {
       const caseData = await runWithContext(
         () =>
@@ -77,7 +90,8 @@ router.post(
             { name: diagnosis, icd },
             generationFlags,
             userInstructions,
-            language
+            language,
+            anamnesisCategories
           ),
         jobId,
         llmConfig
@@ -103,6 +117,15 @@ router.post(
       res.status(200).json(response);
     } catch (error) {
       console.error(error);
+
+      if (error instanceof Error && error.name === "AbortError") {
+        bus.emit("Generation Cancelled", { jobId });
+        if (!res.writableEnded) {
+          res.status(499).end();
+        }
+        return;
+      }
+
       if (error instanceof Error) {
         bus.emit("Generation Failure", { error, jobId });
       }
@@ -126,5 +149,20 @@ router.post(
     }
   }
 );
+
+router.delete("/:jobId", (req, res) => {
+  const { jobId } = req.params;
+  const aborted = cancelManager.abort(jobId);
+  if (aborted) {
+    res.status(204).end();
+  } else {
+    res.status(404).json({
+      error: {
+        code: "NOT_FOUND",
+        message: "No active generation for this jobId",
+      },
+    });
+  }
+});
 
 export default router;

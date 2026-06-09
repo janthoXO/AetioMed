@@ -84,7 +84,10 @@ export async function generateCase(
       anamnesisCategories,
       language,
     },
-    { context: { llmConfig: context?.llmConfig, jobId: context?.jobId } }
+    {
+      context: { llmConfig: context?.llmConfig, jobId: context?.jobId },
+      ...(context?.signal !== undefined ? { signal: context.signal } : {}),
+    }
   );
 
   console.log(

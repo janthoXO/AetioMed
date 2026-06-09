@@ -30,7 +30,10 @@ export async function generateDiagnosisToEnglish(
 
   const response = await getDeterministicLLM(context?.llmConfig)
     .withStructuredOutput(responseSchema)
-    .invoke([new SystemMessage(systemPrompt), new HumanMessage(userPrompt)]);
+    .invoke(
+      [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+      context?.signal !== undefined ? { signal: context.signal } : undefined
+    );
 
   console.debug(
     `[GenerateDiagnosisToEnglish] Generated diagnosis translation:\n${response.diagnosis}`

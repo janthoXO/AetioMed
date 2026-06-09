@@ -47,5 +47,9 @@ export const extension = defineExtension({
       const message = error instanceof Error ? error.message : String(error);
       emitToTraceBus(jobId, "Generation Failure", { message });
     });
+
+    bus.on("Generation Cancelled", ({ jobId }) => {
+      emitToTraceBus(jobId, "Generation Cancelled", {});
+    });
   },
 });

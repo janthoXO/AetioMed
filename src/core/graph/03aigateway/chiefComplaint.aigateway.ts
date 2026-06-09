@@ -55,10 +55,12 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
           ...context?.llmConfig,
           outputFormat: "text",
         })
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
-          ])
+          .invoke(
+            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
           .catch((error) => {
             handleLangchainError(error);
           });
@@ -145,10 +147,12 @@ ${JSON.stringify(ChiefComplaintJsonExample())}`,
       async (attempt: number) => {
         const result = await getCreativeLLM(context?.llmConfig)
           .withStructuredOutput(ChiefComplaintJsonSchema)
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
-          ])
+          .invoke(
+            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
           .catch((error) => {
             handleLangchainError(error);
           });

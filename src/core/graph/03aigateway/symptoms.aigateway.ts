@@ -51,10 +51,12 @@ export async function generateSymptomsOneShot(
       async () => {
         const result = await getDeterministicLLM(context?.llmConfig)
           .withStructuredOutput(SymptomArrayWrapperSchema)
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
-          ])
+          .invoke(
+            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
           .catch((error) => {
             handleLangchainError(error);
           });

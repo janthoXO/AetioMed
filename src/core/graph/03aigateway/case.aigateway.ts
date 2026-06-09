@@ -49,10 +49,12 @@ ${generationFlags.join(", ")}`,
           ...context?.llmConfig,
           outputFormat: "text",
         })
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
-          ])
+          .invoke(
+            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
           .catch((error) => {
             handleLangchainError(error);
           });
@@ -131,10 +133,12 @@ ${cot}`,
           ...context?.llmConfig,
           outputFormat: "text",
         })
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
-          ])
+          .invoke(
+            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
           .catch((error) => {
             handleLangchainError(error);
           });

@@ -7,7 +7,9 @@ import { extension as _ext3 } from "./persistency/index.js";
 import { extension as _ext4 } from "./rest/index.js";
 import { extension as _ext5 } from "./swagger/index.js";
 import { extension as _ext6 } from "./tracing/index.js";
-import { extension as _ext7 } from "./tracingPersistency/index.js";
+import { extension as _ext7 } from "./tracingNats/index.js";
+import { extension as _ext8 } from "./tracingPersistency/index.js";
+import { extension as _ext9 } from "./tracingRest/index.js";
 
 export const allExtensions = [
   _ext0,
@@ -18,4 +20,6 @@ export const allExtensions = [
   _ext5,
   _ext6,
   _ext7,
+  _ext8,
+  _ext9,
 ] as const;

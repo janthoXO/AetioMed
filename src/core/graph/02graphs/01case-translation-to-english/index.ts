@@ -3,7 +3,7 @@ import { CaseTranslationToEnglishStateSchema } from "./state.js";
 import { RequestContextSchema } from "@/core/graph/utils/context.js";
 import { type CaseTranslationToEnglishState } from "./state.js";
 import { translationToEnglishTools } from "./tools.js";
-import { wrapNode } from "@/core/graph/utils/nodeWrapper.js";
+import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 async function translateDiagnosis(
   state: CaseTranslationToEnglishState
@@ -37,11 +37,19 @@ export const caseTranslationToEnglishGraph = new StateGraph(
 )
   .addNode(
     "translate_diagnosis",
-    wrapNode("translate_diagnosis", translateDiagnosis)
+    traceNode(
+      "translate_diagnosis",
+      translateDiagnosis,
+      "Translating diagnosis to English"
+    )
   )
   .addNode(
     "translate_anamnesis_category",
-    wrapNode("translate_anamnesis_category", translateAnamnesisCategory)
+    traceNode(
+      "translate_anamnesis_category",
+      translateAnamnesisCategory,
+      "Translating anamnesis categories to English"
+    )
   )
 
   .addConditionalEdges(START, (state) => {

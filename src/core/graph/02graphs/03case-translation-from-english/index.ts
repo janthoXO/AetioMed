@@ -6,7 +6,7 @@ import { type Runtime, Send } from "@langchain/langgraph";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { PickNested } from "@/core/graph/utils/pickNested.js";
 import { translationFromEnglishTools } from "./tools.js";
-import { wrapNode } from "@/core/graph/utils/nodeWrapper.js";
+import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 async function translateAnamnesisCategory(
   state: CaseTranslationFromEnglishState
@@ -90,13 +90,28 @@ export const caseTranslationFromEnglishGraph = new StateGraph(
 )
   .addNode(
     "translate_anamnesis_category",
-    wrapNode("translate_anamnesis_category", translateAnamnesisCategory)
+    traceNode(
+      "translate_anamnesis_category",
+      translateAnamnesisCategory,
+      "Translating anamnesis categories"
+    )
   )
   .addNode(
     "translate_procedures_names",
-    wrapNode("translate_procedures_names", translateProcedureNames)
+    traceNode(
+      "translate_procedures_names",
+      translateProcedureNames,
+      "Translating procedure names"
+    )
   )
-  .addNode("translate_values", wrapNode("translate_values", translateValues))
+  .addNode(
+    "translate_values",
+    traceNode(
+      "translate_values",
+      translateValues,
+      "Translating case to target language"
+    )
+  )
 
   .addConditionalEdges(START, (state): Send[] => {
     const sends: Send[] = [];

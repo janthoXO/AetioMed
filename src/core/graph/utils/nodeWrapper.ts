@@ -11,18 +11,20 @@ import type { RequestContext } from "./context.js";
  * (CompiledStateGraph instances); those are not callable as functions.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export function wrapNode<F extends (...args: any[]) => any>(
+export function traceNode<F extends (...args: any[]) => any>(
   name: string,
-  fn: F
+  fn: F,
+  label?: string
 ): F {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return (async (...args: any[]) => {
     const runtime = args[1] as Runtime<RequestContext> | undefined;
-    const traceId = runtime?.context?.traceId ?? getRequestContext()?.traceId;
+    const jobId = runtime?.context?.jobId ?? getRequestContext()?.jobId;
 
     bus.emit("Node Started", {
       node: name,
-      traceId,
+      label,
+      jobId,
       timestamp: new Date().toISOString(),
     });
 
@@ -30,8 +32,9 @@ export function wrapNode<F extends (...args: any[]) => any>(
 
     bus.emit("Node Completed", {
       node: name,
+      label,
       result,
-      traceId,
+      jobId,
       timestamp: new Date().toISOString(),
     });
 

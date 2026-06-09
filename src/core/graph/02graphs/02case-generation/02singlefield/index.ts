@@ -8,7 +8,7 @@ import {
 } from "@/core/graph/utils/context.js";
 import { singleFieldCoTTools } from "./tools.js";
 import { generationTools } from "../tools.js";
-import { wrapNode } from "@/core/graph/utils/nodeWrapper.js";
+import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 const SingleFieldStateSchema = CaseGenerationStateSchema.extend({
   cot: z.string(),
@@ -334,39 +334,76 @@ export const singleFieldGraph = new StateGraph(
 )
   .addNode(
     "instructions_reduce",
-    wrapNode("instructions_reduce", (state: SingleFieldState) => {
-      if (!state.userInstructions) return {};
-      return {
-        userInstructions: Object.fromEntries(
-          Object.entries(state.userInstructions).filter(
-            ([key]) => key === state.generationFlags[0] || key === "general"
-          )
-        ),
-      };
-    })
+    traceNode(
+      "instructions_reduce",
+      (state: SingleFieldState) => {
+        if (!state.userInstructions) return {};
+        return {
+          userInstructions: Object.fromEntries(
+            Object.entries(state.userInstructions).filter(
+              ([key]) => key === state.generationFlags[0] || key === "general"
+            )
+          ),
+        };
+      },
+      "Applying user instructions"
+    )
   )
-  .addNode("patient_cot", wrapNode("patient_cot", generatePatientCoT))
+  .addNode(
+    "patient_cot",
+    traceNode(
+      "patient_cot",
+      generatePatientCoT,
+      "Thinking about patient profile"
+    )
+  )
   .addNode(
     "patient_generate",
-    wrapNode("patient_generate", generatePatientField)
+    traceNode("patient_generate", generatePatientField, "Generating patient")
   )
   .addNode(
     "chiefComplaint_cot",
-    wrapNode("chiefComplaint_cot", generateChiefComplaintCoT)
+    traceNode(
+      "chiefComplaint_cot",
+      generateChiefComplaintCoT,
+      "Thinking about chief complaint"
+    )
   )
   .addNode(
     "chiefComplaint_generate",
-    wrapNode("chiefComplaint_generate", generateChiefComplaintField)
+    traceNode(
+      "chiefComplaint_generate",
+      generateChiefComplaintField,
+      "Generating chief complaint"
+    )
   )
-  .addNode("anamnesis_cot", wrapNode("anamnesis_cot", generateAnamnesisCoT))
+  .addNode(
+    "anamnesis_cot",
+    traceNode("anamnesis_cot", generateAnamnesisCoT, "Thinking about anamnesis")
+  )
   .addNode(
     "anamnesis_generate",
-    wrapNode("anamnesis_generate", generateAnamnesisField)
+    traceNode(
+      "anamnesis_generate",
+      generateAnamnesisField,
+      "Generating anamnesis"
+    )
   )
-  .addNode("procedures_cot", wrapNode("procedures_cot", generateProceduresCoT))
+  .addNode(
+    "procedures_cot",
+    traceNode(
+      "procedures_cot",
+      generateProceduresCoT,
+      "Thinking about procedures"
+    )
+  )
   .addNode(
     "procedures_generate",
-    wrapNode("procedures_generate", generateProceduresField)
+    traceNode(
+      "procedures_generate",
+      generateProceduresField,
+      "Generating procedures"
+    )
   )
 
   .addEdge(START, "instructions_reduce")

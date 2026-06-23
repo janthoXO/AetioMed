@@ -18,6 +18,7 @@ import {
 import type { Symptom } from "../models/Symptom.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
+import { translateTermsKeyed } from "./translate.helper.js";
 import type { Case } from "../models/Case.js";
 
 export async function generateProceduresCoT(
@@ -215,74 +216,11 @@ export async function generateProceduresFromEnglish(
   language: ForeignLanguage,
   context?: RequestContext
 ): Promise<Record<string, string>> {
-  const systemPrompt = buildPrompt(
-    `Translate the provided procedures from English to a target language:`,
-    `Return the procedures mapped to their translated part in a JSON
-{ "translations": 
-  [
-  "translated procedure1",
-  "translated procedure2",
-  ...
-  ]
-}
-ONLY return the JSON object, no additional text.`
-  );
-
-  const userPrompt = buildPrompt(
-    `Target language: ${language}`,
-    `Procedures to translate:
-${procedureNames.map((p) => p.toLowerCase()).join("\n")}`
-  );
-
-  console.debug(
-    `[GenerateProcedureTranslations] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
-  );
-
-  return await retry(
-    async (attempt: number, previousError?: Error) => {
-      const response = await getDeterministicLLM(context?.llmConfig)
-        .withStructuredOutput(z.object({ translations: z.array(z.string()) }))
-        .invoke(
-          [
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              userPrompt +
-                (previousError
-                  ? `\nPrevious generation error: ${previousError.message}`
-                  : "")
-            ),
-          ],
-          context?.signal !== undefined ? { signal: context.signal } : undefined
-        );
-
-      console.debug(
-        `[GenerateProceduresFromEnglish] [Attempt ${attempt}] Generated procedure translations:`,
-        response
-      );
-
-      if (response.translations.length !== procedureNames.length) {
-        throw new Error(
-          `The number of translated procedures does not match the number of English procedures. Expected ${procedureNames.length} but got ${response.translations.length}.`
-        );
-      }
-
-      const result: Record<string, string> = {};
-      procedureNames.forEach((engProc, idx) => {
-        result[engProc] = response.translations[idx]!;
-      });
-
-      return result;
-    },
-    2,
-    0,
-    (error, attempt) => {
-      const msg = `[GenerateProceduresFromEnglish] Attempt ${attempt} failed with error: ${error.message}`;
-      console.error(msg);
-      bus.emit("Generation Log", {
-        msg,
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-      });
-    }
-  );
+  return translateTermsKeyed({
+    logTag: "GenerateProceduresFromEnglish",
+    taskDescription: `Translate the provided procedures from English to a target language.`,
+    contextLines: [`Target language: ${language}`],
+    terms: procedureNames,
+    context,
+  });
 }

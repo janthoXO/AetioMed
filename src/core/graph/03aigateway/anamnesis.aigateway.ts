@@ -19,6 +19,7 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
 import type { Symptom } from "../models/Symptom.js";
+import { translateTermsKeyed } from "./translate.helper.js";
 
 export async function generateAnamnesisCoT(
   diagnosis: Diagnosis,
@@ -225,86 +226,13 @@ export async function generateAnamnesisCategoriesToEnglish(
   language: Language,
   context?: RequestContext
 ): Promise<Record<AnamnesisCategory, AnamnesisCategory>> {
-  if (categories.length === 0) {
-    return {};
-  }
-
-  const systemPrompt = buildPrompt(
-    `Translate the provided anamnesis categories from the provided language to English:`,
-    `Return the translations as a JSON
-{ "translations": [
-  "translated category1",
-  "translated category2",
-  ...
-] }
-The order must match the input order exactly.`
-  );
-
-  const userPrompt = buildPrompt(
-    `Source language: ${language}`,
-    `Categories to translate:\n${categories.join("\n")}`
-  );
-
-  console.debug(
-    `[GenerateAnamnesisCategoriesToEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
-  );
-
-  const categoryTranslations: Record<AnamnesisCategory, AnamnesisCategory> =
-    await retry(
-      async (attempt: number, previousError?: Error) => {
-        const response = await getDeterministicLLM(context?.llmConfig)
-          .withStructuredOutput(z.object({ translations: z.array(z.string()) }))
-          .invoke(
-            [
-              new SystemMessage(systemPrompt),
-              new HumanMessage(
-                userPrompt +
-                  (previousError
-                    ? `\nPrevious generation error: ${previousError.message}`
-                    : "")
-              ),
-            ],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch(handleLangchainError);
-
-        console.debug(
-          `[GenerateAnamnesisCategoriesToEnglish] [Attempt ${attempt}] Generated anamnesis category translations:`,
-          response
-        );
-
-        if (response.translations.length !== categories.length) {
-          throw new Error(
-            `The number of translated categories does not match the number of input categories. Expected ${categories.length} but got ${response.translations.length}.`
-          );
-        }
-
-        const result: Record<string, string> = {};
-        categories.forEach((cat, idx) => {
-          result[cat] = response.translations[idx]!;
-        });
-        return result;
-      },
-      2,
-      0,
-      (error, attempt) => {
-        const msg = `[GenerateAnamnesisCategoriesToEnglish] Attempt ${attempt} failed with error: ${error.message}`;
-        console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
-      }
-    );
-
-  console.debug(
-    `[GenerateAnamnesisCategoriesToEnglish] Generated anamnesis category translations:\n${JSON.stringify(categoryTranslations, null, 2)}`
-  );
-
-  return categoryTranslations;
+  return translateTermsKeyed({
+    logTag: "GenerateAnamnesisCategoriesToEnglish",
+    taskDescription: `Translate the provided anamnesis categories from the provided language to English.`,
+    contextLines: [`Source language: ${language}`],
+    terms: categories,
+    context,
+  });
 }
 
 /**
@@ -318,74 +246,11 @@ export async function generateAnamnesisCategoriesFromEnglish(
   language: Language,
   context?: RequestContext
 ): Promise<Record<AnamnesisCategory, AnamnesisCategory>> {
-  const systemPrompt = buildPrompt(
-    `Translate the provided anamnesis categories from English to a target language:`,
-
-    `Return the categories mapped to their translated part in a JSON
-{ "translations": 
-  [
-  "translated category1",
-  "translated category2",
-  ...
-  ]
-}`
-  );
-
-  const userPrompt = buildPrompt(
-    `Target language: ${language}`,
-    `Categories to translate:
-${englishCategories.join("\n")}`
-  );
-
-  console.debug(
-    `[GenerateAnamnesisCategoriesFromEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
-  );
-
-  return retry(
-    async (attempt: number, previousError?: Error) => {
-      const response = await getDeterministicLLM(context?.llmConfig)
-        .withStructuredOutput(z.object({ translations: z.array(z.string()) }))
-        .invoke(
-          [
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              userPrompt +
-                (previousError
-                  ? `\nPrevious generation error: ${previousError.message}`
-                  : "")
-            ),
-          ],
-          context?.signal !== undefined ? { signal: context.signal } : undefined
-        );
-
-      console.debug(
-        `[GenerateAnamnesisCategoriesFromEnglish] [Attempt ${attempt}] Generated anamnesis category translations:`,
-        response
-      );
-
-      if (response.translations.length !== englishCategories.length) {
-        throw new Error(
-          `The number of translated categories does not match the number of English categories. Expected ${englishCategories.length} but got ${response.translations.length}.`
-        );
-      }
-
-      const result: Record<string, string> = {};
-      englishCategories.forEach((engCat, idx) => {
-        result[engCat] = response.translations[idx]!;
-      });
-
-      return result;
-    },
-    2,
-    0,
-    (error, attempt) => {
-      const msg = `[GenerateAnamnesisCategoriesFromEnglish] [Attempt ${attempt}] failed with error: ${error.message}`;
-      console.error(msg);
-      bus.emit("Generation Log", {
-        msg,
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-      });
-    }
-  );
+  return translateTermsKeyed({
+    logTag: "GenerateAnamnesisCategoriesFromEnglish",
+    taskDescription: `Translate the provided anamnesis categories from English to a target language.`,
+    contextLines: [`Target language: ${language}`],
+    terms: englishCategories,
+    context,
+  });
 }

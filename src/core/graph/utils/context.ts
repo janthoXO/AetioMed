@@ -3,6 +3,7 @@ import {
   LLMConfigSchema,
   type LLMConfig,
 } from "@/core/graph/models/LLMConfig.js";
+import { LanguageSchema } from "@/core/graph/models/Language.js";
 import { setupTracing } from "@/extensions/tracing/traceManager.js";
 import * as cancelManager from "./cancelManager.js";
 import z from "zod";
@@ -10,6 +11,7 @@ import z from "zod";
 export const RequestContextSchema = z.object({
   jobId: z.string().optional(),
   llmConfig: LLMConfigSchema.optional(),
+  language: LanguageSchema.optional(),
 });
 
 export type RequestContext = z.infer<typeof RequestContextSchema> & {

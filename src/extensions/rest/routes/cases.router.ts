@@ -77,8 +77,8 @@ router.post(
     const jobId = (req.query.jobId as string) ?? crypto.randomUUID();
 
     // Abort generation when the HTTP client disconnects before completion
-    req.on("close", () => {
-      if (!res.writableEnded) {
+    res.on("close", () => {
+      if (!res.writableFinished) {
         cancelManager.abort(jobId);
       }
     });

@@ -19,45 +19,12 @@ import { generationTools } from "../../tools.js";
 import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 const GenerationGraphStateSchema = CaseGenerationStateSchema.extend({
-  cot: z.string(),
   outline: z.string(),
 });
 
 type GenerationGraphState = z.infer<typeof GenerationGraphStateSchema>;
 
-// ─── blueprint nodes ──────────────────────────────────────────────────────────
-
-async function generateCaseCoT(
-  state: GenerationGraphState,
-  runtime?: Runtime<RequestContext>
-): Promise<Pick<GenerationGraphState, "cot">> {
-  const cot = await fieldGenerationBlueprintTools.generateCaseCoT
-    .invoke(
-      {
-        diagnosis: state.diagnosis,
-        generationFlags: state.generationFlags,
-        userInstructions: state.userInstructions
-          ? JSON.stringify(state.userInstructions)
-          : undefined,
-      },
-      runtime?.context
-    )
-    .catch((error) => {
-      bus.emit("Generation Log", {
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-        msg: `[GenerationGraph] Error generating case CoT: ${error}`,
-      });
-      throw error;
-    });
-
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Case CoT generated:\n\`\`\` ${cot}\`\`\``,
-  });
-  return { cot };
-}
+// ─── blueprint node ───────────────────────────────────────────────────────────
 
 async function generateCaseOutline(
   state: GenerationGraphState,
@@ -69,7 +36,6 @@ async function generateCaseOutline(
         diagnosis: state.diagnosis,
         generationFlags: state.generationFlags,
         symptoms: state.symptoms,
-        cot: state.cot,
         userInstructions: state.userInstructions
           ? JSON.stringify(state.userInstructions)
           : undefined,
@@ -222,63 +188,12 @@ async function generateAnamnesis(
   return { case: { anamnesis } };
 }
 
-async function generateProcedures(
-  state: GenerationGraphState,
-  runtime?: Runtime<RequestContext>
-): Promise<PickNested<GenerationGraphState, "case", "procedures">> {
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Generating procedures…`,
-  });
-  const procedures = await generationTools.generateProceduresFromCase
-    .invoke(
-      {
-        diagnosis: state.diagnosis,
-        case: state.case,
-        userInstructions: state.userInstructions
-          ? JSON.stringify(
-              Object.fromEntries(
-                Object.entries(state.userInstructions).filter(
-                  ([key]) => key === "procedures" || key === "general"
-                )
-              )
-            )
-          : undefined,
-      },
-      runtime?.context
-    )
-    .catch((error) => {
-      bus.emit("Generation Log", {
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-        msg: `[GenerationGraph] Error generating procedures: ${error}`,
-      });
-      throw error;
-    });
-
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Procedures generated:\n\`\`\`json\n${JSON.stringify(procedures, null, 2)}\n\`\`\``,
-  });
-  return { case: { procedures } };
-}
-
 // ─── graph ────────────────────────────────────────────────────────────────────
 
 export const fieldGenerationGraph = new StateGraph(
   GenerationGraphStateSchema,
   RequestContextSchema
 )
-  .addNode(
-    "case_cot_generate",
-    traceNode(
-      "case_cot_generate",
-      generateCaseCoT,
-      "Thinking about case structure"
-    )
-  )
   .addNode(
     "case_outline_generate",
     traceNode(
@@ -311,17 +226,8 @@ export const fieldGenerationGraph = new StateGraph(
       "Assembling case fields"
     )
   )
-  .addNode(
-    "procedures_generate",
-    traceNode(
-      "procedures_generate",
-      generateProcedures,
-      "Generating procedures"
-    )
-  )
 
-  .addEdge(START, "case_cot_generate")
-  .addEdge("case_cot_generate", "case_outline_generate")
+  .addEdge(START, "case_outline_generate")
   .addConditionalEdges(
     "case_outline_generate",
     (state): Send[] => {
@@ -372,11 +278,5 @@ export const fieldGenerationGraph = new StateGraph(
   .addEdge("patient_generate", "case_fan_in")
   .addEdge("chief_complaint_generate", "case_fan_in")
   .addEdge("anamnesis_generate", "case_fan_in")
-  .addConditionalEdges(
-    "case_fan_in",
-    (state) =>
-      state.generationFlags.includes("procedures") ? "generate" : "skip",
-    { generate: "procedures_generate", skip: END }
-  )
-  .addEdge("procedures_generate", END)
+  .addEdge("case_fan_in", END)
   .compile();

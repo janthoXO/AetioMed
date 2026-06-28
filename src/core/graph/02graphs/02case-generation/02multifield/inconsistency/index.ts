@@ -38,12 +38,17 @@ async function evaluate(
     return new Command({ goto: END });
   }
 
+  // Procedures are generated after the inconsistency phase; exclude them here.
+  const flagsForInconsistency = state.generationFlags.filter(
+    (f) => f !== "procedures"
+  );
+
   let inconsistencies = await inconsistencyTools.generateInconsistencies
     .invoke(
       {
         case: state.case,
         diagnosis: state.diagnosis,
-        generationFlags: state.generationFlags,
+        generationFlags: flagsForInconsistency,
         userInstructions: state.userInstructions
           ? JSON.stringify(state.userInstructions)
           : undefined,
@@ -60,7 +65,7 @@ async function evaluate(
     });
 
   inconsistencies = inconsistencies.filter((i) =>
-    state.generationFlags.some((f) => f === i.field)
+    flagsForInconsistency.some((f) => f === i.field)
   );
 
   bus.emit("Generation Log", {
@@ -80,12 +85,17 @@ async function caseRefine(
   state: InconsistencyGraphState,
   runtime?: Runtime<RequestContext>
 ): Promise<Command> {
+  // Procedures are generated after the inconsistency phase; exclude them here.
+  const flagsForInconsistency = state.generationFlags.filter(
+    (f) => f !== "procedures"
+  );
+
   const refinedCase = await inconsistencyTools.fixCaseInconsistencies
     .invoke(
       {
         case: state.case,
         inconsistencies: state.inconsistencies,
-        generationFlags: state.generationFlags,
+        generationFlags: flagsForInconsistency,
         anamnesisCategories: state.anamnesisCategories,
         procedureNameList: PredefinedProcedureNames,
         userInstructions: state.userInstructions

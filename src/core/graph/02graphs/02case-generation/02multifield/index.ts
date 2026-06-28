@@ -3,9 +3,10 @@ import { CaseGenerationStateSchema } from "../state.js";
 import { fieldGenerationGraph } from "./generation/index.js";
 import { inconsistencyGraph } from "./inconsistency/index.js";
 
-const MultiFieldGraphStateSchema = CaseGenerationStateSchema;
-
-export const multiFieldGraph = new StateGraph(MultiFieldGraphStateSchema)
+// Thin wrapper that sequences field generation → inconsistency check using the
+// shared CaseGenerationStateSchema so that it is type-compatible as a node in
+// the outer caseGenerationGraph. Context propagates from the outer graph.
+export const multiFieldGraph = new StateGraph(CaseGenerationStateSchema)
   .addNode("field_generation_phase", fieldGenerationGraph)
   .addNode("inconsistency_phase", inconsistencyGraph)
 

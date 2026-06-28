@@ -1,4 +1,4 @@
-import { END, START, StateGraph } from "@langchain/langgraph";
+import { END, START, StateGraph, type Runtime } from "@langchain/langgraph";
 import { CaseGenerationStateSchema } from "../state.js";
 import z from "zod";
 import { bus } from "@/core/graph/index.js";
@@ -7,7 +7,6 @@ import {
   RequestContextSchema,
   type RequestContext,
 } from "@/core/graph/utils/context.js";
-import type { Runtime } from "@langchain/langgraph";
 import { symptomTools } from "./tools.js";
 import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
 
@@ -19,11 +18,13 @@ const SymptomsGraphStateSchema = CaseGenerationStateSchema.pick({
 
 type SymptomsGraphState = z.infer<typeof SymptomsGraphStateSchema>;
 
+// ─── node 1: retrieve from UMLS lookup ───────────────────────────────────────
+
 function retrieveSymptomsUMLS(
   state: SymptomsGraphState
 ): Pick<SymptomsGraphState, "symptoms"> {
   if (!state.diagnosis.icd) {
-    return { symptoms: state.symptoms };
+    return { symptoms: [] };
   }
 
   const retrieved = SymptomsRelatedToDiagnosisIcd(state.diagnosis.icd);
@@ -38,10 +39,14 @@ function retrieveSymptomsUMLS(
   return { symptoms: retrieved };
 }
 
-async function generateSymptoms(
+// ─── node 2: generate via LLM and merge with UMLS ────────────────────────────
+
+async function generateAndMergeSymptoms(
   state: SymptomsGraphState,
   runtime?: Runtime<RequestContext>
 ): Promise<Pick<SymptomsGraphState, "symptoms">> {
+  // state.symptoms at this point contains the UMLS-retrieved set from node 1.
+  // Pass it as symptomsToExclude so the LLM generates novel, non-duplicate symptoms.
   const generated = await symptomTools.generateSymptoms.invoke(
     {
       diagnosis: state.diagnosis,
@@ -58,17 +63,21 @@ async function generateSymptoms(
     logLevel: "info",
     timestamp: new Date().toISOString(),
   });
-  return { symptoms: generated };
+
+  // Return UMLS + generated combined
+  return { symptoms: [...state.symptoms, ...generated] };
 }
+
+// ─── graph ────────────────────────────────────────────────────────────────────
 
 export const symptomsGraph = new StateGraph(
   SymptomsGraphStateSchema,
   RequestContextSchema
 )
   .addNode(
-    "symptoms_umls",
+    "symptoms_retrieve",
     traceNode(
-      "symptoms_umls",
+      "symptoms_retrieve",
       retrieveSymptomsUMLS,
       "Retrieving symptoms from UMLS"
     )
@@ -77,12 +86,12 @@ export const symptomsGraph = new StateGraph(
     "symptoms_generate",
     traceNode(
       "symptoms_generate",
-      generateSymptoms,
-      "Generating relevant symptoms"
+      generateAndMergeSymptoms,
+      "Generating and merging symptoms"
     )
   )
 
-  .addEdge(START, "symptoms_umls")
-  .addEdge("symptoms_umls", "symptoms_generate")
+  .addEdge(START, "symptoms_retrieve")
+  .addEdge("symptoms_retrieve", "symptoms_generate")
   .addEdge("symptoms_generate", END)
   .compile();

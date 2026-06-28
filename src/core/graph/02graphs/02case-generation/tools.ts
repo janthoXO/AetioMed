@@ -4,7 +4,6 @@ import { generateChiefComplaint as generateChiefComplaintGateway } from "@/core/
 import { generateAnamnesis as generateAnamnesisGateway } from "@/core/graph/03aigateway/anamnesis.aigateway.js";
 import { generateProcedures as generateProceduresGateway } from "@/core/graph/03aigateway/procedures.aigateway.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
-import { SymptomSchema } from "@/core/graph/models/Symptom.js";
 import { AnamnesisCategorySchema } from "@/core/graph/models/Anamnesis.js";
 import {
   PredefinedProcedureNames,
@@ -19,35 +18,11 @@ import type { Tool } from "@/core/graph/utils/tool.js";
 
 // ─── Patient ─────────────────────────────────────────────────────────────────
 
-const GeneratePatientFromCoTInputSchema = z.object({
-  diagnosis: DiagnosisSchema,
-  cot: z.string(),
-  symptoms: z.array(SymptomSchema),
-  userInstructions: z.string().optional(),
-});
-
 const GeneratePatientFromOutlineInputSchema = z.object({
   diagnosis: DiagnosisSchema,
   outline: z.string(),
   userInstructions: z.string().optional(),
 });
-
-export const generatePatientFromCoT: Tool<
-  z.infer<typeof GeneratePatientFromCoTInputSchema>,
-  Patient
-> = {
-  name: "generate_patient_from_cot",
-  description:
-    "Generate patient demographics using a chain-of-thought reasoning and symptom list.",
-  inputSchema: GeneratePatientFromCoTInputSchema,
-  invoke: ({ diagnosis, cot, symptoms, userInstructions }, context) =>
-    generatePatientGateway(
-      diagnosis,
-      { cot, symptoms },
-      userInstructions,
-      context
-    ),
-};
 
 export const generatePatientFromOutline: Tool<
   z.infer<typeof GeneratePatientFromOutlineInputSchema>,
@@ -62,35 +37,11 @@ export const generatePatientFromOutline: Tool<
 
 // ─── Chief Complaint ──────────────────────────────────────────────────────────
 
-const GenerateChiefComplaintFromCoTInputSchema = z.object({
-  diagnosis: DiagnosisSchema,
-  cot: z.string(),
-  symptoms: z.array(SymptomSchema),
-  userInstructions: z.string().optional(),
-});
-
 const GenerateChiefComplaintFromOutlineInputSchema = z.object({
   diagnosis: DiagnosisSchema,
   outline: z.string(),
   userInstructions: z.string().optional(),
 });
-
-export const generateChiefComplaintFromCoT: Tool<
-  z.infer<typeof GenerateChiefComplaintFromCoTInputSchema>,
-  ChiefComplaint
-> = {
-  name: "generate_chief_complaint_from_cot",
-  description:
-    "Generate the chief complaint using a chain-of-thought reasoning and symptom list.",
-  inputSchema: GenerateChiefComplaintFromCoTInputSchema,
-  invoke: ({ diagnosis, cot, symptoms, userInstructions }, context) =>
-    generateChiefComplaintGateway(
-      diagnosis,
-      { cot, symptoms },
-      userInstructions,
-      context
-    ),
-};
 
 export const generateChiefComplaintFromOutline: Tool<
   z.infer<typeof GenerateChiefComplaintFromOutlineInputSchema>,
@@ -110,41 +61,12 @@ export const generateChiefComplaintFromOutline: Tool<
 
 // ─── Anamnesis ────────────────────────────────────────────────────────────────
 
-const GenerateAnamnesisFromCoTInputSchema = z.object({
-  diagnosis: DiagnosisSchema,
-  cot: z.string(),
-  symptoms: z.array(SymptomSchema),
-  anamnesisCategories: z.array(AnamnesisCategorySchema).optional(),
-  userInstructions: z.string().optional(),
-});
-
 const GenerateAnamnesisFromOutlineInputSchema = z.object({
   diagnosis: DiagnosisSchema,
   outline: z.string(),
   anamnesisCategories: z.array(AnamnesisCategorySchema).optional(),
   userInstructions: z.string().optional(),
 });
-
-export const generateAnamnesisFromCoT: Tool<
-  z.infer<typeof GenerateAnamnesisFromCoTInputSchema>,
-  Anamnesis
-> = {
-  name: "generate_anamnesis_from_cot",
-  description:
-    "Generate patient anamnesis using a chain-of-thought reasoning and symptom list.",
-  inputSchema: GenerateAnamnesisFromCoTInputSchema,
-  invoke: (
-    { diagnosis, cot, symptoms, anamnesisCategories, userInstructions },
-    context
-  ) =>
-    generateAnamnesisGateway(
-      diagnosis,
-      { cot, symptoms },
-      userInstructions,
-      anamnesisCategories,
-      context
-    ),
-};
 
 export const generateAnamnesisFromOutline: Tool<
   z.infer<typeof GenerateAnamnesisFromOutlineInputSchema>,
@@ -168,14 +90,6 @@ export const generateAnamnesisFromOutline: Tool<
 
 // ─── Procedures ───────────────────────────────────────────────────────────────
 
-const GenerateProceduresFromCoTInputSchema = z.object({
-  diagnosis: DiagnosisSchema,
-  cot: z.string(),
-  symptoms: z.array(SymptomSchema),
-  procedureNameList: z.array(ProcedureNameSchema).optional(),
-  userInstructions: z.string().optional(),
-});
-
 const GenerateProceduresFromCaseInputSchema = z.object({
   diagnosis: DiagnosisSchema,
   case: CaseSchema,
@@ -183,34 +97,12 @@ const GenerateProceduresFromCaseInputSchema = z.object({
   userInstructions: z.string().optional(),
 });
 
-export const generateProceduresFromCoT: Tool<
-  z.infer<typeof GenerateProceduresFromCoTInputSchema>,
-  Procedure[]
-> = {
-  name: "generate_procedures_forward",
-  description:
-    "Generate diagnostic procedures from chain-of-thought reasoning (single-field path).",
-  inputSchema: GenerateProceduresFromCoTInputSchema,
-  invoke: (
-    { diagnosis, cot, symptoms, procedureNameList, userInstructions },
-    context
-  ) =>
-    generateProceduresGateway(
-      diagnosis,
-      { cot, symptoms },
-      userInstructions,
-      procedureNameList ?? PredefinedProcedureNames,
-      context
-    ),
-};
-
 export const generateProceduresFromCase: Tool<
   z.infer<typeof GenerateProceduresFromCaseInputSchema>,
   Procedure[]
 > = {
-  name: "generate_procedures_backward",
-  description:
-    "Generate diagnostic procedures from the full case context (multi-field path).",
+  name: "generate_procedures_from_case",
+  description: "Generate diagnostic procedures from the full case context.",
   inputSchema: GenerateProceduresFromCaseInputSchema,
   invoke: (
     { diagnosis, case: c, procedureNameList, userInstructions },
@@ -226,12 +118,8 @@ export const generateProceduresFromCase: Tool<
 };
 
 export const generationTools = {
-  generatePatientFromCoT,
   generatePatientFromOutline,
-  generateChiefComplaintFromCoT,
   generateChiefComplaintFromOutline,
-  generateAnamnesisFromCoT,
   generateAnamnesisFromOutline,
-  generateProceduresFromCoT,
   generateProceduresFromCase,
 } as const;

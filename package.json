@@ -14,7 +14,7 @@
     "lint:fix": "eslint . --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "graph:export": "tsx src/extensions/core/02graphs/exportGraphs.ts",
+    "graph:export": "tsx src/core/graph/02graphs/exportGraphs.ts",
     "swagger": "tsx src/extensions/swagger/swagger.ts"
   },
   "keywords": [],

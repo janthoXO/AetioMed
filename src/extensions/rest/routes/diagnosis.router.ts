@@ -1,5 +1,5 @@
 import express from "express";
-import { PredefinedDiagnoses } from "@/core/graph/models/Diagnosis.js";
+import { getAllDiagnoses } from "@/core/graph/models/Diagnosis.js";
 
 const router = express.Router();
 
@@ -9,7 +9,7 @@ router.use((_req, _res, next) => {
 });
 
 router.get("/", async (_, res) => {
-  res.status(200).json(PredefinedDiagnoses);
+  res.status(200).json(getAllDiagnoses());
 });
 
 export default router;

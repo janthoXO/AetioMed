@@ -6,6 +6,7 @@
   "type": "module",
   "scripts": {
     "generate": "tsx scripts/generate-registry.ts",
+    "db:generate": "drizzle-kit generate",
     "dev": "npm run generate && tsx watch --env-file=.env src/index.ts",
     "build": "npm run generate && tsc && tsc-alias",
     "start": "node dist/index.js",
@@ -20,6 +21,9 @@
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@10.33.0",
+  "engines": {
+    "node": ">=22.5"
+  },
   "dependencies": {
     "@langchain/classic": "^1.0.32",
     "@langchain/core": "^1.1.46",
@@ -34,7 +38,9 @@
     "@toon-format/toon": "^2.2.0",
     "cors": "^2.8.6",
     "dotenv": "^17.4.2",
+    "drizzle-orm": "1.0.0-rc.4-5d5b77c",
     "express": "^5.2.1",
+    "js-yaml": "^5.1.0",
     "jsonrepair": "^3.14.0",
     "langchain": "^1.4.0",
     "morgan": "^1.10.1",
@@ -55,6 +61,7 @@
     "@types/morgan": "^1.9.10",
     "@types/node": "^25.7.0",
     "@types/swagger-ui-express": "^4.1.8",
+    "drizzle-kit": "1.0.0-rc.4-5d5b77c",
     "eslint": "^10.3.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.8.3",

@@ -35,14 +35,8 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
   try {
     console.debug(`[NATS] Received message on ${SUBJECT}:`, msg.json());
     const data = NatsCaseGenerationRequestSchema.parse(msg.json());
-    const {
-      icd,
-      userInstructions,
-      generationFlags,
-      language,
-      llmConfig,
-      anamnesisCategories,
-    } = data;
+    const { icd, userInstructions, generationFlags, language, llmConfig } =
+      data;
     let { diagnosis } = data;
 
     // fill diagnosis and icdCode - zod makes sure that at least one is filled
@@ -62,8 +56,7 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
           { name: diagnosis, icd },
           generationFlags,
           userInstructions,
-          language,
-          anamnesisCategories
+          language
         ),
       jobId,
       llmConfig

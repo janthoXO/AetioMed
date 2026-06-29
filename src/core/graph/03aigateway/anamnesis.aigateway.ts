@@ -1,5 +1,5 @@
 import {
-  AnamnesisCategoryDefaults,
+  getEffectiveCategoryList,
   AnamnesisJsonExample,
   buildAnamnesisSchema,
   type Anamnesis,
@@ -25,13 +25,14 @@ export async function generateAnamnesisCoT(
   diagnosis: Diagnosis,
   symptoms: Symptom[],
   userInstructions?: string,
-  anamnesisCategories:
-    | AnamnesisCategory[]
-    | undefined = AnamnesisCategoryDefaults,
+  anamnesisCategories?: AnamnesisCategory[],
   context?: RequestContext
 ): Promise<string> {
+  const effectiveCategories =
+    anamnesisCategories ?? getEffectiveCategoryList(context?.language);
+
   const systemPrompt = buildPrompt(
-    `You are an expert medical educator specializing in designing realistic clinical mock cases for medical students. 
+    `You are an expert medical educator specializing in designing realistic clinical mock cases for medical students.
 Your task is to generate a step-by-step logical reasoning process (Chain of Thought) detailing EXACTLY HOW to construct the Anamnesis (medical history)`,
 
     `The following symptoms are typical for the diagnosis. You may use a subset of them:
@@ -51,8 +52,8 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
       ? `Additional Instructions: ${userInstructions}`
       : undefined,
 
-    anamnesisCategories
-      ? `Required Intake Form Categories to fill: ${anamnesisCategories.join(", ")}`
+    effectiveCategories
+      ? `Required Intake Form Categories to fill: ${effectiveCategories.join(", ")}`
       : `Use standard patient intake categories (e.g., Current Symptoms, Past Illnesses, Family History, Lifestyle/Habits, Current Medications).`
   );
 
@@ -104,7 +105,7 @@ ${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join
 }
 
 export async function generateAnamnesis(
-  diagnosis: Diagnosis, // provided by the user
+  diagnosis: Diagnosis,
   config:
     | {
         cot: string;
@@ -113,12 +114,12 @@ export async function generateAnamnesis(
     | {
         outline: string;
       },
-  userInstructions?: string, // provided by the user
-  anamnesisCategories:
-    | AnamnesisCategory[]
-    | undefined = AnamnesisCategoryDefaults, // provided by the user
+  userInstructions?: string,
+  anamnesisCategories?: AnamnesisCategory[],
   context?: RequestContext
 ): Promise<Anamnesis> {
+  const effectiveCategories =
+    anamnesisCategories ?? getEffectiveCategoryList(context?.language);
   const systemPrompt = buildPrompt(
     `You are an AI generating data for a medical training simulator.
 Your current task is to generate the Anamnesis (medical history) ${"outline" in config ? "based on the provided Case Outline" : ""}.`,
@@ -147,8 +148,8 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
 
     "outline" in config ? `Case Outline: ${config.outline}` : undefined,
 
-    anamnesisCategories
-      ? `Required Intake Form Categories to fill: ${anamnesisCategories.join(", ")}`
+    effectiveCategories
+      ? `Required Intake Form Categories to fill: ${effectiveCategories.join(", ")}`
       : `Use standard patient intake categories (e.g., Current Symptoms, Past Illnesses, Family History, Lifestyle/Habits, Current Medications).`,
 
     userInstructions
@@ -163,7 +164,7 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
   // Initialize cases to empty in case of failure
   try {
     const AnamnesisSchemaWrapper = z.object({
-      anamnesis: buildAnamnesisSchema(anamnesisCategories),
+      anamnesis: buildAnamnesisSchema(effectiveCategories),
     });
 
     const anamnesis: Anamnesis = await retry(
@@ -213,26 +214,6 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
     console.error(`[GenerateAnamnesisFromOutline] Error:`, error);
     throw error;
   }
-}
-
-/**
- * Translates anamnesis categories from a provided language to English, using a combination of repository lookups and LLM generation for missing translations.
- * @param categories the anamnesis categories to translate to English
- * @param language the source language of the provided categories
- * @returns a record mapping the provided categories to their English translations
- */
-export async function generateAnamnesisCategoriesToEnglish(
-  categories: AnamnesisCategory[],
-  language: Language,
-  context?: RequestContext
-): Promise<Record<AnamnesisCategory, AnamnesisCategory>> {
-  return translateTermsKeyed({
-    logTag: "GenerateAnamnesisCategoriesToEnglish",
-    taskDescription: `Translate the provided anamnesis categories from the provided language to English.`,
-    contextLines: [`Source language: ${language}`],
-    terms: categories,
-    context,
-  });
 }
 
 /**

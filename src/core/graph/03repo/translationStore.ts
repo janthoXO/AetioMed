@@ -26,6 +26,13 @@ export interface TranslationStore {
   getToEnglish(translated: string, lang: ForeignLanguage): string | undefined;
   save(englishToTarget: Record<string, string>, lang: ForeignLanguage): void;
   /**
+   * Return all English source keys that have a translation for `lang` in this
+   * domain. Used by the runtime predefined-list resolver (Rule 4: translations
+   * only, no explicit defaults) to constrain generation to terms that can be
+   * translated into the requested target language.
+   */
+  getAllEnglishKeysForLanguage(lang: ForeignLanguage): string[];
+  /**
    * Return english -> translated for every requested key, translating only the
    * keys that miss the cache. Concurrent identical misses share a single
    * `generate` call (in-flight dedup); results are saved before resolving.
@@ -42,7 +49,7 @@ export interface TranslationStore {
   ): Promise<Record<string, string>>;
 }
 
-const TranslationMappingSchema = z.partialRecord(
+export const TranslationMappingSchema = z.partialRecord(
   ForeignLanguageSchema,
   z.record(z.string(), z.string())
 );
@@ -196,5 +203,20 @@ export function createTranslationStore(opts: {
     return result;
   }
 
-  return { getFromEnglish, getToEnglish, save, translateMissing };
+  function getAllEnglishKeysForLanguage(lang: ForeignLanguage): string[] {
+    return db
+      .select({ english: translation.english })
+      .from(translation)
+      .where(and(eq(translation.domain, domain), eq(translation.lang, lang)))
+      .all()
+      .map((r) => r.english);
+  }
+
+  return {
+    getFromEnglish,
+    getToEnglish,
+    save,
+    getAllEnglishKeysForLanguage,
+    translateMissing,
+  };
 }

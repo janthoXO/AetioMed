@@ -22,7 +22,6 @@ const InconsistencyGraphStateSchema = CaseGenerationStateSchema.pick({
   userInstructions: true,
   generationFlags: true,
   case: true,
-  anamnesisCategories: true,
 }).extend({
   refinementIterationsRemaining: z.number().default(2),
   inconsistencies: z.array(InconsistencySchema).default([]),
@@ -96,7 +95,6 @@ async function caseRefine(
         case: state.case,
         inconsistencies: state.inconsistencies,
         generationFlags: flagsForInconsistency,
-        anamnesisCategories: state.anamnesisCategories,
         procedureNameList: PredefinedProcedureNames,
         userInstructions: state.userInstructions
           ? JSON.stringify(state.userInstructions)

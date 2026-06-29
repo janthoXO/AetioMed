@@ -2,6 +2,12 @@ import z from "zod";
 import { asc, eq } from "drizzle-orm";
 import { chunk, db, syncSource } from "../03repo/db.js";
 import { predefinedItem } from "../03repo/schema.js";
+import {
+  readDeclaredEnglishKeys,
+  resolvePredefinedList,
+} from "../03repo/predefinedList.js";
+import { getProcedureNameListForLanguage } from "../03repo/procedures.repo.js";
+import type { Language } from "./Language.js";
 
 export const ProcedureNameSchema = z
   .string()
@@ -63,7 +69,34 @@ function loadPredefinedProcedures(): ProcedureName[] | undefined {
 syncPredefinedProcedures();
 
 export const PredefinedProcedureNames: ProcedureName[] | undefined =
-  loadPredefinedProcedures();
+  resolvePredefinedList({
+    defaults: loadPredefinedProcedures(),
+    translationKeys: readDeclaredEnglishKeys("data/proceduresTranslations.yml"),
+    label: "procedures",
+  });
+
+/**
+ * Resolve the effective procedure name list for a given generation language.
+ *
+ * - If a static default list is configured (Rules 2 & 3) it is always returned
+ *   regardless of language.
+ * - If no defaults are configured but translation mappings exist for the given
+ *   non-English language (Rule 4), the English keys for that language are
+ *   returned so the from-English output translator can always resolve them.
+ * - Otherwise `undefined` is returned and the LLM may invent procedure names freely.
+ */
+export function getEffectiveProcedureList(
+  language?: Language
+): ProcedureName[] | undefined {
+  if (PredefinedProcedureNames !== undefined) {
+    return PredefinedProcedureNames;
+  }
+  if (language && language !== "English") {
+    const keys = getProcedureNameListForLanguage(language);
+    return keys.length > 0 ? keys : undefined;
+  }
+  return undefined;
+}
 
 export const ProcedureRelevanceSchema = z.enum([
   "obligatory",

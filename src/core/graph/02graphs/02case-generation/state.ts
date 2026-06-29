@@ -1,7 +1,6 @@
 import { GenerationFlagSchema } from "@/core/graph/models/GenerationFlags.js";
 import z from "zod";
 import { CaseSchema } from "@/core/graph/models/Case.js";
-import { AnamnesisCategorySchema } from "@/core/graph/models/Anamnesis.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
 import { SymptomSchema } from "@/core/graph/models/Symptom.js";
 import { registry } from "@langchain/langgraph/zod";
@@ -11,7 +10,6 @@ export const CaseGenerationStateSchema = z.object({
   diagnosis: DiagnosisSchema,
   userInstructions: UserInstructionsSchema.optional(),
   generationFlags: z.array(GenerationFlagSchema).min(1),
-  anamnesisCategories: z.array(AnamnesisCategorySchema).optional(),
   /**
    * Generated cases.
    */

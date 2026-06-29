@@ -4,10 +4,6 @@ import { getRequestContext, RequestContextSchema } from "../utils/context.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { GenerationFlag } from "../models/GenerationFlags.js";
 import type { UserInstructions } from "../models/UserInstructions.js";
-import {
-  AnamnesisCategoryDefaults,
-  type AnamnesisCategory,
-} from "../models/Anamnesis.js";
 import { caseGenerationGraph } from "./02case-generation/index.js";
 import { CaseGenerationStateSchema } from "./02case-generation/state.js";
 import { caseTranslationFromEnglishGraph } from "./03case-translation-from-english/index.js";
@@ -22,7 +18,6 @@ const CaseStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
   generationFlags: true,
-  anamnesisCategories: true,
   case: true,
 }).extend({
   language: LanguageSchema.default("English"),
@@ -63,18 +58,11 @@ export async function generateCase(
   diagnosis: Diagnosis,
   generationFlags: GenerationFlag[],
   userInstructions?: UserInstructions,
-  language?: Language,
-  anamnesisCategories?: AnamnesisCategory[]
+  language?: Language
 ): Promise<Case> {
-  anamnesisCategories = anamnesisCategories ?? AnamnesisCategoryDefaults;
-
   console.log(
     `[CaseGraph] Starting case generation for:\n`,
-    JSON.stringify(
-      { diagnosis, userInstructions, generationFlags, anamnesisCategories },
-      null,
-      2
-    )
+    JSON.stringify({ diagnosis, userInstructions, generationFlags }, null, 2)
   );
 
   const context = getRequestContext();
@@ -102,7 +90,6 @@ export async function generateCase(
       diagnosis,
       generationFlags,
       userInstructions,
-      anamnesisCategories,
       language,
     },
     {

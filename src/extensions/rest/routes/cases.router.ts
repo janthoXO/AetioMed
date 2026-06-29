@@ -52,14 +52,8 @@ router.post(
     }
 
     let { diagnosis } = bodyResult.data;
-    const {
-      icd,
-      userInstructions,
-      generationFlags,
-      language,
-      llmConfig,
-      anamnesisCategories,
-    } = bodyResult.data;
+    const { icd, userInstructions, generationFlags, language, llmConfig } =
+      bodyResult.data;
 
     if (!diagnosis) {
       diagnosis = await IcdToDiagnosisName(icd!);
@@ -90,8 +84,7 @@ router.post(
             { name: diagnosis, icd },
             generationFlags,
             userInstructions,
-            language,
-            anamnesisCategories
+            language
           ),
         jobId,
         llmConfig

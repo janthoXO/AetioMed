@@ -10,7 +10,6 @@ import {
 } from "@/core/graph/models/Inconsistency.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
 import { GenerationFlagSchema } from "@/core/graph/models/GenerationFlags.js";
-import { AnamnesisCategorySchema } from "@/core/graph/models/Anamnesis.js";
 import { ProcedureNameSchema } from "@/core/graph/models/Procedure.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
 
@@ -25,7 +24,6 @@ const FixCaseInconsistenciesInputSchema = z.object({
   case: CaseSchema,
   inconsistencies: z.array(InconsistencySchema),
   generationFlags: z.array(GenerationFlagSchema),
-  anamnesisCategories: z.array(AnamnesisCategorySchema).optional(),
   procedureNameList: z.array(ProcedureNameSchema).optional(),
   userInstructions: z.string().optional(),
 });
@@ -51,19 +49,13 @@ export const fixCaseInconsistencies: Tool<
     "Fix clinical and logical inconsistencies in a generated medical case.",
   inputSchema: FixCaseInconsistenciesInputSchema,
   invoke: (
-    {
-      case: c,
-      inconsistencies,
-      anamnesisCategories,
-      procedureNameList,
-      userInstructions,
-    },
+    { case: c, inconsistencies, procedureNameList, userInstructions },
     context
   ) =>
     fixCaseInconsistenciesGateway(
       c,
       inconsistencies,
-      anamnesisCategories,
+      undefined,
       procedureNameList,
       userInstructions,
       context

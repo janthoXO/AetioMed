@@ -28,10 +28,6 @@ export const CaseGenerationRequestSchema = z
     language: LanguageSchema.optional().describe(
       "Language to generate the case in"
     ),
-    anamnesisCategories: z
-      .array(z.string())
-      .optional()
-      .describe("Categories of anamnesis to include in the case"),
     llmConfig: LLMConfigSchema.optional().describe(
       "Optional configuration for the LLM used in case generation"
     ),

@@ -16,21 +16,6 @@ async function translateDiagnosis(
   return { diagnosis };
 }
 
-async function translateAnamnesisCategory(
-  state: CaseTranslationToEnglishState
-): Promise<
-  Pick<CaseTranslationToEnglishState, "anamnesisCategories"> | undefined
-> {
-  const translations =
-    await translationToEnglishTools.translateAnamnesisCategoriesToEnglish.invoke(
-      {
-        categories: state.anamnesisCategories!,
-        language: state.language,
-      }
-    );
-  return { anamnesisCategories: Object.values(translations) };
-}
-
 export const caseTranslationToEnglishGraph = new StateGraph(
   CaseTranslationToEnglishStateSchema,
   RequestContextSchema
@@ -43,22 +28,9 @@ export const caseTranslationToEnglishGraph = new StateGraph(
       "Translating diagnosis to English"
     )
   )
-  .addNode(
-    "translate_anamnesis_category",
-    traceNode(
-      "translate_anamnesis_category",
-      translateAnamnesisCategory,
-      "Translating anamnesis categories to English"
-    )
-  )
 
-  .addConditionalEdges(START, (state) => {
-    const sends: Send[] = [new Send("translate_diagnosis", state)];
-    if (state.anamnesisCategories && state.anamnesisCategories.length > 0) {
-      sends.push(new Send("translate_anamnesis_category", state));
-    }
-    return sends;
-  })
+  .addConditionalEdges(START, (state) => [
+    new Send("translate_diagnosis", state),
+  ])
   .addEdge("translate_diagnosis", END)
-  .addEdge("translate_anamnesis_category", END)
   .compile();

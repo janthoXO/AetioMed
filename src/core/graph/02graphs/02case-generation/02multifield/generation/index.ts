@@ -147,7 +147,7 @@ async function generateChiefComplaint(
 
 type AnamnesisNodeInput = Pick<
   GenerationGraphState,
-  "diagnosis" | "outline" | "anamnesisCategories" | "userInstructions"
+  "diagnosis" | "outline" | "userInstructions"
 >;
 
 async function generateAnamnesis(
@@ -164,7 +164,6 @@ async function generateAnamnesis(
       {
         diagnosis: state.diagnosis,
         outline: state.outline,
-        anamnesisCategories: state.anamnesisCategories,
         userInstructions: state.userInstructions
           ? JSON.stringify(state.userInstructions)
           : undefined,
@@ -265,7 +264,6 @@ export const fieldGenerationGraph = new StateGraph(
           new Send("anamnesis_generate", {
             diagnosis: state.diagnosis,
             outline: state.outline,
-            anamnesisCategories: state.anamnesisCategories,
             userInstructions: filterInstructions(["anamnesis", "general"]),
           })
         );

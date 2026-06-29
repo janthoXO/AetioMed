@@ -5,7 +5,10 @@ import {
 } from "../utils/llm.js";
 import { bus } from "@/core/graph/index.js";
 import { buildCaseSchema, type Case } from "../models/Case.js";
-import type { AnamnesisCategory } from "../models/Anamnesis.js";
+import {
+  getEffectiveCategoryList,
+  type AnamnesisCategory,
+} from "../models/Anamnesis.js";
 import type { ProcedureName } from "../models/Procedure.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import {
@@ -108,6 +111,9 @@ export async function fixCaseInconsistencies(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<Case> {
+  const effectiveCategories =
+    anamnesisCategories ?? getEffectiveCategoryList(context?.language);
+
   const systemPrompt = buildPrompt(
     `You are an expert medical educator tasked with fixing a generated clinical mock case for a medical training simulator.`,
 
@@ -135,7 +141,7 @@ ${inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.desc
       async (attempt: number, previousError?: Error) => {
         const result = await getDeterministicLLM(context?.llmConfig)
           .withStructuredOutput(
-            buildCaseSchema(anamnesisCategories, procedureNameList)
+            buildCaseSchema(effectiveCategories, procedureNameList)
           )
           .invoke(
             [

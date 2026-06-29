@@ -10,7 +10,7 @@ import {
 } from "../utils/llm.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import {
-  PredefinedProcedureNames,
+  getEffectiveProcedureList,
   buildProcedureSchema,
   type Procedure,
   type ProcedureName,
@@ -105,10 +105,13 @@ export async function generateProcedures(
     | {
         case: Case;
       },
-  userInstructions?: string, // provided by the user
-  procedureNameList: ProcedureName[] | undefined = PredefinedProcedureNames,
+  userInstructions?: string,
+  procedureNameList?: ProcedureName[],
   context?: RequestContext
 ): Promise<Procedure[]> {
+  const effectiveProcedures =
+    procedureNameList ?? getEffectiveProcedureList(context?.language);
+
   const systemPrompt = buildPrompt(
     `You are an expert attending physician designing the diagnostic workup for a medical training simulator.
 Your current task is to order the required Procedures ${"case" in config ? "based on the provided Case" : ""}.`,
@@ -127,10 +130,10 @@ In addition take the previously generated fields into account and decide which p
 ${JSON.stringify(config.case)}`
       : undefined,
 
-    procedureNameList?.length
+    effectiveProcedures?.length
       ? `[RESTRICTED WORKUP]
 You MUST ONLY select the necessary diagnostic procedures from the following approved list. Do not invent or recommend any procedures that are not explicitly listed below:
-${procedureNameList.map((p) => `- ${p}`).join("\n")}`
+${effectiveProcedures.map((p) => `- ${p}`).join("\n")}`
       : `Generate a realistic list of standard procedures that should be performed to appropriately work up the patient and confirm the diagnosis.`,
 
     `Requirements:
@@ -158,7 +161,7 @@ ${procedureNameList.map((p) => `- ${p}`).join("\n")}`
   try {
     const ProcedureSchemaWrapper = z.object({
       procedures: z
-        .array(buildProcedureSchema(procedureNameList))
+        .array(buildProcedureSchema(effectiveProcedures))
         .describe("Generated procedures"),
     });
 

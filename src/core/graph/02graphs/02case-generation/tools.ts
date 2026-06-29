@@ -4,7 +4,6 @@ import { generateChiefComplaint as generateChiefComplaintGateway } from "@/core/
 import { generateAnamnesis as generateAnamnesisGateway } from "@/core/graph/03aigateway/anamnesis.aigateway.js";
 import { generateProcedures as generateProceduresGateway } from "@/core/graph/03aigateway/procedures.aigateway.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
-import { AnamnesisCategorySchema } from "@/core/graph/models/Anamnesis.js";
 import {
   PredefinedProcedureNames,
   ProcedureNameSchema,
@@ -64,7 +63,6 @@ export const generateChiefComplaintFromOutline: Tool<
 const GenerateAnamnesisFromOutlineInputSchema = z.object({
   diagnosis: DiagnosisSchema,
   outline: z.string(),
-  anamnesisCategories: z.array(AnamnesisCategorySchema).optional(),
   userInstructions: z.string().optional(),
 });
 
@@ -75,15 +73,12 @@ export const generateAnamnesisFromOutline: Tool<
   name: "generate_anamnesis_from_outline",
   description: "Generate patient anamnesis from a pre-built case outline.",
   inputSchema: GenerateAnamnesisFromOutlineInputSchema,
-  invoke: (
-    { diagnosis, outline, anamnesisCategories, userInstructions },
-    context
-  ) =>
+  invoke: ({ diagnosis, outline, userInstructions }, context) =>
     generateAnamnesisGateway(
       diagnosis,
       { outline },
       userInstructions,
-      anamnesisCategories,
+      undefined,
       context
     ),
 };

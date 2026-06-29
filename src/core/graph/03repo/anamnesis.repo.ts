@@ -12,16 +12,6 @@ const store = createTranslationStore({
 });
 
 /**
- * Get the translation of an anamnesis category to English (reverse lookup).
- */
-export function getAnamnesisCategoryTranslationToEnglish(
-  category: AnamnesisCategory,
-  language: ForeignLanguage
-): AnamnesisCategory | undefined {
-  return store.getToEnglish(category, language);
-}
-
-/**
  * Get the translation of an anamnesis category from English to the target language.
  */
 export function getAnamnesisCategoryTranslationFromEnglish(
@@ -29,6 +19,18 @@ export function getAnamnesisCategoryTranslationFromEnglish(
   language: ForeignLanguage
 ): AnamnesisCategory | undefined {
   return store.getFromEnglish(category, language);
+}
+
+/**
+ * Return all English category keys that have a known translation for the given
+ * target language. Used when no static default list is configured (Rule 4): the
+ * English keys for a specific language define the generation constraint so the
+ * from-English output translator can always resolve them.
+ */
+export function getAnamnesisCategoryListForLanguage(
+  language: ForeignLanguage
+): AnamnesisCategory[] {
+  return store.getAllEnglishKeysForLanguage(language);
 }
 
 /**

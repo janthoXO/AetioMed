@@ -170,12 +170,18 @@ export async function generateProcedureResult(
   presentation: Presentation,
   diagnosis: Diagnosis,
   procedureStep: ProcedureStep,
+  outline?: string,
   userInstructions?: string,
   context?: RequestContext
 ): Promise<string> {
   const systemPrompt = buildPrompt(
     `You are a medical simulator generating a realistic result for a diagnostic procedure.
 The true diagnosis is known to you. Generate a result that is clinically consistent with both the true diagnosis and the patient's presentation.`,
+
+    outline
+      ? `Case blueprint (single source of truth — follow its "Workup / Procedure Results Strategy" section, including any difficulty-driven ambiguity or borderline values it specifies):
+${outline}`
+      : undefined,
 
     `Patient presentation:
 ${JSON.stringify(presentation, null, 2)}`,

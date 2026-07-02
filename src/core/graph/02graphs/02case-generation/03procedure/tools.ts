@@ -72,6 +72,7 @@ const GenerateProcedureResultInputSchema = z.object({
   presentation: PresentationSchema,
   diagnosis: DiagnosisSchema,
   procedureStep: ProcedureStepSchema,
+  outline: z.string().optional(),
   userInstructions: z.string().optional(),
 });
 
@@ -81,13 +82,17 @@ export const generateProcedureResultTool: Tool<
 > = {
   name: "generate_procedure_result",
   description:
-    "Non-blinded result step: generate a clinically realistic result for a procedure, consistent with the true diagnosis.",
+    "Non-blinded result step: generate a clinically realistic result for a procedure, consistent with the true diagnosis and the case blueprint's difficulty strategy.",
   inputSchema: GenerateProcedureResultInputSchema,
-  invoke: ({ presentation, diagnosis, procedureStep, userInstructions }, context) =>
+  invoke: (
+    { presentation, diagnosis, procedureStep, outline, userInstructions },
+    context
+  ) =>
     generateProcedureResult(
       presentation,
       diagnosis,
       procedureStep,
+      outline,
       userInstructions,
       context
     ),

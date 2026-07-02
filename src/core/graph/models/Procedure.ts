@@ -124,6 +124,22 @@ export function buildProcedureSchema(procedureNames?: ProcedureName[]) {
   return ProcedureSchema;
 }
 
+/**
+ * Procedure without a result — used when a procedure has been chosen during
+ * the blinded solver step but its result has not yet been generated.
+ */
+export const ProcedureStepSchema = ProcedureSchema.omit({ result: true });
+export type ProcedureStep = z.infer<typeof ProcedureStepSchema>;
+
+export function buildProcedureStepSchema(procedureNames?: ProcedureName[]) {
+  if (procedureNames?.length) {
+    return ProcedureStepSchema.extend({
+      name: z.literal(procedureNames).describe("Name of the medical procedure"),
+    });
+  }
+  return ProcedureStepSchema;
+}
+
 export function ProcedureWithIdArrayJsonExampleString(): string {
   return `[
     {

@@ -12,12 +12,13 @@ import {
 import type { ProcedureName } from "../models/Procedure.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import {
-  InconsistencyArrayJsonFormatZod,
+  InconsistencySchema,
   type Inconsistency,
 } from "../models/Inconsistency.js";
 import { retry } from "../utils/retry.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
+import z from "zod";
 
 export async function generateInconsistencies(
   caseToCheck: Case,
@@ -60,7 +61,7 @@ export async function generateInconsistencies(
     const parsedInconsistencies: Inconsistency[] = await retry(
       async (attempt: number) => {
         const result = await getDeterministicLLM(context?.llmConfig)
-          .withStructuredOutput(InconsistencyArrayJsonFormatZod)
+          .withStructuredOutput(z.object({inconsistencies: z.array(InconsistencySchema)}))
           .invoke(
             [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
             context?.signal !== undefined

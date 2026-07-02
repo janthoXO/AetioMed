@@ -21,13 +21,6 @@ export const InconsistencySchema = z.object({
 
 export type Inconsistency = z.infer<typeof InconsistencySchema>;
 
-/**
- * a zod representing {inconsistencies: Inconsistency[]}
- */
-export const InconsistencyArrayJsonFormatZod = z.object({
-  inconsistencies: z.array(InconsistencySchema),
-});
-
 export function InconsistencyJsonExample(): Inconsistency {
   return {
     field: "anamnesis",

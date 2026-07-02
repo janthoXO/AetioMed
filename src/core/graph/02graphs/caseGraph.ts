@@ -8,6 +8,7 @@ import { caseGenerationGraph } from "./02case-generation/index.js";
 import { CaseGenerationStateSchema } from "./02case-generation/state.js";
 import { caseTranslationFromEnglishGraph } from "./03case-translation-from-english/index.js";
 import { LanguageSchema, type Language } from "../models/Language.js";
+import type { Difficulty } from "../models/Difficulty.js";
 import { GenerationError } from "../errors/AppError.js";
 import { caseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
 import { getKnownLabels } from "../utils/nodeWrapper.js";
@@ -18,6 +19,7 @@ const CaseStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
   generationFlags: true,
+  difficulty: true,
   case: true,
 }).extend({
   language: LanguageSchema.default("English"),
@@ -58,11 +60,16 @@ export async function generateCase(
   diagnosis: Diagnosis,
   generationFlags: GenerationFlag[],
   userInstructions?: UserInstructions,
-  language?: Language
+  language?: Language,
+  difficulty?: Difficulty
 ): Promise<Case> {
   console.log(
     `[CaseGraph] Starting case generation for:\n`,
-    JSON.stringify({ diagnosis, userInstructions, generationFlags }, null, 2)
+    JSON.stringify(
+      { diagnosis, userInstructions, generationFlags, difficulty },
+      null,
+      2
+    )
   );
 
   const context = getRequestContext();
@@ -91,6 +98,7 @@ export async function generateCase(
       generationFlags,
       userInstructions,
       language,
+      difficulty,
     },
     {
       context: {

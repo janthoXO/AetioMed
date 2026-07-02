@@ -30,6 +30,7 @@ const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
   case: true,
+  outline: true,
 }).extend({
   /** Iterations remaining before the bridge step is forced. */
   solverIterationsRemaining: z.number().default(SOLVER_MAX_ITERATIONS),
@@ -194,6 +195,7 @@ async function resultStep(
         presentation: presentationOf(state.case),
         diagnosis: state.diagnosis,
         procedureStep: pending,
+        outline: state.outline,
         userInstructions: userInstructionsForProcedures(state.userInstructions),
       },
       runtime?.context

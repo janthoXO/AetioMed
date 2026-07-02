@@ -1,4 +1,5 @@
 import {
+  Command,
   END,
   Send,
   START,
@@ -18,8 +19,14 @@ import { fieldGenerationBlueprintTools } from "./tools.js";
 import { generationTools } from "../../tools.js";
 import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
 
+const OBVIOUSNESS_MAX_ITERATIONS = 2;
+
 const GenerationGraphStateSchema = CaseGenerationStateSchema.extend({
   outline: z.string(),
+  /** Iterations remaining before the current outline is accepted as-is. */
+  obviousnessIterationsRemaining: z.number().default(OBVIOUSNESS_MAX_ITERATIONS),
+  /** Feedback from the last obviousness evaluation, fed into regeneration. */
+  obviousnessFeedback: z.array(z.string()).default([]),
 });
 
 type GenerationGraphState = z.infer<typeof GenerationGraphStateSchema>;
@@ -36,6 +43,7 @@ async function generateCaseOutline(
         diagnosis: state.diagnosis,
         generationFlags: state.generationFlags,
         symptoms: state.symptoms,
+        difficulty: state.difficulty,
         userInstructions: state.userInstructions
           ? JSON.stringify(state.userInstructions)
           : undefined,
@@ -57,6 +65,159 @@ async function generateCaseOutline(
     msg: `[GenerationGraph] Case outline generated:\n\`\`\` ${outline}\`\`\``,
   });
   return { outline };
+}
+
+// ─── obviousness evaluate / regenerate loop ──────────────────────────────────
+
+function filterUserInstructions(
+  userInstructions: GenerationGraphState["userInstructions"],
+  keys: string[]
+) {
+  return userInstructions
+    ? Object.fromEntries(
+        Object.entries(userInstructions).filter(([k]) => keys.includes(k))
+      )
+    : undefined;
+}
+
+/** Builds the fan-out Sends to the field generators once the outline is accepted. */
+function buildFieldGenerationSends(state: GenerationGraphState): Send[] {
+  const sends: Send[] = [];
+
+  if (state.generationFlags.includes("patient")) {
+    sends.push(
+      new Send("patient_generate", {
+        diagnosis: state.diagnosis,
+        outline: state.outline,
+        userInstructions: filterUserInstructions(state.userInstructions, [
+          "patient",
+          "general",
+        ]),
+      })
+    );
+  }
+  if (state.generationFlags.includes("chiefComplaint")) {
+    sends.push(
+      new Send("chief_complaint_generate", {
+        diagnosis: state.diagnosis,
+        outline: state.outline,
+        userInstructions: filterUserInstructions(state.userInstructions, [
+          "chiefComplaint",
+          "general",
+        ]),
+      })
+    );
+  }
+  if (state.generationFlags.includes("anamnesis")) {
+    sends.push(
+      new Send("anamnesis_generate", {
+        diagnosis: state.diagnosis,
+        outline: state.outline,
+        userInstructions: filterUserInstructions(state.userInstructions, [
+          "anamnesis",
+          "general",
+        ]),
+      })
+    );
+  }
+
+  return sends;
+}
+
+async function outlineEvaluate(
+  state: GenerationGraphState,
+  runtime?: Runtime<RequestContext>
+): Promise<Command> {
+  if (state.obviousnessIterationsRemaining <= 0) {
+    bus.emit("Generation Log", {
+      logLevel: "info",
+      timestamp: new Date().toISOString(),
+      msg: `[GenerationGraph] Obviousness iteration cap reached — proceeding with current outline.`,
+    });
+    return new Command({ goto: buildFieldGenerationSends(state) });
+  }
+
+  const evaluation = await fieldGenerationBlueprintTools.evaluateOutlineObviousness
+    .invoke(
+      {
+        diagnosis: state.diagnosis,
+        outline: state.outline,
+        difficulty: state.difficulty,
+        userInstructions: state.userInstructions
+          ? JSON.stringify(state.userInstructions)
+          : undefined,
+      },
+      runtime?.context
+    )
+    .catch((error) => {
+      bus.emit("Generation Log", {
+        logLevel: "error",
+        timestamp: new Date().toISOString(),
+        msg: `[GenerationGraph] Error evaluating outline obviousness: ${error}`,
+      });
+      throw error;
+    });
+
+  bus.emit("Generation Log", {
+    logLevel: "info",
+    timestamp: new Date().toISOString(),
+    msg: `[GenerationGraph] Obviousness evaluation (${state.obviousnessIterationsRemaining} iter left):\n\`\`\`json\n${JSON.stringify(evaluation, null, 2)}\n\`\`\``,
+  });
+
+  if (!evaluation.tooObvious) {
+    return new Command({ goto: buildFieldGenerationSends(state) });
+  }
+
+  const feedback = evaluation.suggestion
+    ? [...evaluation.reasons, evaluation.suggestion]
+    : evaluation.reasons;
+
+  return new Command({
+    update: { obviousnessFeedback: feedback },
+    goto: "outline_regenerate",
+  });
+}
+
+async function outlineRegenerate(
+  state: GenerationGraphState,
+  runtime?: Runtime<RequestContext>
+): Promise<Command> {
+  const outline = await fieldGenerationBlueprintTools.generateCaseOutline
+    .invoke(
+      {
+        diagnosis: state.diagnosis,
+        generationFlags: state.generationFlags,
+        symptoms: state.symptoms,
+        difficulty: state.difficulty,
+        userInstructions: state.userInstructions
+          ? JSON.stringify(state.userInstructions)
+          : undefined,
+        feedback: state.obviousnessFeedback,
+      },
+      runtime?.context
+    )
+    .catch((error) => {
+      bus.emit("Generation Log", {
+        logLevel: "error",
+        timestamp: new Date().toISOString(),
+        msg: `[GenerationGraph] Error regenerating case outline: ${error}`,
+      });
+      throw error;
+    });
+
+  bus.emit("Generation Log", {
+    logLevel: "info",
+    timestamp: new Date().toISOString(),
+    msg: `[GenerationGraph] Case outline regenerated:\n\`\`\` ${outline}\`\`\``,
+  });
+
+  return new Command({
+    update: {
+      outline,
+      obviousnessIterationsRemaining: state.obviousnessIterationsRemaining - 1,
+    },
+    goto: "outline_evaluate",
+  });
 }
 
 // ─── fan-out field nodes ──────────────────────────────────────────────────────
@@ -202,6 +363,31 @@ export const fieldGenerationGraph = new StateGraph(
     )
   )
   .addNode(
+    "outline_evaluate",
+    traceNode(
+      "outline_evaluate",
+      outlineEvaluate,
+      "Checking case is not too obvious"
+    ),
+    {
+      ends: [
+        "outline_regenerate",
+        "patient_generate",
+        "chief_complaint_generate",
+        "anamnesis_generate",
+      ],
+    }
+  )
+  .addNode(
+    "outline_regenerate",
+    traceNode(
+      "outline_regenerate",
+      outlineRegenerate,
+      "Regenerating case outline"
+    ),
+    { ends: ["outline_evaluate"] }
+  )
+  .addNode(
     "patient_generate",
     traceNode("patient_generate", generatePatient, "Generating patient")
   )
@@ -227,52 +413,7 @@ export const fieldGenerationGraph = new StateGraph(
   )
 
   .addEdge(START, "case_outline_generate")
-  .addConditionalEdges(
-    "case_outline_generate",
-    (state): Send[] => {
-      const sends: Send[] = [];
-
-      const filterInstructions = (keys: string[]) =>
-        state.userInstructions
-          ? Object.fromEntries(
-              Object.entries(state.userInstructions).filter(([k]) =>
-                keys.includes(k)
-              )
-            )
-          : undefined;
-
-      if (state.generationFlags.includes("patient")) {
-        sends.push(
-          new Send("patient_generate", {
-            diagnosis: state.diagnosis,
-            outline: state.outline,
-            userInstructions: filterInstructions(["patient", "general"]),
-          })
-        );
-      }
-      if (state.generationFlags.includes("chiefComplaint")) {
-        sends.push(
-          new Send("chief_complaint_generate", {
-            diagnosis: state.diagnosis,
-            outline: state.outline,
-            userInstructions: filterInstructions(["chiefComplaint", "general"]),
-          })
-        );
-      }
-      if (state.generationFlags.includes("anamnesis")) {
-        sends.push(
-          new Send("anamnesis_generate", {
-            diagnosis: state.diagnosis,
-            outline: state.outline,
-            userInstructions: filterInstructions(["anamnesis", "general"]),
-          })
-        );
-      }
-
-      return sends;
-    },
-    ["patient_generate", "chief_complaint_generate", "anamnesis_generate"]
-  )
+  .addEdge("case_outline_generate", "outline_evaluate")
   .addEdge("patient_generate", "case_fan_in")
   .addEdge("chief_complaint_generate", "case_fan_in")
   .addEdge("anamnesis_generate", "case_fan_in")

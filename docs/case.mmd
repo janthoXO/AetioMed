@@ -1,0 +1,11 @@
+flowchart TD
+    Diagnosis@{shape: circle, label: "Diagnosis"}
+    Symptoms@{ shape: rect, label: "Retrieve Symptoms" }
+    Outline@{ shape: rect, label: "Generate Outline" }
+    ChiefComplaint@{ shape: rect, label: "Generate Chief Complaint" }
+    Anamnesis@{ shape: rect, label: "Generate Anamnesis" }
+    Patient@{ shape: rect, label: "Generate Patient" }
+
+    Diagnosis --> Symptoms
+    Symptoms --> Outline
+  

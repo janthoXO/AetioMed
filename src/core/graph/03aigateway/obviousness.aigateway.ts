@@ -1,8 +1,10 @@
+import { getDeterministicLLM, handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
-  getDeterministicLLM,
-  handleLangchainError,
-} from "../utils/llm.js";
+  renderSchemaForPrompt,
+  section,
+  summarizeValidationError,
+} from "../utils/prompt.js";
 import { bus } from "@/core/graph/index.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { Difficulty } from "../models/Difficulty.js";
@@ -28,31 +30,39 @@ const DIFFICULTY_EXPECTATION: Record<Difficulty, string> = {
 export async function evaluateOutlineObviousness(
   diagnosis: Diagnosis,
   outline: string,
-  difficulty: Difficulty = "medium",
+  difficulty: Difficulty,
   userInstructions?: string,
   context?: RequestContext
 ): Promise<ObviousnessEvaluation> {
   const systemPrompt = buildPrompt(
-    `You are an expert medical educator reviewing a clinical case blueprint for a training simulator BEFORE the full case is written out. Your job is to judge whether the blueprint makes the diagnosis too easy to guess for the requested difficulty level.`,
+    section(
+      "Role",
+      `You are an expert medical educator reviewing a clinical case blueprint for a training simulator BEFORE the full case is written out. Your job is to judge whether the blueprint makes the diagnosis too easy to guess for the requested difficulty level.`
+    ),
 
-    `${DIFFICULTY_EXPECTATION[difficulty]}`,
+    section(
+      "Rules",
+      `Evaluate the blueprint holistically: the symptom selection, any distractors present, and the planned workup/procedure-result strategy described in it.`
+    ),
 
-    `Evaluate the blueprint holistically: the symptom selection, any distractors present, and the planned workup/procedure-result strategy described in it.`,
-
-    `Return a JSON object with:
-  "tooObvious": true if the blueprint reveals/telegraphs the diagnosis more directly than the requested difficulty allows, false otherwise.
-  "reasons": an array of specific, concrete reasons (empty if not too obvious).
-  "suggestion": a single actionable directive for how to regenerate the blueprint to fit the requested difficulty (omit if not too obvious).
-Return ONLY the JSON object, no additional text.`
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object:
+${renderSchemaForPrompt(ObviousnessEvaluationSchema)}`
+    )
   );
 
   const userPrompt = buildPrompt(
-    `Target Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
-    `Requested Difficulty: ${difficulty}`,
-    `Blueprint to evaluate:\n${outline}`,
-    userInstructions
-      ? `Additional Instructions: ${userInstructions}`
-      : undefined
+    section("Target diagnosis", `${diagnosis.name} ${diagnosis.icd ?? ""}`),
+
+    section(
+      `Requested difficulty (${difficulty})`,
+      DIFFICULTY_EXPECTATION[difficulty]
+    ),
+
+    section("Blueprint to evaluate", outline),
+
+    section("Additional instructions", userInstructions)
   );
 
   console.debug(
@@ -70,7 +80,7 @@ Return ONLY the JSON object, no additional text.`
               new HumanMessage(
                 userPrompt +
                   (previousError
-                    ? `\nPrevious generation error: ${previousError.message}`
+                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
                     : "")
               ),
             ],

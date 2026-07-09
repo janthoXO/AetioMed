@@ -1,160 +1,68 @@
 import {
-  getEffectiveCategoryList,
-  AnamnesisJsonExample,
   buildAnamnesisSchema,
   type Anamnesis,
   type AnamnesisCategory,
 } from "../models/Anamnesis.js";
+import { getEffectiveCategoryList } from "../03repo/anamnesis.repo.js";
 import { bus } from "@/core/graph/index.js";
 import type { Language } from "../models/Language.js";
+import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
-  getCreativeLLM,
-  getDeterministicLLM,
-  handleLangchainError,
-} from "../utils/llm.js";
+  renderSchemaForPrompt,
+  section,
+  summarizeValidationError,
+} from "../utils/prompt.js";
 import z from "zod";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
-import type { Symptom } from "../models/Symptom.js";
 import { translateTermsKeyed } from "./translate.helper.js";
-
-export async function generateAnamnesisCoT(
-  diagnosis: Diagnosis,
-  symptoms: Symptom[],
-  userInstructions?: string,
-  anamnesisCategories?: AnamnesisCategory[],
-  context?: RequestContext
-): Promise<string> {
-  const effectiveCategories =
-    anamnesisCategories ?? getEffectiveCategoryList(context?.language);
-
-  const systemPrompt = buildPrompt(
-    `You are an expert medical educator specializing in designing realistic clinical mock cases for medical students.
-Your task is to generate a step-by-step logical reasoning process (Chain of Thought) detailing EXACTLY HOW to construct the Anamnesis (medical history)`,
-
-    `The following symptoms are typical for the diagnosis. You may use a subset of them:
-${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join("\n")}`,
-
-    `Instructions:
-1. The anamnesis data will be written from the perspective of the PATIENT filling out an intake form.
-2. DO NOT generate the actual anamnesis data yet. Only generate the thinking process which should be specific to the given diagnosis and a subset of symptoms.
-3. Outline a sequential thought process.
-4. Output ONLY the numbered reasoning steps, without any conversational filler.`
-  );
-
-  const userPrompt = buildPrompt(
-    `Target Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
-
-    userInstructions
-      ? `Additional Instructions: ${userInstructions}`
-      : undefined,
-
-    effectiveCategories
-      ? `Required Intake Form Categories to fill: ${effectiveCategories.join(", ")}`
-      : `Use standard patient intake categories (e.g., Current Symptoms, Past Illnesses, Family History, Lifestyle/Habits, Current Medications).`
-  );
-
-  console.debug(
-    `[GenerateAnamnesisCoT] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
-  );
-
-  try {
-    const stepsString: string = await retry(
-      async (attempt: number) => {
-        const text = await getDeterministicLLM({
-          ...context?.llmConfig,
-          outputFormat: "text",
-        })
-          .invoke(
-            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch((error) => {
-            handleLangchainError(error);
-          });
-        console.debug(
-          `[GenerateAnamnesisCoT] [Attempt ${attempt}] LLM raw Response:\n`,
-          text.text
-        );
-
-        return text.text;
-      },
-      2,
-      0,
-      (error, attempt) => {
-        const msg = `[GenerateAnamnesisCoT] Attempt ${attempt} failed with error: ${error.message}`;
-        console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
-      }
-    );
-
-    return stepsString;
-  } catch (error) {
-    console.error(`[GenerateAnamnesisCoT] Error:`, error);
-    throw error;
-  }
-}
 
 export async function generateAnamnesis(
   diagnosis: Diagnosis,
-  config:
-    | {
-        cot: string;
-        symptoms: Symptom[];
-      }
-    | {
-        outline: string;
-      },
+  outline: string,
   userInstructions?: string,
-  anamnesisCategories?: AnamnesisCategory[],
   context?: RequestContext
 ): Promise<Anamnesis> {
-  const effectiveCategories =
-    anamnesisCategories ?? getEffectiveCategoryList(context?.language);
+  const effectiveCategories = getEffectiveCategoryList(context?.language);
   const systemPrompt = buildPrompt(
-    `You are an AI generating data for a medical training simulator.
-Your current task is to generate the Anamnesis (medical history) ${"outline" in config ? "based on the provided Case Outline" : ""}.`,
+    section(
+      "Role",
+      `You are an AI generating data for a medical training simulator.
+Your current task is to generate the Anamnesis (medical history) based on the provided Case Outline.`
+    ),
 
-    "cot" in config
-      ? `The following symptoms are typical for the diagnosis. You may use a subset of them:
-      ${config.symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join("\n")}
-
-Think step by step:
-    ${config.cot}`
-      : undefined,
-
-    `Return ONLY a valid JSON object matching the requested categories.
-Schema:
-${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
-
-    `Requirements:
-- The text inside the JSON must be written from the perspective of the PATIENT filling out an intake form.
+    section(
+      "Requirements",
+      `- The text inside the JSON must be written from the perspective of the PATIENT filling out an intake form.
 - Use the patient's subjective voice, layman's terms, and personal tone (e.g., "My chest feels heavy" instead of "Patient presents with angina").
 - Adapt the tone to fit the patient's age and demographic as defined in the outline.
+- Fill exactly the required intake form categories, using their exact names.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
+    ),
+
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object:
+${renderSchemaForPrompt(z.object({ anamnesis: buildAnamnesisSchema() }))}`
+    )
   );
 
   const userPrompt = buildPrompt(
-    `Target Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
+    section("Target diagnosis", `${diagnosis.name} ${diagnosis.icd ?? ""}`),
 
-    "outline" in config ? `Case Outline: ${config.outline}` : undefined,
+    section("Case outline", outline),
 
-    effectiveCategories
-      ? `Required Intake Form Categories to fill: ${effectiveCategories.join(", ")}`
-      : `Use standard patient intake categories (e.g., Current Symptoms, Past Illnesses, Family History, Lifestyle/Habits, Current Medications).`,
+    section(
+      "Required intake form categories to fill",
+      effectiveCategories
+        ? effectiveCategories.join(", ")
+        : `Use standard patient intake categories (e.g., Current Symptoms, Past Illnesses, Family History, Lifestyle/Habits, Current Medications).`
+    ),
 
-    userInstructions
-      ? `Additional Instructions: ${userInstructions}`
-      : undefined
+    section("Additional instructions", userInstructions)
   );
 
   console.debug(
@@ -177,7 +85,7 @@ ${JSON.stringify({ anamnesis: AnamnesisJsonExample() })}`,
               new HumanMessage(
                 userPrompt +
                   (previousError
-                    ? `\nPrevious generation error: ${previousError.message}`
+                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
                     : "")
               ),
             ],

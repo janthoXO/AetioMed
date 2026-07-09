@@ -5,11 +5,7 @@ import {
   type AnamnesisCategory,
 } from "./Anamnesis.js";
 import { ChiefComplaintSchema } from "./ChiefComplaint.js";
-import {
-  ProcedureSchema,
-  buildProcedureSchema,
-  type ProcedureName,
-} from "./Procedure.js";
+import { ProcedureResultSchema } from "./Procedure.js";
 import { PatientSchema } from "./Patient.js";
 
 /**
@@ -19,19 +15,20 @@ export const CaseSchema = z.object({
   patient: PatientSchema.optional(),
   chiefComplaint: ChiefComplaintSchema.optional(),
   anamnesis: AnamnesisSchema.optional(),
-  procedures: z.array(ProcedureSchema).optional(),
+  procedures: z.array(ProcedureResultSchema).optional(),
 });
 
 export type Case = z.infer<typeof CaseSchema>;
 
-export function buildCaseSchema(
-  anamnesisCategories?: AnamnesisCategory[],
-  procedureNames?: ProcedureName[]
-) {
+/**
+ * Schema for fixing case inconsistencies. Procedures are generated in a
+ * later phase (after inconsistency fixing runs), so they are intentionally
+ * omitted here — see `fixCaseInconsistencies`.
+ */
+export function buildCaseSchema(anamnesisCategories?: AnamnesisCategory[]) {
   return z.object({
     patient: PatientSchema.optional(),
     chiefComplaint: ChiefComplaintSchema.optional(),
     anamnesis: buildAnamnesisSchema(anamnesisCategories).optional(),
-    procedures: z.array(buildProcedureSchema(procedureNames)).optional(),
   });
 }

@@ -1,15 +1,14 @@
+import { getDeterministicLLM, handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
-  getDeterministicLLM,
-  handleLangchainError,
-} from "../utils/llm.js";
+  renderForPrompt,
+  renderSchemaForPrompt,
+  section,
+  summarizeValidationError,
+} from "../utils/prompt.js";
 import { bus } from "@/core/graph/index.js";
 import { buildCaseSchema, type Case } from "../models/Case.js";
-import {
-  getEffectiveCategoryList,
-  type AnamnesisCategory,
-} from "../models/Anamnesis.js";
-import type { ProcedureName } from "../models/Procedure.js";
+import { getEffectiveCategoryList } from "../03repo/anamnesis.repo.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import {
   InconsistencySchema,
@@ -26,31 +25,44 @@ export async function generateInconsistencies(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<Inconsistency[]> {
+  const InconsistenciesSchema = z.object({
+    inconsistencies: z.array(InconsistencySchema),
+  });
+
   const systemPrompt = buildPrompt(
-    `You are an expert Medical Quality Assurance Reviewer evaluating a generated clinical mock case for a medical training simulator. Your task is to identify clinical, logical, or pedagogical inconsistencies across the generated fields.`,
+    section(
+      "Role",
+      `You are an expert Medical Quality Assurance Reviewer evaluating a generated clinical mock case for a medical training simulator. Your task is to identify clinical, logical, or pedagogical inconsistencies across the generated fields.`
+    ),
 
-    `CRITICAL EVALUATION CRITERIA:
-1. Diagnosis Secrecy (Pedagogical): The target diagnosis MUST NOT be explicitly named in any of the fields (the student is supposed to deduce it).
+    section(
+      "Critical evaluation criteria",
+      `1. Diagnosis Secrecy (Pedagogical): The target diagnosis MUST NOT be explicitly named in any of the fields (the student is supposed to deduce it).
 2. Clinical Coherence: Do the fields logically align? (e.g., Do the Procedures make sense for the Chief Complaint? Does the Anamnesis contradict the Patient's age/gender?)
-3. Realism: Are there impossible biometric values (e.g., a 2-year-old weighing 70kg), contradictory timelines, or medical hallucinations?`,
+3. Realism: Are there impossible biometric values (e.g., a 2-year-old weighing 70kg), contradictory timelines, or medical hallucinations?`
+    ),
 
-    `When creating an inconsistency record, ensure the "suggestion" field provides a highly specific, actionable directive. This suggestion will be fed directly to the AI regenerating that specific field. Tell it EXACTLY how to fix the error.`,
+    section(
+      "Requirements",
+      `- Be thorough but fair.
+- Only flag genuine medical, logical, or pedagogical errors. Do not flag stylistic choices.
+- When creating an inconsistency record, ensure the "suggestion" field provides a highly specific, actionable directive. This suggestion will be fed directly to the AI regenerating that specific field. Tell it EXACTLY how to fix the error.`
+    ),
 
-    `If there are no genuine inconsistencies, return an empty inconsistencies array.`,
-
-    `Requirements:
-- Be thorough but fair.
-- Only flag genuine medical, logical, or pedagogical errors. Do not flag stylistic choices.`
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object:
+${renderSchemaForPrompt(InconsistenciesSchema)}
+If there are no genuine inconsistencies, return an empty inconsistencies array.`
+    )
   );
 
   const userPrompt = buildPrompt(
-    `Target Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
+    section("Target diagnosis", `${diagnosis.name} ${diagnosis.icd ?? ""}`),
 
-    `Generated Case Data to Validate:\n${JSON.stringify(caseToCheck, null, 2)}`,
+    section("Generated case data to validate", renderForPrompt(caseToCheck)),
 
-    userInstructions
-      ? `Additional Instructions: ${userInstructions}`
-      : undefined
+    section("Additional instructions", userInstructions)
   );
 
   console.debug(
@@ -59,11 +71,19 @@ export async function generateInconsistencies(
 
   try {
     const parsedInconsistencies: Inconsistency[] = await retry(
-      async (attempt: number) => {
+      async (attempt: number, previousError?: Error) => {
         const result = await getDeterministicLLM(context?.llmConfig)
-          .withStructuredOutput(z.object({inconsistencies: z.array(InconsistencySchema)}))
+          .withStructuredOutput(InconsistenciesSchema)
           .invoke(
-            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(
+                userPrompt +
+                  (previousError
+                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+                    : "")
+              ),
+            ],
             context?.signal !== undefined
               ? { signal: context.signal }
               : undefined
@@ -107,30 +127,39 @@ export async function generateInconsistencies(
 export async function fixCaseInconsistencies(
   inconsistentCase: Case,
   inconsistencies: Inconsistency[],
-  anamnesisCategories?: AnamnesisCategory[],
-  procedureNameList?: ProcedureName[],
   userInstructions?: string,
   context?: RequestContext
 ): Promise<Case> {
-  const effectiveCategories =
-    anamnesisCategories ?? getEffectiveCategoryList(context?.language);
+  const effectiveCategories = getEffectiveCategoryList(context?.language);
 
   const systemPrompt = buildPrompt(
-    `You are an expert medical educator tasked with fixing a generated clinical mock case for a medical training simulator.`,
+    section(
+      "Role",
+      `You are an expert medical educator tasked with fixing a generated clinical mock case for a medical training simulator.
+The previous case generation contained clinical or logical inconsistencies. Regenerate the JSON and fix the given issues.`
+    ),
 
-    `The previous case generation contained clinical or logical inconsistencies. Regenerate the JSON and fix the given issues.`
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object:
+${renderSchemaForPrompt(buildCaseSchema())}`
+    )
   );
 
   const userPrompt = buildPrompt(
-    `Original Case:
-${JSON.stringify(inconsistentCase, null, 2)}`,
+    section("Original case", renderForPrompt(inconsistentCase)),
 
-    `Inconsistencies to Fix:
-${inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.description}\n   Suggested Fix: ${i.suggestion}`).join("\n")}`,
+    section(
+      "Inconsistencies to fix",
+      inconsistencies
+        .map(
+          (i, idx) =>
+            `${idx + 1}. [Severity ${i.severity}] ${i.description}\n   Suggested Fix: ${i.suggestion}`
+        )
+        .join("\n")
+    ),
 
-    userInstructions
-      ? `Additional Instructions: ${userInstructions}`
-      : undefined
+    section("Additional instructions", userInstructions)
   );
 
   console.debug(
@@ -141,16 +170,14 @@ ${inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.desc
     const parsedCase: Case = await retry(
       async (attempt: number, previousError?: Error) => {
         const result = await getDeterministicLLM(context?.llmConfig)
-          .withStructuredOutput(
-            buildCaseSchema(effectiveCategories, procedureNameList)
-          )
+          .withStructuredOutput(buildCaseSchema(effectiveCategories))
           .invoke(
             [
               new SystemMessage(systemPrompt),
               new HumanMessage(
                 userPrompt +
                   (previousError
-                    ? `\nPrevious attempt failed with error: ${previousError.message}`
+                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
                     : "")
               ),
             ],

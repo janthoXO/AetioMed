@@ -1,8 +1,9 @@
+import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
-  getCreativeLLM,
-  handleLangchainError,
-} from "../utils/llm.js";
+  section,
+  summarizeValidationError,
+} from "../utils/prompt.js";
 import { bus } from "@/core/graph/index.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { Symptom } from "../models/Symptom.js";
@@ -28,43 +29,59 @@ export async function generateCaseOutline(
   diagnosis: Diagnosis,
   generationFlags: Omit<GenerationFlag, "procedures">[],
   symptoms: Symptom[],
-  difficulty: Difficulty = "medium",
+  difficulty: Difficulty,
   userInstructions?: string,
   feedback?: string[],
   context?: RequestContext
 ): Promise<string> {
   const systemPrompt = buildPrompt(
-    `You are an expert medical educator tasked with creating a concrete, outline for a clinical practice case based on a specific diagnosis.`,
-    `You must outline the specific content and direction for the following required fields:
-${generationFlags.join(", ")}`,
+    section(
+      "Role",
+      `You are an expert medical educator tasked with creating a concrete outline for a clinical practice case based on a specific diagnosis.
+This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents generating the final JSON fields, INCLUDING the eventual procedure/workup results. It must contain specific, hard data outlining the content of each field.`
+    ),
 
-    `This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents generating the final JSON fields, INCLUDING the eventual procedure/workup results. It must contain specific, hard data outlining the content of each field.`,
-
-    `Typical symptoms associated with this diagnosis are:
-${symptoms.map((s) => s.name).join(", ")}
-(You should select a clinically coherent subset of these symptoms to feature in the patient's presentation).`,
-
-    `Difficulty Strategy (${difficulty}) — this controls how unclear the diagnosis must remain to a student working through the case, both in the presentation AND in any workup/procedure results:
-${DIFFICULTY_STRATEGY[difficulty]}`,
-
-    `Instructions:
-1. Generate a structured markdown outline that briefly describes the exact clinical content that will go into each required field.
+    section(
+      "Instructions",
+      `1. Generate a structured markdown outline that briefly describes the exact clinical content that will go into each required field.
 2. Make sure that all fields are clinically coherent to each other
 3. Do not write the full narrative text for the fields yet; provide the essential details needed to formulate them.
-4. Include a dedicated "Workup / Procedure Results Strategy" section describing how procedure and lab results should be shaped per the difficulty strategy above, so a downstream agent generating those results can follow it.
+4. Include a dedicated "Workup / Procedure Results Strategy" section describing how procedure and lab results should be shaped per the difficulty strategy, so a downstream agent generating those results can follow it.
 5. The diagnosis must never be explicitly named anywhere in the outline's field content — the student must deduce it.
-6. Return ONLY the markdown outline. Do not include introductory text, acknowledgments, or conversational filler.`,
-
-    feedback && feedback.length > 0
-      ? `The previous outline was rejected as too obvious for the requested difficulty. Address the following feedback when regenerating:
-${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
-      : undefined
+6. Return ONLY the markdown outline. Do not include introductory text, acknowledgments, or conversational filler.`
+    )
   );
 
   const userPrompt = buildPrompt(
-    `Target Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
-    userInstructions
-      ? `Additional Instructions: ${userInstructions}`
+    section("Target diagnosis", `${diagnosis.name} ${diagnosis.icd ?? ""}`),
+
+    section(
+      "Required fields to outline",
+      `You must outline the specific content and direction for the following required fields:
+${generationFlags.join(", ")}`
+    ),
+
+    section(
+      "Typical symptoms",
+      `Typical symptoms associated with this diagnosis are:
+${symptoms.map((s) => s.name).join(", ")}
+(You should select a clinically coherent subset of these symptoms to feature in the patient's presentation).`
+    ),
+
+    section(
+      `Difficulty strategy (${difficulty})`,
+      `This controls how unclear the diagnosis must remain to a student working through the case, both in the presentation AND in any workup/procedure results:
+${DIFFICULTY_STRATEGY[difficulty]}`
+    ),
+
+    section("Additional instructions", userInstructions),
+
+    feedback && feedback.length > 0
+      ? section(
+          "Feedback on the previous outline",
+          `The previous outline was rejected as too obvious for the requested difficulty. Address the following feedback when regenerating:
+${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
+        )
       : undefined
   );
 
@@ -74,13 +91,21 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
 
   try {
     const outline: string = await retry(
-      async (attempt: number) => {
+      async (attempt: number, previousError?: Error) => {
         const result = await getCreativeLLM({
           ...context?.llmConfig,
           outputFormat: "text",
         })
           .invoke(
-            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(
+                userPrompt +
+                  (previousError
+                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+                    : "")
+              ),
+            ],
             context?.signal !== undefined
               ? { signal: context.signal }
               : undefined

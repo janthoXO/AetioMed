@@ -13,14 +13,14 @@ import {
   type RequestContext,
 } from "@/core/graph/utils/context.js";
 import {
-  PredefinedProcedureNames,
-  ProcedureStepSchema,
-  type Procedure,
+  ProcedureSchema,
+  type ProcedureResult,
 } from "@/core/graph/models/Procedure.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import { procedureTools } from "./tools.js";
 import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
-import type { Presentation } from "@/core/graph/03aigateway/procedureSolver.aigateway.js";
+import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
+import type { Presentation } from "@/core/graph/03aigateway/procedures.aigateway.js";
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -34,8 +34,11 @@ const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
 }).extend({
   /** Iterations remaining before the bridge step is forced. */
   solverIterationsRemaining: z.number().default(SOLVER_MAX_ITERATIONS),
-  /** The procedure chosen by the blinded step, awaiting its result. */
-  pendingProcedure: ProcedureStepSchema.optional(),
+  /**
+   * The batch of mutually-independent procedures chosen by the blinded step,
+   * scheduled together and awaiting their results.
+   */
+  pendingProcedures: z.array(ProcedureSchema).default([]),
   /** Diagnoses committed to and ruled out in earlier iterations. */
   ruledOutDiagnoses: z.array(z.string()).default([]),
 });
@@ -63,14 +66,14 @@ function userInstructionsForProcedures(
       ([key]) => key === "procedures" || key === "general"
     )
   );
-  return JSON.stringify(filtered);
+  return renderUserInstructions(filtered);
 }
 
 /** Read-and-concat append: returns the full updated procedures array. */
 function appendProcedures(
-  current: Procedure[] | undefined,
-  incoming: Procedure[]
-): Procedure[] {
+  current: ProcedureResult[] | undefined,
+  incoming: ProcedureResult[]
+): ProcedureResult[] {
   return [...(current ?? []), ...incoming];
 }
 
@@ -96,7 +99,6 @@ async function blindedStep(
         presentation: presentationOf(state.case),
         previousProcedures: state.case.procedures ?? [],
         ruledOutDiagnoses: state.ruledOutDiagnoses,
-        procedureNameList: PredefinedProcedureNames,
         userInstructions: userInstructionsForProcedures(state.userInstructions),
       },
       runtime?.context
@@ -116,11 +118,11 @@ async function blindedStep(
     msg: `[ProcedureGraph] Blinded step (${state.solverIterationsRemaining} iter left):\n\`\`\`json\n${JSON.stringify(step, null, 2)}\n\`\`\``,
   });
 
-  // ── action: order a procedure ──────────────────────────────────────────────
-  if (step.action === "procedure" && step.procedure) {
+  // ── action: order a batch of mutually-independent procedures ───────────────
+  if (step.action === "procedure" && step.procedures?.length) {
     return new Command({
       update: {
-        pendingProcedure: step.procedure,
+        pendingProcedures: step.procedures,
         solverIterationsRemaining: state.solverIterationsRemaining - 1,
       },
       goto: "result_step",
@@ -178,51 +180,56 @@ async function resultStep(
   state: ProcedureGraphState,
   runtime?: Runtime<RequestContext>
 ): Promise<Command> {
-  const pending = state.pendingProcedure;
-  if (!pending) {
+  const pending = state.pendingProcedures;
+  if (!pending.length) {
     // Guard: should not happen in normal flow.
     bus.emit("Generation Log", {
       logLevel: "warn",
       timestamp: new Date().toISOString(),
-      msg: `[ProcedureGraph] result_step called without a pending procedure — skipping.`,
+      msg: `[ProcedureGraph] result_step called without any pending procedures — skipping.`,
     });
     return new Command({ goto: "blinded_step" });
   }
 
-  const result = await procedureTools.generateProcedureResult
-    .invoke(
-      {
-        presentation: presentationOf(state.case),
-        diagnosis: state.diagnosis,
-        procedureStep: pending,
-        outline: state.outline,
-        userInstructions: userInstructionsForProcedures(state.userInstructions),
-      },
-      runtime?.context
-    )
-    .catch((error) => {
-      bus.emit("Generation Log", {
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-        msg: `[ProcedureGraph] Error generating result for "${pending.name}": ${error}`,
+  const completedProcedures: ProcedureResult[] =
+    await procedureTools.generateProcedureResults
+      .invoke(
+        {
+          presentation: presentationOf(state.case),
+          diagnosis: state.diagnosis,
+          procedureSteps: pending,
+          outline: state.outline,
+          userInstructions: userInstructionsForProcedures(
+            state.userInstructions
+          ),
+        },
+        runtime?.context
+      )
+      .catch((error) => {
+        bus.emit("Generation Log", {
+          logLevel: "error",
+          timestamp: new Date().toISOString(),
+          msg: `[ProcedureGraph] Error generating results for batch [${pending.map((p) => p.name).join(", ")}]: ${error}`,
+        });
+        throw error;
       });
-      throw error;
-    });
 
-  const completedProcedure: Procedure = { ...pending, result };
   const updatedProcedures = appendProcedures(
     state.case.procedures,
-    [completedProcedure]
+    completedProcedures
   );
 
   bus.emit("Generation Log", {
     logLevel: "info",
     timestamp: new Date().toISOString(),
-    msg: `[ProcedureGraph] Result for "${pending.name}": ${result}`,
+    msg: `[ProcedureGraph] Results for batch of ${completedProcedures.length} procedure(s):\n\`\`\`json\n${JSON.stringify(completedProcedures, null, 2)}\n\`\`\``,
   });
 
   return new Command({
-    update: { case: { procedures: updatedProcedures } },
+    update: {
+      case: { procedures: updatedProcedures },
+      pendingProcedures: [],
+    },
     goto: "blinded_step",
   });
 }
@@ -245,7 +252,6 @@ async function bridge(
         presentation: presentationOf(state.case),
         diagnosis: state.diagnosis,
         previousProcedures: state.case.procedures ?? [],
-        procedureNameList: PredefinedProcedureNames,
         userInstructions: userInstructionsForProcedures(state.userInstructions),
       },
       runtime?.context

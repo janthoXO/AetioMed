@@ -1,15 +1,13 @@
-import {
-  SymptomArrayJsonExample,
-  SymptomSchema,
-  type Symptom,
-} from "../models/Symptom.js";
+import { SymptomSchema, type Symptom } from "../models/Symptom.js";
 import { bus } from "@/core/graph/index.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
+import { getDeterministicLLM, handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
-  getDeterministicLLM,
-  handleLangchainError,
-} from "../utils/llm.js";
+  renderSchemaForPrompt,
+  section,
+  summarizeValidationError,
+} from "../utils/prompt.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import z from "zod";
 import { retry } from "../utils/retry.js";
@@ -21,20 +19,41 @@ export async function generateSymptomsOneShot(
   symptomsToExclude: Symptom[] = [],
   context?: RequestContext
 ): Promise<Symptom[]> {
+  const SymptomArrayWrapperSchema = z.object({
+    symptoms: SymptomSchema.array(),
+  });
+
   const systemPrompt = buildPrompt(
-    `You are a medical expert tasked with generating symptoms for a given diagnosis.`,
-    symptomsToExclude.length > 0
-      ? `Try to generate symptoms that are not in the list of excluded symptoms: ${symptomsToExclude.map((s) => s.name).join(", ")}`
-      : undefined,
-    `Return your response in JSON:\n${JSON.stringify({ symptoms: SymptomArrayJsonExample() })}`,
-    `Requirements:\n- Be medically accurate and realistic\n- Use standard medical terminology\n- Return ONLY the JSON content, no additional text`
+    section(
+      "Role",
+      `You are a medical expert tasked with generating symptoms for a given diagnosis.`
+    ),
+
+    section(
+      "Requirements",
+      `- Be medically accurate and realistic
+- Use standard medical terminology
+- Return ONLY the JSON content, no additional text`
+    ),
+
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object:
+${renderSchemaForPrompt(SymptomArrayWrapperSchema)}`
+    )
   );
 
   const userPrompt = buildPrompt(
-    `Provided Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
-    userInstructions
-      ? `Additional provided instructions: ${userInstructions}`
-      : undefined
+    section("Provided diagnosis", `${diagnosis.name} ${diagnosis.icd ?? ""}`),
+
+    symptomsToExclude.length > 0
+      ? section(
+          "Excluded symptoms",
+          `Try to generate symptoms that are not in this list: ${symptomsToExclude.map((s) => s.name).join(", ")}`
+        )
+      : undefined,
+
+    section("Additional instructions", userInstructions)
   );
 
   console.debug(
@@ -43,16 +62,20 @@ export async function generateSymptomsOneShot(
 
   // Initialize cases to empty in case of failure
   try {
-    const SymptomArrayWrapperSchema = z.object({
-      symptoms: SymptomSchema.array(),
-    });
-
     const symptoms: Symptom[] = await retry(
-      async () => {
+      async (attempt: number, previousError?: Error) => {
         const result = await getDeterministicLLM(context?.llmConfig)
           .withStructuredOutput(SymptomArrayWrapperSchema)
           .invoke(
-            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(
+                userPrompt +
+                  (previousError
+                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+                    : "")
+              ),
+            ],
             context?.signal !== undefined
               ? { signal: context.signal }
               : undefined
@@ -62,7 +85,7 @@ export async function generateSymptomsOneShot(
           });
 
         console.debug(
-          `[GenerateSymptomsOneShot] LLM raw Response:\n`,
+          `[GenerateSymptomsOneShot] [Attempt ${attempt}] LLM raw Response:\n`,
           JSON.stringify(result, null, 2)
         );
 

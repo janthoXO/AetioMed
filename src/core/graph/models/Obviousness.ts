@@ -8,20 +8,20 @@ export const ObviousnessEvaluationSchema = z.object({
   tooObvious: z
     .boolean()
     .describe(
-      "Whether the blueprint telegraphs the diagnosis more than the requested difficulty allows"
+      "true if the blueprint reveals/telegraphs the diagnosis more directly than the requested difficulty allows, false otherwise"
     ),
   reasons: z
     .array(z.string())
     .default([])
-    .describe("Specific reasons the blueprint is too obvious, if any"),
+    .describe(
+      "specific, concrete reasons the blueprint is too obvious (empty if not too obvious)"
+    ),
   suggestion: z
     .string()
     .optional()
     .describe(
-      "Actionable directive for how to regenerate the blueprint to be appropriately unclear"
+      "a single actionable directive for how to regenerate the blueprint to fit the requested difficulty (omit if not too obvious)"
     ),
 });
 
-export type ObviousnessEvaluation = z.infer<
-  typeof ObviousnessEvaluationSchema
->;
+export type ObviousnessEvaluation = z.infer<typeof ObviousnessEvaluationSchema>;

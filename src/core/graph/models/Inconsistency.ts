@@ -20,13 +20,3 @@ export const InconsistencySchema = z.object({
 });
 
 export type Inconsistency = z.infer<typeof InconsistencySchema>;
-
-export function InconsistencyJsonExample(): Inconsistency {
-  return {
-    field: "anamnesis",
-    description: "e.g. the anamnesis contradicts the chief complaint.",
-    suggestion:
-      "Review the anamnesis and ensure it aligns with the chief complaint.",
-    severity: "medium",
-  };
-}

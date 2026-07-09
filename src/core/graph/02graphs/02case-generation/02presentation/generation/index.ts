@@ -18,13 +18,16 @@ import type { PickNested } from "@/core/graph/utils/pickNested.js";
 import { fieldGenerationBlueprintTools } from "./tools.js";
 import { generationTools } from "../../tools.js";
 import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
+import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
 
 const OBVIOUSNESS_MAX_ITERATIONS = 2;
 
 const GenerationGraphStateSchema = CaseGenerationStateSchema.extend({
   outline: z.string(),
   /** Iterations remaining before the current outline is accepted as-is. */
-  obviousnessIterationsRemaining: z.number().default(OBVIOUSNESS_MAX_ITERATIONS),
+  obviousnessIterationsRemaining: z
+    .number()
+    .default(OBVIOUSNESS_MAX_ITERATIONS),
   /** Feedback from the last obviousness evaluation, fed into regeneration. */
   obviousnessFeedback: z.array(z.string()).default([]),
 });
@@ -44,9 +47,7 @@ async function generateCaseOutline(
         generationFlags: state.generationFlags,
         symptoms: state.symptoms,
         difficulty: state.difficulty,
-        userInstructions: state.userInstructions
-          ? JSON.stringify(state.userInstructions)
-          : undefined,
+        userInstructions: renderUserInstructions(state.userInstructions),
       },
       runtime?.context
     )
@@ -137,26 +138,25 @@ async function outlineEvaluate(
     return new Command({ goto: buildFieldGenerationSends(state) });
   }
 
-  const evaluation = await fieldGenerationBlueprintTools.evaluateOutlineObviousness
-    .invoke(
-      {
-        diagnosis: state.diagnosis,
-        outline: state.outline,
-        difficulty: state.difficulty,
-        userInstructions: state.userInstructions
-          ? JSON.stringify(state.userInstructions)
-          : undefined,
-      },
-      runtime?.context
-    )
-    .catch((error) => {
-      bus.emit("Generation Log", {
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-        msg: `[GenerationGraph] Error evaluating outline obviousness: ${error}`,
+  const evaluation =
+    await fieldGenerationBlueprintTools.evaluateOutlineObviousness
+      .invoke(
+        {
+          diagnosis: state.diagnosis,
+          outline: state.outline,
+          difficulty: state.difficulty,
+          userInstructions: renderUserInstructions(state.userInstructions),
+        },
+        runtime?.context
+      )
+      .catch((error) => {
+        bus.emit("Generation Log", {
+          logLevel: "error",
+          timestamp: new Date().toISOString(),
+          msg: `[GenerationGraph] Error evaluating outline obviousness: ${error}`,
+        });
+        throw error;
       });
-      throw error;
-    });
 
   bus.emit("Generation Log", {
     logLevel: "info",
@@ -189,9 +189,7 @@ async function outlineRegenerate(
         generationFlags: state.generationFlags,
         symptoms: state.symptoms,
         difficulty: state.difficulty,
-        userInstructions: state.userInstructions
-          ? JSON.stringify(state.userInstructions)
-          : undefined,
+        userInstructions: renderUserInstructions(state.userInstructions),
         feedback: state.obviousnessFeedback,
       },
       runtime?.context
@@ -241,9 +239,7 @@ async function generatePatient(
       {
         diagnosis: state.diagnosis,
         outline: state.outline,
-        userInstructions: state.userInstructions
-          ? JSON.stringify(state.userInstructions)
-          : undefined,
+        userInstructions: renderUserInstructions(state.userInstructions),
       },
       runtime?.context
     )
@@ -283,9 +279,7 @@ async function generateChiefComplaint(
       {
         diagnosis: state.diagnosis,
         outline: state.outline,
-        userInstructions: state.userInstructions
-          ? JSON.stringify(state.userInstructions)
-          : undefined,
+        userInstructions: renderUserInstructions(state.userInstructions),
       },
       runtime?.context
     )
@@ -325,9 +319,7 @@ async function generateAnamnesis(
       {
         diagnosis: state.diagnosis,
         outline: state.outline,
-        userInstructions: state.userInstructions
-          ? JSON.stringify(state.userInstructions)
-          : undefined,
+        userInstructions: renderUserInstructions(state.userInstructions),
       },
       runtime?.context
     )

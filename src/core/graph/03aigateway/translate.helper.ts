@@ -1,11 +1,12 @@
 import z from "zod";
 import { bus } from "@/core/graph/index.js";
 import { retry } from "../utils/retry.js";
+import { getDeterministicLLM, handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
-  getDeterministicLLM,
-  handleLangchainError,
-} from "../utils/llm.js";
+  section,
+  summarizeValidationError,
+} from "../utils/prompt.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
 
@@ -32,10 +33,13 @@ export async function translateTermsKeyed(opts: {
 
   if (terms.length === 0) return {};
 
-  const systemPrompt = buildPrompt(taskDescription, KEYED_FORMAT_INSTRUCTION);
+  const systemPrompt = buildPrompt(
+    section("Role", taskDescription),
+    section("Output format", KEYED_FORMAT_INSTRUCTION)
+  );
   const baseUserPrompt = buildPrompt(
     ...contextLines,
-    `Terms to translate:\n${terms.join("\n")}`
+    section("Terms to translate", terms.join("\n"))
   );
 
   console.debug(
@@ -52,7 +56,7 @@ export async function translateTermsKeyed(opts: {
             new HumanMessage(
               baseUserPrompt +
                 (previousError
-                  ? `\nPrevious generation error: ${previousError.message}`
+                  ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
                   : "")
             ),
           ],

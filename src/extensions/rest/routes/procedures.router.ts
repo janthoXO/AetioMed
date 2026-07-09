@@ -1,5 +1,5 @@
 import express from "express";
-import { PredefinedProcedureNames } from "@/core/graph/models/Procedure.js";
+import { PredefinedProcedureNames } from "@/core/graph/03repo/procedures.repo.js";
 
 const router = express.Router();
 

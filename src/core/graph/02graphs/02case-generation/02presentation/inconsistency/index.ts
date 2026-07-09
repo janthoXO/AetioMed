@@ -9,13 +9,13 @@ import { bus } from "@/core/graph/index.js";
 import { CaseGenerationStateSchema } from "../../state.js";
 import z from "zod";
 import { InconsistencySchema } from "@/core/graph/models/Inconsistency.js";
-import { PredefinedProcedureNames } from "@/core/graph/models/Procedure.js";
 import {
   RequestContextSchema,
   type RequestContext,
 } from "@/core/graph/utils/context.js";
 import { inconsistencyTools } from "./tools.js";
 import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
+import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
 
 const InconsistencyGraphStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
@@ -48,9 +48,7 @@ async function evaluate(
         case: state.case,
         diagnosis: state.diagnosis,
         generationFlags: flagsForInconsistency,
-        userInstructions: state.userInstructions
-          ? JSON.stringify(state.userInstructions)
-          : undefined,
+        userInstructions: renderUserInstructions(state.userInstructions),
       },
       runtime?.context
     )
@@ -95,10 +93,7 @@ async function caseRefine(
         case: state.case,
         inconsistencies: state.inconsistencies,
         generationFlags: flagsForInconsistency,
-        procedureNameList: PredefinedProcedureNames,
-        userInstructions: state.userInstructions
-          ? JSON.stringify(state.userInstructions)
-          : undefined,
+        userInstructions: renderUserInstructions(state.userInstructions),
       },
       runtime?.context
     )

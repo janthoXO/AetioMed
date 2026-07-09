@@ -1,19 +1,17 @@
 import z from "zod";
 import {
   generateBlindedProcedureStep,
-  generateProcedureResult,
+  generateProcedureResults,
   generateDiagnosisBridge,
   matchDiagnosis as matchDiagnosisGateway,
   type BlindedProcedureStepResult,
-} from "@/core/graph/03aigateway/procedureSolver.aigateway.js";
+} from "@/core/graph/03aigateway/procedures.aigateway.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
 import { PatientSchema } from "@/core/graph/models/Patient.js";
 import {
   ProcedureSchema,
-  ProcedureStepSchema,
-  ProcedureNameSchema,
-  type Procedure,
-  type ProcedureStep,
+  ProcedureResultSchema,
+  type ProcedureResult,
 } from "@/core/graph/models/Procedure.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
 
@@ -32,9 +30,8 @@ const PresentationSchema = z.object({
 
 const GenerateBlindedProcedureStepInputSchema = z.object({
   presentation: PresentationSchema,
-  previousProcedures: z.array(ProcedureSchema).default([]),
+  previousProcedures: z.array(ProcedureResultSchema).default([]),
   ruledOutDiagnoses: z.array(z.string()).default([]),
-  procedureNameList: z.array(ProcedureNameSchema).optional(),
   userInstructions: z.string().optional(),
 });
 
@@ -47,51 +44,44 @@ export const generateBlindedProcedureStepTool: Tool<
     "Blinded solver step: choose the next procedure to order or commit to a diagnosis, without knowledge of the true diagnosis.",
   inputSchema: GenerateBlindedProcedureStepInputSchema,
   invoke: (
-    {
-      presentation,
-      previousProcedures,
-      ruledOutDiagnoses,
-      procedureNameList,
-      userInstructions,
-    },
+    { presentation, previousProcedures, ruledOutDiagnoses, userInstructions },
     context
   ) =>
     generateBlindedProcedureStep(
       presentation,
       previousProcedures,
       ruledOutDiagnoses,
-      procedureNameList,
       userInstructions,
       context
     ),
 };
 
-// ─── generateProcedureResult ──────────────────────────────────────────────────
+// ─── generateProcedureResults ─────────────────────────────────────────────────
 
-const GenerateProcedureResultInputSchema = z.object({
+const GenerateProcedureResultsInputSchema = z.object({
   presentation: PresentationSchema,
   diagnosis: DiagnosisSchema,
-  procedureStep: ProcedureStepSchema,
+  procedureSteps: z.array(ProcedureSchema),
   outline: z.string().optional(),
   userInstructions: z.string().optional(),
 });
 
-export const generateProcedureResultTool: Tool<
-  z.infer<typeof GenerateProcedureResultInputSchema>,
-  string
+export const generateProcedureResultsTool: Tool<
+  z.infer<typeof GenerateProcedureResultsInputSchema>,
+  ProcedureResult[]
 > = {
-  name: "generate_procedure_result",
+  name: "generate_procedure_results",
   description:
-    "Non-blinded result step: generate a clinically realistic result for a procedure, consistent with the true diagnosis and the case blueprint's difficulty strategy.",
-  inputSchema: GenerateProcedureResultInputSchema,
+    "Non-blinded result step: generate clinically realistic results for a batch of concurrently-scheduled procedures, consistent with the true diagnosis and the case blueprint's difficulty strategy.",
+  inputSchema: GenerateProcedureResultsInputSchema,
   invoke: (
-    { presentation, diagnosis, procedureStep, outline, userInstructions },
+    { presentation, diagnosis, procedureSteps, outline, userInstructions },
     context
   ) =>
-    generateProcedureResult(
+    generateProcedureResults(
       presentation,
       diagnosis,
-      procedureStep,
+      procedureSteps,
       outline,
       userInstructions,
       context
@@ -103,28 +93,26 @@ export const generateProcedureResultTool: Tool<
 const GenerateDiagnosisBridgeInputSchema = z.object({
   presentation: PresentationSchema,
   diagnosis: DiagnosisSchema,
-  previousProcedures: z.array(ProcedureSchema).default([]),
-  procedureNameList: z.array(ProcedureNameSchema).optional(),
+  previousProcedures: z.array(ProcedureResultSchema).default([]),
   userInstructions: z.string().optional(),
 });
 
 export const generateDiagnosisBridgeTool: Tool<
   z.infer<typeof GenerateDiagnosisBridgeInputSchema>,
-  Procedure[]
+  ProcedureResult[]
 > = {
   name: "generate_diagnosis_bridge",
   description:
     "Non-blinded bridge step: generate the remaining confirmatory procedures (with results) that complete the diagnostic pathway to the true diagnosis.",
   inputSchema: GenerateDiagnosisBridgeInputSchema,
   invoke: (
-    { presentation, diagnosis, previousProcedures, procedureNameList, userInstructions },
+    { presentation, diagnosis, previousProcedures, userInstructions },
     context
   ) =>
     generateDiagnosisBridge(
       presentation,
       diagnosis,
       previousProcedures,
-      procedureNameList,
       userInstructions,
       context
     ),
@@ -151,11 +139,11 @@ export const matchDiagnosisTool: Tool<
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export type { ProcedureStep };
+export type { ProcedureResult };
 
 export const procedureTools = {
   generateBlindedProcedureStep: generateBlindedProcedureStepTool,
-  generateProcedureResult: generateProcedureResultTool,
+  generateProcedureResults: generateProcedureResultsTool,
   generateDiagnosisBridge: generateDiagnosisBridgeTool,
   matchDiagnosis: matchDiagnosisTool,
 } as const;

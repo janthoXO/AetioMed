@@ -12,7 +12,7 @@ const GenerateCaseOutlineInputSchema = z.object({
   diagnosis: DiagnosisSchema,
   generationFlags: z.array(GenerationFlagSchema),
   symptoms: z.array(SymptomSchema),
-  difficulty: DifficultySchema.default("medium"),
+  difficulty: DifficultySchema,
   userInstructions: z.string().optional(),
   feedback: z.array(z.string()).optional(),
 });
@@ -52,7 +52,7 @@ export const generateCaseOutline: Tool<
 const EvaluateOutlineObviousnessInputSchema = z.object({
   diagnosis: DiagnosisSchema,
   outline: z.string(),
-  difficulty: DifficultySchema.default("medium"),
+  difficulty: DifficultySchema,
   userInstructions: z.string().optional(),
 });
 

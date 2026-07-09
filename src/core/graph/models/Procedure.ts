@@ -15,9 +15,6 @@ export type ProcedureRelevance = z.infer<typeof ProcedureRelevanceSchema>;
 
 export const ProcedureSchema = z.object({
   name: ProcedureNameSchema,
-  relevance: ProcedureRelevanceSchema.describe(
-    "Relevance of the procedure to the diagnosis"
-  ),
 });
 
 export type Procedure = z.infer<typeof ProcedureSchema>;
@@ -33,10 +30,16 @@ export function buildProcedureSchema(procedureNames?: ProcedureName[]) {
 }
 
 /**
- * Procedure with a result — used once a procedure that was chosen during the
- * blinded solver step has had its result generated.
+ * Procedure with a relevance and a result — both are decided non-blinded,
+ * once a procedure that was chosen during the blinded solver step has had
+ * its result generated. `relevance` is a judgment relative to the TRUE
+ * diagnosis (which the blinded solver never sees), so it cannot be produced
+ * by the blinded step — see `procedures.aigateway.ts`.
  */
 export const ProcedureResultSchema = ProcedureSchema.extend({
+  relevance: ProcedureRelevanceSchema.describe(
+    "Relevance of the procedure to the diagnosis"
+  ),
   result: z.string().describe("Result of the procedure, if applicable"),
 });
 export type ProcedureResult = z.infer<typeof ProcedureResultSchema>;

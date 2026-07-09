@@ -17,6 +17,7 @@ import type { Diagnosis } from "../models/Diagnosis.js";
 import {
   buildProcedureResultSchema,
   buildProcedureSchema,
+  ProcedureRelevanceSchema,
   type Procedure,
   type ProcedureName,
   type ProcedureResult,
@@ -67,6 +68,12 @@ ${procedures.map((p) => `- ${p}`).join("\n")}`
     : undefined;
 }
 
+/**
+ * Renders only `name -> result` for each prior procedure. This is used by
+ * both the blinded step and the non-blinded bridge step — it deliberately
+ * omits `relevance`, which is a judgment relative to the TRUE diagnosis and
+ * would leak it to the blinded solver if ever included here.
+ */
 function previousProceduresSection(previousProcedures: ProcedureResult[]) {
   return section(
     "Procedures ordered so far (with results)",
@@ -232,6 +239,9 @@ const ResultsSchema = z.object({
         name: z
           .string()
           .describe("exact name of a procedure from the ordered batch"),
+        relevance: ProcedureRelevanceSchema.describe(
+          "Relevance of the procedure to the TRUE diagnosis"
+        ),
         result: z.string().describe("clinically realistic result, concise"),
       })
     )
@@ -241,9 +251,10 @@ const ResultsSchema = z.object({
 /**
  * Non-blinded result step: given the patient presentation, the TRUE diagnosis,
  * and a batch of concurrently-scheduled procedures, generates a clinically
- * realistic result for each, consistent with the diagnosis. The `relevance`
- * decided by the blinded step is preserved as-is — only the `result` string
- * is filled in from the LLM response.
+ * realistic result AND a relevance judgment for each. The blinded solver
+ * never knows the true diagnosis, so it cannot meaningfully judge relevance
+ * (e.g. it would never knowingly order a "contraindicated" procedure) —
+ * both `relevance` and `result` are decided here instead.
  */
 export async function generateProcedureResults(
   presentation: Presentation,
@@ -257,7 +268,8 @@ export async function generateProcedureResults(
     section(
       "Role",
       `You are a medical simulator generating realistic results for a batch of diagnostic procedures ordered at the same time.
-The true diagnosis is known to you. Generate a result for EACH procedure that is clinically consistent with both the true diagnosis and the patient's presentation.`
+The true diagnosis is known to you. Generate a result AND a relevance judgment for EACH procedure, clinically consistent with both the true diagnosis and the patient's presentation.
+These procedures were chosen by a separate, BLINDED solver who does not know the true diagnosis — it ordered them based on the presentation alone, so some may turn out to be unnecessary or even contraindicated in hindsight.`
     ),
 
     section(
@@ -265,7 +277,11 @@ The true diagnosis is known to you. Generate a result for EACH procedure that is
       `- Provide exactly one result entry per procedure in the batch, using the same "name".
 - Each result must be clinically consistent with the true diagnosis.
 - Use specific, realistic medical findings (e.g., exact lab values, imaging descriptions).
-- Keep each result concise (1–3 sentences).`
+- Keep each result concise (1–3 sentences).
+- Judge "relevance" relative to the TRUE diagnosis, not the blinded solver's reasoning:
+  - "obligatory": essential to establishing or confirming this diagnosis.
+  - "optional": clinically reasonable and supportive, but not required for this diagnosis.
+  - "contraindicated": not indicated, or potentially harmful/misleading, given this diagnosis — even if the blinded solver had a reasonable reason to order it without knowing the diagnosis.`
     ),
 
     section(
@@ -341,12 +357,13 @@ ${outline}`
     );
 
     // Merge results back onto the input steps, matching by name (falling back
-    // to positional index), and preserving the relevance already decided by
-    // the blinded step rather than trusting the LLM to re-emit it.
+    // to positional index). Both `relevance` and `result` come from this
+    // (non-blinded) LLM response — the blinded step never decides relevance.
     return procedureSteps.map((step, index) => {
       const match = results.find((r) => r.name === step.name) ?? results[index];
       return {
         ...step,
+        relevance: match?.relevance ?? "optional",
         result: match?.result ?? "",
       };
     });
@@ -395,7 +412,8 @@ Generate the remaining procedures — with clinically consistent results — tha
       `- Generate only the procedures needed to confirm the diagnosis, given what has already been done.
 - Each procedure must include a result consistent with the true diagnosis.
 - Use specific, professional medical terminology.
-- When an approved procedure list is provided, every procedure name MUST be an exact name from that list.`
+- When an approved procedure list is provided, every procedure name MUST be an exact name from that list.
+- These are bridge procedures YOU are choosing specifically to confirm the diagnosis, so their "relevance" should almost always be "obligatory" unless one is merely supportive ("optional").`
     ),
 
     section(

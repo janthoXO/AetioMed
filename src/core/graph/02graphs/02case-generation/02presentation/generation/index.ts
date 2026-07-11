@@ -20,16 +20,16 @@ import { generationTools } from "../../tools.js";
 import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
 
-const OBVIOUSNESS_MAX_ITERATIONS = 2;
+const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
 
 const GenerationGraphStateSchema = CaseGenerationStateSchema.extend({
   outline: z.string(),
   /** Iterations remaining before the current outline is accepted as-is. */
-  obviousnessIterationsRemaining: z
+  outlineEvaluationIterationsRemaining: z
     .number()
-    .default(OBVIOUSNESS_MAX_ITERATIONS),
-  /** Feedback from the last obviousness evaluation, fed into regeneration. */
-  obviousnessFeedback: z.array(z.string()).default([]),
+    .default(OUTLINE_EVALUATION_MAX_ITERATIONS),
+  /** Feedback from the last outline evaluation, fed into the revision. */
+  outlineFeedback: z.array(z.string()).default([]),
 });
 
 type GenerationGraphState = z.infer<typeof GenerationGraphStateSchema>;
@@ -68,7 +68,7 @@ async function generateCaseOutline(
   return { outline };
 }
 
-// ─── obviousness evaluate / regenerate loop ──────────────────────────────────
+// ─── outline evaluate (obviousness + consistency) / regenerate loop ──────────
 
 function filterUserInstructions(
   userInstructions: GenerationGraphState["userInstructions"],
@@ -129,42 +129,41 @@ async function outlineEvaluate(
   state: GenerationGraphState,
   runtime?: Runtime<RequestContext>
 ): Promise<Command> {
-  if (state.obviousnessIterationsRemaining <= 0) {
+  if (state.outlineEvaluationIterationsRemaining <= 0) {
     bus.emit("Generation Log", {
       logLevel: "info",
       timestamp: new Date().toISOString(),
-      msg: `[GenerationGraph] Obviousness iteration cap reached — proceeding with current outline.`,
+      msg: `[GenerationGraph] Outline evaluation iteration cap reached — proceeding with current outline.`,
     });
     return new Command({ goto: buildFieldGenerationSends(state) });
   }
 
-  const evaluation =
-    await fieldGenerationBlueprintTools.evaluateOutlineObviousness
-      .invoke(
-        {
-          diagnosis: state.diagnosis,
-          outline: state.outline,
-          difficulty: state.difficulty,
-          userInstructions: renderUserInstructions(state.userInstructions),
-        },
-        runtime?.context
-      )
-      .catch((error) => {
-        bus.emit("Generation Log", {
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-          msg: `[GenerationGraph] Error evaluating outline obviousness: ${error}`,
-        });
-        throw error;
+  const evaluation = await fieldGenerationBlueprintTools.evaluateOutline
+    .invoke(
+      {
+        diagnosis: state.diagnosis,
+        outline: state.outline,
+        difficulty: state.difficulty,
+        userInstructions: renderUserInstructions(state.userInstructions),
+      },
+      runtime?.context
+    )
+    .catch((error) => {
+      bus.emit("Generation Log", {
+        logLevel: "error",
+        timestamp: new Date().toISOString(),
+        msg: `[GenerationGraph] Error evaluating outline: ${error}`,
       });
+      throw error;
+    });
 
   bus.emit("Generation Log", {
     logLevel: "info",
     timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Obviousness evaluation (${state.obviousnessIterationsRemaining} iter left):\n\`\`\`json\n${JSON.stringify(evaluation, null, 2)}\n\`\`\``,
+    msg: `[GenerationGraph] Outline evaluation (${state.outlineEvaluationIterationsRemaining} iter left):\n\`\`\`json\n${JSON.stringify(evaluation, null, 2)}\n\`\`\``,
   });
 
-  if (!evaluation.tooObvious) {
+  if (evaluation.accepted) {
     return new Command({ goto: buildFieldGenerationSends(state) });
   }
 
@@ -173,7 +172,7 @@ async function outlineEvaluate(
     : evaluation.reasons;
 
   return new Command({
-    update: { obviousnessFeedback: feedback },
+    update: { outlineFeedback: feedback },
     goto: "outline_regenerate",
   });
 }
@@ -190,7 +189,8 @@ async function outlineRegenerate(
         symptoms: state.symptoms,
         difficulty: state.difficulty,
         userInstructions: renderUserInstructions(state.userInstructions),
-        feedback: state.obviousnessFeedback,
+        feedback: state.outlineFeedback,
+        previousOutline: state.outline,
       },
       runtime?.context
     )
@@ -212,7 +212,8 @@ async function outlineRegenerate(
   return new Command({
     update: {
       outline,
-      obviousnessIterationsRemaining: state.obviousnessIterationsRemaining - 1,
+      outlineEvaluationIterationsRemaining:
+        state.outlineEvaluationIterationsRemaining - 1,
     },
     goto: "outline_evaluate",
   });
@@ -356,11 +357,7 @@ export const fieldGenerationGraph = new StateGraph(
   )
   .addNode(
     "outline_evaluate",
-    traceNode(
-      "outline_evaluate",
-      outlineEvaluate,
-      "Checking case is not too obvious"
-    ),
+    traceNode("outline_evaluate", outlineEvaluate, "Evaluating case outline"),
     {
       ends: [
         "outline_regenerate",

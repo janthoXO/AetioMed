@@ -123,7 +123,8 @@ function buildStepSchema(procedureNames?: ProcedureName[]) {
  * Blinded step: the solver sees only the patient presentation, prior
  * procedure results, and previously ruled-out diagnoses. It does NOT receive
  * the true diagnosis. It returns either:
- *   • action "procedure" — the next procedure to order (name + relevance), or
+ *   • action "procedure" — the next procedure(s) to order (name only — the
+ *     solver never assigns relevance, since it doesn't know the diagnosis), or
  *   • action "diagnose"  — a diagnosis it commits to based on available evidence.
  */
 export async function generateBlindedProcedureStep(

@@ -7,6 +7,7 @@ import {
 import { bus } from "@/core/graph/index.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { Symptom } from "../models/Symptom.js";
+import { getEffectiveCategoryList } from "../03repo/anamnesis.repo.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
@@ -27,25 +28,34 @@ const DIFFICULTY_STRATEGY: Record<Difficulty, string> = {
 
 export async function generateCaseOutline(
   diagnosis: Diagnosis,
-  generationFlags: Omit<GenerationFlag, "procedures">[],
+  generationFlags: GenerationFlag[],
   symptoms: Symptom[],
   difficulty: Difficulty,
   userInstructions?: string,
   feedback?: string[],
+  previousOutline?: string,
   context?: RequestContext
 ): Promise<string> {
+  const effectiveCategories = generationFlags.includes("anamnesis")
+    ? getEffectiveCategoryList(context?.language)
+    : undefined;
+
   const systemPrompt = buildPrompt(
     section(
       "Role",
       `You are an expert medical educator tasked with creating a concrete outline for a clinical practice case based on a specific diagnosis.
-This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents generating the final JSON fields, INCLUDING the eventual procedure/workup results. It must contain specific, hard data outlining the content of each field.`
+This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents generating the final JSON fields, INCLUDING the eventual procedure/workup results. It is the COMPLETE FACTUAL RECORD of the case: downstream agents only rewrite its facts in the right voice and format — they never add facts of their own.`
     ),
 
     section(
       "Instructions",
-      `1. Generate a structured markdown outline that briefly describes the exact clinical content that will go into each required field.
-2. Make sure that all fields are clinically coherent to each other
-3. Do not write the full narrative text for the fields yet; provide the essential details needed to formulate them.
+      `1. Generate a structured markdown outline with one section per required field, containing hard, concrete data:
+   - Patient: exact age, gender, height (in cm), weight (in kg), and any relevant demographic details.
+   - Symptoms/presentation: the selected symptom subset with concrete onset, duration, severity, and timeline.
+   - Chief complaint: the specific presenting problem in one or two factual sentences.
+   - Anamnesis: for each intake form category, the concrete facts to state (history items, medications with names and doses, lifestyle details, family history).
+2. Downstream generators must be able to write their field using ONLY facts from this outline. Any fact not specified here does not exist. Do not leave placeholders or vague descriptions.
+3. Make sure that all fields are clinically coherent to each other.
 4. Include a dedicated "Workup / Procedure Results Strategy" section describing how procedure and lab results should be shaped per the difficulty strategy, so a downstream agent generating those results can follow it.
 5. The diagnosis must never be explicitly named anywhere in the outline's field content — the student must deduce it.
 6. Return ONLY the markdown outline. Do not include introductory text, acknowledgments, or conversational filler.`
@@ -74,12 +84,24 @@ ${symptoms.map((s) => s.name).join(", ")}
 ${DIFFICULTY_STRATEGY[difficulty]}`
     ),
 
+    effectiveCategories
+      ? section(
+          "Anamnesis intake form categories",
+          `The anamnesis section of the outline must specify concrete facts for each of these intake form categories, using their exact names:
+${effectiveCategories.join(", ")}`
+        )
+      : undefined,
+
     section("Additional instructions", userInstructions),
+
+    previousOutline
+      ? section("Previous outline (rejected)", previousOutline)
+      : undefined,
 
     feedback && feedback.length > 0
       ? section(
           "Feedback on the previous outline",
-          `The previous outline was rejected as too obvious for the requested difficulty. Address the following feedback when regenerating:
+          `The previous outline was rejected for the following reasons. Revise it — keep what was good, and change only what is needed to address the feedback:
 ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
         )
       : undefined

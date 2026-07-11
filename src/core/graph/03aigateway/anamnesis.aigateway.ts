@@ -31,7 +31,7 @@ export async function generateAnamnesis(
     section(
       "Role",
       `You are an AI generating data for a medical training simulator.
-Your current task is to generate the Anamnesis (medical history) based on the provided Case Outline.`
+Your current task is to render the Anamnesis (medical history) facts from the provided Case Outline in the patient's own voice. The outline is the single source of truth — you do not decide any clinical facts yourself.`
     ),
 
     section(
@@ -40,6 +40,7 @@ Your current task is to generate the Anamnesis (medical history) based on the pr
 - Use the patient's subjective voice, layman's terms, and personal tone (e.g., "My chest feels heavy" instead of "Patient presents with angina").
 - Adapt the tone to fit the patient's age and demographic as defined in the outline.
 - Fill exactly the required intake form categories, using their exact names.
+- Use ONLY the facts specified in the outline. Do not invent symptoms, history items, medications, or details beyond the outline; your job is voice and format.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
 

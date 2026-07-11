@@ -1,4 +1,4 @@
-import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
+import { getBalancedLLM, handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
   renderSchemaForPrompt,
@@ -59,7 +59,9 @@ ${renderSchemaForPrompt(ChiefComplaintJsonSchema)}`
   try {
     const chiefComplaint: ChiefComplaint = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM(context?.llmConfig)
+        // Balanced: one clinical sentence whose facts come from the outline —
+        // fidelity matters more than variety.
+        const result = await getBalancedLLM(context?.llmConfig)
           .withStructuredOutput(ChiefComplaintJsonSchema)
           .invoke(
             [

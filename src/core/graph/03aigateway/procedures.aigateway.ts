@@ -2,7 +2,7 @@ import { bus } from "@/core/graph/index.js";
 import { retry } from "../utils/retry.js";
 import z from "zod";
 import {
-  getCreativeLLM,
+  getBalancedLLM,
   getDeterministicLLM,
   handleLangchainError,
 } from "../utils/llm.js";
@@ -189,7 +189,9 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
 
     const result: BlindedProcedureStepResult = await retry(
       async (attempt, previousError) => {
-        const res = await getCreativeLLM(context?.llmConfig)
+        // Balanced: this is clinical decision-making, not creative writing —
+        // lower temperature keeps procedure choices focused and output short.
+        const res = await getBalancedLLM(context?.llmConfig)
           .withStructuredOutput(StepSchema)
           .invoke(
             [
@@ -322,7 +324,9 @@ ${outline}`
   try {
     const results = await retry(
       async (attempt, previousError) => {
-        const res = await getCreativeLLM(context?.llmConfig)
+        // Balanced: results must follow the blueprint's workup strategy and
+        // stay clinically plausible — specific values, not invention.
+        const res = await getBalancedLLM(context?.llmConfig)
           .withStructuredOutput(ResultsSchema)
           .invoke(
             [
@@ -447,7 +451,9 @@ ${renderSchemaForPrompt(buildBridgeSchema())}`
   try {
     const procedures = await retry(
       async (attempt, previousError) => {
-        const res = await getCreativeLLM(context?.llmConfig)
+        // Balanced: confirmatory procedures for a known diagnosis — the most
+        // clinically standard choices are exactly what we want.
+        const res = await getBalancedLLM(context?.llmConfig)
           .withStructuredOutput(BridgeSchema)
           .invoke(
             [

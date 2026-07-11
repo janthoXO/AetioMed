@@ -1,11 +1,11 @@
 import z from "zod";
 import { generateCaseOutline as generateCaseOutlineGateway } from "@/core/graph/03aigateway/case.aigateway.js";
-import { evaluateOutlineObviousness as evaluateOutlineObviousnessGateway } from "@/core/graph/03aigateway/obviousness.aigateway.js";
+import { evaluateOutline as evaluateOutlineGateway } from "@/core/graph/03aigateway/outlineEvaluation.aigateway.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
 import { GenerationFlagSchema } from "@/core/graph/models/GenerationFlags.js";
 import { SymptomSchema } from "@/core/graph/models/Symptom.js";
 import { DifficultySchema } from "@/core/graph/models/Difficulty.js";
-import type { ObviousnessEvaluation } from "@/core/graph/models/Obviousness.js";
+import type { OutlineEvaluation } from "@/core/graph/models/OutlineEvaluation.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
 
 const GenerateCaseOutlineInputSchema = z.object({
@@ -15,6 +15,7 @@ const GenerateCaseOutlineInputSchema = z.object({
   difficulty: DifficultySchema,
   userInstructions: z.string().optional(),
   feedback: z.array(z.string()).optional(),
+  previousOutline: z.string().optional(),
 });
 
 export const generateCaseOutline: Tool<
@@ -33,6 +34,7 @@ export const generateCaseOutline: Tool<
       difficulty,
       userInstructions,
       feedback,
+      previousOutline,
     },
     context
   ) =>
@@ -43,29 +45,30 @@ export const generateCaseOutline: Tool<
       difficulty,
       userInstructions,
       feedback,
+      previousOutline,
       context
     ),
 };
 
-// ─── obviousness check ─────────────────────────────────────────────────────────
+// ─── combined outline evaluation (obviousness + consistency) ──────────────────
 
-const EvaluateOutlineObviousnessInputSchema = z.object({
+const EvaluateOutlineInputSchema = z.object({
   diagnosis: DiagnosisSchema,
   outline: z.string(),
   difficulty: DifficultySchema,
   userInstructions: z.string().optional(),
 });
 
-export const evaluateOutlineObviousness: Tool<
-  z.infer<typeof EvaluateOutlineObviousnessInputSchema>,
-  ObviousnessEvaluation
+export const evaluateOutline: Tool<
+  z.infer<typeof EvaluateOutlineInputSchema>,
+  OutlineEvaluation
 > = {
-  name: "evaluate_outline_obviousness",
+  name: "evaluate_outline",
   description:
-    "Judge whether a case blueprint reveals the diagnosis more directly than the requested difficulty allows.",
-  inputSchema: EvaluateOutlineObviousnessInputSchema,
+    "Judge in one call whether a case blueprint is too obvious for the requested difficulty and whether it is clinically consistent.",
+  inputSchema: EvaluateOutlineInputSchema,
   invoke: ({ diagnosis, outline, difficulty, userInstructions }, context) =>
-    evaluateOutlineObviousnessGateway(
+    evaluateOutlineGateway(
       diagnosis,
       outline,
       difficulty,
@@ -76,7 +79,7 @@ export const evaluateOutlineObviousness: Tool<
 
 export const fieldGenerationBlueprintTools = {
   generateCaseOutline,
-  evaluateOutlineObviousness,
+  evaluateOutline,
 } as const;
 
-export type { ObviousnessEvaluation };
+export type { OutlineEvaluation };

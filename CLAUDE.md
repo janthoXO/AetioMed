@@ -81,9 +81,7 @@ All AI generation uses LangGraph. Graphs live in `src/core/graph/02graphs/`. The
 The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs three phases:
 
 - **`01symptom/`** — always runs first; combines a static UMLS symptom floor (per ICD code) with cache-aside LLM-generated additions (skips the LLM on a fresh cache hit)
-- **`02presentation/`** — two sub-phases:
-  - `generation/` — generates a case outline, then an obviousness evaluate ⇄ regenerate `Command` loop (max 2 iterations); once accepted, fans out via `Send` to `patient_generate` / `chief_complaint_generate` / `anamnesis_generate` (gated per `generationFlags`), joining at `case_fan_in`
-  - `inconsistency/` — evaluate ⇄ refine `Command` loop (default 2 iterations); excludes procedures
+- **`02presentation/`** — `generation/` generates a detailed case outline (the complete factual record of the case), then a combined outline evaluate ⇄ revise `Command` loop (max 2 iterations) judging obviousness AND clinical consistency in one LLM call; once accepted, fans out via `Send` to `patient_generate` / `chief_complaint_generate` / `anamnesis_generate` (gated per `generationFlags`) which only render the outline's facts in the right voice/format, joining at `case_fan_in`. There is no post-fan-out consistency check.
 - **`03procedure/`** — only when the `procedures` flag is set. A **blinded solver** loop (max 6 iterations): `blinded_step` orders procedures without knowing the true diagnosis, `result_step` generates their results non-blinded; when the solver commits to a diagnosis, an LLM judge checks the match (loop continues with `ruledOutDiagnoses` on mismatch). On exhaustion, a `bridge` node generates confirmatory procedures for the true diagnosis.
 
 **Tool pattern:** each subgraph directory has a `tools.ts` exporting `Tool<TInput, TOutput>` objects (`src/core/graph/utils/tool.ts`). Graph nodes are thin — prompt building, LLM calls, retries, and structured-output parsing live in the aigateway behind the tools. Nodes are wrapped with `traceNode()` (`utils/nodeWrapper.ts`) to emit "Node Started/Completed" bus events with translated labels.
@@ -92,7 +90,7 @@ The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs three phases:
 
 ### AI Gateway Layer
 
-`src/core/graph/03aigateway/` contains one file per generated field (case, symptoms, patient, chiefComplaint, anamnesis, consistency, obviousness, procedures, diagnosis, labels, plus `translate.helper.ts`). Each gateway builds prompts, calls `getLLM()` / `getDeterministicLLM()` (temp 0.1) / `getCreativeLLM()` (temp 0.8) from `src/core/graph/utils/llm.ts`, and wraps calls with `retry()`.
+`src/core/graph/03aigateway/` contains one file per generated field (case, symptoms, patient, chiefComplaint, anamnesis, outlineEvaluation, procedures, diagnosis, labels, plus `translate.helper.ts`). Each gateway builds prompts, calls `getLLM()` / `getDeterministicLLM()` (temp 0.1) / `getCreativeLLM()` (temp 0.8) from `src/core/graph/utils/llm.ts`, and wraps calls with `retry()`.
 
 `getLLM()` supports three providers: `ollama`, `google`, `openai` (the `openai` provider also serves OpenAI-compatible endpoints via `LLM_URL`). Provider/model come from env (`LLM_PROVIDER`, `LLM_MODEL`) or from per-request `llmConfig` passed via `RequestContext` (AsyncLocalStorage). The `ALLOW_LLMS` feature flag enables per-request LLM selection from an allowlist (`ALLOWED_LLMS=ollama:llama3.1,google:gemini-2.0-flash`); when set, no global LLM is configured and requests must supply `llmConfig` (exposed via `GET /api/allowedLlms`).
 

@@ -25,14 +25,14 @@ export async function generateChiefComplaint(
     section(
       "Role",
       `You are an expert attending physician documenting a patient's presentation for a medical training simulator.
-Your current task is to generate the Chief Complaint based on the provided Case Outline.`
+Your current task is to rewrite the Chief Complaint facts from the provided Case Outline in clinical-chart voice. The outline is the single source of truth — you do not decide any clinical facts yourself.`
     ),
 
     section(
       "Requirements",
       `- The text inside the JSON must be written from the perspective of a medical professional writing in a clinical chart.
 - Use concise, objective clinical language and standard medical terminology (e.g., "acute onset dyspnea" instead of "shortness of breath").
-- Ensure it directly aligns with the demographic data and symptoms specified in the outline.
+- Use ONLY the facts specified in the outline (chief complaint, demographics, symptom timeline). Do not add clinical facts not present in the outline.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
 

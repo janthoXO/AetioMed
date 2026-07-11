@@ -9,9 +9,9 @@ import { bus } from "@/core/graph/index.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { Difficulty } from "../models/Difficulty.js";
 import {
-  ObviousnessEvaluationSchema,
-  type ObviousnessEvaluation,
-} from "../models/Obviousness.js";
+  OutlineEvaluationSchema,
+  type OutlineEvaluation,
+} from "../models/OutlineEvaluation.js";
 import { retry } from "../utils/retry.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
@@ -23,32 +23,51 @@ const DIFFICULTY_EXPECTATION: Record<Difficulty, string> = {
 };
 
 /**
- * Judge whether a case blueprint reveals the diagnosis more directly than the
- * requested difficulty permits. Runs immediately after outline generation, before
- * any field content is written, so an over-obvious case can be caught early.
+ * Judge a case blueprint in a single call on both quality dimensions:
+ * 1. Obviousness — does it reveal the diagnosis more directly than the
+ *    requested difficulty permits?
+ * 2. Clinical consistency — diagnosis secrecy, coherence between the planned
+ *    fields, and realism of the planned facts.
+ * Runs immediately after outline generation, before any field content is
+ * written, so a flawed blueprint can be revised early.
  */
-export async function evaluateOutlineObviousness(
+export async function evaluateOutline(
   diagnosis: Diagnosis,
   outline: string,
   difficulty: Difficulty,
   userInstructions?: string,
   context?: RequestContext
-): Promise<ObviousnessEvaluation> {
+): Promise<OutlineEvaluation> {
   const systemPrompt = buildPrompt(
     section(
       "Role",
-      `You are an expert medical educator reviewing a clinical case blueprint for a training simulator BEFORE the full case is written out. Your job is to judge whether the blueprint makes the diagnosis too easy to guess for the requested difficulty level.`
+      `You are an expert medical educator reviewing a clinical case blueprint for a training simulator BEFORE the full case is written out. The blueprint is the single source of truth for all downstream field generation, so it must be sound. Judge it on TWO dimensions and accept it only if BOTH pass.`
     ),
 
     section(
-      "Rules",
-      `Evaluate the blueprint holistically: the symptom selection, any distractors present, and the planned workup/procedure-result strategy described in it.`
+      "Dimension 1: Obviousness",
+      `Judge whether the blueprint makes the diagnosis too easy to guess for the requested difficulty level. Evaluate it holistically: the symptom selection, any distractors present, and the planned workup/procedure-result strategy described in it.`
+    ),
+
+    section(
+      "Dimension 2: Clinical consistency",
+      `1. Diagnosis Secrecy (Pedagogical): The target diagnosis MUST NOT be explicitly named anywhere in the blueprint's field content (the student is supposed to deduce it).
+2. Clinical Coherence: Do the planned fields logically align? (e.g., Does the workup strategy make sense for the chief complaint? Does the planned anamnesis contradict the patient's age/gender?)
+3. Realism: Are there impossible biometric values (e.g., a 2-year-old weighing 70kg), contradictory timelines, or medical hallucinations?
+
+IMPORTANT: Distractor symptoms, omitted hallmark symptoms, and ambiguous or borderline findings planned per the difficulty strategy are INTENTIONAL pedagogical design — do NOT flag them as inconsistencies.`
+    ),
+
+    section(
+      "Requirements",
+      `- Be thorough but fair. Only flag genuine problems, not stylistic choices.
+- If the blueprint is rejected, list concrete reasons and give ONE actionable suggestion describing exactly how to revise it.`
     ),
 
     section(
       "Output format",
       `Return ONLY a valid JSON object:
-${renderSchemaForPrompt(ObviousnessEvaluationSchema)}`
+${renderSchemaForPrompt(OutlineEvaluationSchema)}`
     )
   );
 
@@ -66,14 +85,14 @@ ${renderSchemaForPrompt(ObviousnessEvaluationSchema)}`
   );
 
   console.debug(
-    `[EvaluateOutlineObviousness] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+    `[EvaluateOutline] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   try {
-    const evaluation: ObviousnessEvaluation = await retry(
+    const evaluation: OutlineEvaluation = await retry(
       async (attempt: number, previousError?: Error) => {
         const result = await getDeterministicLLM(context?.llmConfig)
-          .withStructuredOutput(ObviousnessEvaluationSchema)
+          .withStructuredOutput(OutlineEvaluationSchema)
           .invoke(
             [
               new SystemMessage(systemPrompt),
@@ -93,7 +112,7 @@ ${renderSchemaForPrompt(ObviousnessEvaluationSchema)}`
           });
 
         console.debug(
-          `[EvaluateOutlineObviousness] [Attempt ${attempt}] LLM raw Response:\n`,
+          `[EvaluateOutline] [Attempt ${attempt}] LLM raw Response:\n`,
           JSON.stringify(result, null, 2)
         );
 
@@ -102,7 +121,7 @@ ${renderSchemaForPrompt(ObviousnessEvaluationSchema)}`
       2,
       0,
       (error, attempt) => {
-        const msg = `[EvaluateOutlineObviousness] Attempt ${attempt} failed with error: ${error.message}`;
+        const msg = `[EvaluateOutline] Attempt ${attempt} failed with error: ${error.message}`;
         console.error(msg);
         bus.emit("Generation Log", {
           msg,
@@ -114,7 +133,7 @@ ${renderSchemaForPrompt(ObviousnessEvaluationSchema)}`
 
     return evaluation;
   } catch (error) {
-    console.error("[EvaluateOutlineObviousness] Error:", error);
+    console.error("[EvaluateOutline] Error:", error);
     throw error;
   }
 }

@@ -49,6 +49,10 @@ export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
         };
       }
 
+      if (fullConfig.enableThinking !== undefined) {
+        ollamaConfig.think = fullConfig.enableThinking;
+      }
+
       chat = new ChatOllama(ollamaConfig);
       break;
     }
@@ -79,6 +83,17 @@ export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
       if (fullConfig.url) {
         openAIConfig.configuration = {
           baseURL: fullConfig.url,
+        };
+      }
+
+      // vLLM-style OpenAI-compatible servers toggle the thinking phase via
+      // the chat template (verified against Morpheus; not an official OpenAI
+      // parameter, which ignores unknown body fields).
+      if (fullConfig.enableThinking !== undefined) {
+        openAIConfig.modelKwargs = {
+          chat_template_kwargs: {
+            enable_thinking: fullConfig.enableThinking,
+          },
         };
       }
 

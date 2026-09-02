@@ -133,3 +133,66 @@ export function getEffectiveProcedureList(
   }
   return undefined;
 }
+
+// ─── Category grouping ─────────────────────────────────────────────────────
+
+/**
+ * Synthetic category bucket for procedure names with no `"Category: Name"`
+ * prefix — kept separate from the real categories so it can be handled
+ * specially (e.g. always offered, never itself a filterable choice).
+ */
+export const UNCATEGORIZED_CATEGORY = "General";
+
+/**
+ * Split a procedure's full name into its category and bare name, on the
+ * first `": "`. Names with no such separator fall into the synthetic
+ * `UNCATEGORIZED_CATEGORY` bucket, using the full name as-is.
+ */
+export function parseProcedureName(full: ProcedureName): {
+  category: string;
+  name: string;
+} {
+  const separatorIndex = full.indexOf(": ");
+  if (separatorIndex === -1) {
+    return { category: UNCATEGORIZED_CATEGORY, name: full };
+  }
+  return {
+    category: full.slice(0, separatorIndex),
+    name: full.slice(separatorIndex + 2),
+  };
+}
+
+/**
+ * Group the effective procedure list's bare names by category, in list
+ * order. Uncategorized names (no `": "` prefix) are grouped under
+ * `UNCATEGORIZED_CATEGORY`. Returns an empty map when no effective list is
+ * configured for the given language.
+ */
+export function getGroupedProcedures(
+  language?: Language
+): Map<string, ProcedureName[]> {
+  const effective = getEffectiveProcedureList(language) ?? [];
+  const grouped = new Map<string, ProcedureName[]>();
+  for (const full of effective) {
+    const { category, name } = parseProcedureName(full);
+    const names = grouped.get(category);
+    if (names) {
+      names.push(name);
+    } else {
+      grouped.set(category, [name]);
+    }
+  }
+  return grouped;
+}
+
+/**
+ * The real (non-synthetic) procedure categories, in first-seen order. Empty
+ * when no effective list is configured, or when every procedure name is
+ * uncategorized (flat-list mode) — both cases signal that category-based
+ * filtering isn't applicable.
+ */
+export function getProcedureCategories(language?: Language): string[] {
+  return [...getGroupedProcedures(language).keys()].filter(
+    (category) => category !== UNCATEGORIZED_CATEGORY
+  );
+}

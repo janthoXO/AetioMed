@@ -18,17 +18,24 @@ import {
   buildProcedureResultSchema,
   buildProcedureSchema,
   ProcedureRelevanceSchema,
+  ProcedureSchema,
   type Procedure,
   type ProcedureName,
+  type ProcedureRelevance,
   type ProcedureResult,
 } from "../models/Procedure.js";
-import { getEffectiveProcedureList } from "../03repo/procedures.repo.js";
+import {
+  getEffectiveProcedureList,
+  getGroupedProcedures,
+  getProcedureCategories,
+  UNCATEGORIZED_CATEGORY,
+} from "../03repo/procedures.repo.js";
 import type { Patient } from "../models/Patient.js";
 import type { Anamnesis } from "../models/Anamnesis.js";
 import type { ChiefComplaint } from "../models/ChiefComplaint.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
-import type { ForeignLanguage } from "../models/Language.js";
+import type { ForeignLanguage, Language } from "../models/Language.js";
 import { translateTermsKeyed } from "./translate.helper.js";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -52,20 +59,29 @@ export type BlindedProcedureStepResult =
       reasoning?: string | undefined;
     };
 
+/**
+ * Result of a category-scoped procedure pick (LLM_SMALL step 2): either the
+ * actual pick, or a request to pull additional categories into scope. The
+ * expand action is only offered while the caller still allows it — the
+ * grammar constraint restricts it to categories NOT already in scope, so the
+ * model can never re-request one it has already seen.
+ */
+export type ScopedProcedurePickResult =
+  | {
+      action: "procedures";
+      procedures: Procedure[];
+      reasoning?: string | undefined;
+    }
+  | {
+      action: "expand";
+      categories: string[];
+      reasoning?: string | undefined;
+    };
+
 // ─── Shared prompt sections ───────────────────────────────────────────────────
 
 function presentationSection(presentation: Presentation) {
   return section("Patient presentation", renderForPrompt(presentation));
-}
-
-function approvedProceduresSection(procedures: ProcedureName[] | undefined) {
-  return procedures?.length
-    ? section(
-        "Approved procedure list (RESTRICTED WORKUP)",
-        `You MUST ONLY select procedures from the following list, using their exact names. Do not invent or recommend any procedures not explicitly listed below:
-${procedures.map((p) => `- ${p}`).join("\n")}`
-      )
-    : undefined;
 }
 
 /**
@@ -95,20 +111,268 @@ function errorFeedback(previousError: Error | undefined) {
     : "";
 }
 
-// ─── 1. generateBlindedProcedureStep ─────────────────────────────────────────
+// ─── Procedure grouping (category-aware prompting) ───────────────────────────
 
 /**
- * The `procedureNames` restriction is applied to the schema used as the
- * grammar constraint, but NOT to the schema rendered into the prompt — the
- * approved list lives in the user message so the system prompt stays stable.
+ * How the approved procedure list is presented to (and expected back from) a
+ * blinded pick step, resolved once per call from the effective list for the
+ * request language:
+ *   - "freeform": no approved list configured — the LLM invents freely.
+ *   - "flat": an approved list exists but none of its entries carry a
+ *     `"Category: Name"` prefix — shown/returned as a plain list of names.
+ *   - "grouped": an approved list exists with real categories — shown/returned
+ *     grouped by category so a small model only reasons over one category's
+ *     worth of names at a time.
  */
-function buildStepSchema(procedureNames?: ProcedureName[]) {
+type ProcedurePickMode =
+  | { kind: "freeform" }
+  | { kind: "flat"; names: ProcedureName[] }
+  | { kind: "grouped"; grouped: Map<string, ProcedureName[]> };
+
+function resolveProcedurePickMode(language?: Language): ProcedurePickMode {
+  const effective = getEffectiveProcedureList(language);
+  if (effective === undefined) return { kind: "freeform" };
+
+  const categories = getProcedureCategories(language);
+  if (categories.length === 0) {
+    const grouped = getGroupedProcedures(language);
+    return { kind: "flat", names: grouped.get(UNCATEGORIZED_CATEGORY) ?? [] };
+  }
+  return { kind: "grouped", grouped: getGroupedProcedures(language) };
+}
+
+/**
+ * Remove already-ordered procedures from a grouped candidate map, comparing
+ * against the previously ordered FULL names (category prefix reunited).
+ * Categories that end up empty are dropped entirely — they have nothing left
+ * to offer a pick or an expansion.
+ */
+function excludeOrderedFromGrouped(
+  grouped: Map<string, ProcedureName[]>,
+  previousProcedures: ProcedureResult[]
+): Map<string, ProcedureName[]> {
+  if (previousProcedures.length === 0) return grouped;
+  const ordered = new Set(previousProcedures.map((p) => p.name));
+  const filtered = new Map<string, ProcedureName[]>();
+  for (const [category, names] of grouped) {
+    const remaining = names.filter(
+      (name) =>
+        !ordered.has(
+          category === UNCATEGORIZED_CATEGORY ? name : `${category}: ${name}`
+        )
+    );
+    if (remaining.length) filtered.set(category, remaining);
+  }
+  return filtered;
+}
+
+/**
+ * Remove already-ordered procedures from a pick mode's candidates, so a
+ * duplicate order is impossible by construction (the grammar never offers
+ * them) and the candidate context shrinks as the workup progresses.
+ * Freeform mode passes through unchanged — a prompt rule covers it instead.
+ */
+function excludeOrderedFromMode(
+  mode: ProcedurePickMode,
+  previousProcedures: ProcedureResult[]
+): ProcedurePickMode {
+  switch (mode.kind) {
+    case "freeform":
+      return mode;
+    case "flat": {
+      const ordered = new Set(previousProcedures.map((p) => p.name));
+      return {
+        kind: "flat",
+        names: mode.names.filter((name) => !ordered.has(name)),
+      };
+    }
+    case "grouped":
+      return {
+        kind: "grouped",
+        grouped: excludeOrderedFromGrouped(mode.grouped, previousProcedures),
+      };
+  }
+}
+
+/** Whether a pick mode still has any candidates left to offer. */
+function modeHasCandidates(mode: ProcedurePickMode): boolean {
+  switch (mode.kind) {
+    case "freeform":
+      return true;
+    case "flat":
+      return mode.names.length > 0;
+    case "grouped":
+      return mode.grouped.size > 0;
+  }
+}
+
+/**
+ * Scope the grouped procedure map down to the selected categories, plus the
+ * always-included uncategorized bucket (uncategorized procedures bypass the
+ * category filter entirely).
+ */
+function scopeGroupedProcedures(
+  selectedCategories: string[],
+  language?: Language
+): Map<string, ProcedureName[]> {
+  const allGrouped = getGroupedProcedures(language);
+  const scoped = new Map<string, ProcedureName[]>();
+  for (const category of selectedCategories) {
+    const names = allGrouped.get(category);
+    if (names?.length) scoped.set(category, names);
+  }
+  const general = allGrouped.get(UNCATEGORIZED_CATEGORY);
+  if (general?.length) scoped.set(UNCATEGORIZED_CATEGORY, general);
+  return scoped;
+}
+
+const CATEGORY_MENU_SAMPLE_SIZE = 3;
+
+/**
+ * Renders one line per real category with a size hint and a few sample
+ * procedure names, so a category-level pick is informed rather than
+ * name-only. Expects an already duplicate-filtered grouped map, so fully
+ * ordered categories disappear from the menu.
+ */
+function renderCategoryMenu(grouped: Map<string, ProcedureName[]>): string {
+  return [...grouped.entries()]
+    .filter(([category]) => category !== UNCATEGORIZED_CATEGORY)
+    .map(([category, names]) => {
+      const sample = names.slice(0, CATEGORY_MENU_SAMPLE_SIZE).join(", ");
+      const more = names.length > CATEGORY_MENU_SAMPLE_SIZE ? ", …" : "";
+      return `- ${category} (${names.length} procedures) — e.g. ${sample}${more}`;
+    })
+    .join("\n");
+}
+
+/** Convergence-pressure nudge rendered when the solver's budget is known. */
+function workupBudgetSection(iterationsRemaining: number | undefined) {
+  return iterationsRemaining === undefined
+    ? undefined
+    : section(
+        "Workup budget",
+        `You have ${iterationsRemaining} diagnostic step(s) remaining. A thorough workup that uses every step is a FAILURE mode, not diligence — commit to a diagnosis as soon as one is well supported (roughly 90% confidence), and do not spend steps on marginal or merely confirmatory procedures.`
+      );
+}
+
+/** Renders the "Approved procedure list" prompt section for a pick mode. */
+function procedureCandidatesSection(mode: ProcedurePickMode) {
+  switch (mode.kind) {
+    case "freeform":
+      return undefined;
+    case "flat":
+      return section(
+        "Approved procedure list (RESTRICTED WORKUP)",
+        `You MUST ONLY select procedures from the following list, using their exact names. Do not invent or recommend any procedures not explicitly listed below:
+${mode.names.map((n) => `- ${n}`).join("\n")}`
+      );
+    case "grouped":
+      return section(
+        "Approved procedure list, grouped by category (RESTRICTED WORKUP)",
+        `You MUST ONLY select procedures from the categories below, using their exact names WITHOUT the category prefix — place each name under its correct category key in your response. Do not invent or recommend any procedures not explicitly listed below:
+${renderForPrompt(Object.fromEntries(mode.grouped))}`
+      );
+  }
+}
+
+/**
+ * The grammar-constrained schema for a pick step's "procedures" field, per
+ * mode — this is what's passed to `withStructuredOutput`.
+ */
+function procedurePickGrammarSchema(mode: ProcedurePickMode): z.ZodTypeAny {
+  switch (mode.kind) {
+    case "freeform":
+      return z
+        .array(buildProcedureSchema())
+        .describe("one or more mutually independent procedures to order now");
+    case "flat":
+      return z
+        .array(z.literal(mode.names))
+        .describe("exact names of the procedures to order now");
+    case "grouped": {
+      const shape: Record<string, z.ZodTypeAny> = {};
+      for (const [category, names] of mode.grouped) {
+        shape[category] = z
+          .array(z.literal(names))
+          .optional()
+          .describe(
+            `procedure names (without category prefix) to order from "${category}"`
+          );
+      }
+      return z
+        .object(shape)
+        .describe("procedures to order now, grouped by category key");
+    }
+  }
+}
+
+/**
+ * Generic, name-agnostic counterpart to {@link procedurePickGrammarSchema}
+ * used ONLY for the system prompt's "Output format" example — kept free of
+ * the actual (potentially large) approved-name literals so the system prompt
+ * stays short and stable; the real constraint is applied via the grammar
+ * schema instead.
+ */
+function procedurePickPromptSchema(mode: ProcedurePickMode): z.ZodTypeAny {
+  switch (mode.kind) {
+    case "freeform":
+      return z
+        .array(ProcedureSchema)
+        .describe("one or more mutually independent procedures to order now");
+    case "flat":
+      return z.array(z.string()).describe("exact procedure names to order now");
+    case "grouped":
+      return z
+        .record(z.string(), z.array(z.string()))
+        .describe("procedure names (without category prefix), keyed by category");
+  }
+}
+
+/**
+ * Assemble a raw "procedures" LLM response back into `Procedure[]`, per pick
+ * mode. Grouped/flat names are reunited with their category prefix (if any)
+ * and validated against the canonical effective list — any assembled name not
+ * found there is dropped (belt-and-braces; the grammar constraint should
+ * already prevent this).
+ */
+function assembleProcedurePick(
+  mode: ProcedurePickMode,
+  raw: unknown,
+  effectiveList: ProcedureName[] | undefined
+): Procedure[] {
+  const canonical = effectiveList ? new Set(effectiveList) : undefined;
+  const keep = (full: string) => !canonical || canonical.has(full);
+
+  if (mode.kind === "freeform") {
+    return (raw as Procedure[] | undefined) ?? [];
+  }
+
+  if (mode.kind === "flat") {
+    return ((raw as ProcedureName[] | undefined) ?? [])
+      .filter(keep)
+      .map((name) => ({ name }));
+  }
+
+  const grouped = (raw as Record<string, ProcedureName[] | undefined>) ?? {};
+  const result: Procedure[] = [];
+  for (const [category, names] of Object.entries(grouped)) {
+    if (!names) continue;
+    for (const name of names) {
+      const full =
+        category === UNCATEGORIZED_CATEGORY ? name : `${category}: ${name}`;
+      if (keep(full)) result.push({ name: full });
+    }
+  }
+  return result;
+}
+
+// ─── 1. generateBlindedProcedureStep ─────────────────────────────────────────
+
+function buildStepSchema(procedureFieldSchema: z.ZodTypeAny) {
   return z.discriminatedUnion("action", [
     z.object({
       action: z.literal("procedure"),
-      procedures: z
-        .array(buildProcedureSchema(procedureNames))
-        .describe("one or more mutually independent procedures to order now"),
+      procedures: procedureFieldSchema,
       reasoning: z.string().optional().describe("brief clinical reasoning"),
     }),
     z.object({
@@ -132,38 +396,54 @@ export async function generateBlindedProcedureStep(
   previousProcedures: ProcedureResult[],
   ruledOutDiagnoses: string[],
   userInstructions?: string,
+  iterationsRemaining?: number,
   context?: RequestContext
 ): Promise<BlindedProcedureStepResult> {
   const effectiveProcedures = getEffectiveProcedureList(context?.language);
+  const mode = excludeOrderedFromMode(
+    resolveProcedurePickMode(context?.language),
+    previousProcedures
+  );
+
+  if (!modeHasCandidates(mode)) {
+    // Every approved procedure has already been ordered — nothing left to
+    // pick; the caller treats an empty pick as "bridge to the diagnosis".
+    console.warn(
+      "[GenerateBlindedProcedureStep] All approved procedures already ordered — returning empty pick."
+    );
+    return { action: "procedure", procedures: [] };
+  }
 
   const systemPrompt = buildPrompt(
     section(
       "Role",
       `You are an attending physician working up a patient in a clinical training simulator.
 You do NOT know the final diagnosis - reason purely from the patient's presentation and the results of procedures ordered so far.
-Your goal: determine the most appropriate next diagnostic action.`
+You work under real-world time and cost constraints: every procedure costs time and money, so run a focused, high-yield workup — not an exhaustive one.
+Your goal: reach a confident working diagnosis with as few procedures as possible.`
     ),
 
     section(
       "Rules",
       `Choose ONE action:
-- "procedure": Order the next batch of clinically indicated procedures based on the available evidence. You may schedule MULTIPLE procedures together in the same batch, but ONLY if they are mutually independent — none of them interferes with, contraindicates, or depends on the result of another in the batch. If a procedure's indication depends on the result of another procedure you'd also want to order now, leave it for a later iteration instead of batching it.
-- "diagnose": Commit to a diagnosis if you have sufficient evidence.
+- "procedure": Order the next batch of clinically indicated procedures based on the available evidence. Order ONLY high-yield procedures that will meaningfully change your leading diagnosis — skip tests that merely add marginal confirmation or chase unlikely alternatives. You may schedule MULTIPLE procedures together in the same batch, but ONLY if they are mutually independent — none of them interferes with, contraindicates, or depends on the result of another in the batch. If a procedure's indication depends on the result of another procedure you'd also want to order now, leave it for a later iteration instead of batching it.
+- "diagnose": Commit to a diagnosis as soon as one clearly best explains the presentation and the evidence so far (roughly 90% confidence). You do NOT need certainty, and you do NOT need to rule out every alternative — a real physician stops testing once the leading diagnosis is well supported and no dangerous alternative remains plausible. When in doubt between ordering another marginal procedure and diagnosing, prefer to diagnose.
 
-When an approved procedure list is provided, every procedure name MUST be an exact name from that list.`
+When an approved procedure list is provided, every procedure name MUST be an exact name from that list.
+Do NOT re-order any procedure that already appears in the workup so far.`
     ),
 
     section(
       "Output format",
       `Return ONLY a valid JSON object matching one of these shapes:
-${renderSchemaForPrompt(buildStepSchema())}`
+${renderSchemaForPrompt(buildStepSchema(procedurePickPromptSchema(mode)))}`
     )
   );
 
   const userPrompt = buildPrompt(
     presentationSection(presentation),
 
-    approvedProceduresSection(effectiveProcedures),
+    procedureCandidatesSection(mode),
 
     section("Additional instructions", userInstructions),
 
@@ -177,6 +457,8 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
         )
       : undefined,
 
+    workupBudgetSection(iterationsRemaining),
+
     `Based on the patient's presentation and the workup so far, what is your next action?`
   );
 
@@ -185,9 +467,9 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
   );
 
   try {
-    const StepSchema = buildStepSchema(effectiveProcedures);
+    const StepSchema = buildStepSchema(procedurePickGrammarSchema(mode));
 
-    const result: BlindedProcedureStepResult = await retry(
+    const rawResult = await retry(
       async (attempt, previousError) => {
         // Balanced: this is clinical decision-making, not creative writing —
         // lower temperature keeps procedure choices focused and output short.
@@ -226,9 +508,406 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       }
     );
 
-    return result;
+    if (rawResult.action === "diagnose") {
+      return rawResult;
+    }
+
+    // Reunite grouped/flat names with their category prefix (if any) —
+    // the blinded step's public shape is always a plain `Procedure[]`.
+    return {
+      action: "procedure",
+      procedures: assembleProcedurePick(
+        mode,
+        rawResult.procedures,
+        effectiveProcedures
+      ),
+      reasoning: rawResult.reasoning,
+    };
   } catch (error) {
     console.error("[GenerateBlindedProcedureStep] Error:", error);
+    throw error;
+  }
+}
+
+// ─── generateBlindedCategoryStep (LLM_SMALL: step 1 of 2) ────────────────────
+
+export type BlindedCategoryStepResult =
+  | {
+      action: "categories";
+      categories?: string[] | undefined;
+      reasoning?: string | undefined;
+    }
+  | {
+      action: "diagnose";
+      diagnosisName?: string | undefined;
+      reasoning?: string | undefined;
+    };
+
+/**
+ * Same grammar-vs-prompt split as {@link buildStepSchema}: the `categories`
+ * restriction is applied to the grammar constraint but not to the schema
+ * rendered into the system prompt.
+ */
+function buildCategoryStepSchema(categories?: string[]) {
+  return z.discriminatedUnion("action", [
+    z.object({
+      action: z.literal("categories"),
+      categories: z
+        .array(categories?.length ? z.literal(categories) : z.string())
+        .describe(
+          "ALL procedure categories that could plausibly be relevant — be over-inclusive, a second step narrows down to the exact procedures"
+        ),
+      reasoning: z.string().optional().describe("brief clinical reasoning"),
+    }),
+    z.object({
+      action: z.literal("diagnose"),
+      diagnosisName: z.string().describe("the diagnosis you commit to"),
+      reasoning: z.string().optional().describe("brief clinical reasoning"),
+    }),
+  ]);
+}
+
+/**
+ * Step 1 of the small-model-friendly split of the blinded procedure pick
+ * (enabled via `LLM_SMALL`, dispatched from the `blinded_step` node): choose
+ * the plausibly-relevant procedure categories — over-inclusive, since
+ * {@link generateBlindedProcedureStepFromCategories} narrows down to actual
+ * procedures next — or commit to a diagnosis. The diagnose handling mirrors
+ * {@link generateBlindedProcedureStep} exactly, so the graph node can reuse
+ * the same `matchDiagnosis` / ruled-out-diagnoses flow for either path.
+ */
+export async function generateBlindedCategoryStep(
+  presentation: Presentation,
+  previousProcedures: ProcedureResult[],
+  ruledOutDiagnoses: string[],
+  userInstructions?: string,
+  iterationsRemaining?: number,
+  context?: RequestContext
+): Promise<BlindedCategoryStepResult> {
+  // Categories are picked from the duplicate-filtered map: fully ordered
+  // categories vanish from the menu, and the size/sample hints reflect only
+  // the procedures still available to order.
+  const grouped = excludeOrderedFromGrouped(
+    getGroupedProcedures(context?.language),
+    previousProcedures
+  );
+  const categories = [...grouped.keys()].filter(
+    (category) => category !== UNCATEGORIZED_CATEGORY
+  );
+
+  const systemPrompt = buildPrompt(
+    section(
+      "Role",
+      `You are an attending physician working up a patient in a clinical training simulator.
+You do NOT know the final diagnosis - reason purely from the patient's presentation and the results of procedures ordered so far.
+You work under real-world time and cost constraints: aim for a confident working diagnosis with as few procedures as possible, not an exhaustive workup.
+Your goal: narrow down the categories of diagnostic workup that could plausibly help — a second step will pick the exact procedures from within them.`
+    ),
+
+    section(
+      "Rules",
+      `Choose ONE action:
+- "categories": List ALL procedure categories that could plausibly be relevant to the next diagnostic step. Be over-inclusive — it is fine (and expected) to list categories that turn out not to be needed, since a second step will pick the exact procedures from within them.
+- "diagnose": Commit to a diagnosis as soon as one clearly best explains the presentation and the evidence so far (roughly 90% confidence). You do NOT need certainty, and you do NOT need to rule out every alternative — a real physician stops testing once the leading diagnosis is well supported and no dangerous alternative remains plausible. When in doubt between exploring more categories and diagnosing, prefer to diagnose.
+
+Every category name MUST be an exact name from the provided list.`
+    ),
+
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object matching one of these shapes:
+${renderSchemaForPrompt(buildCategoryStepSchema())}`
+    )
+  );
+
+  const userPrompt = buildPrompt(
+    presentationSection(presentation),
+
+    section("Available procedure categories", renderCategoryMenu(grouped)),
+
+    section("Additional instructions", userInstructions),
+
+    previousProceduresSection(previousProcedures),
+
+    ruledOutDiagnoses.length > 0
+      ? section(
+          "Ruled-out diagnoses",
+          `The following diagnoses have already been ruled out — do NOT propose any of these again:
+${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
+        )
+      : undefined,
+
+    workupBudgetSection(iterationsRemaining),
+
+    `Based on the patient's presentation and the workup so far, which categories are worth exploring next?`
+  );
+
+  console.debug(
+    `[GenerateBlindedCategoryStep] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+  );
+
+  try {
+    const CategoryStepSchema = buildCategoryStepSchema(categories);
+
+    const result: BlindedCategoryStepResult = await retry(
+      async (attempt, previousError) => {
+        // Thinking off: the category shortlist is a constrained pick and the
+        // split into two small steps exists precisely to keep each call fast.
+        const res = await getBalancedLLM({
+          ...context?.llmConfig,
+          enableThinking: false,
+        })
+          .withStructuredOutput(CategoryStepSchema)
+          .invoke(
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(userPrompt + errorFeedback(previousError)),
+            ],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
+          .catch((error) => {
+            handleLangchainError(error);
+          });
+
+        console.debug(
+          `[GenerateBlindedCategoryStep] [Attempt ${attempt}] Response:\n`,
+          JSON.stringify(res, null, 2)
+        );
+
+        return res;
+      },
+      2,
+      0,
+      (error, attempt) => {
+        const msg = `[GenerateBlindedCategoryStep] Attempt ${attempt} failed: ${error.message}`;
+        console.error(msg);
+        bus.emit("Generation Log", {
+          msg,
+          logLevel: "error",
+          timestamp: new Date().toISOString(),
+        });
+      }
+    );
+
+    return result;
+  } catch (error) {
+    console.error("[GenerateBlindedCategoryStep] Error:", error);
+    throw error;
+  }
+}
+
+// ─── generateBlindedProcedureStepFromCategories (LLM_SMALL: step 2 of 2) ─────
+
+/**
+ * Assemble the scoped-pick response schema from its optional branches — used
+ * for both the grammar constraint and the name-agnostic prompt rendering so
+ * the two can never diverge structurally. Same grammar-vs-prompt split as
+ * {@link procedurePickGrammarSchema} / {@link procedurePickPromptSchema}.
+ */
+function scopedPickSchema(
+  proceduresField: z.ZodTypeAny | undefined,
+  expandCategoriesField: z.ZodTypeAny | undefined
+): z.ZodTypeAny {
+  const pick = proceduresField
+    ? z.object({
+        action: z.literal("procedures"),
+        procedures: proceduresField,
+        reasoning: z.string().optional().describe("brief clinical reasoning"),
+      })
+    : undefined;
+  const expand = expandCategoriesField
+    ? z.object({
+        action: z.literal("expand"),
+        categories: expandCategoriesField.describe(
+          "exact names of the additional categories to pull into scope"
+        ),
+        reasoning: z
+          .string()
+          .optional()
+          .describe("why the in-scope procedures don't suffice"),
+      })
+    : undefined;
+  if (pick && expand) return z.discriminatedUnion("action", [pick, expand]);
+  const single = pick ?? expand;
+  if (!single) throw new Error("scopedPickSchema requires at least one branch");
+  return single;
+}
+
+/**
+ * Step 2 of the small-model-friendly split: pick the actual procedures from
+ * within the categories {@link generateBlindedCategoryStep} selected, plus
+ * the always-included uncategorized "General" bucket (uncategorized
+ * procedures bypass the category filter entirely). Uses the exact same
+ * grouped prompt/schema shape as {@link generateBlindedProcedureStep}'s
+ * grouped mode — just scoped to fewer categories, so the candidate set a
+ * small model has to reason over stays short.
+ *
+ * When `expandableCategories` is non-empty the model may instead answer with
+ * an "expand" action naming additional categories to pull into scope. The
+ * expand branch's grammar is restricted to exactly those categories, so a
+ * category already in scope can never be re-requested; the caller loops on
+ * expand under a hard cap and passes an empty `expandableCategories` once
+ * the cap is reached, which removes the branch from the schema entirely and
+ * forces a pick.
+ */
+export async function generateBlindedProcedureStepFromCategories(
+  presentation: Presentation,
+  previousProcedures: ProcedureResult[],
+  selectedCategories: string[],
+  expandableCategories: string[],
+  userInstructions?: string,
+  context?: RequestContext
+): Promise<ScopedProcedurePickResult> {
+  const scoped = excludeOrderedFromGrouped(
+    scopeGroupedProcedures(selectedCategories, context?.language),
+    previousProcedures
+  );
+  // Only offer expansion into categories that still have unordered candidates.
+  const allFiltered = excludeOrderedFromGrouped(
+    getGroupedProcedures(context?.language),
+    previousProcedures
+  );
+  const expandable = expandableCategories.filter((category) =>
+    allFiltered.has(category)
+  );
+
+  const mode: ProcedurePickMode = { kind: "grouped", grouped: scoped };
+  const canPick = scoped.size > 0;
+  const canExpand = expandable.length > 0;
+
+  if (!canPick && !canExpand) {
+    console.warn(
+      "[GenerateBlindedProcedureStepFromCategories] No candidates in scope and nothing left to expand into — returning empty pick."
+    );
+    return { action: "procedures", procedures: [] };
+  }
+
+  const pickRules = `Order the next batch of clinically indicated procedures based on the available evidence (action "procedures"). You work under real-world time and cost constraints: order ONLY high-yield procedures that will meaningfully change the leading diagnosis — skip tests that merely add marginal confirmation or chase unlikely alternatives. You may schedule MULTIPLE procedures together in the same batch, but ONLY if they are mutually independent — none of them interferes with, contraindicates, or depends on the result of another in the batch. If a procedure's indication depends on the result of another procedure you'd also want to order now, leave it for a later iteration instead of batching it.
+
+Every procedure name MUST be an exact name from the provided list, placed under its correct category key. Do NOT re-order any procedure that already appears in the workup so far.`;
+
+  const expandRules = `If — and ONLY if — none of the in-scope procedures is clinically appropriate as the next step, respond with action "expand" and name the additional categories you need (exact names from the "Other available categories" section); they will be shown in full next. Otherwise always prefer action "procedures".`;
+
+  const systemPrompt = buildPrompt(
+    section(
+      "Role",
+      `You are an attending physician working up a patient in a clinical training simulator.
+You do NOT know the final diagnosis - reason purely from the patient's presentation and the results of procedures ordered so far.
+A first step already narrowed the workup down to a shortlist of categories; your goal now is to pick the exact next procedure(s) from within them.`
+    ),
+
+    section(
+      "Rules",
+      [canPick ? pickRules : undefined, canExpand ? expandRules : undefined]
+        .filter((rule): rule is string => !!rule)
+        .join("\n\n")
+    ),
+
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object matching ${canPick && canExpand ? "one of these shapes" : "this shape"}:
+${renderSchemaForPrompt(
+  scopedPickSchema(
+    canPick ? procedurePickPromptSchema(mode) : undefined,
+    canExpand ? z.array(z.string()) : undefined
+  )
+)}`
+    )
+  );
+
+  const userPrompt = buildPrompt(
+    presentationSection(presentation),
+
+    canPick ? procedureCandidatesSection(mode) : undefined,
+
+    canExpand
+      ? section(
+          "Other available categories (names only)",
+          `These categories are NOT currently in scope — request them via action "expand" only if the in-scope procedures don't suffice:
+${renderCategoryMenu(new Map(expandable.map((category) => [category, allFiltered.get(category) ?? []])))}`
+        )
+      : undefined,
+
+    section("Additional instructions", userInstructions),
+
+    previousProceduresSection(previousProcedures),
+
+    `Based on the patient's presentation and the workup so far, which procedures should be ordered next?`
+  );
+
+  console.debug(
+    `[GenerateBlindedProcedureStepFromCategories] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+  );
+
+  const OutputSchema = scopedPickSchema(
+    canPick ? procedurePickGrammarSchema(mode) : undefined,
+    canExpand ? z.array(z.literal(expandable)) : undefined
+  );
+
+  try {
+    const raw = await retry(
+      async (attempt, previousError) => {
+        // Thinking off: same rationale as the category step — the candidate
+        // set is already scoped, so the pick doesn't need a reasoning phase.
+        const res = await getBalancedLLM({
+          ...context?.llmConfig,
+          enableThinking: false,
+        })
+          .withStructuredOutput(OutputSchema)
+          .invoke(
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(userPrompt + errorFeedback(previousError)),
+            ],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
+          .catch((error) => {
+            handleLangchainError(error);
+          });
+
+        console.debug(
+          `[GenerateBlindedProcedureStepFromCategories] [Attempt ${attempt}] Response:\n`,
+          JSON.stringify(res, null, 2)
+        );
+
+        return res;
+      },
+      2,
+      0,
+      (error, attempt) => {
+        const msg = `[GenerateBlindedProcedureStepFromCategories] Attempt ${attempt} failed: ${error.message}`;
+        console.error(msg);
+        bus.emit("Generation Log", {
+          msg,
+          logLevel: "error",
+          timestamp: new Date().toISOString(),
+        });
+      }
+    );
+
+    if (raw.action === "expand") {
+      return {
+        action: "expand",
+        categories: (raw.categories as string[] | undefined) ?? [],
+        reasoning: raw.reasoning,
+      };
+    }
+
+    return {
+      action: "procedures",
+      procedures: assembleProcedurePick(
+        mode,
+        raw.procedures,
+        getEffectiveProcedureList(context?.language)
+      ),
+      reasoning: raw.reasoning,
+    };
+  } catch (error) {
+    console.error("[GenerateBlindedProcedureStepFromCategories] Error:", error);
     throw error;
   }
 }
@@ -380,20 +1059,128 @@ ${outline}`
 
 // ─── 3. generateDiagnosisBridge ───────────────────────────────────────────────
 
-/** Same grammar-vs-prompt split as `buildStepSchema`. */
-function buildBridgeSchema(procedureNames?: ProcedureName[]) {
+type ResultLeaf = { name: string; relevance: ProcedureRelevance; result: string };
+
+const GenericResultLeafSchema = z.object({
+  name: z.string().describe("exact procedure name"),
+  relevance: ProcedureRelevanceSchema,
+  result: z.string().describe("clinically realistic result, concise"),
+});
+
+/**
+ * The bare-name-scoped counterpart to {@link buildProcedureResultSchema} —
+ * used inside a grouped-by-category bridge pick, where "name" only needs to
+ * be unique within its category group (the category key supplies the rest).
+ */
+function bareProcedureResultSchema(bareNames?: ProcedureName[]) {
   return z.object({
-    procedures: z
-      .array(buildProcedureResultSchema(procedureNames))
-      .describe("bridge procedures that confirm the diagnosis"),
+    name: (bareNames?.length ? z.literal(bareNames) : z.string()).describe(
+      "exact bare procedure name (without category prefix)"
+    ),
+    relevance: ProcedureRelevanceSchema,
+    result: z.string().describe("clinically realistic result, concise"),
   });
+}
+
+/**
+ * The grammar-constrained schema for a bridge pick's "procedures" field, per
+ * mode — this is what's passed to `withStructuredOutput`. Mirrors
+ * {@link procedurePickGrammarSchema}, but each leaf is a full
+ * `{name, relevance, result}` result instead of a bare name.
+ */
+function bridgePickGrammarSchema(mode: ProcedurePickMode): z.ZodTypeAny {
+  switch (mode.kind) {
+    case "freeform":
+      return z
+        .array(buildProcedureResultSchema())
+        .describe("bridge procedures that confirm the diagnosis");
+    case "flat":
+      return z
+        .array(bareProcedureResultSchema(mode.names))
+        .describe("bridge procedures that confirm the diagnosis");
+    case "grouped": {
+      const shape: Record<string, z.ZodTypeAny> = {};
+      for (const [category, names] of mode.grouped) {
+        shape[category] = z
+          .array(bareProcedureResultSchema(names))
+          .optional()
+          .describe(
+            `bridge procedures (without category prefix) from "${category}" that confirm the diagnosis`
+          );
+      }
+      return z
+        .object(shape)
+        .describe(
+          "bridge procedures that confirm the diagnosis, grouped by category key"
+        );
+    }
+  }
+}
+
+/**
+ * Generic, name-agnostic counterpart to {@link bridgePickGrammarSchema} used
+ * ONLY for the system prompt's "Output format" example — mirrors
+ * {@link procedurePickPromptSchema}'s stability rationale.
+ */
+function bridgePickPromptSchema(mode: ProcedurePickMode): z.ZodTypeAny {
+  if (mode.kind === "grouped") {
+    return z
+      .record(z.string(), z.array(GenericResultLeafSchema))
+      .describe(
+        "bridge procedures that confirm the diagnosis, keyed by category"
+      );
+  }
+  return z
+    .array(GenericResultLeafSchema)
+    .describe("bridge procedures that confirm the diagnosis");
+}
+
+/**
+ * Assemble a raw bridge "procedures" LLM response back into `ProcedureResult[]`,
+ * per pick mode — mirrors {@link assembleProcedurePick}, but preserves each
+ * leaf's `relevance`/`result` alongside the reunited full name.
+ */
+function assembleBridgeResults(
+  mode: ProcedurePickMode,
+  raw: unknown,
+  effectiveList: ProcedureName[] | undefined
+): ProcedureResult[] {
+  const canonical = effectiveList ? new Set(effectiveList) : undefined;
+  const keep = (full: string) => !canonical || canonical.has(full);
+
+  if (mode.kind !== "grouped") {
+    return ((raw as ResultLeaf[] | undefined) ?? [])
+      .filter((leaf) => keep(leaf.name))
+      .map((leaf) => ({
+        name: leaf.name,
+        relevance: leaf.relevance,
+        result: leaf.result,
+      }));
+  }
+
+  const grouped = (raw as Record<string, ResultLeaf[] | undefined>) ?? {};
+  const result: ProcedureResult[] = [];
+  for (const [category, leaves] of Object.entries(grouped)) {
+    if (!leaves) continue;
+    for (const leaf of leaves) {
+      const full =
+        category === UNCATEGORIZED_CATEGORY
+          ? leaf.name
+          : `${category}: ${leaf.name}`;
+      if (keep(full)) {
+        result.push({ name: full, relevance: leaf.relevance, result: leaf.result });
+      }
+    }
+  }
+  return result;
 }
 
 /**
  * Non-blinded bridge step: called when the blinded solver has exhausted its
  * iteration budget without reaching the diagnosis. Generates the remaining
  * confirmatory procedures (each with a result) that complete the diagnostic
- * pathway to the true diagnosis.
+ * pathway to the true diagnosis. Uses the same category-grouped candidate
+ * presentation as the blinded step (see {@link resolveProcedurePickMode}).
  */
 export async function generateDiagnosisBridge(
   presentation: Presentation,
@@ -403,6 +1190,17 @@ export async function generateDiagnosisBridge(
   context?: RequestContext
 ): Promise<ProcedureResult[]> {
   const effectiveProcedures = getEffectiveProcedureList(context?.language);
+  const mode = excludeOrderedFromMode(
+    resolveProcedurePickMode(context?.language),
+    previousProcedures
+  );
+
+  if (!modeHasCandidates(mode)) {
+    console.warn(
+      "[GenerateDiagnosisBridge] All approved procedures already ordered — nothing left to bridge with."
+    );
+    return [];
+  }
 
   const systemPrompt = buildPrompt(
     section(
@@ -418,13 +1216,14 @@ Generate the remaining procedures — with clinically consistent results — tha
 - Each procedure must include a result consistent with the true diagnosis.
 - Use specific, professional medical terminology.
 - When an approved procedure list is provided, every procedure name MUST be an exact name from that list.
+- Do NOT re-order any procedure that already appears in the workup so far.
 - These are bridge procedures YOU are choosing specifically to confirm the diagnosis, so their "relevance" should almost always be "obligatory" unless one is merely supportive ("optional").`
     ),
 
     section(
       "Output format",
       `Return ONLY a valid JSON object:
-${renderSchemaForPrompt(buildBridgeSchema())}`
+${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(mode) }))}`
     )
   );
 
@@ -433,7 +1232,7 @@ ${renderSchemaForPrompt(buildBridgeSchema())}`
 
     section("True diagnosis", diagnosisLabel(diagnosis)),
 
-    approvedProceduresSection(effectiveProcedures),
+    procedureCandidatesSection(mode),
 
     section("Additional instructions", userInstructions),
 
@@ -446,10 +1245,10 @@ ${renderSchemaForPrompt(buildBridgeSchema())}`
     `[GenerateDiagnosisBridge] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const BridgeSchema = buildBridgeSchema(effectiveProcedures);
+  const BridgeSchema = z.object({ procedures: bridgePickGrammarSchema(mode) });
 
   try {
-    const procedures = await retry(
+    const rawProcedures = await retry(
       async (attempt, previousError) => {
         // Balanced: confirmatory procedures for a known diagnosis — the most
         // clinically standard choices are exactly what we want.
@@ -488,9 +1287,263 @@ ${renderSchemaForPrompt(buildBridgeSchema())}`
       }
     );
 
-    return procedures;
+    return assembleBridgeResults(mode, rawProcedures, effectiveProcedures);
   } catch (error) {
     console.error("[GenerateDiagnosisBridge] Error:", error);
+    throw error;
+  }
+}
+
+// ─── generateBridgeCategoryStep (LLM_SMALL: bridge step 1 of 2) ──────────────
+
+/**
+ * Same grammar-vs-prompt split as {@link buildCategoryStepSchema}: the
+ * `categories` restriction is applied to the grammar constraint but not to
+ * the schema rendered into the system prompt.
+ */
+function buildBridgeCategoryStepSchema(categories?: string[]) {
+  return z.object({
+    categories: z
+      .array(categories?.length ? z.literal(categories) : z.string())
+      .describe(
+        "ALL procedure categories that could plausibly contain the confirmatory procedures needed — be over-inclusive, a second step narrows down to the exact procedures"
+      ),
+    reasoning: z.string().optional().describe("brief clinical reasoning"),
+  });
+}
+
+/**
+ * Step 1 of the small-model-friendly split of the bridge (enabled via
+ * `LLM_SMALL`): unlike the blinded step's category pick, this is non-blinded
+ * (the true diagnosis is already known) and has no "diagnose" branch — its
+ * only job is narrowing the workup down to a shortlist of categories that
+ * plausibly contain the confirmatory procedures, over-inclusive by design.
+ */
+export async function generateBridgeCategoryStep(
+  presentation: Presentation,
+  diagnosis: Diagnosis,
+  previousProcedures: ProcedureResult[],
+  userInstructions?: string,
+  context?: RequestContext
+): Promise<string[]> {
+  // Same duplicate-filtered menu as the blinded category step: fully ordered
+  // categories vanish, and size/sample hints reflect remaining candidates.
+  const grouped = excludeOrderedFromGrouped(
+    getGroupedProcedures(context?.language),
+    previousProcedures
+  );
+  const categories = [...grouped.keys()].filter(
+    (category) => category !== UNCATEGORIZED_CATEGORY
+  );
+
+  const systemPrompt = buildPrompt(
+    section(
+      "Role",
+      `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
+The true diagnosis is known to you. Your goal: narrow down the categories of diagnostic workup that could plausibly contain the confirmatory procedures needed — a second step will pick the exact procedures from within them.`
+    ),
+
+    section(
+      "Rules",
+      `List ALL procedure categories that could plausibly contain the confirmatory procedures needed to complete the diagnostic workup. Be over-inclusive — it is fine (and expected) to list categories that turn out not to be needed, since a second step will pick the exact procedures from within them.
+
+Every category name MUST be an exact name from the provided list.`
+    ),
+
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object:
+${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
+    )
+  );
+
+  const userPrompt = buildPrompt(
+    presentationSection(presentation),
+
+    section("True diagnosis", diagnosisLabel(diagnosis)),
+
+    section("Available procedure categories", renderCategoryMenu(grouped)),
+
+    section("Additional instructions", userInstructions),
+
+    previousProceduresSection(previousProcedures),
+
+    `Which categories are worth exploring to confirm the diagnosis?`
+  );
+
+  console.debug(
+    `[GenerateBridgeCategoryStep] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+  );
+
+  try {
+    const CategoryStepSchema = buildBridgeCategoryStepSchema(categories);
+
+    const categoriesResult = await retry(
+      async (attempt, previousError) => {
+        const res = await getBalancedLLM(context?.llmConfig)
+          .withStructuredOutput(CategoryStepSchema)
+          .invoke(
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(userPrompt + errorFeedback(previousError)),
+            ],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
+          .catch((error) => {
+            handleLangchainError(error);
+          });
+
+        console.debug(
+          `[GenerateBridgeCategoryStep] [Attempt ${attempt}] Response:\n`,
+          JSON.stringify(res, null, 2)
+        );
+
+        return res.categories;
+      },
+      2,
+      0,
+      (error, attempt) => {
+        const msg = `[GenerateBridgeCategoryStep] Attempt ${attempt} failed: ${error.message}`;
+        console.error(msg);
+        bus.emit("Generation Log", {
+          msg,
+          logLevel: "error",
+          timestamp: new Date().toISOString(),
+        });
+      }
+    );
+
+    return categoriesResult;
+  } catch (error) {
+    console.error("[GenerateBridgeCategoryStep] Error:", error);
+    throw error;
+  }
+}
+
+// ─── generateBridgeProcedureStepFromCategories (LLM_SMALL: bridge step 2) ────
+
+/**
+ * Step 2 of the small-model-friendly split of the bridge: generate the
+ * confirmatory procedures (with results) from within the categories
+ * {@link generateBridgeCategoryStep} selected, plus the always-included
+ * uncategorized "General" bucket. Same grouped prompt/schema/assembly as
+ * {@link generateDiagnosisBridge}'s grouped mode — just scoped to fewer
+ * categories.
+ */
+export async function generateBridgeProcedureStepFromCategories(
+  presentation: Presentation,
+  diagnosis: Diagnosis,
+  previousProcedures: ProcedureResult[],
+  selectedCategories: string[],
+  userInstructions?: string,
+  context?: RequestContext
+): Promise<ProcedureResult[]> {
+  const scoped = excludeOrderedFromGrouped(
+    scopeGroupedProcedures(selectedCategories, context?.language),
+    previousProcedures
+  );
+
+  if (scoped.size === 0) {
+    // Nothing left in scope — the caller widens to all categories and retries.
+    console.warn(
+      "[GenerateBridgeProcedureStepFromCategories] No unordered candidates in the selected categories — returning empty result."
+    );
+    return [];
+  }
+
+  const mode: ProcedurePickMode = { kind: "grouped", grouped: scoped };
+  const effectiveProcedures = getEffectiveProcedureList(context?.language);
+
+  const systemPrompt = buildPrompt(
+    section(
+      "Role",
+      `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
+The true diagnosis is known to you. A first step already narrowed the workup down to a shortlist of categories; your goal now is to generate the remaining procedures — with clinically consistent results — that efficiently bridge from the current workup to a confirmed diagnosis, using only those categories.`
+    ),
+
+    section(
+      "Rules",
+      `- Generate only the procedures needed to confirm the diagnosis, given what has already been done.
+- Each procedure must include a result consistent with the true diagnosis.
+- Use specific, professional medical terminology.
+- Every procedure name MUST be an exact name from the provided list, placed under its correct category key.
+- Do NOT re-order any procedure that already appears in the workup so far.
+- These are bridge procedures YOU are choosing specifically to confirm the diagnosis, so their "relevance" should almost always be "obligatory" unless one is merely supportive ("optional").`
+    ),
+
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object:
+${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(mode) }))}`
+    )
+  );
+
+  const userPrompt = buildPrompt(
+    presentationSection(presentation),
+
+    section("True diagnosis", diagnosisLabel(diagnosis)),
+
+    procedureCandidatesSection(mode),
+
+    section("Additional instructions", userInstructions),
+
+    previousProceduresSection(previousProcedures),
+
+    `Generate the remaining bridge procedures to confirm the diagnosis.`
+  );
+
+  console.debug(
+    `[GenerateBridgeProcedureStepFromCategories] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+  );
+
+  const BridgeSchema = z.object({ procedures: bridgePickGrammarSchema(mode) });
+
+  try {
+    const rawProcedures = await retry(
+      async (attempt, previousError) => {
+        const res = await getBalancedLLM(context?.llmConfig)
+          .withStructuredOutput(BridgeSchema)
+          .invoke(
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(userPrompt + errorFeedback(previousError)),
+            ],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
+          .catch((error) => {
+            handleLangchainError(error);
+          });
+
+        console.debug(
+          `[GenerateBridgeProcedureStepFromCategories] [Attempt ${attempt}] Response:\n`,
+          JSON.stringify(res, null, 2)
+        );
+
+        return res.procedures;
+      },
+      2,
+      0,
+      (error, attempt) => {
+        const msg = `[GenerateBridgeProcedureStepFromCategories] Attempt ${attempt} failed: ${error.message}`;
+        console.error(msg);
+        bus.emit("Generation Log", {
+          msg,
+          logLevel: "error",
+          timestamp: new Date().toISOString(),
+        });
+      }
+    );
+
+    return assembleBridgeResults(mode, rawProcedures, effectiveProcedures);
+  } catch (error) {
+    console.error(
+      "[GenerateBridgeProcedureStepFromCategories] Error:",
+      error
+    );
     throw error;
   }
 }

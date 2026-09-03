@@ -1,22 +1,25 @@
-import path from "node:path";
-import fs from "node:fs";
-import YAML from "yaml";
 import z from "zod";
+import { and, eq, sql } from "drizzle-orm";
 import {
   ForeignLanguageSchema,
   type ForeignLanguage,
 } from "../models/Language.js";
 import type { RequestContext } from "../utils/context.js";
+import { chunk, db, syncSource } from "./db.js";
+import { translation } from "./schema.js";
 
 /**
- * In-memory translation cache shared by every domain that maps known English
- * strings to a target-language equivalent (procedures, anamnesis categories,
- * diagnoses, trace labels). The cache is preloaded from a YAML config and may
- * be extended at runtime with AI-generated translations — the latter are never
- * written back to the config file.
+ * SQLite-backed translation cache shared by every domain that maps known
+ * English strings to a target-language equivalent (procedures, anamnesis
+ * categories, diagnoses, trace labels). On creation the store syncs its YAML
+ * config into the `translation` table (upserting only the keys listed in the
+ * YAML — see `syncSource` in `db.ts`) and is queried live from then on. The
+ * cache may be extended at runtime with AI-generated translations, which are
+ * persisted to the DB so they survive restarts, but are never written back
+ * to the YAML config file.
  *
  * Canonical key is always the English string; the reverse lookup
- * (`getToEnglish`) iterates the per-language map.
+ * (`getToEnglish`) is served by an index on (domain, lang, translated).
  */
 export interface TranslationStore {
   getFromEnglish(english: string, lang: ForeignLanguage): string | undefined;
@@ -44,64 +47,114 @@ const TranslationMappingSchema = z.partialRecord(
   z.record(z.string(), z.string())
 );
 
-type TranslationMapping = z.infer<typeof TranslationMappingSchema>;
-
-function preload(name: string, yamlFile?: string): TranslationMapping {
-  if (!yamlFile) return {};
-
-  const filepath = path.resolve(process.cwd(), yamlFile);
-  if (!fs.existsSync(filepath)) {
-    console.warn(`[${name} Store] No ${yamlFile} found, skipping preload.`);
-    return {};
-  }
-
-  try {
-    const parsed = TranslationMappingSchema.safeParse(
-      YAML.parse(fs.readFileSync(filepath, "utf-8"))
-    );
-    if (!parsed.success) {
-      console.warn(
-        `[${name} Store] Could not parse ${yamlFile}, skipping preload.`
-      );
-      return {};
-    }
-
-    const count = Object.keys(parsed.data).flatMap((k) =>
-      Object.keys(parsed.data[k as keyof typeof parsed.data] ?? {})
-    ).length;
-    console.info(`[${name} Store] Preloaded ${count} translations from YAML.`);
-    return parsed.data;
-  } catch (err) {
-    console.warn(`[${name} Store] Failed to preload ${yamlFile}:`, err);
-    return {};
-  }
-}
-
 export function createTranslationStore(opts: {
   name: string;
   yamlFile?: string;
 }): TranslationStore {
-  const cache: TranslationMapping = preload(opts.name, opts.yamlFile);
+  const domain = opts.name;
   const inFlight = new Map<string, Promise<Record<string, string>>>();
 
+  function upsertRows(
+    rows: {
+      domain: string;
+      lang: string;
+      english: string;
+      translated: string;
+    }[]
+  ) {
+    for (const batch of chunk(rows)) {
+      db.insert(translation)
+        .values(batch)
+        .onConflictDoUpdate({
+          target: [translation.domain, translation.lang, translation.english],
+          set: { translated: sql`excluded.translated` },
+        })
+        .run();
+    }
+  }
+
   function getFromEnglish(english: string, lang: ForeignLanguage) {
-    return cache[lang]?.[english];
+    const row = db
+      .select({ translated: translation.translated })
+      .from(translation)
+      .where(
+        and(
+          eq(translation.domain, domain),
+          eq(translation.lang, lang),
+          eq(translation.english, english)
+        )
+      )
+      .get();
+    return row?.translated;
   }
 
   function getToEnglish(translated: string, lang: ForeignLanguage) {
-    const translations = cache[lang];
-    if (!translations) return undefined;
-    for (const [english, target] of Object.entries(translations)) {
-      if (target === translated) return english;
-    }
-    return undefined;
+    const row = db
+      .select({ english: translation.english })
+      .from(translation)
+      .where(
+        and(
+          eq(translation.domain, domain),
+          eq(translation.lang, lang),
+          eq(translation.translated, translated)
+        )
+      )
+      .limit(1)
+      .get();
+    return row?.english;
   }
 
   function save(
     englishToTarget: Record<string, string>,
     lang: ForeignLanguage
   ) {
-    Object.assign((cache[lang] ??= {}), englishToTarget);
+    const rows = Object.entries(englishToTarget).map(
+      ([english, translated]) => ({
+        domain,
+        lang,
+        english,
+        translated,
+      })
+    );
+    if (rows.length === 0) return;
+    upsertRows(rows);
+  }
+
+  if (opts.yamlFile) {
+    const yamlFile = opts.yamlFile;
+    const synced = syncSource(domain, yamlFile, (parsed) => {
+      const result = TranslationMappingSchema.safeParse(parsed);
+      if (!result.success) {
+        console.warn(
+          `[${domain} Store] Could not parse ${yamlFile}, skipping sync.`
+        );
+        return;
+      }
+
+      const rows: {
+        domain: string;
+        lang: string;
+        english: string;
+        translated: string;
+      }[] = [];
+      for (const lang of Object.keys(result.data) as ForeignLanguage[]) {
+        const translations = result.data[lang];
+        if (!translations) continue;
+        for (const [english, translated] of Object.entries(translations)) {
+          rows.push({ domain, lang, english, translated });
+        }
+      }
+      upsertRows(rows);
+      console.info(
+        `[${domain} Store] Synced ${rows.length} translations from YAML.`
+      );
+    });
+
+    if (!synced) {
+      console.info(
+        `[${domain} Store] ${yamlFile} unchanged, skipped YAML parse.`
+      );
+    }
   }
 
   async function translateMissing(

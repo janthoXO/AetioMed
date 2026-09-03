@@ -36,6 +36,7 @@ services:
       sh -c "ollama serve & sleep 5 && ollama pull $$MODEL_NAME && wait"
 
   nats:
+    profiles: [NATS]
     image: nats:2.12.1
     ports:
       - "4222:4222" # client connections
@@ -51,6 +52,7 @@ services:
 
   # to debug nats
   nats-box:
+    profiles: [NATS]
     image: natsio/nats-box
     # Tell nats-box to sleep so the container stays alive in the background
     command: sleep infinity
@@ -60,6 +62,7 @@ services:
       - nats
 
   redis:
+    profiles: [PERSISTENCY]
     image: redis:alpine
     ports:
       - "6379:6379"

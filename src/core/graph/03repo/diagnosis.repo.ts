@@ -1,16 +1,11 @@
-import { PredefinedDiagnoses, type ICDCode } from "../models/Diagnosis.js";
+import { getDiagnosisByIcd, type ICDCode } from "../models/Diagnosis.js";
 import { type ForeignLanguage } from "../models/Language.js";
 import { createTranslationStore } from "./translationStore.js";
 
 export async function IcdToDiagnosisName(
   icdCode: ICDCode
 ): Promise<string | undefined> {
-  const diagnosis = PredefinedDiagnoses.find((d) => d.icd === icdCode);
-  if (!diagnosis) {
-    return undefined;
-  }
-
-  return diagnosis.name;
+  return getDiagnosisByIcd(icdCode)?.name;
 }
 
 /**
@@ -33,7 +28,8 @@ export function getDiagnosisTranslationToEnglish(
 }
 
 /**
- * Save new diagnosis translations to the in-memory mapping.
+ * Save new diagnosis translations to the translation store (persisted to the
+ * embedded DB, not written back to the YAML config).
  * @param englishToTarget a record mapping English diagnoses to their translations in the target language
  */
 export function saveDiagnosisTranslations(

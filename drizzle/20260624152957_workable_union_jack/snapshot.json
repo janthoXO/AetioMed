@@ -1,0 +1,195 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "58641994-0c14-47f2-a8a9-eb42d6867357",
+  "prevIds": ["00000000-0000-0000-0000-000000000000"],
+  "ddl": [
+    {
+      "name": "diagnosis",
+      "entityType": "tables"
+    },
+    {
+      "name": "_meta",
+      "entityType": "tables"
+    },
+    {
+      "name": "predefined_item",
+      "entityType": "tables"
+    },
+    {
+      "name": "translation",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "icd",
+      "entityType": "columns",
+      "table": "diagnosis"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "diagnosis"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "alternative_names",
+      "entityType": "columns",
+      "table": "diagnosis"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "_meta"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "hash",
+      "entityType": "columns",
+      "table": "_meta"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "predefined_item"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "position",
+      "entityType": "columns",
+      "table": "predefined_item"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "predefined_item"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "domain",
+      "entityType": "columns",
+      "table": "translation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lang",
+      "entityType": "columns",
+      "table": "translation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "english",
+      "entityType": "columns",
+      "table": "translation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "translated",
+      "entityType": "columns",
+      "table": "translation"
+    },
+    {
+      "columns": ["source", "position"],
+      "nameExplicit": false,
+      "name": "predefined_item_pk",
+      "entityType": "pks",
+      "table": "predefined_item"
+    },
+    {
+      "columns": ["domain", "lang", "english"],
+      "nameExplicit": false,
+      "name": "translation_pk",
+      "entityType": "pks",
+      "table": "translation"
+    },
+    {
+      "columns": ["icd"],
+      "nameExplicit": false,
+      "name": "diagnosis_pk",
+      "table": "diagnosis",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["source"],
+      "nameExplicit": false,
+      "name": "_meta_pk",
+      "table": "_meta",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "domain",
+          "isExpression": false
+        },
+        {
+          "value": "lang",
+          "isExpression": false
+        },
+        {
+          "value": "translated",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_translation_reverse",
+      "entityType": "indexes",
+      "table": "translation"
+    }
+  ],
+  "renames": []
+}

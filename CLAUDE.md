@@ -142,21 +142,23 @@ The `procedures/` directory (root level) contains categorized procedure YAML sou
 
 ## Environment Variables
 
-| Variable                      | Default                 | Notes                                                                                  |
-| ----------------------------- | ----------------------- | -------------------------------------------------------------------------------------- |
-| `PORT`                        | `3030`                  | Server port                                                                            |
-| `FEATURES`                    | `""`                    | Comma-separated flags: `REST`, `DEBUG`, `NATS`, `PERSISTENCY`, `TRACING`, `ALLOW_LLMS` |
-| `LLM_PROVIDER`                | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                        |
-| `LLM_MODEL`                   | —                       | Model name (required unless `ALLOW_LLMS`)                                              |
-| `LLM_API_KEY`                 | —                       | API key for Google/OpenAI                                                              |
-| `LLM_URL`                     | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                   |
-| `LLM_TEMPERATURE`             | `0.7`                   | 0–1                                                                                    |
-| `LLM_SMALL`                   | `false`                 | `true`/`1` enables small-model-friendly prompting (e.g. splits the blinded procedure step into a category pick then a procedure pick) |
-| `ALLOWED_LLMS`                | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                     |
-| `NATS_URL`                    | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                   |
-| `NATS_USER` / `NATS_PASSWORD` | `nats` / `nats`         |                                                                                        |
-| `REDIS_URL`                   | —                       | Required for `PERSISTENCY` extension                                                   |
-| `SYMPTOM_CACHE_TTL_DAYS`      | `30`                    | TTL for cached LLM-generated symptoms (see `03repo/symptoms.repo.ts`)                  |
+| Variable                      | Default                 | Notes                                                                                                                                         |
+| ----------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                        | `3030`                  | Server port                                                                                                                                   |
+| `FEATURES`                    | `""`                    | Comma-separated flags: `REST`, `DEBUG`, `NATS`, `PERSISTENCY`, `TRACING`, `ALLOW_LLMS`                                                        |
+| `LLM_PROVIDER`                | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                               |
+| `LLM_MODEL`                   | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                     |
+| `LLM_API_KEY`                 | —                       | API key for Google/OpenAI                                                                                                                     |
+| `LLM_URL`                     | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                          |
+| `LLM_TEMPERATURE`             | `0.7`                   | 0–1                                                                                                                                           |
+| `LLM_SMALL`                   | `false`                 | `true`/`1` enables small-model-friendly prompting (e.g. splits the blinded procedure step into a category pick then a procedure pick)         |
+| `ALLOWED_LLMS`                | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                            |
+| `CATALOG_DIR`                 | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                  |
+| `CACHE_DIR`                   | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative |
+| `NATS_URL`                    | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                          |
+| `NATS_USER` / `NATS_PASSWORD` | `nats` / `nats`         |                                                                                                                                               |
+| `REDIS_URL`                   | —                       | Required for `PERSISTENCY` extension                                                                                                          |
+| `SYMPTOM_CACHE_TTL_DAYS`      | `30`                    | TTL for cached LLM-generated symptoms (see `03repo/symptoms.repo.ts`)                                                                         |
 
 Note: the `REST` flag is required for the HTTP API to load — include it in `FEATURES` when running the server.
 

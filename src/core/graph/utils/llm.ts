@@ -92,13 +92,6 @@ export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
   return chat;
 }
 
-/**
- * Concatenates the provided strings with new lines and removes any empty or undefined strings.
- */
-export function buildPrompt(...parts: (string | undefined)[]): string {
-  return parts.filter((s): s is string => !!s).join("\n");
-}
-
 export function getSearchTool(llmConfig: LLMConfig) {
   switch (llmConfig.provider) {
     case "ollama": {

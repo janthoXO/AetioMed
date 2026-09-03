@@ -1,5 +1,5 @@
 import express from "express";
-import { getAllDiagnoses } from "@/core/graph/models/Diagnosis.js";
+import { getAllDiagnoses } from "@/core/graph/03repo/diagnosis.repo.js";
 
 const router = express.Router();
 

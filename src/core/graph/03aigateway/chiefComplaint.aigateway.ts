@@ -1,140 +1,54 @@
+import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
-  getCreativeLLM,
-  getDeterministicLLM,
-  handleLangchainError,
-} from "../utils/llm.js";
+  renderSchemaForPrompt,
+  section,
+  summarizeValidationError,
+} from "../utils/prompt.js";
 import { bus } from "@/core/graph/index.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
-import type { Symptom } from "../models/Symptom.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "../utils/retry.js";
 import {
-  ChiefComplaintJsonExample,
   ChiefComplaintJsonSchema,
   type ChiefComplaint,
 } from "../models/ChiefComplaint.js";
 import type { RequestContext } from "../utils/context.js";
 
-export async function generateChiefComplaintCoT(
-  diagnosis: Diagnosis,
-  symptoms: Symptom[],
-  userInstructions?: string,
-  context?: RequestContext
-): Promise<string> {
-  const systemPrompt = buildPrompt(
-    `You are an expert medical educator specializing in designing realistic clinical mock cases for medical students. 
-Your task is to generate a step-by-step logical reasoning process (Chain of Thought) detailing EXACTLY HOW to construct the Chief Complaint`,
-
-    `The following symptoms are typical for the diagnosis. You may use a subset of them:
-${symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join("\n")}`,
-
-    `Instructions:
-1. The chief complaint will be written from the perspective of a medical professional writing in a clinical chart.
-2. DO NOT generate the actual chief complaint yet. Only generate the thinking process which should be specific to the given diagnosis and a subset of symptoms.
-3. Outline a sequential thought process.
-4. Output ONLY the numbered reasoning steps, without any conversational filler.`
-  );
-
-  const userPrompt = buildPrompt(
-    `Target Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
-
-    userInstructions
-      ? `Additional Instructions: ${userInstructions}`
-      : undefined
-  );
-
-  console.debug(
-    `[GenerateChiefComplaintCoT] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
-  );
-
-  try {
-    const stepsString: string = await retry(
-      async (attempt: number) => {
-        const text = await getDeterministicLLM({
-          ...context?.llmConfig,
-          outputFormat: "text",
-        })
-          .invoke(
-            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch((error) => {
-            handleLangchainError(error);
-          });
-        console.debug(
-          `[GenerateChiefComplaintCoT] [Attempt ${attempt}] LLM raw Response:\n`,
-          text.text
-        );
-
-        return text.text;
-      },
-      2,
-      0,
-      (error, attempt) => {
-        const msg = `[GenerateChiefComplaintCoT] Attempt ${attempt} failed with error: ${error.message}`;
-        console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
-      }
-    );
-
-    return stepsString;
-  } catch (error) {
-    console.error(`[GenerateChiefComplaintCoT] Error:`, error);
-    throw error;
-  }
-}
-
 export async function generateChiefComplaint(
   diagnosis: Diagnosis, // provided by the user
-  config:
-    | {
-        cot: string;
-        symptoms: Symptom[];
-      }
-    | {
-        outline: string;
-      },
+  outline: string,
   userInstructions?: string, // provided by the user | undefined
   context?: RequestContext
 ): Promise<ChiefComplaint> {
   const systemPrompt = buildPrompt(
-    `You are an expert attending physician documenting a patient's presentation for a medical training simulator.
-Your current task is to generate the Chief Complaint ${"outline" in config ? "based on the provided Case Outline" : ""}.`,
+    section(
+      "Role",
+      `You are an expert attending physician documenting a patient's presentation for a medical training simulator.
+Your current task is to rewrite the Chief Complaint facts from the provided Case Outline in clinical-chart voice. The outline is the single source of truth — you do not decide any clinical facts yourself.`
+    ),
 
-    "cot" in config
-      ? `The following symptoms are typical for the diagnosis. You may use a subset of them:
-      ${config.symptoms.map((s, idx) => `${idx + 1}. ${s.name}: ${s.description ?? ""}`).join("\n")}
-
-Think step by step:
-    ${config.cot}`
-      : undefined,
-
-    `Return ONLY a valid JSON object matching the schema below.
-Schema:
-${JSON.stringify(ChiefComplaintJsonExample())}`,
-
-    `Requirements:
-- The text inside the JSON must be written from the perspective of a medical professional writing in a clinical chart.
+    section(
+      "Requirements",
+      `- The text inside the JSON must be written from the perspective of a medical professional writing in a clinical chart.
 - Use concise, objective clinical language and standard medical terminology (e.g., "acute onset dyspnea" instead of "shortness of breath").
-- Ensure it directly aligns with the demographic data and symptoms specified in the outline.
+- Use ONLY the facts specified in the outline (chief complaint, demographics, symptom timeline). Do not add clinical facts not present in the outline.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
+    ),
+
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object:
+${renderSchemaForPrompt(ChiefComplaintJsonSchema)}`
+    )
   );
 
   const userPrompt = buildPrompt(
-    `Target Diagnosis: ${diagnosis.name} ${diagnosis.icd ?? ""}`,
+    section("Target diagnosis", `${diagnosis.name} ${diagnosis.icd ?? ""}`),
 
-    "outline" in config ? `Case Outline: ${config.outline}` : undefined,
+    section("Case outline", outline),
 
-    userInstructions
-      ? `Additional Instructions: ${userInstructions}`
-      : undefined
+    section("Additional instructions", userInstructions)
   );
 
   console.debug(
@@ -144,11 +58,19 @@ ${JSON.stringify(ChiefComplaintJsonExample())}`,
   // Initialize cases to empty in case of failure
   try {
     const chiefComplaint: ChiefComplaint = await retry(
-      async (attempt: number) => {
+      async (attempt: number, previousError?: Error) => {
         const result = await getCreativeLLM(context?.llmConfig)
           .withStructuredOutput(ChiefComplaintJsonSchema)
           .invoke(
-            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(
+                userPrompt +
+                  (previousError
+                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+                    : "")
+              ),
+            ],
             context?.signal !== undefined
               ? { signal: context.signal }
               : undefined

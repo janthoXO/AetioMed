@@ -4,6 +4,7 @@ import {
 } from "@/core/graph/models/GenerationFlags.js";
 import { ICDCodeSchema } from "@/core/graph/models/Diagnosis.js";
 import { LanguageSchema } from "@/core/graph/models/Language.js";
+import { DifficultySchema } from "@/core/graph/models/Difficulty.js";
 import { z } from "zod/v4";
 import { UserInstructionsSchema } from "@/core/graph/models/UserInstructions.js";
 import { config } from "@/core/graph/index.js";
@@ -28,10 +29,13 @@ export const CaseGenerationRequestSchema = z
     language: LanguageSchema.optional().describe(
       "Language to generate the case in"
     ),
-    anamnesisCategories: z
-      .array(z.string())
-      .optional()
-      .describe("Categories of anamnesis to include in the case"),
+    difficulty: DifficultySchema.optional().describe(
+      "How unclear the diagnosis should be to a student working through the case. " +
+        "'easy' features a clean, classic subset of symptoms with definitive procedure " +
+        "results; 'medium' adds distractor symptoms from other diseases and minor/borderline " +
+        "changes in procedure results; 'hard' presents an atypical case with omitted " +
+        "hallmark symptoms and ambiguous procedure results. Defaults to 'medium'."
+    ),
     llmConfig: LLMConfigSchema.optional().describe(
       "Optional configuration for the LLM used in case generation"
     ),

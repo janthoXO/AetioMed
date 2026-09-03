@@ -2,16 +2,19 @@ import { z } from "zod/v4";
 import { asc, eq } from "drizzle-orm";
 import { chunk, db, syncSource } from "./db.js";
 import { predefinedItem } from "./schema.js";
-import {
-  readDeclaredEnglishKeys,
-  resolvePredefinedList,
-} from "./predefinedList.js";
+import { resolvePredefinedList } from "./predefinedList.js";
 import {
   type AnamnesisCategory,
   AnamnesisCategorySchema,
 } from "../models/Anamnesis.js";
 import { type ForeignLanguage } from "../models/Language.js";
 import { createTranslationStore } from "./translationStore.js";
+import { catalogFile } from "./paths.js";
+
+/** Exposed for the startup catalogue validator (`catalog/startupValidation.ts`). */
+export const ANAMNESIS_TRANSLATIONS_FILE = catalogFile(
+  "anamnesisCategoriesTranslations.yml"
+);
 
 /**
  * Anamnesis category translations.
@@ -19,7 +22,7 @@ import { createTranslationStore } from "./translationStore.js";
  */
 const store = createTranslationStore({
   name: "Anamnesis",
-  yamlFile: "data/anamnesisCategoriesTranslations.yml",
+  yamlFile: ANAMNESIS_TRANSLATIONS_FILE,
 });
 
 /**
@@ -48,7 +51,7 @@ const SOURCE = "anamnesisCategories";
 function syncAnamnesisCategoryDefaults() {
   const synced = syncSource(
     SOURCE,
-    "data/anamnesisCategories.yml",
+    catalogFile("anamnesisCategories.yml"),
     (parsed) => {
       const categoryObject = z
         .object({
@@ -83,7 +86,7 @@ function syncAnamnesisCategoryDefaults() {
 
   if (!synced) {
     console.info(
-      "[Anamnesis] data/anamnesisCategories.yml unchanged, skipped YAML parse."
+      "[Anamnesis] anamnesisCategories.yml unchanged, skipped YAML parse."
     );
   }
 }
@@ -103,10 +106,6 @@ syncAnamnesisCategoryDefaults();
 export const AnamnesisCategoryDefaults: AnamnesisCategory[] | undefined =
   resolvePredefinedList({
     defaults: loadAnamnesisCategoryDefaults(),
-    translationKeys: readDeclaredEnglishKeys(
-      "data/anamnesisCategoriesTranslations.yml"
-    ),
-    label: "anamnesisCategories",
   });
 
 /**

@@ -1,11 +1,11 @@
 import { SymptomSchema, type Symptom } from "../models/Symptom.js";
 import { ICDCodeSchema, type ICDCode } from "../models/Diagnosis.js";
-import path from "path";
 import fs from "fs";
 import z from "zod";
 import { eq } from "drizzle-orm";
 import { db } from "./db.js";
 import { symptomCache } from "./schema.js";
+import { catalogFile } from "./paths.js";
 
 const SymptomMapSchema = z.record(
   ICDCodeSchema,
@@ -15,7 +15,7 @@ const SymptomMapSchema = z.record(
 );
 
 function preloadDiagnosisAnamnesisMap(): z.infer<typeof SymptomMapSchema> {
-  const filepath = path.resolve(process.cwd(), "data/diagnosis_symptoms.json");
+  const filepath = catalogFile("diagnosis_symptoms.json");
 
   const translationsObject = JSON.parse(fs.readFileSync(filepath, "utf-8"));
 

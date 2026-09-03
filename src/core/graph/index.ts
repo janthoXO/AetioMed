@@ -1,6 +1,7 @@
 import type { EventBus } from "../event-bus.js";
 import type { Case } from "./models/Case.js";
 import { ConfigSchema, type Config } from "./config.js";
+import { validateCatalogsOrExit } from "./catalog/startupValidation.js";
 
 declare module "../event-bus.js" {
   interface EventMap {
@@ -44,6 +45,17 @@ export let bus: EventBus;
 
 /** Called once from app.ts before any extension loads. */
 export function initGraph(opts: { bus: EventBus; config: Config }): void {
+  // Validate catalogue translation files here, and not at module scope: the
+  // "labels" catalogue's base key set is `getKnownLabels()`
+  // (utils/nodeWrapper.ts), which `traceNode` populates as the graph modules
+  // are constructed at *import time*. This module re-exports `caseGraph`
+  // below, so by the time this function's *body* runs — which app.ts only
+  // does after importing this module — every graph module has already been
+  // imported and every label registered. Running the validation any earlier
+  // (e.g. at this module's own top level) would validate labels against an
+  // empty set and silently pass.
+  validateCatalogsOrExit();
+
   bus = opts.bus;
   config = opts.config;
 

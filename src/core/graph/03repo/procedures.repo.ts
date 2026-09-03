@@ -2,16 +2,19 @@ import z from "zod";
 import { asc, eq } from "drizzle-orm";
 import { chunk, db, syncSource } from "./db.js";
 import { predefinedItem } from "./schema.js";
-import {
-  readDeclaredEnglishKeys,
-  resolvePredefinedList,
-} from "./predefinedList.js";
+import { resolvePredefinedList } from "./predefinedList.js";
 import {
   type ProcedureName,
   ProcedureNameSchema,
 } from "../models/Procedure.js";
 import { type ForeignLanguage } from "../models/Language.js";
 import { createTranslationStore } from "./translationStore.js";
+import { catalogFile } from "./paths.js";
+
+/** Exposed for the startup catalogue validator (`catalog/startupValidation.ts`). */
+export const PROCEDURES_TRANSLATIONS_FILE = catalogFile(
+  "proceduresTranslations.yml"
+);
 
 /**
  * Procedure name translations from English to other languages.
@@ -19,7 +22,7 @@ import { createTranslationStore } from "./translationStore.js";
  */
 const store = createTranslationStore({
   name: "Procedures",
-  yamlFile: "data/proceduresTranslations.yml",
+  yamlFile: PROCEDURES_TRANSLATIONS_FILE,
 });
 
 /**
@@ -42,7 +45,7 @@ export function saveProcedureNameTranslation(
 const SOURCE = "procedures";
 
 function syncPredefinedProcedures() {
-  const synced = syncSource(SOURCE, "data/procedures.yml", (parsed) => {
+  const synced = syncSource(SOURCE, catalogFile("procedures.yml"), (parsed) => {
     const procedureEntries = z
       .object({
         procedures: ProcedureNameSchema.array(),
@@ -74,9 +77,7 @@ function syncPredefinedProcedures() {
   });
 
   if (!synced) {
-    console.info(
-      "[Procedure] data/procedures.yml unchanged, skipped YAML parse."
-    );
+    console.info("[Procedure] procedures.yml unchanged, skipped YAML parse.");
   }
 }
 
@@ -95,8 +96,6 @@ syncPredefinedProcedures();
 export const PredefinedProcedureNames: ProcedureName[] | undefined =
   resolvePredefinedList({
     defaults: loadPredefinedProcedures(),
-    translationKeys: readDeclaredEnglishKeys("data/proceduresTranslations.yml"),
-    label: "procedures",
   });
 
 /**

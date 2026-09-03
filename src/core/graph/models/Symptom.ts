@@ -6,16 +6,3 @@ export const SymptomSchema = z.object({
 });
 
 export type Symptom = z.infer<typeof SymptomSchema>;
-
-export function SymptomArrayJsonExample(): Symptom[] {
-  return [
-    {
-      name: "Headache",
-      description: "A pain or discomfort in the head or neck region",
-    },
-    {
-      name: "Fatigue",
-      description: "A feeling of tiredness or exhaustion",
-    },
-  ];
-}

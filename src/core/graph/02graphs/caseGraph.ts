@@ -4,14 +4,11 @@ import { getRequestContext, RequestContextSchema } from "../utils/context.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { GenerationFlag } from "../models/GenerationFlags.js";
 import type { UserInstructions } from "../models/UserInstructions.js";
-import {
-  AnamnesisCategoryDefaults,
-  type AnamnesisCategory,
-} from "../models/Anamnesis.js";
 import { caseGenerationGraph } from "./02case-generation/index.js";
 import { CaseGenerationStateSchema } from "./02case-generation/state.js";
 import { caseTranslationFromEnglishGraph } from "./03case-translation-from-english/index.js";
 import { LanguageSchema, type Language } from "../models/Language.js";
+import type { Difficulty } from "../models/Difficulty.js";
 import { GenerationError } from "../errors/AppError.js";
 import { caseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
 import { getKnownLabels } from "../utils/nodeWrapper.js";
@@ -22,7 +19,7 @@ const CaseStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
   generationFlags: true,
-  anamnesisCategories: true,
+  difficulty: true,
   case: true,
 }).extend({
   language: LanguageSchema.default("English"),
@@ -64,14 +61,12 @@ export async function generateCase(
   generationFlags: GenerationFlag[],
   userInstructions?: UserInstructions,
   language?: Language,
-  anamnesisCategories?: AnamnesisCategory[]
+  difficulty?: Difficulty
 ): Promise<Case> {
-  anamnesisCategories = anamnesisCategories ?? AnamnesisCategoryDefaults;
-
   console.log(
     `[CaseGraph] Starting case generation for:\n`,
     JSON.stringify(
-      { diagnosis, userInstructions, generationFlags, anamnesisCategories },
+      { diagnosis, userInstructions, generationFlags, difficulty },
       null,
       2
     )
@@ -102,8 +97,8 @@ export async function generateCase(
       diagnosis,
       generationFlags,
       userInstructions,
-      anamnesisCategories,
       language,
+      difficulty,
     },
     {
       context: {

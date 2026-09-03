@@ -5,6 +5,8 @@ German:
   Retrieving symptoms from UMLS: Symptome werden aus UMLS abgerufen
   Thinking about case structure: Fallstruktur wird überlegt
   Generating case outline: Fallübersicht wird generiert
+  Evaluating case outline: Fallübersicht wird geprüft
+  Regenerating case outline: Fallübersicht wird überarbeitet
   Thinking about patient profile: Patientenprofil wird überlegt
   Generating patient: Patient wird generiert
   Thinking about chief complaint: Hauptbeschwerde wird überlegt
@@ -13,8 +15,6 @@ German:
   Generating anamnesis: Anamnese wird generiert
   Thinking about procedures: Untersuchungen werden überlegt
   Generating procedures: Untersuchungen werden generiert
-  Evaluating case consistency: Fallkonsistenz wird geprüft
-  Refining case for consistency: Fall wird auf Konsistenz verfeinert
   Translating case to target language: Fall wird in die Zielsprache übersetzt
   Translating procedure names: Untersuchungsnamen werden übersetzt
   Translating anamnesis categories: Anamnesekategorien werden übersetzt

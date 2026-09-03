@@ -57,8 +57,8 @@ router.post(
       userInstructions,
       generationFlags,
       language,
+      difficulty,
       llmConfig,
-      anamnesisCategories,
     } = bodyResult.data;
 
     if (!diagnosis) {
@@ -91,7 +91,7 @@ router.post(
             generationFlags,
             userInstructions,
             language,
-            anamnesisCategories
+            difficulty
           ),
         jobId,
         llmConfig

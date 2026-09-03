@@ -1,8 +1,17 @@
 import z from "zod";
 import type { ForeignLanguage } from "../models/Language.js";
 import type { RequestContext } from "../utils/context.js";
-import { buildPrompt, getDeterministicLLM } from "../utils/llm.js";
+import { getDeterministicLLM } from "../utils/llm.js";
+import {
+  buildPrompt,
+  renderSchemaForPrompt,
+  section,
+} from "../utils/prompt.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+
+const responseSchema = z.object({
+  diagnosis: z.string().describe("the diagnosis translated to English"),
+});
 
 export async function generateDiagnosisToEnglish(
   diagnosis: string,
@@ -10,23 +19,26 @@ export async function generateDiagnosisToEnglish(
   context?: RequestContext
 ): Promise<string> {
   const systemPrompt = buildPrompt(
-    `Translate the provided diagnosis from the provided language to English.`,
-    `Return the English diagnosis in a JSON\n{\n  "diagnosis": "diagnosis in English"\n}`
+    section(
+      "Role",
+      `Translate the provided diagnosis from the provided language to English.`
+    ),
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object:
+${renderSchemaForPrompt(responseSchema)}`
+    )
   );
 
   const userPrompt = buildPrompt(
-    `Source language: ${language}`,
-    `Target language: English`,
-    `Diagnosis to translate:\n${diagnosis}`
+    section("Source language", language),
+    section("Target language", "English"),
+    section("Diagnosis to translate", diagnosis)
   );
 
   console.debug(
     `[GenerateDiagnosisToEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
-
-  const responseSchema = z.object({
-    diagnosis: z.string(),
-  });
 
   const response = await getDeterministicLLM(context?.llmConfig)
     .withStructuredOutput(responseSchema)

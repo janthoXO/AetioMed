@@ -1,41 +1,71 @@
 import { z } from "zod/v4";
-import fs from "node:fs";
-import YAML from "yaml";
-import path from "node:path";
+import { asc, eq } from "drizzle-orm";
+import { chunk, db, syncSource } from "../03repo/db.js";
+import { predefinedItem } from "../03repo/schema.js";
 
 export const AnamnesisCategorySchema = z.string();
 
 export type AnamnesisCategory = z.infer<typeof AnamnesisCategorySchema>;
 
-function preloadAnamnesisCategoryDefaults(): AnamnesisCategory[] | undefined {
-  const filepath = path.resolve(process.cwd(), "data/anamnesisCategories.yml");
+const SOURCE = "anamnesisCategories";
 
-  if (!fs.existsSync(filepath)) {
-    console.warn(
-      "[Anamnesis Repo] No anamnesisCategories.yml found, skipping preload."
-    );
-    return undefined;
-  }
+function syncAnamnesisCategoryDefaults() {
+  const synced = syncSource(
+    SOURCE,
+    "data/anamnesisCategories.yml",
+    (parsed) => {
+      const categoryObject = z
+        .object({
+          categories: z.array(AnamnesisCategorySchema),
+        })
+        .safeParse(parsed);
 
-  const categoryObject = z
-    .object({
-      categories: z.array(AnamnesisCategorySchema),
-    })
-    .safeParse(YAML.parse(fs.readFileSync(filepath, "utf-8")));
+      if (!categoryObject.success) {
+        console.error(
+          "[Anamnesis] Failed to load default categories from YAML"
+        );
+        return;
+      }
 
-  if (!categoryObject.success) {
-    console.error("[Anamnesis] Failed to load default categories from YAML");
-    return undefined;
-  }
+      // Plain read-only ordered list (no runtime additions) - full replace.
+      db.delete(predefinedItem).where(eq(predefinedItem.source, SOURCE)).run();
 
-  console.info(
-    `[Anamnesis] Loaded ${categoryObject.data.categories.length} default categories from YAML:`
+      const rows = categoryObject.data.categories.map((value, position) => ({
+        source: SOURCE,
+        position,
+        value,
+      }));
+      for (const batch of chunk(rows)) {
+        db.insert(predefinedItem).values(batch).run();
+      }
+
+      console.info(
+        `[Anamnesis] Synced ${categoryObject.data.categories.length} default categories from YAML`
+      );
+    }
   );
-  return categoryObject.data.categories;
+
+  if (!synced) {
+    console.info(
+      "[Anamnesis] data/anamnesisCategories.yml unchanged, skipped YAML parse."
+    );
+  }
 }
 
+function loadAnamnesisCategoryDefaults(): AnamnesisCategory[] | undefined {
+  const rows = db
+    .select({ value: predefinedItem.value })
+    .from(predefinedItem)
+    .where(eq(predefinedItem.source, SOURCE))
+    .orderBy(asc(predefinedItem.position))
+    .all();
+  return rows.length ? rows.map((row) => row.value) : undefined;
+}
+
+syncAnamnesisCategoryDefaults();
+
 export const AnamnesisCategoryDefaults: AnamnesisCategory[] | undefined =
-  preloadAnamnesisCategoryDefaults();
+  loadAnamnesisCategoryDefaults();
 
 export const AnamnesisFieldSchema = z.object({
   category: AnamnesisCategorySchema.describe("Category of the anamnesis field"),

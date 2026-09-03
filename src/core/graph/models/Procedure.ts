@@ -1,7 +1,7 @@
 import z from "zod";
-import fs from "node:fs";
-import YAML from "yaml";
-import path from "node:path";
+import { asc, eq } from "drizzle-orm";
+import { chunk, db, syncSource } from "../03repo/db.js";
+import { predefinedItem } from "../03repo/schema.js";
 
 export const ProcedureNameSchema = z
   .string()
@@ -9,34 +9,61 @@ export const ProcedureNameSchema = z
 
 export type ProcedureName = z.infer<typeof ProcedureNameSchema>;
 
-function preloadPredefinedProcedures(): ProcedureName[] | undefined {
-  const filepath = path.resolve(process.cwd(), "data/procedures.yml");
+const SOURCE = "procedures";
 
-  if (!fs.existsSync(filepath)) {
-    console.warn("[Procedure Repo] No procedures.yml found, skipping preload.");
-    return undefined;
+function syncPredefinedProcedures() {
+  const synced = syncSource(SOURCE, "data/procedures.yml", (parsed) => {
+    const procedureEntries = z
+      .object({
+        procedures: ProcedureNameSchema.array(),
+      })
+      .safeParse(parsed);
+
+    if (!procedureEntries.success) {
+      console.error(
+        "[Procedure] Failed to load predefined procedures from YAML"
+      );
+      return;
+    }
+
+    // Plain read-only ordered list (no runtime additions) - full replace.
+    db.delete(predefinedItem).where(eq(predefinedItem.source, SOURCE)).run();
+
+    const rows = procedureEntries.data.procedures.map((value, position) => ({
+      source: SOURCE,
+      position,
+      value,
+    }));
+    for (const batch of chunk(rows)) {
+      db.insert(predefinedItem).values(batch).run();
+    }
+
+    console.info(
+      `[Procedure] Synced ${procedureEntries.data.procedures.length} predefined procedures from YAML`
+    );
+  });
+
+  if (!synced) {
+    console.info(
+      "[Procedure] data/procedures.yml unchanged, skipped YAML parse."
+    );
   }
-
-  const procedureEntries = z
-    .object({
-      procedures: ProcedureNameSchema.array(),
-    })
-    .safeParse(YAML.parse(fs.readFileSync(filepath, "utf-8")));
-
-  if (!procedureEntries.success) {
-    console.error("[Procedure] Failed to load predefined procedures from YAML");
-    return undefined;
-  }
-
-  console.info(
-    `[Procedure] Loaded ${procedureEntries.data.procedures.length} predefined procedures from YAML`
-  );
-
-  return procedureEntries.data.procedures;
 }
 
+function loadPredefinedProcedures(): ProcedureName[] | undefined {
+  const rows = db
+    .select({ value: predefinedItem.value })
+    .from(predefinedItem)
+    .where(eq(predefinedItem.source, SOURCE))
+    .orderBy(asc(predefinedItem.position))
+    .all();
+  return rows.length ? rows.map((row) => row.value) : undefined;
+}
+
+syncPredefinedProcedures();
+
 export const PredefinedProcedureNames: ProcedureName[] | undefined =
-  preloadPredefinedProcedures();
+  loadPredefinedProcedures();
 
 export const ProcedureRelevanceSchema = z.enum([
   "obligatory",

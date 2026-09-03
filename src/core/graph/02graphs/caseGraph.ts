@@ -14,6 +14,9 @@ import { caseTranslationFromEnglishGraph } from "./03case-translation-from-engli
 import { LanguageSchema, type Language } from "../models/Language.js";
 import { GenerationError } from "../errors/AppError.js";
 import { caseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
+import { getKnownLabels } from "../utils/nodeWrapper.js";
+import { ensureLabelsTranslated } from "../03repo/labels.repo.js";
+import { translateLabelsFromEnglish } from "../03aigateway/labels.aigateway.js";
 
 const CaseStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
@@ -76,6 +79,24 @@ export async function generateCase(
 
   const context = getRequestContext();
 
+  // Warm the trace-label translation cache once, up front, so trace events can
+  // resolve labels into the target language synchronously during generation.
+  if (language && language !== "English") {
+    try {
+      await ensureLabelsTranslated(
+        getKnownLabels(),
+        language,
+        translateLabelsFromEnglish,
+        context
+      );
+    } catch (err) {
+      console.warn(
+        "[CaseGraph] Failed to warm up trace label translations, falling back to English labels:",
+        err
+      );
+    }
+  }
+
   const result = await caseGraph.invoke(
     {
       diagnosis,
@@ -84,7 +105,14 @@ export async function generateCase(
       anamnesisCategories,
       language,
     },
-    { context: { llmConfig: context?.llmConfig, jobId: context?.jobId } }
+    {
+      context: {
+        llmConfig: context?.llmConfig,
+        jobId: context?.jobId,
+        language,
+      },
+      ...(context?.signal !== undefined ? { signal: context.signal } : {}),
+    }
   );
 
   console.log(

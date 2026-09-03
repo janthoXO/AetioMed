@@ -58,10 +58,12 @@ export async function generateInconsistencies(
       async (attempt: number) => {
         const result = await getDeterministicLLM(context?.llmConfig)
           .withStructuredOutput(InconsistencyArrayJsonFormatZod)
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt),
-          ])
+          .invoke(
+            [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
           .catch((error) => {
             handleLangchainError(error);
           });
@@ -135,15 +137,20 @@ ${inconsistencies.map((i, idx) => `${idx + 1}. [Severity ${i.severity}] ${i.desc
           .withStructuredOutput(
             buildCaseSchema(anamnesisCategories, procedureNameList)
           )
-          .invoke([
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              userPrompt +
-                (previousError
-                  ? `\nPrevious attempt failed with error: ${previousError.message}`
-                  : "")
-            ),
-          ])
+          .invoke(
+            [
+              new SystemMessage(systemPrompt),
+              new HumanMessage(
+                userPrompt +
+                  (previousError
+                    ? `\nPrevious attempt failed with error: ${previousError.message}`
+                    : "")
+              ),
+            ],
+            context?.signal !== undefined
+              ? { signal: context.signal }
+              : undefined
+          )
           .catch((error) => {
             handleLangchainError(error);
           });

@@ -14,6 +14,9 @@ declare module "../event-bus.js" {
       jobId?: string;
       additionalData?: object;
     };
+    "Generation Cancelled": {
+      jobId?: string;
+    };
     "Generation Log": {
       msg: string;
       logLevel: "info" | "warn" | "error";
@@ -60,3 +63,4 @@ export { ConfigSchema };
 // Surface consumed by transport extensions (rest, nats)
 export { caseGraph, generateCase } from "./02graphs/caseGraph.js";
 export { runWithContext } from "./utils/context.js";
+export * as cancelManager from "./utils/cancelManager.js";

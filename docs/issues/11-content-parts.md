@@ -11,11 +11,11 @@ This is a **breaking schema change**. Do it in one release, together with F08 (s
 
 ## Current state
 
-| Field | Today | File |
-|---|---|---|
-| `chiefComplaint` | `z.string()` | `models/ChiefComplaint.ts:3` |
-| `anamnesis[].answer` | `z.string()` | `models/Anamnesis.ts:9` |
-| `procedures[].result` | `z.string()` | `models/Procedure.ts:43` |
+| Field                 | Today        | File                         |
+| --------------------- | ------------ | ---------------------------- |
+| `chiefComplaint`      | `z.string()` | `models/ChiefComplaint.ts:3` |
+| `anamnesis[].answer`  | `z.string()` | `models/Anamnesis.ts:9`      |
+| `procedures[].result` | `z.string()` | `models/Procedure.ts:43`     |
 
 `CaseSchema` (`models/Case.ts:10-15`) currently plays four roles at once — LLM output schema, HTTP response body, Redis payload, and translation input/output. That coupling is what makes content changes expensive.
 
@@ -37,7 +37,7 @@ ChiefComplaint  = ContentPart[]
 
 **`alt` is the render request, retained** — the plain-text input the provider was called with (issue 13), not a description the provider produced. Every part therefore carries text **by construction**: there is no provider obligation to enforce and nothing to validate at startup.
 
-**Semantics: additive parts, all rendered.** The array is an ordered list of parts that together *compose* one field value. It is **not** a list of alternative renditions to choose between. Put this in the schema docstring — it is the kind of ambiguity that produces two clients that disagree.
+**Semantics: additive parts, all rendered.** The array is an ordered list of parts that together _compose_ one field value. It is **not** a list of alternative renditions to choose between. Put this in the schema docstring — it is the kind of ambiguity that produces two clients that disagree.
 
 ```
 result = [
@@ -53,17 +53,20 @@ Two consequences: **order is meaningful** and must survive the modality fan-in, 
 
 For a `text/*` part the rendering is the words themselves, so `value = utf8(alt)`. Model it as a **derived** field. That is what makes the uniform shape safe:
 
-| Property | Consequence |
-|---|---|
-| `textOf()` is `parts.map(p => p.alt).join("\n\n")` | no `isText()` branch in any consumer |
+| Property                                                           | Consequence                                                      |
+| ------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| `textOf()` is `parts.map(p => p.alt).join("\n\n")`                 | no `isText()` branch in any consumer                             |
 | Translation touches `alt` only, then re-derives `value` (issue 12) | the two **cannot** drift, because one is computed from the other |
-| "every part contributes text" is a property of the type | nothing to validate, nothing a provider can get wrong |
+| "every part contributes text" is a property of the type            | nothing to validate, nothing a provider can get wrong            |
 
 Provide a single constructor so `value` is never hand-assembled:
 
 ```ts
-const textPart = (alt: string): ContentPart =>
-  ({ type: "text/plain", alt, value: new TextEncoder().encode(alt) });
+const textPart = (alt: string): ContentPart => ({
+  type: "text/plain",
+  alt,
+  value: new TextEncoder().encode(alt),
+});
 ```
 
 Do **not** make `alt` optional-and-absent for text parts. It avoids storing the string twice but forces every consumer to branch and re-introduces two translation paths; the duplication is only apparent, since one side is computed.
@@ -78,10 +81,10 @@ Field generators keep producing ordinary strings under `z.string()` schemas; tha
 
 `value` serializes to a JSON **string**, encoded by MIME class:
 
-| MIME | Encoding |
-|---|---|
-| `text/*` | UTF-8, verbatim |
-| everything else | base64 |
+| MIME            | Encoding        |
+| --------------- | --------------- |
+| `text/*`        | UTF-8, verbatim |
+| everything else | base64          |
 
 Omit `alt` on the wire for `text/*` parts — it is derivable from `value`, and the deserializer fills it back in. Uniform in the domain, no duplication on the wire.
 
@@ -92,7 +95,7 @@ Put the serializer in **one** place; it is a boundary concern, not a domain conc
 ### 5. `textOf()` — the only path from content to a prompt
 
 ```ts
-const textOf = (parts: ContentPart[]) => parts.map(p => p.alt).join("\n\n");
+const textOf = (parts: ContentPart[]) => parts.map((p) => p.alt).join("\n\n");
 ```
 
 Consumers: the plan prompt, the plan judge, `matchDiagnosis`, logs and traces, and above all the presentation slice handed to the **blinded solver** (`03procedure/index.ts:66` `presentationOf`, and `previousProcedures` at `:238`), which re-reads it on every one of up to six iterations.

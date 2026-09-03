@@ -31,23 +31,25 @@ What frontier models could obsolete is only the free-text LLM translation call �
 
 ### `RequestContext.language` reaches six places inside the graph
 
-| Call site | Uses |
-| --- | --- |
-| `03aigateway/case.aigateway.ts` | `getEffectiveCategoryList(context?.language)` |
-| `03aigateway/anamnesis.aigateway.ts` | `getEffectiveCategoryList(context?.language)` |
+| Call site                             | Uses                                                                          |
+| ------------------------------------- | ----------------------------------------------------------------------------- |
+| `03aigateway/case.aigateway.ts`       | `getEffectiveCategoryList(context?.language)`                                 |
+| `03aigateway/anamnesis.aigateway.ts`  | `getEffectiveCategoryList(context?.language)`                                 |
 | `03aigateway/procedures.aigateway.ts` | `getEffectiveProcedureList`, `getGroupedProcedures`, `getProcedureCategories` |
-| `02graphs/.../03procedure/index.ts` | `useSmallModelSplit(runtime?.context?.language)` |
+| `02graphs/.../03procedure/index.ts`   | `useSmallModelSplit(runtime?.context?.language)`                              |
 
 **All of these are currently no-ops.** `data/procedures.yml` has 152 entries and `data/anamnesisCategories.yml` has 7, so `resolvePredefinedList` returns a defaults list, `PredefinedProcedureNames` / `AnamnesisCategoryDefaults` are defined, and `getEffective*List` returns the English list on its first line without ever reading `language`:
 
 ```ts
-if (PredefinedProcedureNames !== undefined) return PredefinedProcedureNames;  // ← always taken
-if (language && language !== "English") { /* Rule 4 — unreachable */ }
+if (PredefinedProcedureNames !== undefined) return PredefinedProcedureNames; // ← always taken
+if (language && language !== "English") {
+  /* Rule 4 — unreachable */
+}
 ```
 
 ### Rule 4 encodes a design we don't want
 
-`predefinedList.ts` Rule 4 ("no defaults, only translation keys → the effective list for a language is whatever has a translation") makes *translations define the vocabulary*. Our intent is the opposite: **the catalog file defines the vocabulary; the translation file is a partial cache seed.**
+`predefinedList.ts` Rule 4 ("no defaults, only translation keys → the effective list for a language is whatever has a translation") makes _translations define the vocabulary_. Our intent is the opposite: **the catalog file defines the vocabulary; the translation file is a partial cache seed.**
 
 Rule 4 exists only to guarantee the output translator can resolve every generated term. Once controlled-vocabulary translation is a deterministic dictionary lookup backed by a startup completeness check, that guarantee moves to boot time and the runtime filter is unnecessary.
 
@@ -84,28 +86,28 @@ Make the contract explicit and enforce it at startup:
 
 Startup validation, stated as an asymmetry because it reads backwards otherwise:
 
-| Condition | Action |
-| --- | --- |
-| Translation key **not in** the catalog | **Panic** (typo or stale entry) |
+| Condition                               | Action                                               |
+| --------------------------------------- | ---------------------------------------------------- |
+| Translation key **not in** the catalog  | **Panic** (typo or stale entry)                      |
 | Catalog entry **missing** a translation | Allowed — filled by LLM on first use, then persisted |
 
 `resolvePredefinedList` already implements the first row (Rule 3, `process.exit(1)`). **Delete Rule 4** and drop the `language` parameter from `getEffectiveProcedureList`, `getEffectiveCategoryList`, `getProcedureCategories`, and `useSmallModelSplit`.
 
-**Add translation provenance.** The `translation` table is `(domain, lang, english, translated)`. Add `source: 'curated' | 'generated'`. Without it, an LLM-invented German name for a procedure is cached permanently and is indistinguishable from a reviewed one — "deterministic" would mean *stable*, not *correct*. With it, we can list unreviewed translations and promote them into YAML.
+**Add translation provenance.** The `translation` table is `(domain, lang, english, translated)`. Add `source: 'curated' | 'generated'`. Without it, an LLM-invented German name for a procedure is cached permanently and is indistinguishable from a reviewed one — "deterministic" would mean _stable_, not _correct_. With it, we can list unreviewed translations and promote them into YAML.
 
 ### 3. Field-wise translation
 
 Replace the whole-case `translateCase` call with a per-field split, partitioned by **field ownership** so the two passes touch disjoint fields:
 
-| Field | Direction | Mechanism |
-| --- | --- | --- |
-| `diagnosis` (free text only) | in | Dictionary → LLM fill |
-| `userInstructions` | in | LLM |
-| `anamnesis[].category` | out | Dictionary → LLM fill |
-| `procedures[].name` | out | Dictionary → LLM fill |
-| `chiefComplaint` | out | LLM |
-| `anamnesis[].answer` | out | LLM |
-| `procedures[].result` | out | LLM |
+| Field                        | Direction | Mechanism             |
+| ---------------------------- | --------- | --------------------- |
+| `diagnosis` (free text only) | in        | Dictionary → LLM fill |
+| `userInstructions`           | in        | LLM                   |
+| `anamnesis[].category`       | out       | Dictionary → LLM fill |
+| `procedures[].name`          | out       | Dictionary → LLM fill |
+| `chiefComplaint`             | out       | LLM                   |
+| `anamnesis[].answer`         | out       | LLM                   |
+| `procedures[].result`        | out       | LLM                   |
 
 Disjoint field ownership means ordering no longer matters, which removes the current bug where `translate_values` overwrites the controlled-vocabulary translations. It also shrinks the LLM payload — we stop shipping 152-character compound procedure names through it.
 
@@ -129,11 +131,11 @@ This is simpler than warming the cache at the API layer, and it removes one of t
 
 **Nothing above resolves what identity a procedure or category has in the response, and that decision constrains the rest.**
 
-| Option | Response shape | Consequence |
-| --- | --- | --- |
-| A | English identifiers only | Caller localizes from its own bundle. Cleanest, requires caller cooperation. |
-| B | Localized display strings | Current behavior. Caller cannot tell `"Bluttest"` and `"Blood Test"` are the same procedure without an ambiguous reverse lookup. |
-| C | `id` (English) + `label` (localized) | Schema change; identity and presentation both explicit. |
+| Option | Response shape                       | Consequence                                                                                                                      |
+| ------ | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| A      | English identifiers only             | Caller localizes from its own bundle. Cleanest, requires caller cooperation.                                                     |
+| B      | Localized display strings            | Current behavior. Caller cannot tell `"Bluttest"` and `"Blood Test"` are the same procedure without an ambiguous reverse lookup. |
+| C      | `id` (English) + `label` (localized) | Schema change; identity and presentation both explicit.                                                                          |
 
 Recommend **C**. It is the only option where removing translation later breaks nothing: `id` still comes from the approved English list via the grammar constraint, `label` still comes from the dictionary, and dropping the free-text LLM pass affects only prose. Under B, a natively-multilingual model would emit German procedure names and break name matching in the calling software.
 

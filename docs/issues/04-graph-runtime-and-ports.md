@@ -12,7 +12,7 @@ export let config: Config;
 export let bus: EventBus;
 ```
 
-assigned later in `initGraph()`. **17 modules import them.** Any import-time code path sees `undefined` — `extensions/api/CaseGenerationRequest.ts:47-53` reads `config.llm` inside three `.refine()` callbacks, so the *public request schema* works only by luck of load order.
+assigned later in `initGraph()`. **17 modules import them.** Any import-time code path sees `undefined` — `extensions/api/CaseGenerationRequest.ts:47-53` reads `config.llm` inside three `.refine()` callbacks, so the _public request schema_ works only by luck of load order.
 
 This is also why there is no way to construct the graph with a fake LLM: `utils/llm.ts:19` imports `config` from module scope, so `getLLM()` has no injection seam. Every guarantee in issues 06, 07, 09 and 14 is untestable until this changes.
 
@@ -31,15 +31,15 @@ This is also why there is no way to construct the graph with a fake LLM: `utils/
 ```ts
 // src/core/graph/runtime.ts
 export interface GraphRuntime {
-  llm: LlmPort;                      // roles land here in issue 06
+  llm: LlmPort; // roles land here in issue 06
   catalogs: {
-    procedures: ProcedureCatalog;    // issue 01
+    procedures: ProcedureCatalog; // issue 01
     anamnesis: AnamnesisCatalog;
     labels: LabelCatalog;
     diagnosis: DiagnosisCatalog;
   };
-  log: Logger;                       // info/warn/error, stamps the timestamp
-  clock: () => Date;                 // so tests can freeze time
+  log: Logger; // info/warn/error, stamps the timestamp
+  clock: () => Date; // so tests can freeze time
 }
 ```
 
@@ -51,7 +51,7 @@ export interface GraphRuntime {
 
 Ports are captured by **closure at assembly time**, not passed through every call. Where a node genuinely needs per-request access, use the existing `AsyncLocalStorage` in `utils/context.ts` — **not** LangGraph's runtime context.
 
-**Why not the LangGraph context:** `RequestContextSchema` is a Zod schema that LangGraph validates, so putting port *functions* in it means loosening it to `z.custom`. Carrying ports in ALS avoids that. Note the trade-off for later: ALS-carried ports are invisible to checkpoints, so anything resumable (F09) must rebuild them.
+**Why not the LangGraph context:** `RequestContextSchema` is a Zod schema that LangGraph validates, so putting port _functions_ in it means loosening it to `z.custom`. Carrying ports in ALS avoids that. Note the trade-off for later: ALS-carried ports are invisible to checkpoints, so anything resumable (F09) must rebuild them.
 
 ### 4. Collapse the logging ceremony
 

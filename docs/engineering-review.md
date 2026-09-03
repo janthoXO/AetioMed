@@ -11,7 +11,7 @@ This document merges the two earlier reviews (`Review.md`, pre-refactor code qua
 The architecture is well matched to the problem, and the current design is a clear improvement over a single mega-prompt or a free-form agent loop — especially on small local models. The strongest ideas in the codebase:
 
 - **Outline-as-blueprint.** A single source of truth fanned out to field generators is the correct decomposition. Each LLM call gets one job, a small output, and shared context.
-- **The blinded procedure solver.** Generating the workup via self-play — a solver that doesn't know the answer, an oracle that does — yields procedures that are *evidence-justified*, and implicitly proves the case is solvable.
+- **The blinded procedure solver.** Generating the workup via self-play — a solver that doesn't know the answer, an oracle that does — yields procedures that are _evidence-justified_, and implicitly proves the case is solvable.
 - **Constraint by construction.** Already-ordered procedures are removed from the grammar, the expand branch is deleted from the schema at the cap, and relevance is structurally unavailable to the blinded solver. These are enforced in types and data shape rather than in prompt text — the right instinct throughout.
 - **Generate → judge → revise loops with iteration caps**, and the Tool/gateway/repo layering with Zod-validated boundaries.
 
@@ -71,7 +71,7 @@ All 15 `retry(...)` invocations pass `baseDelayMs = 0`, so `retry.ts`'s exponent
 
 ### 2.8 Zod v3/v4 split is a live hazard
 
-`models/Case.ts`, `models/Anamnesis.ts`, `03repo/anamnesis.repo.ts`, and `extensions/api/CaseGenerationRequest.ts` import `zod/v4`; their siblings import `zod`. The tell is the workaround comment in `02graphs/02case-generation/03procedure/tools.ts`: *"Inlined to avoid importing AnamnesisSchema (zod/v4) into a zod v3 file."* That inlined `PresentationSchema` will silently drift from the real `Anamnesis` shape the moment the anamnesis model changes.
+`models/Case.ts`, `models/Anamnesis.ts`, `03repo/anamnesis.repo.ts`, and `extensions/api/CaseGenerationRequest.ts` import `zod/v4`; their siblings import `zod`. The tell is the workaround comment in `02graphs/02case-generation/03procedure/tools.ts`: _"Inlined to avoid importing AnamnesisSchema (zod/v4) into a zod v3 file."_ That inlined `PresentationSchema` will silently drift from the real `Anamnesis` shape the moment the anamnesis model changes.
 
 **Fix:** unify on one import path across `models/` and delete the duplicate schema.
 
@@ -81,20 +81,20 @@ All 15 `retry(...)` invocations pass `baseDelayMs = 0`, so `retry.ts`'s exponent
 
 ### 3.1 The overall shape is right
 
-`translate-in → symptoms → outline → evaluate-loop → parallel field fan-out → blinded procedure solver → translate-out` is a sensible pipeline. Two properties are worth calling out as *correct*:
+`translate-in → symptoms → outline → evaluate-loop → parallel field fan-out → blinded procedure solver → translate-out` is a sensible pipeline. Two properties are worth calling out as _correct_:
 
 - The blinded solver never sees the outline or diagnosis, while `result_step` and `bridge` do. The information asymmetry is enforced through function signatures and data shape, not convention.
-- Difficulty is decided once, in the outline's *Workup / Procedure Results Strategy* section, and downstream stages *follow* it rather than re-deciding it.
+- Difficulty is decided once, in the outline's _Workup / Procedure Results Strategy_ section, and downstream stages _follow_ it rather than re-deciding it.
 
 ### 3.2 The solver's success signal is thrown away
 
 When the blinded solver diagnoses correctly on iteration 1–2, that is direct empirical evidence the case is too easy; when it exhausts all 6 iterations and needs the bridge, the case may be too hard or the presentation incoherent. Today this signal only decides control flow.
 
-**Suggestion:** record `solverIterationsUsed` / `bridged: boolean` on the result, even as metadata. It's a free ground-truth difficulty measurement — arguably more trustworthy than the obviousness judge, since it measures *actual solvability* rather than a model's opinion. Longer term it feeds the eval harness (§6.4).
+**Suggestion:** record `solverIterationsUsed` / `bridged: boolean` on the result, even as metadata. It's a free ground-truth difficulty measurement — arguably more trustworthy than the obviousness judge, since it measures _actual solvability_ rather than a model's opinion. Longer term it feeds the eval harness (§6.4).
 
 ### 3.3 Wrong-guess handling leaks oracle knowledge
 
-On a wrong commit the name goes into `ruledOutDiagnoses` and the solver is told "do NOT propose any of these again." Clinically, ruling out a diagnosis requires a discriminating test — here the solver is simply *told* by the oracle. The generated procedure chain then contains an invisible reasoning step the student never sees.
+On a wrong commit the name goes into `ruledOutDiagnoses` and the solver is told "do NOT propose any of these again." Clinically, ruling out a diagnosis requires a discriminating test — here the solver is simply _told_ by the oracle. The generated procedure chain then contains an invisible reasoning step the student never sees.
 
 **Suggestion:** on a wrong guess, have the non-blinded side generate the discriminating procedure whose result rules that diagnosis out, append it to the case, and let the solver continue from that evidence. Wrong guesses become pedagogically valuable red-herring workup — exactly what a `hard` case wants.
 
@@ -103,7 +103,7 @@ On a wrong commit the name goes into `ruledOutDiagnoses` and the solver is told 
 `caseGenerationGraph` always runs the presentation phase, and `buildFieldGenerationSends` produces zero `Send`s when none of patient/chiefComplaint/anamnesis is flagged. With `generationFlags: ["procedures"]`:
 
 - You still pay for outline generation plus up to two evaluation rounds, and the fan-out then produces nothing.
-- `presentationOf(state.case)` is `{}`, so the blinded solver — whose entire prompt is *"reason purely from the patient's presentation"* — reasons from nothing.
+- `presentationOf(state.case)` is `{}`, so the blinded solver — whose entire prompt is _"reason purely from the patient's presentation"_ — reasons from nothing.
 
 **Fix:** either declare the presentation fields prerequisites of `procedures` and validate at the API boundary, or inject the outline's presentation summary into the solver when the case has no generated fields. The first is simpler and probably matches the product reality.
 
@@ -111,9 +111,9 @@ On a wrong commit the name goes into `ruledOutDiagnoses` and the solver is told 
 
 In `03case-translation-from-english/index.ts` the targeted translators (anamnesis categories, procedure names — cache-backed, controlled vocabulary) run **before** `translate_values`, which re-translates the whole case via free-form LLM and returns a full `Case` that replaces `case.anamnesis` and `case.procedures` wholesale through the shallow reducer merge.
 
-The prompt says *"translate only the VALUES, do not translate keys"* — but categories and procedure names **are** values (the `category:` and `name:` fields), so the LLM re-translates them and its output wins over the controlled vocabulary. The controlled pass currently only *biases* the input; it guarantees nothing.
+The prompt says _"translate only the VALUES, do not translate keys"_ — but categories and procedure names **are** values (the `category:` and `name:` fields), so the LLM re-translates them and its output wins over the controlled vocabulary. The controlled pass currently only _biases_ the input; it guarantees nothing.
 
-**Fix:** invert the order — run `translate_values` first, then apply the cache-backed translators as overrides — or strip categories and procedure names from the case handed to `translate_values` and re-attach afterward. *(Both earlier reviews flagged this; both refactors preserved the ordering.)*
+**Fix:** invert the order — run `translate_values` first, then apply the cache-backed translators as overrides — or strip categories and procedure names from the case handed to `translate_values` and re-attach afterward. _(Both earlier reviews flagged this; both refactors preserved the ordering.)_
 
 ### 3.6 Smaller structural notes
 
@@ -132,7 +132,7 @@ The prompt says *"translate only the VALUES, do not translate keys"* — but cat
 
 - One narrow task per call; structured output via `withStructuredOutput`, grammar-constrained on Ollama — the single most effective reliability tool for small models.
 - The **grammar/prompt split**: the full literal-union constraint goes to the provider while a name-agnostic schema goes into the prompt, with `renderSchemaForPrompt` collapsing unions over 8 members. Prompts stay short and stable; the constraint stays exact.
-- Retry with a *summarized* previous error fed back into the prompt.
+- Retry with a _summarized_ previous error fed back into the prompt.
 - Restricted vocabularies enforced in both prompt and schema.
 - Keyed-translation format with missing-key detection and targeted retry.
 - Temperature split by task type (0.1 deterministic / 0.4 balanced / 0.7 creative).
@@ -150,7 +150,7 @@ This "deterministic validators → LLM judge" layering is the standard recipe fo
 
 ### 4.3 Prompt-section ordering vs. the prefix cache
 
-Data now lives in the user message and the system prompt is stable across calls of the same type — the important half of this is done. What remains is ordering *within* the user prompt.
+Data now lives in the user message and the system prompt is stable across calls of the same type — the important half of this is done. What remains is ordering _within_ the user prompt.
 
 The blinded solver is called up to 6× per case. Its user prompt runs presentation → candidates → instructions → previous procedures → budget. The candidate list shrinks every iteration (ordered procedures are filtered out), which invalidates the KV cache for everything after it — including the otherwise-static instructions.
 
@@ -208,7 +208,7 @@ Related: several gateways import `bus` from `@/core/graph/index.js` — a layer-
 
 `Generation Completed`, `Generation Failure`, and `Generation Cancelled` are emitted by `cases.router.ts` and `cases.handler.ts` — not by the graph. Any future caller that invokes `generateCase` without going through a transport gets none of them, which means `persistency` silently doesn't save that case and `tracing` never sees a terminal event.
 
-This is defensible (the transport is the only layer that knows whether the *whole request* succeeded), but it is load-bearing and undocumented. Either document it as the contract or move terminal emission into `runWithContext`, which already wraps the full lifecycle and has the `jobId`.
+This is defensible (the transport is the only layer that knows whether the _whole request_ succeeded), but it is load-bearing and undocumented. Either document it as the contract or move terminal emission into `runWithContext`, which already wraps the full lifecycle and has the `jobId`.
 
 ### 5.5 Extension framework
 
@@ -243,7 +243,7 @@ Nothing records call duration or `usage_metadata`. The shared `callStructuredLLM
 
 ### 6.4 The evaluation gap
 
-There is excellent *tracing* — bus events, `traceNode`, per-node labels, localized labels — and no *evaluation*. For a pipeline whose entire purpose is the quality of generated artifacts, the missing piece is a small harness: ~20 diagnoses × difficulties, run through the pipeline, scored by
+There is excellent _tracing_ — bus events, `traceNode`, per-node labels, localized labels — and no _evaluation_. For a pipeline whose entire purpose is the quality of generated artifacts, the missing piece is a small harness: ~20 diagnoses × difficulties, run through the pipeline, scored by
 
 1. code checks (name leak, schema completeness, biometric plausibility),
 2. the solver-iterations metric from §3.2, and
@@ -261,34 +261,34 @@ This is what turns prompt tweaking from vibes into engineering. It matters espec
 
 Recorded so these aren't re-raised. All verified fixed in the current code.
 
-| Earlier finding | Status |
-| --- | --- |
-| Single-field vs. multi-field pipeline split (quality gap + ~360 lines duplicated) | Removed; one pipeline |
-| UMLS symptoms discarded after lookup | Now unioned with LLM additions, plus a TTL cache that skips the LLM on a hit |
-| Symptom retrieval split across two graph nodes instead of one cache-aside step | Single `symptoms_resolve` node |
-| Whole-case regeneration in the inconsistency fixer | Inconsistency phase removed entirely |
-| Inconsistency judge blind to difficulty/outline, undoing intentional distractors | Judging moved onto the outline, with explicit "distractors are intentional" instruction |
-| No validation of the outline before parallel field generation | Combined obviousness + consistency evaluate ⇄ revise loop, pre-fan-out |
-| `outlineRegenerate` didn't pass the rejected outline | `previousOutline` + `feedback` now threaded through |
-| `relevance` demanded from the blinded solver | Moved to the non-blinded `result_step` |
-| `procedureGraph` was a no-op stub | Fully implemented 3-node solver |
-| Top-level graph recompiled on every request | Compiled once at module load |
-| State mutation inside nodes; passthrough `iteration_check` nodes; manual counter+back-edge loops | Replaced by `Command`-based loops |
-| `Send` payloads carrying full untyped parent state | Field fan-out slices to `{diagnosis, outline, userInstructions}` |
-| `userInstructions` leaking as `[string, unknown][]` into prompts | `renderUserInstructions` / `filterUserInstructions` |
-| Prompt style inconsistent (raw templates, `{role, content}` objects) | All gateways use `buildPrompt` + `SystemMessage`/`HumanMessage` |
-| `buildPrompt` joined sections with a single `\n` | Joins with `\n\n`; `section()` adds `##` headers |
-| `"Schema:"` followed by a concrete example instance | `renderSchemaForPrompt` derives a real pseudo-schema from Zod |
-| Raw one-line `JSON.stringify` as prompt payload | `renderForPrompt` emits readable YAML |
-| Enormous raw Zod error dumps fed into retry prompts | `summarizeValidationError` |
-| Full procedure list re-sent every solver iteration | Category grouping, `LLM_SMALL` scoping, and ordered-procedure filtering |
-| `generateBlindedProcedureStep` not passing `signal` to `.invoke()` | Signal threaded through all gateways |
-| Prompt-example helpers and hand-typed pseudo-schemas living in `models/` | Models export only schema and type |
-| Translation cache-aside duplicated across three services | Generic `createTranslationStore` + `translate.helper.ts` |
-| `z.literal(stringArray)` not matching elements | Valid in Zod v4 |
-| Publisher not setting `Nats-Msg-Id` | Set, plus a stream-level `duplicate_window` |
-| Imports from the top-level `langchain` convenience package | All from `@langchain/core/*` |
-| `cases.service.ts` pass-through layer | Deleted; routers invoke the graph directly |
+| Earlier finding                                                                                  | Status                                                                                  |
+| ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| Single-field vs. multi-field pipeline split (quality gap + ~360 lines duplicated)                | Removed; one pipeline                                                                   |
+| UMLS symptoms discarded after lookup                                                             | Now unioned with LLM additions, plus a TTL cache that skips the LLM on a hit            |
+| Symptom retrieval split across two graph nodes instead of one cache-aside step                   | Single `symptoms_resolve` node                                                          |
+| Whole-case regeneration in the inconsistency fixer                                               | Inconsistency phase removed entirely                                                    |
+| Inconsistency judge blind to difficulty/outline, undoing intentional distractors                 | Judging moved onto the outline, with explicit "distractors are intentional" instruction |
+| No validation of the outline before parallel field generation                                    | Combined obviousness + consistency evaluate ⇄ revise loop, pre-fan-out                  |
+| `outlineRegenerate` didn't pass the rejected outline                                             | `previousOutline` + `feedback` now threaded through                                     |
+| `relevance` demanded from the blinded solver                                                     | Moved to the non-blinded `result_step`                                                  |
+| `procedureGraph` was a no-op stub                                                                | Fully implemented 3-node solver                                                         |
+| Top-level graph recompiled on every request                                                      | Compiled once at module load                                                            |
+| State mutation inside nodes; passthrough `iteration_check` nodes; manual counter+back-edge loops | Replaced by `Command`-based loops                                                       |
+| `Send` payloads carrying full untyped parent state                                               | Field fan-out slices to `{diagnosis, outline, userInstructions}`                        |
+| `userInstructions` leaking as `[string, unknown][]` into prompts                                 | `renderUserInstructions` / `filterUserInstructions`                                     |
+| Prompt style inconsistent (raw templates, `{role, content}` objects)                             | All gateways use `buildPrompt` + `SystemMessage`/`HumanMessage`                         |
+| `buildPrompt` joined sections with a single `\n`                                                 | Joins with `\n\n`; `section()` adds `##` headers                                        |
+| `"Schema:"` followed by a concrete example instance                                              | `renderSchemaForPrompt` derives a real pseudo-schema from Zod                           |
+| Raw one-line `JSON.stringify` as prompt payload                                                  | `renderForPrompt` emits readable YAML                                                   |
+| Enormous raw Zod error dumps fed into retry prompts                                              | `summarizeValidationError`                                                              |
+| Full procedure list re-sent every solver iteration                                               | Category grouping, `LLM_SMALL` scoping, and ordered-procedure filtering                 |
+| `generateBlindedProcedureStep` not passing `signal` to `.invoke()`                               | Signal threaded through all gateways                                                    |
+| Prompt-example helpers and hand-typed pseudo-schemas living in `models/`                         | Models export only schema and type                                                      |
+| Translation cache-aside duplicated across three services                                         | Generic `createTranslationStore` + `translate.helper.ts`                                |
+| `z.literal(stringArray)` not matching elements                                                   | Valid in Zod v4                                                                         |
+| Publisher not setting `Nats-Msg-Id`                                                              | Set, plus a stream-level `duplicate_window`                                             |
+| Imports from the top-level `langchain` convenience package                                       | All from `@langchain/core/*`                                                            |
+| `cases.service.ts` pass-through layer                                                            | Deleted; routers invoke the graph directly                                              |
 
 ---
 

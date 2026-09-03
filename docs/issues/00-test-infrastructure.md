@@ -5,7 +5,7 @@
 
 ## Why
 
-There is no test runner in the repository — no `*.test.ts`, no vitest or jest in `package.json`. Several guarantees in the target architecture are *concurrency* or *absence* properties that cannot be verified by running one generation by hand:
+There is no test runner in the repository — no `*.test.ts`, no vitest or jest in `package.json`. Several guarantees in the target architecture are _concurrency_ or _absence_ properties that cannot be verified by running one generation by hand:
 
 - "an empty medical-basis registry costs zero LLM calls" (needs a call counter)
 - "two concurrent requests converge on one translation" (issue 03)

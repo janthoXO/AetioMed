@@ -15,14 +15,14 @@ Concatenation is usually the better clinical answer — if a UMLS lookup and a P
 
 The concatenation design is deliberately the degenerate case of this one, so the upgrade is additive:
 
-| Tier | Condition | Cost |
-|---|---|---|
-| 0 | Registry empty → node not compiled in | zero |
-| 1 | Providers declare a deterministic `appliesTo(query)` predicate (ICD prefix or chapter, difficulty, required request fields). Filter in code | zero LLM |
-| 2 | Several applicable → **concatenate** (today's behaviour) | zero LLM |
-| 3 | Only when a provider declares itself `exclusive` — expensive, rate-limited, or contradictory with a sibling → LLM tiebreak | 1 call, rare |
+| Tier | Condition                                                                                                                                   | Cost         |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------- | ------------ |
+| 0    | Registry empty → node not compiled in                                                                                                       | zero         |
+| 1    | Providers declare a deterministic `appliesTo(query)` predicate (ICD prefix or chapter, difficulty, required request fields). Filter in code | zero LLM     |
+| 2    | Several applicable → **concatenate** (today's behaviour)                                                                                    | zero LLM     |
+| 3    | Only when a provider declares itself `exclusive` — expensive, rate-limited, or contradictory with a sibling → LLM tiebreak                  | 1 call, rare |
 
-The important property: an LLM decision is entered only when more than one provider is *applicable* **and** at least one is exclusive — not merely because two are installed.
+The important property: an LLM decision is entered only when more than one provider is _applicable_ **and** at least one is exclusive — not merely because two are installed.
 
 ## Triggers for picking this up
 

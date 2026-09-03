@@ -17,11 +17,11 @@ This is the largest single change on the roadmap and has its own document. Read 
 
 Three things are being done up front so this remains additive rather than a rewrite:
 
-| Preserved by | What |
-|---|---|
-| Issue 05 | `CaseGenerationService` returns a job shape, so `status: "awaiting_review"` is a new value, not a breaking change |
-| Issue 08 | `planGraph` is an independently invocable subgraph, so a gate can be inserted without touching generation |
-| *this issue* | The `ReviewDecision` type below, which should be added even before HITL ships |
+| Preserved by | What                                                                                                              |
+| ------------ | ----------------------------------------------------------------------------------------------------------------- |
+| Issue 05     | `CaseGenerationService` returns a job shape, so `status: "awaiting_review"` is a new value, not a breaking change |
+| Issue 08     | `planGraph` is an independently invocable subgraph, so a gate can be inserted without touching generation         |
+| _this issue_ | The `ReviewDecision` type below, which should be added even before HITL ships                                     |
 
 ```ts
 type ReviewDecision =

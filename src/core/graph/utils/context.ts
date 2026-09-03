@@ -7,7 +7,7 @@ import { setupTracing } from "@/extensions/tracing/traceManager.js";
 import z from "zod";
 
 export const RequestContextSchema = z.object({
-  traceId: z.string().optional(),
+  jobId: z.string().optional(),
   llmConfig: LLMConfigSchema.optional(),
 });
 
@@ -17,17 +17,17 @@ export const requestContext = new AsyncLocalStorage<RequestContext>();
 
 export function runWithContext<T>(
   fn: () => T,
-  traceId?: string,
+  jobId?: string,
   llmConfig?: LLMConfig
 ): T {
   let cleanup: (() => void) | undefined;
 
-  if (traceId) {
-    ({ cleanup } = setupTracing(traceId));
+  if (jobId) {
+    ({ cleanup } = setupTracing(jobId));
   }
 
   try {
-    const result = requestContext.run({ traceId, llmConfig }, fn);
+    const result = requestContext.run({ jobId, llmConfig }, fn);
     if (result instanceof Promise) {
       return result.finally(() => cleanup?.()) as unknown as T;
     }

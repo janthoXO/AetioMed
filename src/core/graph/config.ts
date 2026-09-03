@@ -15,6 +15,13 @@ export const ConfigSchema = z
     LLM_API_KEY: z.string().optional(),
     LLM_URL: z.url().optional(),
     LLM_TEMPERATURE: z.coerce.number().min(0).max(1).default(0.7),
+    /**
+     * When set, small-model-friendly prompting adjustments are enabled
+     */
+    LLM_SMALL: z
+      .string()
+      .optional()
+      .transform((v) => v === "true" || v === "1"),
     ALLOWED_LLMS: z
       .string()
       .regex(allowedLlmsRegex)

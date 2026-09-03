@@ -35,8 +35,8 @@ router.get("/traces", async (_req, res) => {
   }
 });
 
-router.get("/traces/:traceId", async (req, res) => {
-  const { traceId } = req.params;
+router.get("/traces/:jobId", async (req, res) => {
+  const { jobId } = req.params;
   const categories = req.query.categories
     ? (req.query.categories as string).split(",").map((c) => c.trim())
     : [];
@@ -53,7 +53,7 @@ router.get("/traces/:traceId", async (req, res) => {
   }
 
   try {
-    const key = `traces:${traceId}`;
+    const key = `traces:${jobId}`;
     let traces = (await redis.lRange(key, 0, -1)).map((t) => JSON.parse(t));
 
     if (categories.length > 0) {
@@ -62,7 +62,7 @@ router.get("/traces/:traceId", async (req, res) => {
 
     res.status(200).json(traces);
   } catch (err) {
-    console.error(`[Redis] Failed to fetch traces for ${traceId}`, err);
+    console.error(`[Redis] Failed to fetch traces for ${jobId}`, err);
     res.status(500).json({
       error: {
         code: "INTERNAL_SERVER_ERROR",

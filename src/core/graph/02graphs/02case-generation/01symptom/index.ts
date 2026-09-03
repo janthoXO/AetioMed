@@ -9,7 +9,7 @@ import {
 } from "@/core/graph/utils/context.js";
 import type { Runtime } from "@langchain/langgraph";
 import { symptomTools } from "./tools.js";
-import { wrapNode } from "@/core/graph/utils/nodeWrapper.js";
+import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 const SymptomsGraphStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
@@ -65,8 +65,22 @@ export const symptomsGraph = new StateGraph(
   SymptomsGraphStateSchema,
   RequestContextSchema
 )
-  .addNode("symptoms_umls", wrapNode("symptoms_umls", retrieveSymptomsUMLS))
-  .addNode("symptoms_generate", wrapNode("symptoms_generate", generateSymptoms))
+  .addNode(
+    "symptoms_umls",
+    traceNode(
+      "symptoms_umls",
+      retrieveSymptomsUMLS,
+      "Retrieving symptoms from UMLS"
+    )
+  )
+  .addNode(
+    "symptoms_generate",
+    traceNode(
+      "symptoms_generate",
+      generateSymptoms,
+      "Generating relevant symptoms"
+    )
+  )
 
   .addEdge(START, "symptoms_umls")
   .addEdge("symptoms_umls", "symptoms_generate")

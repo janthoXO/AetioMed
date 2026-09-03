@@ -11,6 +11,8 @@ const SUBJECT = "cases.generate";
 const CONSUMER_NAME = "cases-generate-consumer";
 
 async function consumeCaseGenerateMessage(msg: JsMsg) {
+  const jobId = msg.headers?.get("Job-Id") ?? crypto.randomUUID();
+
   try {
     console.debug(`[NATS] Received message on ${SUBJECT}:`, msg.json());
     const data = CaseGenerationRequestSchema.parse(msg.json());
@@ -28,8 +30,6 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
       }
     }
 
-    const traceId = msg.headers?.get("Trace-Id") ?? crypto.randomUUID();
-
     console.log(`[NATS] Generating case for ${diagnosis}`);
     const generatedCase = await runWithContext(
       () =>
@@ -42,17 +42,17 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
           userInstructions,
           language
         ),
-      traceId,
+      jobId,
       llmConfig
     );
 
-    bus.emit("Generation Completed", { case: generatedCase });
+    bus.emit("Generation Completed", { case: generatedCase, jobId });
     await publishCaseGenerationResponse(msg.headers, generatedCase);
     msg.ack();
   } catch (err) {
     console.error(`[NATS] Error processing message:`, err);
     if (err instanceof Error) {
-      bus.emit("Generation Failure", { error: err });
+      bus.emit("Generation Failure", { error: err, jobId });
     }
 
     let errorResponse;

@@ -68,7 +68,7 @@ router.post(
       }
     }
 
-    const traceId = (req.query.traceId as string) ?? crypto.randomUUID();
+    const jobId = (req.query.jobId as string) ?? crypto.randomUUID();
 
     try {
       const caseData = await runWithContext(
@@ -79,15 +79,15 @@ router.post(
             userInstructions,
             language
           ),
-        traceId,
+        jobId,
         llmConfig
       );
 
-      bus.emit("Generation Completed", { case: caseData });
+      bus.emit("Generation Completed", { case: caseData, jobId });
 
       const response = CaseGenerationResponseSchema.parse({
         ...caseData,
-        traceId,
+        jobId,
       });
 
       /* #swagger.responses[200] = {
@@ -104,7 +104,7 @@ router.post(
     } catch (error) {
       console.error(error);
       if (error instanceof Error) {
-        bus.emit("Generation Failure", { error });
+        bus.emit("Generation Failure", { error, jobId });
       }
       if (error instanceof AppError) {
         res.status(error.statusCode).json({

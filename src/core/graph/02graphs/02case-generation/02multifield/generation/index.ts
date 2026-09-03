@@ -16,7 +16,7 @@ import { passthrough } from "@/core/graph/02graphs/graph.utils.js";
 import type { PickNested } from "@/core/graph/utils/pickNested.js";
 import { fieldGenerationBlueprintTools } from "./tools.js";
 import { generationTools } from "../../tools.js";
-import { wrapNode } from "@/core/graph/utils/nodeWrapper.js";
+import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 const GenerationGraphStateSchema = CaseGenerationStateSchema.extend({
   cot: z.string(),
@@ -271,27 +271,53 @@ export const fieldGenerationGraph = new StateGraph(
   GenerationGraphStateSchema,
   RequestContextSchema
 )
-  .addNode("case_cot_generate", wrapNode("case_cot_generate", generateCaseCoT))
+  .addNode(
+    "case_cot_generate",
+    traceNode(
+      "case_cot_generate",
+      generateCaseCoT,
+      "Thinking about case structure"
+    )
+  )
   .addNode(
     "case_outline_generate",
-    wrapNode("case_outline_generate", generateCaseOutline)
+    traceNode(
+      "case_outline_generate",
+      generateCaseOutline,
+      "Generating case outline"
+    )
   )
-  .addNode("patient_generate", wrapNode("patient_generate", generatePatient))
+  .addNode(
+    "patient_generate",
+    traceNode("patient_generate", generatePatient, "Generating patient")
+  )
   .addNode(
     "chief_complaint_generate",
-    wrapNode("chief_complaint_generate", generateChiefComplaint)
+    traceNode(
+      "chief_complaint_generate",
+      generateChiefComplaint,
+      "Generating chief complaint"
+    )
   )
   .addNode(
     "anamnesis_generate",
-    wrapNode("anamnesis_generate", generateAnamnesis)
+    traceNode("anamnesis_generate", generateAnamnesis, "Generating anamnesis")
   )
   .addNode(
     "case_fan_in",
-    wrapNode("case_fan_in", passthrough<GenerationGraphState>)
+    traceNode(
+      "case_fan_in",
+      passthrough<GenerationGraphState>,
+      "Assembling case fields"
+    )
   )
   .addNode(
     "procedures_generate",
-    wrapNode("procedures_generate", generateProcedures)
+    traceNode(
+      "procedures_generate",
+      generateProcedures,
+      "Generating procedures"
+    )
   )
 
   .addEdge(START, "case_cot_generate")

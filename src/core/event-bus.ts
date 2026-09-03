@@ -1,4 +1,6 @@
 export type Handler<T> = (payload: T) => void | Promise<void>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type AnyHandler = (event: string, payload: any) => void | Promise<void>;
 
 // Extensions augment this to register their event shapes
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -7,6 +9,7 @@ export interface EventMap {}
 export class EventBus {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private readonly handlers = new Map<string, Set<Handler<any>>>();
+  private readonly anyHandlers = new Set<AnyHandler>();
 
   on<K extends keyof EventMap>(
     event: K,
@@ -18,6 +21,11 @@ export class EventBus {
     if (!this.handlers.has(event)) this.handlers.set(event, new Set());
     this.handlers.get(event)!.add(handler);
     return () => this.handlers.get(event)?.delete(handler); // returns unsubscribe
+  }
+
+  onAny(handler: AnyHandler): () => void {
+    this.anyHandlers.add(handler);
+    return () => this.anyHandlers.delete(handler);
   }
 
   off<K extends keyof EventMap>(event: K, handler: Handler<EventMap[K]>): void;
@@ -34,8 +42,9 @@ export class EventBus {
   async emit(event: string, payload?: unknown): Promise<void>;
   async emit(event: string, payload?: unknown): Promise<void> {
     const set = this.handlers.get(event);
-    if (set) {
-      await Promise.all([...set].map((fn) => fn(payload)));
-    }
+    await Promise.all([
+      ...(set ? [...set].map((fn) => fn(payload)) : []),
+      ...[...this.anyHandlers].map((fn) => fn(event, payload)),
+    ]);
   }
 }

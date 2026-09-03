@@ -8,9 +8,9 @@ import tracingPersistencyRouter from "./router.js";
 
 declare module "../../core/event-bus.js" {
   interface EventMap {
-    "Trace Completed": { traceId: string };
+    "Trace Completed": { jobId: string };
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    "Trace Persistence Request": { traceId: string; traceEvent: any };
+    "Trace Persistence Request": { jobId: string; traceEvent: any };
   }
 }
 
@@ -24,14 +24,14 @@ export const extension = defineExtension({
       "[tracingPersistency] Initializing Tracing Persistency extension..."
     );
 
-    bus.on("Trace Persistence Request", ({ traceId, traceEvent }) => {
+    bus.on("Trace Persistence Request", ({ jobId, traceEvent }) => {
       getRedisClient()
         .then((redis) => {
           if (!redis) {
             return;
           }
 
-          const key = `traces:${traceId}`;
+          const key = `traces:${jobId}`;
           const serializedTrace = JSON.stringify(traceEvent);
           redis
             .rPush(key, serializedTrace)

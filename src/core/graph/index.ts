@@ -4,19 +4,33 @@ import { ConfigSchema, type Config } from "./config.js";
 
 declare module "../event-bus.js" {
   interface EventMap {
-    "Generation Completed": { case: Case; additionalData?: object };
-    "Generation Failure": { error: Error; additionalData?: object };
+    "Generation Completed": {
+      case: Case;
+      jobId?: string;
+      additionalData?: object;
+    };
+    "Generation Failure": {
+      error: Error;
+      jobId?: string;
+      additionalData?: object;
+    };
     "Generation Log": {
       msg: string;
       logLevel: "info" | "warn" | "error";
       timestamp: string;
       additionalData?: object;
     };
-    "Node Started": { node: string; traceId?: string; timestamp: string };
+    "Node Started": {
+      node: string;
+      label?: string;
+      jobId?: string;
+      timestamp: string;
+    };
     "Node Completed": {
       node: string;
+      label?: string;
       result: unknown;
-      traceId?: string;
+      jobId?: string;
       timestamp: string;
     };
   }

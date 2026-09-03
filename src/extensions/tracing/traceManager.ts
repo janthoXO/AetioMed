@@ -1,34 +1,32 @@
 import { EventEmitter } from "node:events";
-import z from "zod";
 
 export class TraceBus extends EventEmitter {}
 
-export const TraceEventSchema = z.object({
-  message: z.string(),
-  data: z.any().optional(),
-  timestamp: z.string().default(() => new Date().toISOString()),
-  category: z.enum(["info", "error", "warn"]).default("info"),
-});
-
-export type TraceEvent = z.infer<typeof TraceEventSchema>;
+export interface TraceEvent {
+  jobId: string;
+  type: string;
+  timestamp: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  payload: any;
+}
 
 const activeBuses = new Map<string, TraceBus>();
 
-export function getTraceBus(traceId: string): TraceBus | undefined {
-  return activeBuses.get(traceId);
+export function getTraceBus(jobId: string): TraceBus | undefined {
+  return activeBuses.get(jobId);
 }
 
-export function setupTracing(traceId: string): {
+export function setupTracing(jobId: string): {
   cleanup: () => void;
-  bus: TraceBus; // return the bus directly
+  bus: TraceBus;
 } {
   const bus = new TraceBus();
-  activeBuses.set(traceId, bus);
+  activeBuses.set(jobId, bus);
 
   const cleanup = () => {
     // Wait a bit before cleaning up to ensure all events are sent
     setTimeout(() => {
-      activeBuses.delete(traceId);
+      activeBuses.delete(jobId);
       bus.removeAllListeners();
     }, 10000);
   };

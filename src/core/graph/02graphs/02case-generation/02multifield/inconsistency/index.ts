@@ -15,7 +15,7 @@ import {
   type RequestContext,
 } from "@/core/graph/utils/context.js";
 import { inconsistencyTools } from "./tools.js";
-import { wrapNode } from "@/core/graph/utils/nodeWrapper.js";
+import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 const InconsistencyGraphStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
@@ -122,12 +122,20 @@ export const inconsistencyGraph = new StateGraph(
   InconsistencyGraphStateSchema,
   RequestContextSchema
 )
-  .addNode("evaluate", wrapNode("evaluate", evaluate), {
-    ends: ["case_refine", END],
-  })
-  .addNode("case_refine", wrapNode("case_refine", caseRefine), {
-    ends: ["evaluate"],
-  })
+  .addNode(
+    "evaluate",
+    traceNode("evaluate", evaluate, "Evaluating case consistency"),
+    {
+      ends: ["case_refine", END],
+    }
+  )
+  .addNode(
+    "case_refine",
+    traceNode("case_refine", caseRefine, "Refining case for consistency"),
+    {
+      ends: ["evaluate"],
+    }
+  )
 
   .addEdge(START, "evaluate")
   .compile();

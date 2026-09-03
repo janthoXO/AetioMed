@@ -4,7 +4,7 @@ import { ErrorResponseSchema } from "./ErrorResponse.js";
 
 export const CaseGenerationResponseSchema = z.union([
   CaseSchema.extend({
-    traceId: z.string().optional(),
+    jobId: z.string().optional(),
   }),
   ErrorResponseSchema,
 ]);

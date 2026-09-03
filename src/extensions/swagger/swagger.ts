@@ -1,8 +1,8 @@
-import { CaseGenerationRequestSchema } from "@/extensions/core/01dtos/CaseGenerationRequest.js";
+import { CaseGenerationRequestSchema } from "@/extensions/api/CaseGenerationRequest.js";
 import swaggerAutogen from "swagger-autogen";
 import { createSchema } from "zod-openapi";
 import * as fs from "node:fs/promises";
-import { CaseGenerationResponseSchema } from "@/extensions/core/01dtos/CaseGenerationResponse.js";
+import { CaseGenerationResponseSchema } from "@/extensions/api/CaseGenerationResponse.js";
 
 const { schemas } = Object.entries({
   CaseGenerationRequest: CaseGenerationRequestSchema,

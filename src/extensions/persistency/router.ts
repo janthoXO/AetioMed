@@ -1,5 +1,5 @@
 import express from "express";
-import { getRedisClient } from "@/extensions/core/03repo/redis.js";
+import { getRedisClient } from "@/extensions/persistency/redis.js";
 
 const router = express.Router();
 

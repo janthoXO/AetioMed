@@ -7,7 +7,7 @@ import {
 import { bus } from "@/core/graph/index.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { Symptom } from "../models/Symptom.js";
-import { getEffectiveCategoryList } from "../03repo/anamnesis.repo.js";
+import { anamnesisCatalog } from "../catalog/index.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
@@ -37,7 +37,7 @@ export async function generateCaseOutline(
   context?: RequestContext
 ): Promise<string> {
   const effectiveCategories = generationFlags.includes("anamnesis")
-    ? getEffectiveCategoryList(context?.language)
+    ? anamnesisCatalog.list()
     : undefined;
 
   const systemPrompt = buildPrompt(

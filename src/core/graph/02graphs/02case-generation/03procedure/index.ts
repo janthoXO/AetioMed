@@ -24,7 +24,7 @@ import type {
   Presentation,
   BlindedProcedureStepResult,
 } from "@/core/graph/03aigateway/procedures.aigateway.js";
-import { getProcedureCategories } from "@/core/graph/03repo/procedures.repo.js";
+import { procedureCatalog } from "@/core/graph/catalog/index.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -114,8 +114,8 @@ async function invokeLogged<TInput, TOutput>(
  * when `LLM_SMALL` is set AND the approved procedure list actually has real
  * categories — a flat (uncategorized) list has nothing to filter on.
  */
-function useSmallModelSplit(language: RequestContext["language"]): boolean {
-  return config.LLM_SMALL && getProcedureCategories(language).length > 0;
+function useSmallModelSplit(): boolean {
+  return config.LLM_SMALL && procedureCatalog.categories().length > 0;
 }
 
 // ─── Node 1: blinded_step ─────────────────────────────────────────────────────
@@ -175,7 +175,7 @@ async function resolveBlindedStepViaCategories(
     return { action: "procedure", procedures: undefined };
   }
 
-  const allCategories = getProcedureCategories(context?.language);
+  const allCategories = procedureCatalog.categories();
   const scope = new Set(categoryStep.categories);
 
   for (let expansions = 0; ; expansions++) {
@@ -243,7 +243,7 @@ async function blindedStep(
     state.userInstructions
   );
 
-  const step = useSmallModelSplit(runtime?.context?.language)
+  const step = useSmallModelSplit()
     ? await resolveBlindedStepViaCategories(
         presentation,
         previousProcedures,
@@ -417,7 +417,7 @@ async function resolveBridgeViaCategories(
     "Error in bridge category step"
   );
 
-  const allCategories = getProcedureCategories(context?.language);
+  const allCategories = procedureCatalog.categories();
   const selectedCategories = categories.length ? categories : allCategories;
 
   bus.emit("Generation Log", {
@@ -482,7 +482,7 @@ async function bridge(
     state.userInstructions
   );
 
-  const bridgeProcedures = useSmallModelSplit(runtime?.context?.language)
+  const bridgeProcedures = useSmallModelSplit()
     ? await resolveBridgeViaCategories(
         presentation,
         state.diagnosis,

@@ -13,18 +13,18 @@ This issue makes the catalog own its own concept, behind a port.
 
 **The catalog logic to move**, all in `03aigateway/procedures.aigateway.ts`:
 
-| Line | Function |
-|---|---|
-| 132 | `resolveProcedurePickMode` |
-| 150 | `excludeOrderedFromGrouped` |
-| 175 | `excludeOrderedFromMode` |
-| 198 | `modeHasCandidates` |
-| 214 | `scopeGroupedProcedures` |
-| 237 | `renderCategoryMenu` |
-| 259 | `procedureCandidatesSection` |
-| 282 | `procedurePickGrammarSchema` |
-| 316 | `procedurePickPromptSchema` |
-| 338 | `assembleProcedurePick` |
+| Line | Function                     |
+| ---- | ---------------------------- |
+| 132  | `resolveProcedurePickMode`   |
+| 150  | `excludeOrderedFromGrouped`  |
+| 175  | `excludeOrderedFromMode`     |
+| 198  | `modeHasCandidates`          |
+| 214  | `scopeGroupedProcedures`     |
+| 237  | `renderCategoryMenu`         |
+| 259  | `procedureCandidatesSection` |
+| 282  | `procedurePickGrammarSchema` |
+| 316  | `procedurePickPromptSchema`  |
+| 338  | `assembleProcedurePick`      |
 
 **The repo side:** `03repo/procedures.repo.ts` (`getEffectiveProcedureList`, `getGroupedProcedures`, `getProcedureCategories`, `parseProcedureName`, `UNCATEGORIZED_CATEGORY`, `PredefinedProcedureNames`), `03repo/anamnesis.repo.ts` (`getEffectiveCategoryList`), `03repo/predefinedList.ts` (`resolvePredefinedList`).
 
@@ -34,7 +34,7 @@ This issue makes the catalog own its own concept, behind a port.
 
 ### 1. Delete Rule 4
 
-`03repo/predefinedList.ts:78-113` implements four rules. **Rule 4** — "translation keys only ⇒ the effective list for a language is whatever has a translation" — inverts the intended contract: it lets *translations define the vocabulary*. Delete it.
+`03repo/predefinedList.ts:78-113` implements four rules. **Rule 4** — "translation keys only ⇒ the effective list for a language is whatever has a translation" — inverts the intended contract: it lets _translations define the vocabulary_. Delete it.
 
 Consequence: `getEffectiveProcedureList(language)`, `getEffectiveCategoryList(language)` and `getProcedureCategories(language)` lose their `language` parameter entirely. This is the change that makes the generation core language-independent (design §5.1), so do not skip it.
 
@@ -76,7 +76,7 @@ export interface AnamnesisCatalog {
 }
 ```
 
-`AnamnesisCatalog` is deliberately *not* a generic `Catalog<T>`: procedures carry a taxonomy and categories do not, and forcing one interface over both produces an interface as complex as the two implementations. Share the *adapter*, not the port.
+`AnamnesisCatalog` is deliberately _not_ a generic `Catalog<T>`: procedures carry a taxonomy and categories do not, and forcing one interface over both produces an interface as complex as the two implementations. Share the _adapter_, not the port.
 
 ### 3. Move the logic
 

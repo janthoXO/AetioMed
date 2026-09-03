@@ -15,13 +15,13 @@ A full generation is roughly **20+ LLM calls**, and on a local model that is min
 
 Verified against `@langchain/langgraph` 1.3.0:
 
-| Fact | Consequence |
-|---|---|
-| `interrupt()` **throws without a checkpointer** | There is no checkpointer-free pause; this issue is a hard prerequisite for F01 |
+| Fact                                                                          | Consequence                                                                                                                                               |
+| ----------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `interrupt()` **throws without a checkpointer**                               | There is no checkpointer-free pause; this issue is a hard prerequisite for F01                                                                            |
 | **No checkpointer package is installed** — only in-memory `MemorySaver` ships | Add `@langchain/langgraph-checkpoint-sqlite`, or write ~200 lines of `BaseCheckpointSaver` against the `node:sqlite` connection already in `03repo/db.ts` |
-| `checkpointer: true` means "inherit from parent" and throws on a root graph | Checkpointing the root suffices — subgraphs inherit |
-| Any invoke with a checkpointer requires `configurable.thread_id` | Use the existing `jobId` |
-| Per-invoke `durability: "exit" \| "async" \| "sync"` | Pay for synchronous writes only where it matters |
+| `checkpointer: true` means "inherit from parent" and throws on a root graph   | Checkpointing the root suffices — subgraphs inherit                                                                                                       |
+| Any invoke with a checkpointer requires `configurable.thread_id`              | Use the existing `jobId`                                                                                                                                  |
+| Per-invoke `durability: "exit" \| "async" \| "sync"`                          | Pay for synchronous writes only where it matters                                                                                                          |
 
 ## Design sketch
 

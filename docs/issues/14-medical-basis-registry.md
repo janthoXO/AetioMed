@@ -29,11 +29,15 @@ interface MedicalBasisProvider {
   fetch(query: BasisQuery, signal?: AbortSignal): Promise<BasisFragment[]>;
 }
 
-type BasisQuery = { diagnosis: Diagnosis; difficulty: Difficulty; userInstructions?: string };
+type BasisQuery = {
+  diagnosis: Diagnosis;
+  difficulty: Difficulty;
+  userInstructions?: string;
+};
 
 type BasisFragment = {
   sourceId: string;
-  label: string;          // section heading in the prompt
+  label: string; // section heading in the prompt
   content: string;
   retrievedAt: string;
   licence?: string;
@@ -67,7 +71,7 @@ If the port cannot express it cleanly, **change the port**, not the provider.
 
 ### 7. Keep the prompt shape stable
 
-The plan prompt must have the **same shape** whether or not providers exist — providers strictly *append* a labelled section. Otherwise there are two prompt variants and no way to know which one a quality measurement came from.
+The plan prompt must have the **same shape** whether or not providers exist — providers strictly _append_ a labelled section. Otherwise there are two prompt variants and no way to know which one a quality measurement came from.
 
 ## Acceptance criteria
 
@@ -82,4 +86,4 @@ The plan prompt must have the **same shape** whether or not providers exist — 
 
 ## Future work
 
-A selection step can be added **in front of** the concatenation without disturbing anything downstream — providers gain a deterministic `appliesTo(query)` predicate, and only when more than one provider is *applicable* does an LLM tiebreak run. Tracked in `F03-medical-basis-decision-node.md`. The concatenation design is deliberately the degenerate case of that one.
+A selection step can be added **in front of** the concatenation without disturbing anything downstream — providers gain a deterministic `appliesTo(query)` predicate, and only when more than one provider is _applicable_ does an LLM tiebreak run. Tracked in `F03-medical-basis-decision-node.md`. The concatenation design is deliberately the degenerate case of that one.

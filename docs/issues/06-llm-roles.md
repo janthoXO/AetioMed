@@ -24,18 +24,18 @@ Each role falls back **per field**, not per role: an unset `LLM_JUDGE_TEMPERATUR
 
 ### 2. Role assignment
 
-| Role | Call sites |
-|---|---|
-| `generator` | `case.aigateway.ts` (plan), `patient/chiefComplaint/anamnesis.aigateway.ts`, `procedures.aigateway.ts` blinded step, result step, bridge |
-| `judge` | `outlineEvaluation.aigateway.ts`, `matchDiagnosis` in `procedures.aigateway.ts:1567` |
-| `translator` | `diagnosis.aigateway.ts`, `translate.helper.ts`, catalog LLM fill (issue 03) |
+| Role         | Call sites                                                                                                                               |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `generator`  | `case.aigateway.ts` (plan), `patient/chiefComplaint/anamnesis.aigateway.ts`, `procedures.aigateway.ts` blinded step, result step, bridge |
+| `judge`      | `outlineEvaluation.aigateway.ts`, `matchDiagnosis` in `procedures.aigateway.ts:1567`                                                     |
+| `translator` | `diagnosis.aigateway.ts`, `translate.helper.ts`, catalog LLM fill (issue 03)                                                             |
 
 ### 3. Port shape
 
 Role sits on the `LlmPort` from issue 04, alongside the existing temperature split (`getLLM` / `getDeterministicLLM` / `getCreativeLLM`). Both dimensions belong on the port:
 
 ```ts
-runtime.llm.for({ role: "judge", temperature: "deterministic" })
+runtime.llm.for({ role: "judge", temperature: "deterministic" });
 ```
 
 Do not add a fourth global factory function per role — that is 12 combinations of copy-paste.

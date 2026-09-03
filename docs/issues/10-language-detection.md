@@ -5,7 +5,7 @@
 
 ## Why
 
-A caller should be able to omit `language` and have the request resolve sensibly. Detection belongs to the **communication layer**, not the graph: its output *selects the ports*, and binding happens before invoke — so a detection node inside the graph could not inform the thing its answer is for. It is also request normalisation, sitting naturally beside the ICD→name resolution already in the transport.
+A caller should be able to omit `language` and have the request resolve sensibly. Detection belongs to the **communication layer**, not the graph: its output _selects the ports_, and binding happens before invoke — so a detection node inside the graph could not inform the thing its answer is for. It is also request normalisation, sitting naturally beside the ICD→name resolution already in the transport.
 
 ## Task
 
@@ -25,7 +25,7 @@ A caller should be able to omit `language` and have the request resolve sensibly
 Two decisive reasons:
 
 - When a request supplies only `icd`, the diagnosis name is resolved from **our own English catalogue** — detecting on it is circular.
-- Diagnosis names are 2–3 words and frequently Latin. *"Diabetes mellitus"* is byte-identical in English, German and Spanish.
+- Diagnosis names are 2–3 words and frequently Latin. _"Diabetes mellitus"_ is byte-identical in English, German and Spanish.
 
 `userInstructions` is the only request field with enough free text. If it is absent or shorter than a minimum length (~30 characters is a reasonable floor for n-gram detection), skip straight to step 4.
 

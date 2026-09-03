@@ -24,11 +24,11 @@ Once the graph is assembled from ports (issue 04) with a role-based LLM port (is
    - biometric plausibility: age/height/weight ranges.
    - schema completeness: every flagged field present and non-empty.
    - procedure names all drawn from the catalogue.
-2. **Solver metrics** — free ground truth already computed by the pipeline: `solverIterationsUsed` and `bridged: boolean`. A case solved on iteration 1 is too easy; one that exhausts six and needs the bridge may be incoherent. This measures *actual solvability* rather than a model's opinion of it, so it is more trustworthy than the obviousness judge. Record it on the result even before the harness exists.
+2. **Solver metrics** — free ground truth already computed by the pipeline: `solverIterationsUsed` and `bridged: boolean`. A case solved on iteration 1 is too easy; one that exhausts six and needs the bridge may be incoherent. This measures _actual solvability_ rather than a model's opinion of it, so it is more trustworthy than the obviousness judge. Record it on the result even before the harness exists.
 3. **Model grader** — a strong cloud model scoring clinical coherence and difficulty fit. Optional, and the only layer that costs money.
 
 **Output:** a per-run report and a diff against the previous run, so a prompt change shows as a delta.
 
 ## Notes
 
-Layer 1 is worth building even without the rest — it is deterministic, free, and catches the worst failures. `engineering-review.md` §4.2 argues these checks should also run *inline* ahead of the LLM judges, not only in the harness.
+Layer 1 is worth building even without the rest — it is deterministic, free, and catches the worst failures. `engineering-review.md` §4.2 argues these checks should also run _inline_ ahead of the LLM judges, not only in the harness.

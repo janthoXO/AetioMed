@@ -34,7 +34,7 @@ Send payload → generate_content ──→ decide_modality ──┬─ provide
 ```
 
 1. **`generate_content` always runs.** It produces the field's canonical text — exactly what the field generators do today, under an ordinary `z.string()` schema. It is **not** a modality provider and is **not** registry-gated.
-2. **`decide_modality` plans a composition:** an ordered list of render requests, each `{ modality, alt }`, where `alt` is plain text describing what that part should convey — *"an image of a broken right leg"*.
+2. **`decide_modality` plans a composition:** an ordered list of render requests, each `{ modality, alt }`, where `alt` is plain text describing what that part should convey — _"an image of a broken right leg"_.
 3. **Each provider is called with its `alt`** and returns bytes. A provider renders text into a modality; it never describes its own output.
 4. **Each resulting part retains the `alt` it was rendered from** (issue 11).
 
@@ -43,7 +43,7 @@ Send payload → generate_content ──→ decide_modality ──┬─ provide
 ```ts
 interface ModalityProvider {
   readonly id: string;
-  readonly produces: string[];                       // MIME types it can emit
+  readonly produces: string[]; // MIME types it can emit
   render(alt: string, ctx: RenderContext): Promise<Uint8Array>;
 }
 ```
@@ -54,15 +54,15 @@ No LLM assumption anywhere in it. The **text provider** is the degenerate case �
 
 Entries declare which **MIME types** they produce. **Text is a normal registry entry**, not an implicit floor:
 
-| Registry size | Behaviour |
-|---|---|
-| 0 | Misconfiguration — **reject at startup** |
-| 1 | That provider runs directly. **No decide node is compiled in** |
-| >1 | A decide node is compiled in and plans the composition |
+| Registry size | Behaviour                                                      |
+| ------------- | -------------------------------------------------------------- |
+| 0             | Misconfiguration — **reject at startup**                       |
+| 1             | That provider runs directly. **No decide node is compiled in** |
+| >1            | A decide node is compiled in and plans the composition         |
 
 The decide node's presence is a **compile-time** decision driven by registry size, matching the absent-flag-⇒-absent-node rule of issue 08.
 
-**An image-only registry is safe.** This was a live concern in an earlier revision and is resolved by construction: `generate_content` still runs, every part still carries `alt`, and `textOf()` still returns prose — so the plan judge, `matchDiagnosis` and above all the **blinded solver** (which re-reads `previousProcedures` on every one of up to six iterations) all keep working. The registry controls only *which renderings are emitted*, never *whether text exists*. There is no provider obligation to validate.
+**An image-only registry is safe.** This was a live concern in an earlier revision and is resolved by construction: `generate_content` still runs, every part still carries `alt`, and `textOf()` still returns prose — so the plan judge, `matchDiagnosis` and above all the **blinded solver** (which re-reads `previousProcedures` on every one of up to six iterations) all keep working. The registry controls only _which renderings are emitted_, never _whether text exists_. There is no provider obligation to validate.
 
 ### 5. Fan-in ordering
 

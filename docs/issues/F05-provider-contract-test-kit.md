@@ -24,12 +24,12 @@ testMedicalBasisProvider(() => new MyProvider(config));
 
 **Obligations to assert, per port:**
 
-| Port | Obligations |
-|---|---|
-| `MedicalBasisProvider` | returns `[]` rather than throwing when it has nothing; honours `AbortSignal` within a bound; sets `sourceId`/`retrievedAt` on every fragment; is idempotent for the same query; never returns unfenced instruction-shaped text |
-| Modality provider | `render(alt, ctx)` returns a non-empty `Uint8Array` for any non-empty `alt`; the result's MIME type is one it declared in `produces`; is deterministic for the same `alt` where the underlying model allows; honours `AbortSignal`; never inspects or mutates `alt` |
-| `ProcedureCatalog` | `exclude()` is pure and returns a new set; `grammar()` rejects excluded names; `categories()` is stable across calls |
-| `LlmPort` | respects role and temperature; propagates `AbortSignal`; surfaces provider errors as typed errors |
+| Port                   | Obligations                                                                                                                                                                                                                                                         |
+| ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MedicalBasisProvider` | returns `[]` rather than throwing when it has nothing; honours `AbortSignal` within a bound; sets `sourceId`/`retrievedAt` on every fragment; is idempotent for the same query; never returns unfenced instruction-shaped text                                      |
+| Modality provider      | `render(alt, ctx)` returns a non-empty `Uint8Array` for any non-empty `alt`; the result's MIME type is one it declared in `produces`; is deterministic for the same `alt` where the underlying model allows; honours `AbortSignal`; never inspects or mutates `alt` |
+| `ProcedureCatalog`     | `exclude()` is pure and returns a new set; `grammar()` rejects excluded names; `categories()` is stable across calls                                                                                                                                                |
+| `LlmPort`              | respects role and temperature; propagates `AbortSignal`; surfaces provider errors as typed errors                                                                                                                                                                   |
 
 ## Notes
 

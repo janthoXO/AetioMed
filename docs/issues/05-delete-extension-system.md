@@ -5,20 +5,20 @@
 
 ## Why
 
-The extension framework's own dependency mechanism is unused, extensions reach each other by importing mutable bindings, one extension has never worked, and route mounting is order-dependent. After deleting the extensions that are going away, what remains *is* the communication layer — constructed explicitly in ~30 lines.
+The extension framework's own dependency mechanism is unused, extensions reach each other by importing mutable bindings, one extension has never worked, and route mounting is order-dependent. After deleting the extensions that are going away, what remains _is_ the communication layer — constructed explicitly in ~30 lines.
 
 ## Current state
 
-| Evidence | Location |
-|---|---|
-| `ctx.dep()` has **zero call sites** | whole repo |
-| `apiRouter` imported directly by four extensions | `persistency/index.ts:3`, `swagger/index.ts:3`, `tracingPersistency/index.ts:3`, `tracingRest/index.ts:3` |
-| Four extensions mount at `use("/", …)`; `/api/cases` GET resolves to `persistencyRouter` only because `casesRouter` defines no `GET /` | mounting order |
-| `tracingPersistency` subscribes to `Trace Persistence Request`, which **nothing emits** | `tracingPersistency/index.ts:27` |
-| `Trace Completed` is declared, never emitted, never subscribed | `tracingPersistency/index.ts:11` |
-| `api` has an empty `setup()` — a schema module wearing the extension interface | `api/index.ts` |
-| NATS handler **drops `difficulty`** | `nats/cases.handler.ts:38` destructures 5 fields; `:59` calls `generateCase(..., language)` |
-| NATS handler is **not awaited** in the consume loop | `nats/cases.handler.ts:181` |
+| Evidence                                                                                                                               | Location                                                                                                  |
+| -------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `ctx.dep()` has **zero call sites**                                                                                                    | whole repo                                                                                                |
+| `apiRouter` imported directly by four extensions                                                                                       | `persistency/index.ts:3`, `swagger/index.ts:3`, `tracingPersistency/index.ts:3`, `tracingRest/index.ts:3` |
+| Four extensions mount at `use("/", …)`; `/api/cases` GET resolves to `persistencyRouter` only because `casesRouter` defines no `GET /` | mounting order                                                                                            |
+| `tracingPersistency` subscribes to `Trace Persistence Request`, which **nothing emits**                                                | `tracingPersistency/index.ts:27`                                                                          |
+| `Trace Completed` is declared, never emitted, never subscribed                                                                         | `tracingPersistency/index.ts:11`                                                                          |
+| `api` has an empty `setup()` — a schema module wearing the extension interface                                                         | `api/index.ts`                                                                                            |
+| NATS handler **drops `difficulty`**                                                                                                    | `nats/cases.handler.ts:38` destructures 5 fields; `:59` calls `generateCase(..., language)`               |
+| NATS handler is **not awaited** in the consume loop                                                                                    | `nats/cases.handler.ts:181`                                                                               |
 
 ## Task
 
@@ -79,7 +79,7 @@ Core emits **English labels**; the transport looks up a translation and falls ba
 
 ### 7. Also delete
 
-`RequestContext.language` (`utils/context.ts:14` — never populated); the inlined `PresentationSchema` and its comment (`03procedure/tools.ts:26-33` — the `zod`/`zod/v4` split is a subpath distinction *within* v4, not a version mismatch, so the workaround addresses a non-problem); `getRequiredRequestContext`; `decodeObject`, `parseStructuredResponse`, `parseStructuredResponseAgent`, `getSearchTool` in `utils/llm.ts`.
+`RequestContext.language` (`utils/context.ts:14` — never populated); the inlined `PresentationSchema` and its comment (`03procedure/tools.ts:26-33` — the `zod`/`zod/v4` split is a subpath distinction _within_ v4, not a version mismatch, so the workaround addresses a non-problem); `getRequiredRequestContext`; `decodeObject`, `parseStructuredResponse`, `parseStructuredResponseAgent`, `getSearchTool` in `utils/llm.ts`.
 
 ## Behaviour change — release notes
 

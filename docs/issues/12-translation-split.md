@@ -16,11 +16,13 @@ In `02graphs/03case-translation-from-english/index.ts`:
 3. `translate_values` (`:70-85`) sends the **entire case** through one free-text LLM call and returns a full `Case`.
 4. The `case` reducer (`state.ts:25-32`) is a shallow merge:
    ```ts
-   reducer: { fn: (prev, next) => ({ ...prev, ...next }) }
+   reducer: {
+     fn: (prev, next) => ({ ...prev, ...next });
+   }
    ```
    `next` carries its own `anamnesis` and `procedures` arrays, so the LLM's versions **replace** the controlled ones wholesale.
 
-The prompt says "translate only the VALUES, do not translate keys" — but categories and procedure names *are* values.
+The prompt says "translate only the VALUES, do not translate keys" — but categories and procedure names _are_ values.
 
 ## Task
 
@@ -31,11 +33,11 @@ Case (English) ──┬── defined pass  (deterministic) ──┐
                  └── rest pass     (LLM, text only) ─┴── merge ── Case (target)
 ```
 
-| Pass | Handles | Mechanism |
-|---|---|---|
-| **Defined** | `procedures[].name`, `anamnesis[].category` | Catalog dictionary lookup; per-key locked LLM fill on miss (issue 03) |
-| **Rest** | every `ContentPart.alt` | One LLM pass over `alt` strings only |
-| **Neither** | `value` bytes of non-text parts, enums (`relevance`), identifiers, numbers | Passed through untouched |
+| Pass        | Handles                                                                    | Mechanism                                                             |
+| ----------- | -------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| **Defined** | `procedures[].name`, `anamnesis[].category`                                | Catalog dictionary lookup; per-key locked LLM fill on miss (issue 03) |
+| **Rest**    | every `ContentPart.alt`                                                    | One LLM pass over `alt` strings only                                  |
+| **Neither** | `value` bytes of non-text parts, enums (`relevance`), identifiers, numbers | Passed through untouched                                              |
 
 Because the sets are **disjoint**, ordering no longer matters and the merge is unambiguous. That is the structural fix — not a reordering of the existing nodes.
 

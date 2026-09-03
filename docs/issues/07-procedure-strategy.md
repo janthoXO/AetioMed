@@ -25,11 +25,11 @@ read at `:241` (blinded step) and `:472` (bridge).
 
 ```ts
 const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
-  diagnosis: true,        // ← the blinded step receives this and declines to use it
+  diagnosis: true, // ← the blinded step receives this and declines to use it
   userInstructions: true,
   case: true,
   outline: true,
-})
+});
 ```
 
 **The 8 tools:** `03procedure/tools.ts` — `generateBlindedProcedureStep`, `generateBlindedCategoryStep`, `generateBlindedProcedureStepFromCategories`, `generateProcedureResults`, `generateDiagnosisBridge`, `generateBridgeCategoryStep`, `generateBridgeProcedureStepFromCategories`, `matchDiagnosis`.
@@ -44,19 +44,20 @@ interface ProcedureStrategy {
   bridge(view: OracleView): Promise<ProcedureResult[]>;
 }
 
-type BlindedView = {                    // structurally cannot carry the diagnosis
+type BlindedView = {
+  // structurally cannot carry the diagnosis
   presentation: Presentation;
   previousProcedures: ProcedureResult[];
   ruledOutDiagnoses: string[];
   userInstructions?: string;
   iterationsRemaining: number;
-  candidates: ProcedureCandidates;      // from issue 01
+  candidates: ProcedureCandidates; // from issue 01
 };
 
 type SolverMove =
   | { action: "order"; procedures: Procedure[] }
   | { action: "diagnose"; diagnosisName: string }
-  | { action: "exhausted" };            // replaces today's empty-pick-means-bridge inference
+  | { action: "exhausted" }; // replaces today's empty-pick-means-bridge inference
 ```
 
 ### 2. Two adapters

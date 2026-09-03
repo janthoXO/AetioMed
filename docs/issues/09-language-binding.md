@@ -17,10 +17,10 @@ Language must become a property of the **bound ports**, not of graph state or ru
 
 ### 1. Catalog binding differs by mode
 
-| Mode | Generation binds | Translate-out binds |
-|---|---|---|
-| `TRANSLATION_SANDWICH=true` | **English catalogs only** — generation never sees a foreign term | target-language catalogs |
-| `TRANSLATION_SANDWICH=false` | **target-language catalogs**, used directly as generation vocabulary | *(no translate-out)* |
+| Mode                         | Generation binds                                                     | Translate-out binds      |
+| ---------------------------- | -------------------------------------------------------------------- | ------------------------ |
+| `TRANSLATION_SANDWICH=true`  | **English catalogs only** — generation never sees a foreign term     | target-language catalogs |
+| `TRANSLATION_SANDWICH=false` | **target-language catalogs**, used directly as generation vocabulary | _(no translate-out)_     |
 
 In non-sandwich mode the model **selects** from a localized literal union rather than translating — the grammar does the work, not the prompt.
 
@@ -28,10 +28,10 @@ In non-sandwich mode the model **selects** from a localized literal union rather
 
 Split roles (issue 06) by audience:
 
-| Class | Roles | Language, sandwich off |
-|---|---|---|
-| **Internal** — plan, plan judge, blinded solver reasoning, `matchDiagnosis` | `generator` (plan), `judge` | **English, always** |
-| **User-visible** — chief complaint, anamnesis answers, procedure result text | `generator` (fields, results) | target language |
+| Class                                                                        | Roles                         | Language, sandwich off |
+| ---------------------------------------------------------------------------- | ----------------------------- | ---------------------- |
+| **Internal** — plan, plan judge, blinded solver reasoning, `matchDiagnosis`  | `generator` (plan), `judge`   | **English, always**    |
+| **User-visible** — chief complaint, anamnesis answers, procedure result text | `generator` (fields, results) | target language        |
 
 Mechanically this is one extra port binding, not a new concept: internal roles bind an English-directive model, user-facing roles bind a target-language one.
 

@@ -28,11 +28,11 @@ providers:
 
 **What MCP gives you:** process isolation, language-agnostic providers (a Python scraper needs no TypeScript), and an existing ecosystem.
 
-**What it does not give you:** applicability metadata. Discovery returns name, description and JSON schema — nothing about when a provider is relevant. So selection stays config-declared alongside the server entry. *MCP is the right transport boundary and the wrong selection mechanism.*
+**What it does not give you:** applicability metadata. Discovery returns name, description and JSON schema — nothing about when a provider is relevant. So selection stays config-declared alongside the server entry. _MCP is the right transport boundary and the wrong selection mechanism._
 
 ## Requirements
 
-- **Zero cost when unconfigured.** Gate on `servers.length === 0` *before* the handshake, or every boot pays a connect and `tools/list` for nothing.
+- **Zero cost when unconfigured.** Gate on `servers.length === 0` _before_ the handshake, or every boot pays a connect and `tools/list` for nothing.
 - **Trust boundary.** External provider content is fenced and provenance-tagged (issue 14 §5). An MCP server is a third-party process whose output lands in the plan prompt.
 - **Failure isolation.** A server down at boot and one that dies mid-run need different handling; neither may fail a generation.
 - **Credentials.** A deployer needs somewhere to put API keys that is not the provider manifest in version control.

@@ -37,13 +37,13 @@ Add a CLI (or an `npm` script) listing `generated` rows per domain and language,
 Replace the set-keyed in-flight map with a per-key one:
 
 ```ts
-const inFlight = new Map<string, Promise<string>>();   // key: `${domain}\0${lang}\0${english}`
+const inFlight = new Map<string, Promise<string>>(); // key: `${domain}\0${lang}\0${english}`
 ```
 
 Algorithm for `translateMissing(keys, lang, generate, ctx)`:
 
 1. Partition `keys` into cache hits, keys already in flight, and keys to claim.
-2. **Claim atomically** — register a promise for each claimed key *before* any `await`, so a concurrently-entering request sees them.
+2. **Claim atomically** — register a promise for each claimed key _before_ any `await`, so a concurrently-entering request sees them.
 3. Issue **one** `generate()` call for the claimed subset only.
 4. Resolve each claimed key's promise from the response.
 5. `await` the in-flight promises for keys claimed by someone else, and merge.
@@ -56,9 +56,9 @@ Persist with `INSERT ... ON CONFLICT DO NOTHING`, then **read back the stored ro
 
 The shared promise must not turn a transient failure into a stampede, nor into a spurious error for every waiter:
 
-- **Retries live inside the shared promise.** The registered promise wraps the *whole* retry loop, not a single attempt. Everyone awaiting that key receives the successful retry's result.
-- **On ultimate failure, reject all waiters *and* delete the in-flight entry**, so the next request starts fresh. Do not leave a rejected promise cached — `extensions/persistency/redis.ts` has exactly that bug today (a failed connect caches `null` forever); do not reproduce it.
-- **Partial batch success is per key.** One `generate()` call may cover several keys and return only some. Resolve the promises for keys that came back; put the missing ones into the *next* attempt. One stubborn term must not fail its batch-mates.
+- **Retries live inside the shared promise.** The registered promise wraps the _whole_ retry loop, not a single attempt. Everyone awaiting that key receives the successful retry's result.
+- **On ultimate failure, reject all waiters _and_ delete the in-flight entry**, so the next request starts fresh. Do not leave a rejected promise cached — `extensions/persistency/redis.ts` has exactly that bug today (a failed connect caches `null` forever); do not reproduce it.
+- **Partial batch success is per key.** One `generate()` call may cover several keys and return only some. Resolve the promises for keys that came back; put the missing ones into the _next_ attempt. One stubborn term must not fail its batch-mates.
 - **A fill failure is never fatal to the request.** The caller falls back to the English key, exactly as labels do (design §8). A missing translation degrades presentation; it must not fail a generation.
 
 Reuse `utils/retry.ts` for the loop rather than hand-rolling one.

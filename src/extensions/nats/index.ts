@@ -1,13 +1,13 @@
 import { defineExtension } from "../../core/extension.js";
-import { extension as coreExtension } from "../core/index.js";
 import { connectNats, closeNats } from "./client.js";
 import { startCaseGenerationConsumer } from "./cases.handler.js";
 import { ConfigSchema } from "./config.js";
+import { extension as apiExtension } from "../api/index.js";
 
 export const extension = defineExtension({
   name: "nats",
   requiredFlags: ["NATS"],
-  dependsOn: [coreExtension] as const,
+  dependsOn: [apiExtension] as const,
   envSchema: ConfigSchema,
   async setup({ config }) {
     console.log("[NATS] Initializing NATS extension...");

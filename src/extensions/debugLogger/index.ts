@@ -1,11 +1,10 @@
 import { defineExtension } from "../../core/extension.js";
-import { extension as coreExtension } from "../core/index.js";
 import { EnvSchema } from "@/config.js";
 
 export const extension = defineExtension({
   name: "debugLogger",
   requiredFlags: ["DEBUG"],
-  dependsOn: [coreExtension] as const,
+  dependsOn: [] as const,
   envSchema: EnvSchema,
   async setup({ config, bus }) {
     if (!config.features.has("DEBUG")) {

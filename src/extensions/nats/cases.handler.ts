@@ -1,11 +1,10 @@
-import { CaseGenerationRequestSchema } from "@/extensions/core/01dtos/CaseGenerationRequest.js";
+import { CaseGenerationRequestSchema } from "@/extensions/api/CaseGenerationRequest.js";
 import { getJetStreamClient, getNatsConnection } from "./client.js";
 import { AckPolicy, jetstreamManager, type JsMsg } from "@nats-io/jetstream";
-import { generateCase } from "@/extensions/core/02services/cases.service.js";
+import { generateCase, bus, runWithContext } from "@/core/graph/index.js";
 import { publishCaseGenerationResponse } from "./cases.publisher.js";
-import { IcdToDiagnosisName } from "@/extensions/core/03repo/diagnosis.repo.js";
-import { AppError } from "@/extensions/core/errors/AppError.js";
-import { runWithContext } from "../core/utils/context.js";
+import { IcdToDiagnosisName } from "@/core/graph/03repo/diagnosis.repo.js";
+import { AppError } from "@/core/graph/errors/AppError.js";
 
 const STREAM_NAME = "cases";
 const SUBJECT = "cases.generate";
@@ -47,10 +46,14 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
       llmConfig
     );
 
+    bus.emit("Generation Completed", { case: generatedCase });
     await publishCaseGenerationResponse(msg.headers, generatedCase);
     msg.ack();
   } catch (err) {
     console.error(`[NATS] Error processing message:`, err);
+    if (err instanceof Error) {
+      bus.emit("Generation Failure", { error: err });
+    }
 
     let errorResponse;
     if (err instanceof AppError) {

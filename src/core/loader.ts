@@ -1,14 +1,11 @@
 import { z } from "zod";
-import { Router } from "express";
 import type { AnyExt } from "./extension.js";
 import type { EventBus } from "./event-bus.js";
-import { config } from "@/config.js";
 
 export interface LoaderOptions {
   extensions: AnyExt[];
   enabledFlags: Set<string>;
   bus: EventBus;
-  apiRouter: Router;
 }
 
 function topoSort(extensions: AnyExt[]): AnyExt[] {
@@ -39,7 +36,7 @@ function topoSort(extensions: AnyExt[]): AnyExt[] {
 }
 
 export async function loadExtensions(opts: LoaderOptions): Promise<void> {
-  const { extensions, enabledFlags, bus, apiRouter } = opts;
+  const { extensions, enabledFlags, bus } = opts;
   const sorted = topoSort(extensions);
   const resolvedConfigs = new Map<string, object>();
   const skipped = new Set<string>();
@@ -82,15 +79,10 @@ export async function loadExtensions(opts: LoaderOptions): Promise<void> {
     }
     resolvedConfigs.set(ext.name, config);
 
-    // 4. Use the main apiRouter directly without a prefix prefix as requested
-    const router = Router();
-    apiRouter.use("/", router);
-
-    // 5. Build context + call setup
+    // 4. Call setup with config, bus, and dependency accessor
     await ext.setup({
       config,
       bus,
-      router,
       dep(depExt: AnyExt) {
         if (!resolvedConfigs.has(depExt.name))
           throw new Error(
@@ -104,11 +96,5 @@ export async function loadExtensions(opts: LoaderOptions): Promise<void> {
     console.log(`[loader] ✓  "${ext.name}"`);
   }
 
-  console.log(
-    "Config: ",
-    Array.from(resolvedConfigs.values()).reduce(
-      (c, v) => ({ ...c, ...v }),
-      config
-    )
-  );
+  console.log(`[loader] All extensions loaded.`);
 }

@@ -49,6 +49,10 @@ export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
         };
       }
 
+      if (fullConfig.enableThinking !== undefined) {
+        ollamaConfig.think = fullConfig.enableThinking;
+      }
+
       chat = new ChatOllama(ollamaConfig);
       break;
     }
@@ -79,6 +83,17 @@ export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
       if (fullConfig.url) {
         openAIConfig.configuration = {
           baseURL: fullConfig.url,
+        };
+      }
+
+      // vLLM-style OpenAI-compatible servers toggle the thinking phase via
+      // the chat template (verified against Morpheus; not an official OpenAI
+      // parameter, which ignores unknown body fields).
+      if (fullConfig.enableThinking !== undefined) {
+        openAIConfig.modelKwargs = {
+          chat_template_kwargs: {
+            enable_thinking: fullConfig.enableThinking,
+          },
         };
       }
 
@@ -123,7 +138,9 @@ export function getSearchTool(llmConfig: LLMConfig) {
 }
 
 /**
- * Get a low-temperature LLM for deterministic tasks (consistency checks, etc.)
+ * Get a low-temperature LLM for deterministic tasks: judges/evaluations,
+ * yes-no decisions, translations, and factual enumeration where accuracy
+ * matters and variety is unwanted.
  */
 export function getDeterministicLLM(
   config: Partial<Omit<LLMConfig, "temperature">> = {}
@@ -132,12 +149,25 @@ export function getDeterministicLLM(
 }
 
 /**
- * Get a creative LLM for generation tasks
+ * Get a mid-temperature LLM for grounded structured generation: clinical
+ * decision-making and outputs whose content is already pinned down by an
+ * outline/blueprint, where fidelity beats variety but a little flexibility
+ * in wording is still useful.
+ */
+export function getBalancedLLM(
+  config: Partial<Omit<LLMConfig, "temperature">> = {}
+): BaseChatModel {
+  return getLLM({ ...config, temperature: 0.4 });
+}
+
+/**
+ * Get a creative LLM for open-ended narrative generation (case outlines,
+ * patient voice, demographics) where run-to-run variety is a feature.
  */
 export function getCreativeLLM(
   config: Partial<Omit<LLMConfig, "temperature">> = {}
 ): BaseChatModel {
-  return getLLM({ ...config, temperature: 0.8 });
+  return getLLM({ ...config, temperature: 0.7 });
 }
 
 /**

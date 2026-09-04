@@ -324,7 +324,9 @@ function procedurePickPromptSchema(mode: ProcedurePickMode): z.ZodTypeAny {
     case "grouped":
       return z
         .record(z.string(), z.array(z.string()))
-        .describe("procedure names (without category prefix), keyed by category");
+        .describe(
+          "procedure names (without category prefix), keyed by category"
+        );
   }
 }
 
@@ -1059,7 +1061,11 @@ ${outline}`
 
 // ─── 3. generateDiagnosisBridge ───────────────────────────────────────────────
 
-type ResultLeaf = { name: string; relevance: ProcedureRelevance; result: string };
+type ResultLeaf = {
+  name: string;
+  relevance: ProcedureRelevance;
+  result: string;
+};
 
 const GenericResultLeafSchema = z.object({
   name: z.string().describe("exact procedure name"),
@@ -1168,7 +1174,11 @@ function assembleBridgeResults(
           ? leaf.name
           : `${category}: ${leaf.name}`;
       if (keep(full)) {
-        result.push({ name: full, relevance: leaf.relevance, result: leaf.result });
+        result.push({
+          name: full,
+          relevance: leaf.relevance,
+          result: leaf.result,
+        });
       }
     }
   }
@@ -1540,10 +1550,7 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(mode) }))}
 
     return assembleBridgeResults(mode, rawProcedures, effectiveProcedures);
   } catch (error) {
-    console.error(
-      "[GenerateBridgeProcedureStepFromCategories] Error:",
-      error
-    );
+    console.error("[GenerateBridgeProcedureStepFromCategories] Error:", error);
     throw error;
   }
 }

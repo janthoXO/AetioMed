@@ -6,7 +6,10 @@ ENV PATH="$PNPM_HOME:$PATH"
 RUN corepack enable
 
 WORKDIR /app
-COPY package.json pnpm-lock.yaml ./
+# pnpm-workspace.yaml carries the `allowBuilds` allow-list. Without it pnpm 11
+# fails the install outright with ERR_PNPM_IGNORED_BUILDS, so it has to be in
+# the image alongside the manifest and the lockfile.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 
 COPY tsconfig.json ./

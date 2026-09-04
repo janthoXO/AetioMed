@@ -3,6 +3,7 @@ import type { TraceEvent } from "./traceManager.js";
 import { registerJobHook } from "../core/graph/utils/context.js";
 import type { EventBus } from "../core/event-bus.js";
 import type { LabelCatalog } from "../core/graph/catalog/ports.js";
+import { encodeCase } from "../api/contentWire.js";
 
 export { setupTracing, getTraceBus };
 export type { TraceEvent };
@@ -48,7 +49,11 @@ function emitToTraceBus(
  * per jobId. Called once from the composition root (`app.ts`) when the
  * `TRACING` flag is set.
  */
-export function wireTracing(bus: EventBus, labels: LabelCatalog): void {
+export function wireTracing(
+  bus: EventBus,
+  labels: LabelCatalog,
+  maxContentPartBytes: number
+): void {
   console.log("[tracing] Initializing tracing...");
 
   registerJobHook(setupTracing);
@@ -71,7 +76,12 @@ export function wireTracing(bus: EventBus, labels: LabelCatalog): void {
   });
 
   bus.on("Generation Completed", ({ jobId, case: generatedCase }) => {
-    emitToTraceBus(jobId, "Generation Completed", { case: generatedCase });
+    // SSE serializes this payload to JSON (`sse/router.ts`) — encode through
+    // the same wire codec the rest/nats transports use (issue 11 §5), or a
+    // `Uint8Array` content-part value would JSON-stringify to `{"0":...}`.
+    emitToTraceBus(jobId, "Generation Completed", {
+      case: encodeCase(generatedCase, maxContentPartBytes),
+    });
   });
 
   bus.on("Generation Failure", ({ jobId, error }) => {

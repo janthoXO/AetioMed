@@ -1,12 +1,19 @@
 import { z } from "zod/v4";
+import { ContentPartsSchema } from "./ContentPart.js";
 
 export const AnamnesisCategorySchema = z.string();
 
 export type AnamnesisCategory = z.infer<typeof AnamnesisCategorySchema>;
 
+/**
+ * Domain shape: the patient's answer as one or more content parts
+ * (issue 11). See `ContentPart.ts` for additive-parts semantics.
+ */
 export const AnamnesisFieldSchema = z.object({
   category: AnamnesisCategorySchema.describe("Category of the anamnesis field"),
-  answer: z.string().describe("Patient's response or clinical finding"),
+  answer: ContentPartsSchema.describe(
+    "Patient's response or clinical finding, as one or more content parts"
+  ),
 });
 
 export type AnamnesisField = z.infer<typeof AnamnesisFieldSchema>;
@@ -20,15 +27,28 @@ export const AnamnesisSchema = z
 
 export type Anamnesis = z.infer<typeof AnamnesisSchema>;
 
+/**
+ * LLM-facing shape: the generator produces ordinary text under a plain
+ * `z.string()` `answer` field — the LLM is never asked to emit bytes or
+ * base64 (issue 11 §3). The gateway wraps `answer` with `textPart()` to
+ * build a domain `AnamnesisField` above.
+ */
+const AnamnesisFieldTextSchema = z.object({
+  category: AnamnesisCategorySchema.describe("Category of the anamnesis field"),
+  answer: z.string().describe("Patient's response or clinical finding"),
+});
+
+export type AnamnesisFieldText = z.infer<typeof AnamnesisFieldTextSchema>;
+
 export function buildAnamnesisFieldSchema(categories?: AnamnesisCategory[]) {
   if (categories?.length) {
-    return AnamnesisFieldSchema.extend({
+    return AnamnesisFieldTextSchema.extend({
       category: z
         .literal(categories)
         .describe("Category of the anamnesis field"),
     });
   }
-  return AnamnesisFieldSchema;
+  return AnamnesisFieldTextSchema;
 }
 
 export function buildAnamnesisSchema(categories?: AnamnesisCategory[]) {

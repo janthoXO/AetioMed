@@ -18,6 +18,7 @@ import {
 } from "./strategy/index.js";
 import type { GraphRuntime, LlmPort, LlmRole } from "@/core/graph/runtime.js";
 import type { ProcedureResult } from "@/core/graph/models/Procedure.js";
+import { textPart } from "@/core/graph/models/ContentPart.js";
 import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
@@ -163,7 +164,11 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
 
     const { strategy, nextStepViews, bridgeViews } = makeScriptedStrategy({
       bridgeResult: [
-        { name: "Biopsy", relevance: "obligatory", result: "Positive" },
+        {
+          name: "Biopsy",
+          relevance: "obligatory",
+          result: [textPart("Positive")],
+        },
       ],
     });
 

@@ -3,6 +3,7 @@ import type { CompiledGraph } from "@langchain/langgraph";
 import { run } from "@mermaid-js/mermaid-cli";
 import { buildCaseGraph, graphTopologyKey } from "./caseGraph.js";
 import { createMedicalBasisRegistry } from "../medicalBasis/registry.js";
+import { createModalityRegistry } from "../modality/registry.js";
 import type { Node, Graph } from "@langchain/core/runnables/graph";
 import { EventBus } from "../../event-bus.js";
 import type { GraphRuntime } from "../runtime.js";
@@ -176,6 +177,10 @@ const medicalBasisRegistry = createMedicalBasisRegistry({
   symptomsRepo: minimalSymptomsRepo,
 });
 
+// Mirrors the composition root too: always `[textProvider]` today, so no
+// exported topology shows a `decide_modality` node.
+const modalityRegistry = createModalityRegistry();
+
 const { getCaseGraph } = buildCaseGraph(
   minimalRuntime,
   new EventBus(),
@@ -184,7 +189,8 @@ const { getCaseGraph } = buildCaseGraph(
     anamnesis: minimalAnamnesisRepo,
     procedures: minimalProceduresRepo,
   },
-  medicalBasisRegistry
+  medicalBasisRegistry,
+  modalityRegistry
 );
 
 await fs.mkdir("docs/graphs", { recursive: true });

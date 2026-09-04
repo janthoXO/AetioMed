@@ -5,7 +5,6 @@ import {
   CaseGenerationResponseSchema,
   type CaseGenerationResponse,
 } from "@/extensions/api/CaseGenerationResponse.js";
-import { IcdToDiagnosisName } from "@/core/graph/03repo/diagnosis.repo.js";
 import { AppError } from "@/core/graph/errors/AppError.js";
 import { runWithContext } from "@/core/graph/utils/context.js";
 import * as cancelManager from "@/core/graph/utils/cancelManager.js";
@@ -68,7 +67,7 @@ export default function createCasesRouter(
       } = bodyResult.data;
 
       if (!diagnosis) {
-        diagnosis = await IcdToDiagnosisName(icd!);
+        diagnosis = graph.runtime.catalogs.diagnosis.byIcd(icd!)?.name;
         if (!diagnosis) {
           res.status(400).json({
             error: {

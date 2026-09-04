@@ -1,32 +1,29 @@
 import type { Diagnosis, ICDCode } from "../models/Diagnosis.js";
 import type { ForeignLanguage } from "../models/Language.js";
-import {
-  getAllDiagnoses,
-  getDiagnosisByIcd,
-  getDiagnosisTranslationToEnglish,
-  saveDiagnosisTranslations,
-} from "../03repo/diagnosis.repo.js";
+import type { DiagnosisRepo } from "../03repo/diagnosis.repo.js";
 import type { DiagnosisCatalog } from "./ports.js";
 
-/** Reads/writes through `03repo/diagnosis.repo.ts`. */
+/** Reads/writes through an injected `DiagnosisRepo`. */
 export class YamlDiagnosisCatalog implements DiagnosisCatalog {
+  constructor(private readonly repo: DiagnosisRepo) {}
+
   byIcd(icd: ICDCode): Diagnosis | undefined {
-    return getDiagnosisByIcd(icd);
+    return this.repo.getDiagnosisByIcd(icd);
   }
 
   all(): Diagnosis[] {
-    return getAllDiagnoses();
+    return this.repo.getAllDiagnoses();
   }
 
   toEnglish(diagnosis: string, lang: ForeignLanguage): string | undefined {
-    return getDiagnosisTranslationToEnglish(diagnosis, lang);
+    return this.repo.getDiagnosisTranslationToEnglish(diagnosis, lang);
   }
 
   saveTranslations(
     englishToTarget: Record<string, string>,
     lang: ForeignLanguage
   ): void {
-    saveDiagnosisTranslations(englishToTarget, lang);
+    this.repo.saveDiagnosisTranslations(englishToTarget, lang);
   }
 }
 

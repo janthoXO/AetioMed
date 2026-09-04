@@ -4,7 +4,7 @@ import morgan from "morgan";
 import { z } from "zod";
 import { defineExtension } from "../../core/extension.js";
 import createCasesRouter from "./routes/cases.router.js";
-import diagnosisRouter from "./routes/diagnosis.router.js";
+import createDiagnosisRouter from "./routes/diagnosis.router.js";
 import createProceduresRouter from "./routes/procedures.router.js";
 import { extension as apiExtension } from "../api/index.js";
 
@@ -46,7 +46,7 @@ export const extension = defineExtension({
     app.use("/api", apiRouter);
 
     apiRouter.use("/cases", createCasesRouter(graph, bus));
-    apiRouter.use("/diagnosis", diagnosisRouter);
+    apiRouter.use("/diagnosis", createDiagnosisRouter(graph));
     apiRouter.use("/procedures", createProceduresRouter(graph));
     apiRouter.get("/allowedLlms", (_req, res) =>
       res.json(graph.config.allowedLlms || [])

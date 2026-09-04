@@ -122,6 +122,7 @@ const minimalConfig: Config = {
   allowedLlms: undefined,
   PROCEDURE_PRESELECTION: false,
   TRANSLATION_SANDWICH: true,
+  MAX_CONTENT_PART_BYTES: 5_000_000,
 };
 
 const minimalRuntime: GraphRuntime = {

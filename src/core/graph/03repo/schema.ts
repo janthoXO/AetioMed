@@ -20,6 +20,14 @@ export const meta = sqliteTable("_meta", {
  * `createTranslationStore` caller: Diagnosis, Procedures, Labels, Anamnesis).
  * Rows are upserted from YAML on sync; rows for keys absent from the YAML
  * (AI-generated translations) are never deleted by a sync.
+ *
+ * `source` distinguishes a clinician-reviewed YAML row (`curated`) from an
+ * LLM-generated one (`generated`). Existing rows backfill as `curated` (the
+ * safe default: it only claims "reviewed" where we do not know otherwise).
+ * A YAML sync overwrites a row's `source` back to `curated` even if it was
+ * previously `generated` — the curated value always wins on conflict. A
+ * runtime fill only ever inserts if the key is absent, so it never
+ * downgrades a `curated` row to `generated`.
  */
 export const translation = sqliteTable(
   "translation",
@@ -28,6 +36,9 @@ export const translation = sqliteTable(
     lang: text("lang").notNull(),
     english: text("english").notNull(),
     translated: text("translated").notNull(),
+    source: text("source", { enum: ["curated", "generated"] })
+      .notNull()
+      .default("curated"),
   },
   (table) => [
     primaryKey({ columns: [table.domain, table.lang, table.english] }),

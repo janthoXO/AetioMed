@@ -12,6 +12,7 @@ import { buildProcedureGraph } from "./03procedure/index.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
 import { resolveAllFragments } from "@/core/graph/medicalBasis/registry.js";
+import type { ModalityProvider } from "@/core/graph/modality/ports.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
 import type { ProcedureStrategy } from "./03procedure/strategy/index.js";
@@ -57,9 +58,14 @@ export function buildCaseGenerationGraph(
   runtime: GraphRuntime,
   procedureStrategy: ProcedureStrategy,
   medicalBasisRegistry: MedicalBasisProvider[],
+  modalityRegistry: ModalityProvider[],
   traceNode: ReturnType<typeof createTraceNode>
 ) {
-  const presentationPhase = buildFieldGenerationGraph(runtime, traceNode);
+  const presentationPhase = buildFieldGenerationGraph(
+    runtime,
+    modalityRegistry,
+    traceNode
+  );
   const procedurePhase = buildProcedureGraph(
     runtime,
     procedureStrategy,

@@ -19,6 +19,9 @@ import { generationTools } from "../../tools.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
+import type { ModalityProvider } from "@/core/graph/modality/ports.js";
+import { buildChiefComplaintGraph } from "./chiefComplaintGraph.js";
+import { buildAnamnesisGraph } from "./anamnesisGraph.js";
 
 const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
 
@@ -221,6 +224,16 @@ type PatientNodeInput = Pick<
   "diagnosis" | "outline" | "userInstructions"
 >;
 
+// `patient` stays a single function node — it is deliberately NOT a
+// subgraph, unlike `chiefComplaintGraph`/`anamnesisGraph` below (issue 13
+// §1). `patient` is not a `ContentPart[]` field: issue 11 converted exactly
+// three fields (`chiefComplaint`, `anamnesis[].answer`, `procedures[].result`)
+// and `patient` stayed a structured `Patient` object (name, age, gender,
+// height, weight). It is demographic *data*, not renderable *content* —
+// there is no `alt` to render, and forcing it through a modality provider
+// would mean either breaking `PatientSchema` or wrapping structured data in
+// a text part that nothing consumes as text. So only two of the three
+// fields the issue named got subgraphs; this is why.
 function makeGeneratePatient(runtime: GraphRuntime) {
   return async function generatePatient(
     state: PatientNodeInput,
@@ -251,155 +264,90 @@ function makeGeneratePatient(runtime: GraphRuntime) {
   };
 }
 
-type ChiefComplaintNodeInput = Pick<
-  GenerationGraphState,
-  "diagnosis" | "outline" | "userInstructions"
->;
-
-function makeGenerateChiefComplaint(runtime: GraphRuntime) {
-  return async function generateChiefComplaint(
-    state: ChiefComplaintNodeInput,
-    lgRuntime?: Runtime<RequestContext>
-  ): Promise<PickNested<GenerationGraphState, "case", "chiefComplaint">> {
-    runtime.log.info(`[GenerationGraph] Generating chief complaint…`);
-    const chiefComplaint =
-      await generationTools.generateChiefComplaintFromOutline
-        .invoke(
-          {
-            diagnosis: state.diagnosis,
-            outline: state.outline,
-            userInstructions: renderUserInstructions(state.userInstructions),
-          },
-          runtime,
-          lgRuntime?.context
-        )
-        .catch((error) => {
-          runtime.log.error(
-            `[GenerationGraph] Error generating chief complaint: ${error}`
-          );
-          throw error;
-        });
-
-    runtime.log.info(
-      `[GenerationGraph] Chief complaint generated:\n\`\`\` ${chiefComplaint}\`\`\``
-    );
-    return { case: { chiefComplaint } };
-  };
-}
-
-type AnamnesisNodeInput = Pick<
-  GenerationGraphState,
-  "diagnosis" | "outline" | "userInstructions"
->;
-
-function makeGenerateAnamnesis(runtime: GraphRuntime) {
-  return async function generateAnamnesis(
-    state: AnamnesisNodeInput,
-    lgRuntime?: Runtime<RequestContext>
-  ): Promise<PickNested<GenerationGraphState, "case", "anamnesis">> {
-    runtime.log.info(`[GenerationGraph] Generating anamnesis…`);
-    const anamnesis = await generationTools.generateAnamnesisFromOutline
-      .invoke(
-        {
-          diagnosis: state.diagnosis,
-          outline: state.outline,
-          userInstructions: renderUserInstructions(state.userInstructions),
-        },
-        runtime,
-        lgRuntime?.context
-      )
-      .catch((error) => {
-        runtime.log.error(
-          `[GenerationGraph] Error generating anamnesis: ${error}`
-        );
-        throw error;
-      });
-
-    runtime.log.info(
-      `[GenerationGraph] Anamnesis generated:\n\`\`\`json\n${JSON.stringify(anamnesis, null, 2)}\n\`\`\``
-    );
-    return { case: { anamnesis } };
-  };
-}
+// `chief_complaint_generate` and `anamnesis_generate` are compiled
+// subgraphs (`chiefComplaintGraph.ts`, `anamnesisGraph.ts`) — both are
+// `ContentPart[]` fields (issue 11), so both earn the
+// generate/decide/render internal control flow issue 13 introduces.
+// `procedures[].result` is also `ContentPart[]` but is produced in the
+// procedure phase, not here — out of scope for this issue; a natural
+// follow-up.
 
 // ─── graph ────────────────────────────────────────────────────────────────────
 
 export function buildFieldGenerationGraph(
   runtime: GraphRuntime,
+  modalityRegistry: ModalityProvider[],
   traceNode: ReturnType<typeof createTraceNode>
 ) {
-  return new StateGraph(GenerationGraphStateSchema, RequestContextSchema)
-    .addNode(
-      "case_outline_generate",
-      traceNode(
+  return (
+    new StateGraph(GenerationGraphStateSchema, RequestContextSchema)
+      .addNode(
         "case_outline_generate",
-        makeGenerateCaseOutline(runtime),
-        "Generating case outline"
+        traceNode(
+          "case_outline_generate",
+          makeGenerateCaseOutline(runtime),
+          "Generating case outline"
+        )
       )
-    )
-    .addNode(
-      "outline_evaluate",
-      traceNode(
+      .addNode(
         "outline_evaluate",
-        makeOutlineEvaluate(runtime),
-        "Evaluating case outline"
-      ),
-      {
-        ends: [
-          "outline_regenerate",
-          "patient_generate",
-          "chief_complaint_generate",
-          "anamnesis_generate",
-        ],
-      }
-    )
-    .addNode(
-      "outline_regenerate",
-      traceNode(
+        traceNode(
+          "outline_evaluate",
+          makeOutlineEvaluate(runtime),
+          "Evaluating case outline"
+        ),
+        {
+          ends: [
+            "outline_regenerate",
+            "patient_generate",
+            "chief_complaint_generate",
+            "anamnesis_generate",
+          ],
+        }
+      )
+      .addNode(
         "outline_regenerate",
-        makeOutlineRegenerate(runtime),
-        "Regenerating case outline"
-      ),
-      { ends: ["outline_evaluate"] }
-    )
-    .addNode(
-      "patient_generate",
-      traceNode(
+        traceNode(
+          "outline_regenerate",
+          makeOutlineRegenerate(runtime),
+          "Regenerating case outline"
+        ),
+        { ends: ["outline_evaluate"] }
+      )
+      .addNode(
         "patient_generate",
-        makeGeneratePatient(runtime),
-        "Generating patient"
+        traceNode(
+          "patient_generate",
+          makeGeneratePatient(runtime),
+          "Generating patient"
+        )
       )
-    )
-    .addNode(
-      "chief_complaint_generate",
-      traceNode(
+      // Compiled subgraphs are mounted directly, not wrapped in `traceNode`
+      // (see its doc comment: only plain node functions are callable that
+      // way) — each subgraph traces its own internal nodes instead.
+      .addNode(
         "chief_complaint_generate",
-        makeGenerateChiefComplaint(runtime),
-        "Generating chief complaint"
+        buildChiefComplaintGraph(runtime, modalityRegistry, traceNode)
       )
-    )
-    .addNode(
-      "anamnesis_generate",
-      traceNode(
+      .addNode(
         "anamnesis_generate",
-        makeGenerateAnamnesis(runtime),
-        "Generating anamnesis"
+        buildAnamnesisGraph(runtime, modalityRegistry, traceNode)
       )
-    )
-    .addNode(
-      "case_fan_in",
-      traceNode(
+      .addNode(
         "case_fan_in",
-        passthrough<GenerationGraphState>,
-        "Assembling case fields"
+        traceNode(
+          "case_fan_in",
+          passthrough<GenerationGraphState>,
+          "Assembling case fields"
+        )
       )
-    )
 
-    .addEdge(START, "case_outline_generate")
-    .addEdge("case_outline_generate", "outline_evaluate")
-    .addEdge("patient_generate", "case_fan_in")
-    .addEdge("chief_complaint_generate", "case_fan_in")
-    .addEdge("anamnesis_generate", "case_fan_in")
-    .addEdge("case_fan_in", END)
-    .compile();
+      .addEdge(START, "case_outline_generate")
+      .addEdge("case_outline_generate", "outline_evaluate")
+      .addEdge("patient_generate", "case_fan_in")
+      .addEdge("chief_complaint_generate", "case_fan_in")
+      .addEdge("anamnesis_generate", "case_fan_in")
+      .addEdge("case_fan_in", END)
+      .compile()
+  );
 }

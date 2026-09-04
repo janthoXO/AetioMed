@@ -45,7 +45,9 @@ Copy `.env.example` to `.env` and adjust. The most important variable is `FEATUR
 | `LLM_MODEL` | — | Model name (required unless `ALLOW_LLMS`) |
 | `LLM_API_KEY` | — | API key for Google / OpenAI |
 | `LLM_URL` | — | Override base URL (local Ollama, or any OpenAI-compatible endpoint) |
-| `LLM_TEMPERATURE` | `0.7` | 0–1 |
+| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | — | Optional per-role override for the `generator` role; each field falls back individually to the general `LLM_*` value |
+| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | — | Optional per-role override for the `judge` role (same per-field fallback) |
+| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | — | Optional per-role override for the `translator` role (same per-field fallback) |
 | `LLM_SMALL` | `false` | `true`/`1` enables small-model-friendly prompting (splits procedure picks into category-then-procedure) |
 | `ALLOWED_LLMS` | — | `ollama:model1,google:model2` — requires the `ALLOW_LLMS` flag |
 | `NATS_URL` | `nats://localhost:4222` | `nats://nats:4222` inside docker compose |

@@ -1,7 +1,6 @@
 import z from "zod";
 import { generateAnamnesisCategoriesFromEnglish } from "@/core/graph/03aigateway/anamnesis.aigateway.js";
 import { generateProceduresFromEnglish } from "@/core/graph/03aigateway/procedures.aigateway.js";
-import { getDeterministicLLM } from "@/core/graph/utils/llm.js";
 import { retry } from "@/core/graph/utils/retry.js";
 import { GenerationError } from "@/core/graph/errors/AppError.js";
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
@@ -48,7 +47,10 @@ RULES:
     const userPrompt = `Case to translate:\n${JSON.stringify(caseData)}`;
 
     // Deterministic: translation must be faithful, not creative.
-    const llm = getDeterministicLLM(runtime.llm, context?.llmConfig);
+    const llm = runtime.llm.for(
+      { role: "translator", temperature: "deterministic" },
+      context?.llmConfig
+    );
 
     return retry(
       async () => {

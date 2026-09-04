@@ -101,13 +101,22 @@ export async function exportGraphOverviewPng(
 // Minimal runtime — this script only renders topology, it never calls the
 // LLM or touches the filesystem-backed catalogues, so every port is a bare
 // in-memory/no-op stand-in rather than the real app's composition root.
+const minimalLlmRole: {
+  provider: "ollama";
+  model: string;
+  apiKey?: string | undefined;
+  url?: string | undefined;
+} = {
+  provider: "ollama",
+  model: "unused",
+};
+
 const minimalConfig: Config = {
-  llm: {
-    provider: "ollama",
-    model: "unused",
-    temperature: 0.7,
-    apiKey: undefined,
-    url: undefined,
+  llm: minimalLlmRole,
+  llmRoles: {
+    generator: minimalLlmRole,
+    judge: minimalLlmRole,
+    translator: minimalLlmRole,
   },
   allowedLlms: undefined,
   LLM_SMALL: false,
@@ -115,7 +124,7 @@ const minimalConfig: Config = {
 
 const minimalRuntime: GraphRuntime = {
   llm: {
-    chat() {
+    for() {
       throw new Error(
         "exportGraphs: the LLM is never called while exporting graph topology."
       );

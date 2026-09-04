@@ -1,6 +1,6 @@
 import type { Diagnosis } from "../models/Diagnosis.js";
 import { PatientSchema, type Patient } from "../models/Patient.js";
-import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
   renderSchemaForPrompt,
@@ -55,7 +55,11 @@ ${renderSchemaForPrompt(PatientSchema)}`
   try {
     const patient: Patient = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM(runtime.llm, context?.llmConfig)
+        const result = await runtime.llm
+          .for(
+            { role: "generator", temperature: "creative" },
+            context?.llmConfig
+          )
           .withStructuredOutput(PatientSchema)
           .invoke(
             [

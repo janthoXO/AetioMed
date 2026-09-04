@@ -4,7 +4,7 @@ import {
   type AnamnesisCategory,
 } from "../models/Anamnesis.js";
 import type { Language } from "../models/Language.js";
-import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
   renderSchemaForPrompt,
@@ -78,7 +78,11 @@ ${renderSchemaForPrompt(z.object({ anamnesis: buildAnamnesisSchema() }))}`
 
     const anamnesis: Anamnesis = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM(runtime.llm, context?.llmConfig)
+        const result = await runtime.llm
+          .for(
+            { role: "generator", temperature: "creative" },
+            context?.llmConfig
+          )
           .withStructuredOutput(AnamnesisSchemaWrapper)
           .invoke(
             [

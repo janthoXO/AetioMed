@@ -1,4 +1,4 @@
-import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
   section,
@@ -114,10 +114,11 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
   try {
     const outline: string = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM(runtime.llm, {
-          ...context?.llmConfig,
-          outputFormat: "text",
-        })
+        const result = await runtime.llm
+          .for(
+            { role: "generator", temperature: "creative" },
+            { ...context?.llmConfig, outputFormat: "text" }
+          )
           .invoke(
             [
               new SystemMessage(systemPrompt),

@@ -7,7 +7,7 @@ import { createYamlCatalogs } from "./catalog/index.js";
 import { createRepos } from "./repos.js";
 import { createLlmPort } from "./utils/llm.js";
 import { createLogger } from "./utils/logger.js";
-import type { GraphRuntime } from "./runtime.js";
+import { LLM_ROLES, type GraphRuntime } from "./runtime.js";
 import type { GraphAppContext } from "./appContext.js";
 
 declare module "../event-bus.js" {
@@ -84,13 +84,19 @@ export function initGraph(opts: {
   // would validate labels against an empty set and silently pass.
   validateCatalogsOrExit(repos);
 
-  console.log(
-    `[graph] Initialized with ${
-      config.allowedLlms
-        ? "dynamic LLMs"
-        : (config.llm?.provider ?? "?") + "/" + (config.llm?.model ?? "?")
-    } configuration.`
-  );
+  if (config.allowedLlms) {
+    console.log("[graph] Initialized with dynamic LLMs configuration.");
+  } else {
+    console.log(
+      "[graph] LLM roles (temperature is per call site, not configurable):"
+    );
+    for (const role of LLM_ROLES) {
+      const roleConfig = config.llmRoles?.[role];
+      console.log(
+        `[graph]   ${role.padEnd(10)} ${roleConfig?.provider ?? "?"}/${roleConfig?.model ?? "?"}`
+      );
+    }
+  }
 
   return { config, runtime, generateCase };
 }

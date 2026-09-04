@@ -1,4 +1,4 @@
-import { getDeterministicLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
   renderSchemaForPrompt,
@@ -92,10 +92,11 @@ ${renderSchemaForPrompt(OutlineEvaluationSchema)}`
   try {
     const evaluation: OutlineEvaluation = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getDeterministicLLM(
-          runtime.llm,
-          context?.llmConfig
-        )
+        const result = await runtime.llm
+          .for(
+            { role: "judge", temperature: "deterministic" },
+            context?.llmConfig
+          )
           .withStructuredOutput(OutlineEvaluationSchema)
           .invoke(
             [

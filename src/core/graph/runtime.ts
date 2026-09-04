@@ -16,9 +16,11 @@ import type {
  * loosening it to `z.custom`, and ALS-carried ports are invisible to
  * checkpoints — see `utils/context.ts`).
  *
- * Deliberately thin: `llm` exposes one method for now. Modelling per-task
- * LLM *roles* is issue 06's job, not this one's — guessing at that shape
- * here would make 06 a rewrite instead of an extension.
+ * `llm` models two independent dimensions per issue 06: *role* (who is
+ * asking — generator/judge/translator, each independently configurable so a
+ * deployer can run a small local generator against a stronger judge) and
+ * *temperature* (a fixed policy class, not configuration — see
+ * `utils/llm.ts`).
  */
 export interface GraphRuntime {
   llm: LlmPort;
@@ -34,10 +36,23 @@ export interface GraphRuntime {
   clock: () => Date;
 }
 
-/** "Call the model with this config" — the one thing every LLM caller needs. */
+export const LLM_ROLES = ["generator", "judge", "translator"] as const;
+export type LlmRole = (typeof LLM_ROLES)[number];
+
+/** Policy classes, not configuration. See `utils/llm.ts` for the values. */
+export type LlmTemperature = "deterministic" | "balanced" | "creative";
+
+/** "Call the model for this role/temperature" — the one thing every LLM caller needs. */
 export interface LlmPort {
-  /** Construct a chat model for the given per-call config, merged over this port's defaults. */
-  chat(llmConfig?: Partial<LLMConfig>): BaseChatModel;
+  /**
+   * Construct a chat model for the given role and temperature class,
+   * overridden by the given per-call `llmConfig` (e.g. a request's
+   * `ALLOW_LLMS` selection).
+   */
+  for(
+    opts: { role: LlmRole; temperature: LlmTemperature },
+    llmConfig?: Partial<LLMConfig>
+  ): BaseChatModel;
 }
 
 export interface Logger {

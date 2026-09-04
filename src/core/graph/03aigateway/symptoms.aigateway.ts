@@ -1,6 +1,6 @@
 import { SymptomSchema, type Symptom } from "../models/Symptom.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
-import { getDeterministicLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
   renderSchemaForPrompt,
@@ -65,10 +65,11 @@ ${renderSchemaForPrompt(SymptomArrayWrapperSchema)}`
   try {
     const symptoms: Symptom[] = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getDeterministicLLM(
-          runtime.llm,
-          context?.llmConfig
-        )
+        const result = await runtime.llm
+          .for(
+            { role: "generator", temperature: "deterministic" },
+            context?.llmConfig
+          )
           .withStructuredOutput(SymptomArrayWrapperSchema)
           .invoke(
             [

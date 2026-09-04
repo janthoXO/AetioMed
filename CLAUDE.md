@@ -132,11 +132,26 @@ All AI generation uses LangGraph. Graphs live in `src/core/graph/02graphs/`. The
 graph is assembled from the deployer's flags by `assembleCaseGraph(deps, flags)`
 (`caseGraph.ts`) and sequences up to three subgraphs:
 
-1. **`01case-translation-to-english/`** — translates the input diagnosis to English
+1. **`01case-translation-to-english/`** — translates `diagnosis.name` and, alongside it, every
+   `userInstructions` value, to English. Two disjoint-channel `Send` nodes
+   (`translate_diagnosis`/`translate_user_instructions`) run in parallel from `START`, each
+   writing only its own top-level field — no merge is needed.
 2. **`02case-generation/`** — the core generation pipeline (see below)
-3. **`03case-translation-from-english/`** — fans out via `Send` to translate anamnesis categories / procedure names, then translates values back to the target language
+3. **`03case-translation-from-english/`** — three nodes, not a chain (issue 12): `translate_defined`
+   and `translate_rest` run in parallel from `START`, each writing only its own state channel
+   (`definedTranslations`/`restTranslations`, never `case`); `translate_merge` is the **only**
+   node that writes `case`, applying both maps to it. See "Content Parts" below for why this
+   replaced a whole-case, single-LLM-call translator.
 
-`generateCase(diagnosis, generationFlags, userInstructions?, language?, difficulty?)` invokes the top-level graph. `language` is **not** threaded into graph state or LangGraph's own runtime context — by the time this runs, `runWithContext` (called by `CaseGenerationService`) has already bound it on `AsyncLocalStorage`, which is what the translation-routing edges and every generation gateway actually read. See the Language section below.
+`generateCase(opts)` invokes the top-level graph, taking one options object —
+`{ diagnosis, generationFlags, userInstructions?, language?, difficulty?, callerSuppliedFreeText }`
+(`GenerateCaseFn`, `appContext.ts`) — rather than positional scalars, since a sixth parameter
+(`callerSuppliedFreeText`, issue 12 §3) would have made the positional form unreadable at the
+call site. `language` is **not** threaded into graph state or LangGraph's own runtime context —
+by the time this runs, `runWithContext` (called by `CaseGenerationService`) has already bound it
+on `AsyncLocalStorage`, which is what the translation-routing edges and every generation gateway
+actually read. `callerSuppliedFreeText` **is** threaded into graph state (`CaseStateSchema`) —
+see the Language section below for why the two differ.
 
 The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs up to three phases — the first is compiled in only when the medical-basis registry is non-empty:
 
@@ -150,15 +165,25 @@ The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs up to three ph
 backwards: **compile on what the deployer chose; branch on what the caller asked for.**
 `TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are compiled
 away — an _absent flag means an absent node_, not a node that is skipped. With
-`TRANSLATION_SANDWICH=false` the two translation nodes and their two
-`requestNeedsTranslation` conditional edges do not exist. `generationFlags`, `difficulty` and
-`language` are per-request and stay runtime branches — which is why, with the sandwich _on_,
-the two `requestNeedsTranslation` conditional edges remain (whether this deployment can
-translate is the deployer's choice; whether this request needs to is the caller's). Unlike the
-other per-request values, `language` never reaches `CaseStateSchema` at all — the edges call
-`requestNeedsTranslation()`, which reads `getRequestContext()?.language` off ALS (see the
-Language section below). The conditional edge on the `procedures` generation flag stays a
-conditional edge in every variant, for the same "deployer compiles, caller branches" reason.
+`TRANSLATION_SANDWICH=false` the two translation phases and their two conditional edges do not
+exist. `generationFlags`, `difficulty` and `language` are per-request and stay runtime
+branches — which is why, with the sandwich _on_, the two conditional edges remain (whether this
+deployment can translate is the deployer's choice; whether this request needs to is the
+caller's). They are two **different** predicates, not one reused twice (issue 12 §3):
+`requestNeedsTranslationOut()` (after generation) reads only `getRequestContext()?.language` off
+ALS — generation always runs in English under the sandwich, so the response is translated back
+regardless of how the request arrived. `requestNeedsTranslationIn(state)` (before generation)
+additionally requires `state.callerSuppliedFreeText`: an ICD-only request already resolves an
+English name from the catalogue, so translating it "to English" anyway used to pollute the
+translation store with identity entries (`German: { "Diabetes": "Diabetes" }`) — a real bug, not
+a hypothetical one. `callerSuppliedFreeText` is true when the request supplied a diagnosis
+**name** (rather than only an `icd`) or any `userInstructions`; only `CaseGenerationService`
+knows this; it computes the flag before ICD→name resolution and passes it into `generateCase`'s
+options object. Unlike `language`, `callerSuppliedFreeText` **is** a `CaseStateSchema` field —
+it is per-request routing input the caller supplied, not a property of the bound ports (see the
+Language section below for that distinction). The conditional edge on the `procedures`
+generation flag stays a conditional edge in every variant, for the same "deployer compiles,
+caller branches" reason.
 
 `buildCaseGraph` compiles **all four** flag combinations eagerly at boot into a map keyed by
 `graphVariantKey`, and binds `generateCase` to the one the config selects. Only one is ever
@@ -225,10 +250,27 @@ transports encode through it before a case leaves the process — without this, 
 would JSON-stringify to `{"0":102,"1":101,…}`. A part beyond `MAX_CONTENT_PART_BYTES` fails
 loudly, naming the field and size, instead of silently shipping an oversized document.
 
-The translate-out node (`03case-translation-from-english/tools.ts`'s `translateCase`) projects
-the case to this same text shape before it ever reaches the translation prompt, and rebuilds
-`ContentPart[]` with `textPart()` afterwards — see that file's comments for the (deliberately
-preserved, issue-12-owned) overwrite bug and the issue-13 multi-part ordering constraint.
+**The translate-out phase is per-part, not whole-case (issue 12).** It used to project the whole
+case to one text shape, translate it in a single free-text LLM call, and let that response
+overwrite `case` wholesale via the state's shallow-merge reducer — silently clobbering the
+cache-backed, catalogue-correct `procedures[].name`/`anamnesis[].category` translations a
+separate node had just produced, since "translate only the VALUES" doesn't distinguish a
+category/name from any other value. Fixed by disjointness, not by reordering: `translate_defined`
+(catalog dictionary lookup, per-key locked LLM fill on a miss) and `translate_rest` (one LLM call
+over a flat, keyed map of every `ContentPart.alt` in the case — built by
+`03case-translation-from-english/tools.ts`'s `caseAltMap`, keyed by stable **path**
+(`chiefComplaint.0`, `anamnesis.2.answer.0`, `procedures.1.result.3`) rather than by name, so
+translating a procedure's name can never collide with translating its result) run in parallel and
+write to their own state channels, never to `case`. `translate_merge` is the only node that
+applies both maps to `case`: for each part, a `text/plain` part has `value` **re-derived** as
+`utf8(translatedAlt)` via `textPart()` (never translated independently, so the two cannot drift);
+any other part's `value` passes through byte-identical, translating only `alt` — excluded from
+re-derivation by construction, not by a prompt instruction. Because `alt` is the only thing that
+ever reaches this prompt, and it is joined into a small keyed JSON object rather than the whole
+case (patient object, procedure names, enums and all), the rest pass's payload shrinks
+meaningfully too — see issue 12's PR for a representative measurement. This is also
+what unblocks issue 13: per-part translation survives a multi-part field, where the old
+whole-case text projection would have collapsed it.
 
 ### Repo Layer (embedded SQLite via Drizzle)
 
@@ -336,16 +378,22 @@ Concretely:
   its existing per-language summary) exits non-zero naming any catalogue that has zero
   translation entries for a configured non-English language, and warns (does not fail) for a
   translated language that is declared in a YAML file but not in `LANGUAGES`.
-- **ALS, not state.** `runWithContext` stores the request's `language` on the same
-  `AsyncLocalStorage`-carried `RequestContext` that already carries `llmConfig` and the abort
-  `signal`. `CaseStateSchema` (`caseGraph.ts`) has no `language` field; the two conditional
-  edges that decide whether to enter the translation phases call `requestNeedsTranslation()`,
-  which reads `getRequestContext()?.language`. The translation subgraphs
-  (`01case-translation-to-english/`, `03case-translation-from-english/`) likewise dropped their
-  own `language` state field and read it off ALS inside their node functions. Known limitation,
-  carried over from `llmConfig`: ALS-carried values are invisible to checkpoints, so anything
-  resumable (F09) must rebuild `language` from the original request rather than expect it to
-  survive a resume.
+- **ALS, not state — except `callerSuppliedFreeText`, which is state, not ALS (issue 12 §3).**
+  `runWithContext` stores the request's `language` on the same `AsyncLocalStorage`-carried
+  `RequestContext` that already carries `llmConfig` and the abort `signal`. `CaseStateSchema`
+  (`caseGraph.ts`) has no `language` field; the translate-out conditional edge calls
+  `requestNeedsTranslationOut()`, which reads `getRequestContext()?.language`. The translation
+  subgraphs (`01case-translation-to-english/`, `03case-translation-from-english/`) likewise have
+  no `language` state field and read it off ALS inside their node functions. `language` stays on
+  ALS because it is a property of the _bound ports_ — the same value for every node in a request,
+  decided before the graph ever runs. `callerSuppliedFreeText` is different: it is per-request
+  **routing input the caller supplied** (did they send a diagnosis name or userInstructions, as
+  opposed to only an `icd`?), so it lives on `CaseStateSchema` and the translate-**in** edge
+  (`requestNeedsTranslationIn(state)`) reads it from state, not ALS — "branch on what the caller
+  asked for" (the assembly rule above) applies to routing inputs, not only to deployer flags.
+  Known limitation, carried over from `llmConfig`: ALS-carried values are invisible to
+  checkpoints, so anything resumable (F09) must rebuild `language` from the original request
+  rather than expect it to survive a resume.
 - **Audience split.** Every LLM call site is `audience: "internal"` (the plan, the plan judge,
   the blinded solver, `matchDiagnosis`, the symptom/basis provider — English in both sandwich
   modes, which is what keeps the generation core language-agnostic) or `"user-facing"` (chief
@@ -373,9 +421,10 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
   `procedures[].name` and `anamnesis[].category` are literal-union grammar picks from the
   English catalogue (issue 01's Rule 4 deletion made catalogue reads language-independent), so
   there is no translate-out step to localize them and they come back English. This is a known,
-  documented gap, not an oversight — localizing them is a catalogue dictionary lookup, which is
-  issue 12's defined pass; building a second copy of that machinery here would just be
-  duplicated by 12 immediately after. Localized candidate grammars for non-sandwich mode
+  documented gap, not an oversight — localizing them is a catalogue dictionary lookup, exactly
+  what `translate_defined` already does in the sandwich-on `03case-translation-from-english/`
+  (issue 12); building a second copy of that machinery for non-sandwich mode would just
+  duplicate it. Localized candidate grammars for non-sandwich mode
   (picking directly from a target-language catalogue) are tracked separately —
   `docs/issues/16-localized-candidate-grammars.md` — because they reverse issue 01's Rule 4
   deletion and deserve their own decision.

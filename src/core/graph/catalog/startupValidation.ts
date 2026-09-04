@@ -1,6 +1,7 @@
 import { readDeclaredTranslations } from "../persistence/predefinedList.js";
 import type { Repos } from "../repos.js";
 import { getKnownLabels } from "../utils/nodeWrapper.js";
+import { unmappableLanguages } from "@/core/languageDetection/mapping.js";
 import {
   findUnknownKeys,
   formatProblems,
@@ -223,6 +224,24 @@ export function warnUnconfiguredLanguages(
 }
 
 /**
+ * Warn (never fail) for every configured language the language-detection
+ * mapping table (`languageDetection/mapping.ts`) does not recognise (issue
+ * 10 §4) — extends this same catalogue-validation summary rather than
+ * adding a second reporter. Such a language simply never wins step 2 of the
+ * auto-detect ladder; it stays fully usable when passed explicitly, so this
+ * is informational only.
+ */
+function warnUndetectableLanguages(languages: string[]): void {
+  for (const language of unmappableLanguages(languages)) {
+    console.warn(
+      `[catalog] "${language}" is not in the language-detector's ISO↔name mapping ` +
+        `table — it will never be selected by language auto-detection, but stays ` +
+        `fully usable when passed explicitly as "language".`
+    );
+  }
+}
+
+/**
  * Validate the enforcing catalogues' translation files against their base
  * catalogue, and every catalogue's translation coverage against the
  * deployment's configured `languages` (issue 09 §1), printing a startup
@@ -240,6 +259,7 @@ export function validateCatalogsOrExit(
 
   printSummary(specs);
   warnUnconfiguredLanguages(specs, languages);
+  warnUndetectableLanguages(languages);
 
   const unknownKeyProblems: CatalogProblem[] = specs
     .filter((spec) => spec.enforceUnknownKeys)

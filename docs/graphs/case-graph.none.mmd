@@ -1,7 +1,7 @@
 %%{init: {'flowchart': {'curve': 'linear'}}}%%
 graph TD;
 	__start__([<p>__start__</p>]):::first
-	generation_phase_symptom_phase(symptom_phase)
+	generation_phase_basis_resolve(basis_resolve)
 	generation_phase_presentation_phase_case_outline_generate(case_outline_generate)
 	generation_phase_presentation_phase_outline_evaluate(outline_evaluate)
 	generation_phase_presentation_phase_outline_regenerate(outline_regenerate)
@@ -14,7 +14,7 @@ graph TD;
 	generation_phase_procedure_phase_result_step(result_step)
 	generation_phase_procedure_phase_bridge(bridge)
 	__end__([<p>__end__</p>]):::last
-	__start__ --> generation_phase_symptom_phase;
+	__start__ --> generation_phase_basis_resolve;
 	generation_phase_procedure_phase_bridge --> __end__;
 	subgraph generation_phase
 	subgraph presentation_phase
@@ -34,7 +34,7 @@ graph TD;
 	generation_phase_procedure_phase_blinded_step -.-> generation_phase_procedure_phase_bridge;
 	generation_phase_procedure_phase_result_step -.-> generation_phase_procedure_phase_blinded_step;
 	end
-	generation_phase_symptom_phase --> generation_phase_presentation_phase_case_outline_generate;
+	generation_phase_basis_resolve --> generation_phase_presentation_phase_case_outline_generate;
 	generation_phase_presentation_phase_case_fan_in -. &nbsp;generate&nbsp; .-> generation_phase_procedure_phase___start__;
 	end
 	classDef default fill:#f2f0ff,line-height:1.2;

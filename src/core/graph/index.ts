@@ -5,6 +5,7 @@ import { validateCatalogsOrExit } from "./catalog/startupValidation.js";
 import { buildCaseGraph } from "./02graphs/caseGraph.js";
 import { createYamlCatalogs } from "./catalog/index.js";
 import { createRepos } from "./repos.js";
+import { createMedicalBasisRegistry } from "./medicalBasis/registry.js";
 import { createLlmPort } from "./utils/llm.js";
 import { createLogger } from "./utils/logger.js";
 import { LLM_ROLES, type GraphRuntime } from "./runtime.js";
@@ -75,7 +76,23 @@ export function initGraph(opts: {
     clock: () => new Date(),
   };
 
-  const { generateCase } = buildCaseGraph(runtime, bus, config, repos);
+  // The medical-basis registry is a plain list built here, in the
+  // composition root — not a `FEATURES`/config flag (see
+  // `medicalBasis/registry.ts`'s `createMedicalBasisRegistry` doc comment
+  // for why). Today it always returns `[umlsSymptomProvider]`; a deployer
+  // cannot currently switch it off.
+  const medicalBasisRegistry = createMedicalBasisRegistry({
+    runtime,
+    symptomsRepo: repos.symptoms,
+  });
+
+  const { generateCase } = buildCaseGraph(
+    runtime,
+    bus,
+    config,
+    repos,
+    medicalBasisRegistry
+  );
 
   // Validate catalogue translation files here, and not any earlier: the
   // "labels" catalogue's base key set is `getKnownLabels()`

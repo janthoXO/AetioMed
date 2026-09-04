@@ -17,6 +17,7 @@ import type { GraphRuntime } from "../runtime.js";
 import type { Config } from "../config.js";
 import type { EventBus } from "../../event-bus.js";
 import type { Repos } from "../repos.js";
+import type { MedicalBasisProvider } from "../medicalBasis/ports.js";
 
 const CaseStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
@@ -29,12 +30,24 @@ const CaseStateSchema = CaseGenerationStateSchema.pick({
 });
 
 /** The repos the case graph's phases need. */
-type CaseGraphRepos = Pick<Repos, "symptoms" | "anamnesis" | "procedures">;
+type CaseGraphRepos = Pick<Repos, "anamnesis" | "procedures">;
 
-/** Everything assembly needs that is *not* a flag. */
+/**
+ * Everything assembly needs that is *not* a flag. `medicalBasisRegistry` is
+ * here rather than in `GraphFlags` deliberately: it is fixed per deployment
+ * (constructed once in `graph/index.ts` via
+ * `medicalBasis/registry.ts`'s `createMedicalBasisRegistry`), so all four
+ * flag variants share it — putting it in `GraphFlags` would multiply the
+ * variant count by registry configuration. Its *size* still changes the
+ * compiled shape (see `02case-generation/index.ts`'s `buildCaseGenerationGraph`),
+ * exactly like the two real flags, just driven by a list rather than a
+ * boolean and not itself a deployer-facing env flag (see that module's doc
+ * comment on `createMedicalBasisRegistry`).
+ */
 export type AssemblyDeps = {
   runtime: GraphRuntime;
   repos: CaseGraphRepos;
+  medicalBasisRegistry: MedicalBasisProvider[];
   traceNode: ReturnType<typeof createTraceNode>;
 };
 
@@ -109,12 +122,12 @@ export function graphTopologyKey(
  * nothing here performs I/O.
  */
 export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
-  const { runtime, repos, traceNode } = deps;
+  const { runtime, repos, medicalBasisRegistry, traceNode } = deps;
 
   const generationPhase = buildCaseGenerationGraph(
     runtime,
     createProcedureStrategy(runtime, flags.procedurePreselection),
-    repos.symptoms,
+    medicalBasisRegistry,
     traceNode
   );
 
@@ -195,11 +208,13 @@ export function buildCaseGraph(
   runtime: GraphRuntime,
   bus: EventBus,
   config: Config,
-  repos: CaseGraphRepos
+  repos: CaseGraphRepos,
+  medicalBasisRegistry: MedicalBasisProvider[]
 ) {
   const deps: AssemblyDeps = {
     runtime,
     repos,
+    medicalBasisRegistry,
     traceNode: createTraceNode(bus),
   };
 

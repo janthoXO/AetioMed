@@ -20,16 +20,20 @@ import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.
 import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
 import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.js";
-import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
 import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
+import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
 
 const TRANSLATION_NODES = [
   "translation_to_english_phase",
   "translation_from_english_phase",
 ];
 
-function buildDeps(): AssemblyDeps {
+function buildDeps(
+  medicalBasisRegistry: MedicalBasisProvider[] = [
+    { id: "fake-basis", fetch: async () => [] },
+  ]
+): AssemblyDeps {
   const bus = new EventBus();
   const runtime: GraphRuntime = {
     llm: {
@@ -47,11 +51,6 @@ function buildDeps(): AssemblyDeps {
     clock: () => new Date("2024-01-01T00:00:00.000Z"),
   };
 
-  const symptoms: SymptomsRepo = {
-    SymptomsRelatedToDiagnosisIcd: () => [],
-    getCachedSymptoms: () => undefined,
-    saveCachedSymptoms: () => {},
-  };
   const anamnesis: AnamnesisRepo = {
     translationsFile: "",
     getAnamnesisCategoryTranslationFromEnglish: () => undefined,
@@ -67,7 +66,8 @@ function buildDeps(): AssemblyDeps {
 
   return {
     runtime,
-    repos: { symptoms, anamnesis, procedures },
+    repos: { anamnesis, procedures },
+    medicalBasisRegistry,
     traceNode: createTraceNode(bus),
   };
 }
@@ -128,6 +128,23 @@ describe("assembleCaseGraph", () => {
     }
   });
 
+  it("compiles no basis_resolve node at all when the medical-basis registry is empty", async () => {
+    const ids = await nodeIds(
+      assembleCaseGraph(buildDeps([]), flags(false, false))
+    );
+    expect(ids.some((id) => id.includes("basis_resolve"))).toBe(false);
+  });
+
+  it("compiles a basis_resolve node when the medical-basis registry is non-empty", async () => {
+    const ids = await nodeIds(
+      assembleCaseGraph(
+        buildDeps([{ id: "fake-basis", fetch: async () => [] }]),
+        flags(false, false)
+      )
+    );
+    expect(ids.some((id) => id.includes("basis_resolve"))).toBe(true);
+  });
+
   it("gives the two preselection variants of a topology identical shapes", async () => {
     // This is the premise `exportGraphs.ts` rests on when it writes two
     // diagrams instead of four: PROCEDURE_PRESELECTION swaps a strategy
@@ -174,7 +191,8 @@ describe("buildCaseGraph", () => {
       deps.runtime,
       new EventBus(),
       config,
-      deps.repos
+      deps.repos,
+      deps.medicalBasisRegistry
     );
 
     const graphs = ALL_GRAPH_FLAGS.map((f) => getCaseGraph(f));
@@ -187,7 +205,8 @@ describe("buildCaseGraph", () => {
       deps.runtime,
       new EventBus(),
       config,
-      deps.repos
+      deps.repos,
+      deps.medicalBasisRegistry
     );
 
     expect(getCaseGraph(flags(true, false))).toBe(
@@ -206,7 +225,8 @@ describe("buildCaseGraph", () => {
         TRANSLATION_SANDWICH: "false",
         PROCEDURE_PRESELECTION: "true",
       }),
-      deps.repos
+      deps.repos,
+      deps.medicalBasisRegistry
     );
 
     expect(caseGraph).toBe(getCaseGraph(flags(false, true)));

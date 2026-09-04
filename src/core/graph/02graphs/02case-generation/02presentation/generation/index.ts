@@ -46,7 +46,7 @@ function makeGenerateCaseOutline(runtime: GraphRuntime) {
         {
           diagnosis: state.diagnosis,
           generationFlags: state.generationFlags,
-          symptoms: state.symptoms,
+          basisFragments: state.basisFragments,
           difficulty: state.difficulty,
           userInstructions: renderUserInstructions(state.userInstructions),
         },
@@ -183,7 +183,7 @@ function makeOutlineRegenerate(runtime: GraphRuntime) {
         {
           diagnosis: state.diagnosis,
           generationFlags: state.generationFlags,
-          symptoms: state.symptoms,
+          basisFragments: state.basisFragments,
           difficulty: state.difficulty,
           userInstructions: renderUserInstructions(state.userInstructions),
           feedback: state.outlineFeedback,

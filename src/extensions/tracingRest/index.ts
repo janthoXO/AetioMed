@@ -1,13 +1,12 @@
-import { defineExtension } from "../../core/extension.js";
-import { extension as tracingExtension } from "../tracing/index.js";
-import { extension as restExtension, apiRouter } from "../rest/index.js";
+import type express from "express";
 import traceRouter from "./router.js";
 
-export const extension = defineExtension({
-  name: "tracingRest",
-  dependsOn: [tracingExtension, restExtension] as const,
-  async setup() {
-    console.log("[tracingRest] Initializing TracingRest extension...");
-    apiRouter.use("/", traceRouter);
-  },
-});
+/**
+ * Mount the SSE live-trace route (`GET /traces/:jobId/stream`) onto the
+ * given API router. Called from `rest/index.ts` when both `REST` and
+ * `TRACING` are enabled.
+ */
+export function mountTracingRest(apiRouter: express.Router): void {
+  console.log("[tracingRest] Mounting live trace stream route...");
+  apiRouter.use("/", traceRouter);
+}

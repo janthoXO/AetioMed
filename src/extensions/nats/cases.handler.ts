@@ -1,12 +1,10 @@
-import { makeCaseGenerationRequestSchema } from "@/extensions/api/CaseGenerationRequest.js";
+import { makeCaseGenerationRequestSchema } from "@/api/index.js";
 import { getJetStreamClient, getNatsConnection } from "./client.js";
 import { AckPolicy, jetstreamManager, type JsMsg } from "@nats-io/jetstream";
-import { runWithContext } from "@/core/graph/utils/context.js";
 import * as cancelManager from "@/core/graph/utils/cancelManager.js";
-import type { EventBus } from "@/core/event-bus.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
+import type { CaseGenerationService } from "@/core/caseGenerationService.js";
 import { publishCaseGenerationResponse } from "./cases.publisher.js";
-import { AppError } from "@/core/graph/errors/AppError.js";
 import z from "zod";
 
 const STREAM_NAME = "cases";
@@ -21,10 +19,10 @@ const CancelMessageSchema = z.object({
   jobId: z.string().optional(),
 });
 
-async function consumeCaseGenerateMessage(
+export async function consumeCaseGenerateMessage(
   msg: JsMsg,
   graph: GraphAppContext,
-  bus: EventBus
+  service: CaseGenerationService
 ) {
   const NatsCaseGenerationRequestSchema = makeCaseGenerationRequestSchema(
     graph.config
@@ -37,85 +35,39 @@ async function consumeCaseGenerateMessage(
   try {
     console.debug(`[NATS] Received message on ${SUBJECT}:`, msg.json());
     const data = NatsCaseGenerationRequestSchema.parse(msg.json());
-    const { icd, userInstructions, generationFlags, language, llmConfig } =
-      data;
-    let { diagnosis } = data;
 
-    // fill diagnosis and icdCode - zod makes sure that at least one is filled
-    if (!diagnosis) {
-      // if diagnosis is missing, icd is provided
-      diagnosis = graph.runtime.catalogs.diagnosis.byIcd(icd!)?.name;
-      // verify that is set now, otherwise return error
-      if (!diagnosis) {
-        throw new Error("No diagnosis found for icd");
-      }
+    console.log(`[NATS] Generating case (jobId=${jobId})`);
+    const result = await service.generate({ ...data, jobId });
+
+    if (result.status === "done") {
+      await publishCaseGenerationResponse(
+        jobId,
+        result.case as Record<string, unknown>
+      );
+    } else {
+      await publishCaseGenerationResponse(jobId, {
+        error: {
+          code: result.error!.code,
+          message: result.error!.message,
+          details: result.error!.details,
+        },
+      });
     }
-
-    console.log(`[NATS] Generating case for ${diagnosis} (jobId=${jobId})`);
-    const generatedCase = await runWithContext(
-      () =>
-        graph.generateCase(
-          { name: diagnosis, icd },
-          generationFlags,
-          userInstructions,
-          language
-        ),
-      jobId,
-      llmConfig
-    );
-
-    bus.emit("Generation Completed", { case: generatedCase, jobId });
-    await publishCaseGenerationResponse(
-      jobId,
-      generatedCase as Record<string, unknown>
-    );
     msg.ack();
   } catch (err) {
+    // Protocol-level failures only: bad message payload, or the publish
+    // itself failing. Domain failures (generation error, cancellation,
+    // unresolvable ICD) are already handled above via the service's result.
     console.error(`[NATS] Error processing message:`, err);
 
-    if (err instanceof Error && err.name === "AbortError") {
-      bus.emit("Generation Cancelled", { jobId });
-      try {
-        await publishCaseGenerationResponse(jobId, {
-          error: {
-            code: "GENERATION_CANCELLED",
-            message: "Generation was cancelled",
-            details: err.message,
-          },
-        });
-        msg.ack();
-      } catch (pubErr) {
-        console.error("[NATS] Failed to publish cancel response:", pubErr);
-        msg.nak();
-      }
-      return;
-    }
-
-    if (err instanceof Error) {
-      bus.emit("Generation Failure", { error: err, jobId });
-    }
-
-    let errorPayload: Record<string, unknown>;
-    if (err instanceof AppError) {
-      errorPayload = {
-        error: {
-          code: err.code,
-          message: err.message,
-          details: err.details,
-        },
-      };
-    } else {
-      errorPayload = {
+    try {
+      await publishCaseGenerationResponse(jobId, {
         error: {
           code: "GENERATION_FAILED",
           message: "An unexpected error occurred",
           details: err instanceof Error ? err.message : String(err),
         },
-      };
-    }
-
-    try {
-      await publishCaseGenerationResponse(jobId, errorPayload);
+      });
       msg.ack(); // Ack even on error because we processed it by sending an error response
     } catch (pubErr) {
       console.error("[NATS] Failed to publish error response:", pubErr);
@@ -146,7 +98,7 @@ function startCancelSubscription() {
 
 export async function startCaseGenerationConsumer(
   graph: GraphAppContext,
-  bus: EventBus
+  service: CaseGenerationService
 ) {
   const nc = getNatsConnection();
   const js = getJetStreamClient();
@@ -183,6 +135,8 @@ export async function startCaseGenerationConsumer(
   const consumer = await js.consumers.get(STREAM_NAME, CONSUMER_NAME);
   const messages = await consumer.consume({ max_messages: 1 });
   for await (const msg of messages) {
-    consumeCaseGenerateMessage(msg, graph, bus);
+    // Awaited deliberately: without this, ack/nak races the next loop
+    // iteration and generations pile up unbounded despite max_messages: 1.
+    await consumeCaseGenerateMessage(msg, graph, service);
   }
 }

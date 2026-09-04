@@ -1,43 +1,48 @@
-import { defineExtension } from "../../core/extension.js";
 import { connectNats, closeNats } from "./client.js";
 import { startCaseGenerationConsumer } from "./cases.handler.js";
 import { ConfigSchema } from "./config.js";
-import { extension as apiExtension } from "../api/index.js";
+import type { GraphAppContext } from "../../core/graph/appContext.js";
+import type { CaseGenerationService } from "../../core/caseGenerationService.js";
 
-export const extension = defineExtension({
-  name: "nats",
-  requiredFlags: ["NATS"],
-  dependsOn: [apiExtension] as const,
-  envSchema: ConfigSchema,
-  async setup({ config, graph, bus }) {
-    console.log("[NATS] Initializing NATS extension...");
-    try {
-      const connected = await connectNats(config);
-      if (!connected) {
-        return;
-      }
-      startCaseGenerationConsumer(graph, bus).catch(() => {
-        console.error("[NATS] Failed to start case generation consumer");
-      });
-    } catch (error) {
-      console.debug(error);
-      console.error("[NATS] Connection failed");
+/**
+ * Start the NATS transport: connects to NATS/JetStream and starts consuming
+ * `cases.generate` messages. Constructed explicitly by the composition root
+ * (`app.ts`) when the `NATS` flag is set — no loader.
+ */
+export async function startNatsTransport(opts: {
+  graph: GraphAppContext;
+  service: CaseGenerationService;
+}): Promise<void> {
+  const { graph, service } = opts;
+  const config = ConfigSchema.parse(process.env);
+
+  console.log("[NATS] Initializing NATS transport...");
+  try {
+    const connected = await connectNats(config);
+    if (!connected) {
+      return;
     }
-
-    // Graceful shutdown handling
-    const shutdown = async () => {
-      console.log("[NATS] Shutting down NATS...");
-      await closeNats();
-    };
-
-    process.once("SIGINT", async () => {
-      await shutdown();
-      process.exit(0);
+    startCaseGenerationConsumer(graph, service).catch(() => {
+      console.error("[NATS] Failed to start case generation consumer");
     });
+  } catch (error) {
+    console.debug(error);
+    console.error("[NATS] Connection failed");
+  }
 
-    process.once("SIGTERM", async () => {
-      await shutdown();
-      process.exit(0);
-    });
-  },
-});
+  // Graceful shutdown handling
+  const shutdown = async () => {
+    console.log("[NATS] Shutting down NATS...");
+    await closeNats();
+  };
+
+  process.once("SIGINT", async () => {
+    await shutdown();
+    process.exit(0);
+  });
+
+  process.once("SIGTERM", async () => {
+    await shutdown();
+    process.exit(0);
+  });
+}

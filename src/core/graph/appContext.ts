@@ -16,10 +16,11 @@ export type GenerateCaseFn = (
 ) => Promise<Case>;
 
 /**
- * The case-generation graph's surface, as consumed by transport extensions
- * (rest, nats). Built once in `app.ts`'s `createApp()` and handed to every
- * extension's `setup()` via `ExtensionSetupCtx.graph` — extensions never
- * import graph internals (there is no longer a module singleton to import).
+ * The case-generation graph's surface, as consumed by the transports (rest,
+ * nats). Built once in `app.ts`'s `createApp()` and handed explicitly to
+ * each transport's start function (`startRestServer`, `startNatsTransport`)
+ * — transports never import graph internals (there is no module singleton
+ * to import).
  */
 export interface GraphAppContext {
   config: Config;

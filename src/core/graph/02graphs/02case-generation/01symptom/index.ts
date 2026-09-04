@@ -1,11 +1,7 @@
 import { END, START, StateGraph, type Runtime } from "@langchain/langgraph";
 import { CaseGenerationStateSchema } from "../state.js";
 import z from "zod";
-import {
-  SymptomsRelatedToDiagnosisIcd,
-  getCachedSymptoms,
-  saveCachedSymptoms,
-} from "@/core/graph/03repo/symptoms.repo.js";
+import type { SymptomsRepo } from "@/core/graph/03repo/symptoms.repo.js";
 import {
   RequestContextSchema,
   type RequestContext,
@@ -30,13 +26,16 @@ type SymptomsGraphState = z.infer<typeof SymptomsGraphStateSchema>;
 // skips the LLM call entirely; a miss or stale entry regenerates and writes
 // back to the cache. Diagnoses without an ICD code are never cached.
 
-function makeRetrieveOrGenerateSymptoms(runtime: GraphRuntime) {
+function makeRetrieveOrGenerateSymptoms(
+  runtime: GraphRuntime,
+  symptomsRepo: SymptomsRepo
+) {
   return async function retrieveOrGenerateSymptoms(
     state: SymptomsGraphState,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Pick<SymptomsGraphState, "symptoms">> {
     const icd = state.diagnosis.icd;
-    const umls = icd ? SymptomsRelatedToDiagnosisIcd(icd) : [];
+    const umls = icd ? symptomsRepo.SymptomsRelatedToDiagnosisIcd(icd) : [];
 
     runtime.log.info(
       `[SymptomsGraph] UMLS symptoms: ${
@@ -44,7 +43,7 @@ function makeRetrieveOrGenerateSymptoms(runtime: GraphRuntime) {
       }`
     );
 
-    const cached = icd ? getCachedSymptoms(icd) : undefined;
+    const cached = icd ? symptomsRepo.getCachedSymptoms(icd) : undefined;
     if (cached) {
       runtime.log.info(
         `[SymptomsGraph] cache hit for ICD ${icd}: ${cached.map((s) => s.name).join(", ")}`
@@ -69,7 +68,7 @@ function makeRetrieveOrGenerateSymptoms(runtime: GraphRuntime) {
     );
 
     if (icd) {
-      saveCachedSymptoms(icd, generated);
+      symptomsRepo.saveCachedSymptoms(icd, generated);
     }
 
     return { symptoms: [...umls, ...generated] };
@@ -80,6 +79,7 @@ function makeRetrieveOrGenerateSymptoms(runtime: GraphRuntime) {
 
 export function buildSymptomsGraph(
   runtime: GraphRuntime,
+  symptomsRepo: SymptomsRepo,
   traceNode: ReturnType<typeof createTraceNode>
 ) {
   return new StateGraph(SymptomsGraphStateSchema, RequestContextSchema)
@@ -87,7 +87,7 @@ export function buildSymptomsGraph(
       "symptoms_resolve",
       traceNode(
         "symptoms_resolve",
-        makeRetrieveOrGenerateSymptoms(runtime),
+        makeRetrieveOrGenerateSymptoms(runtime, symptomsRepo),
         "Retrieving or generating symptoms"
       )
     )

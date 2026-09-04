@@ -1,46 +1,61 @@
 import { type ForeignLanguage } from "../models/Language.js";
 import type { RequestContext } from "../utils/context.js";
+import type { DbHandle } from "./db.js";
 import { createTranslationStore } from "./translationStore.js";
 import { catalogFile } from "./paths.js";
 
-/** Exposed for the startup catalogue validator (`catalog/startupValidation.ts`). */
-export const LABELS_TRANSLATIONS_FILE = catalogFile("labelTranslations.yml");
-
-/**
- * Trace node label translations from English to other languages.
- * Pre-mapped labels are preloaded from `labelTranslations.yml` (under
- * `CATALOG_DIR`); any label not covered there is translated on demand by the
- * AI warm-up and cached in-memory only (never written back to the config).
- */
-const store = createTranslationStore({
-  name: "Labels",
-  yamlFile: LABELS_TRANSLATIONS_FILE,
-});
-
-/**
- * Synchronous lookup of a label's translation. Used on the trace hot path,
- * which relies on the cache having been warmed for the language beforehand.
- */
-export function getLabelTranslation(
-  label: string,
-  language: ForeignLanguage
-): string | undefined {
-  return store.getFromEnglish(label, language);
+export interface LabelsRepo {
+  /** Absolute path of the translations YAML, for the startup catalogue validator. */
+  readonly translationsFile: string;
+  /**
+   * Synchronous lookup of a label's translation. Used on the trace hot path,
+   * which relies on the cache having been warmed for the language beforehand.
+   */
+  getLabelTranslation(
+    label: string,
+    language: ForeignLanguage
+  ): string | undefined;
+  /**
+   * Translate every requested label that is not already cached, in a single
+   * batch (deduped across concurrent requests). Results are saved in-memory.
+   */
+  ensureLabelsTranslated(
+    labels: string[],
+    language: ForeignLanguage,
+    generate: (
+      missing: string[],
+      lang: ForeignLanguage,
+      ctx?: RequestContext
+    ) => Promise<Record<string, string>>,
+    ctx?: RequestContext
+  ): Promise<Record<string, string>>;
 }
 
 /**
- * Translate every requested label that is not already cached, in a single
- * batch (deduped across concurrent requests). Results are saved in-memory.
+ * Syncs `labelTranslations.yml` (under `catalogDir`) into `dbHandle`'s
+ * embedded database, then exposes trace-node label lookups. Pre-mapped
+ * labels are preloaded from the YAML; any label not covered there is
+ * translated on demand by the AI warm-up and cached (never written back to
+ * the config).
  */
-export function ensureLabelsTranslated(
-  labels: string[],
-  language: ForeignLanguage,
-  generate: (
-    missing: string[],
-    lang: ForeignLanguage,
-    ctx?: RequestContext
-  ) => Promise<Record<string, string>>,
-  ctx?: RequestContext
-): Promise<Record<string, string>> {
-  return store.translateMissing(labels, language, generate, ctx);
+export function createLabelsRepo(
+  dbHandle: DbHandle,
+  catalogDir: string
+): LabelsRepo {
+  const translationsFile = catalogFile(catalogDir, "labelTranslations.yml");
+
+  const store = createTranslationStore(dbHandle, {
+    name: "Labels",
+    yamlFile: translationsFile,
+  });
+
+  return {
+    translationsFile,
+    getLabelTranslation(label, language) {
+      return store.getFromEnglish(label, language);
+    },
+    ensureLabelsTranslated(labels, language, generate, ctx) {
+      return store.translateMissing(labels, language, generate, ctx);
+    },
+  };
 }

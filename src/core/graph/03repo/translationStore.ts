@@ -6,7 +6,7 @@ import {
 } from "../models/Language.js";
 import type { RequestContext } from "../utils/context.js";
 import { retry } from "../utils/retry.js";
-import { chunk, db, syncSource } from "./db.js";
+import type { DbHandle } from "./db.js";
 import { translation } from "./schema.js";
 
 /**
@@ -90,13 +90,16 @@ function createDeferred<T>(): Deferred<T> {
   return { promise, resolve, reject };
 }
 
-export function createTranslationStore(opts: {
-  name: string;
-  yamlFile?: string;
-  /** Retry policy for runtime fills — overridable so tests don't wait out real backoff. */
-  retries?: number;
-  retryBaseDelayMs?: number;
-}): TranslationStore {
+export function createTranslationStore(
+  dbHandle: DbHandle,
+  opts: {
+    name: string;
+    yamlFile?: string;
+    /** Retry policy for runtime fills — overridable so tests don't wait out real backoff. */
+    retries?: number;
+    retryBaseDelayMs?: number;
+  }
+): TranslationStore {
   const domain = opts.name;
   const retries = opts.retries ?? 3;
   const retryBaseDelayMs = opts.retryBaseDelayMs ?? 1000;
@@ -115,8 +118,9 @@ export function createTranslationStore(opts: {
 
   /** YAML sync path: curated always overwrites, whatever was there before. */
   function upsertCurated(rows: Row[]) {
-    for (const batch of chunk(rows)) {
-      db.insert(translation)
+    for (const batch of dbHandle.chunk(rows)) {
+      dbHandle.db
+        .insert(translation)
         .values(batch.map((r) => ({ ...r, source: "curated" as const })))
         .onConflictDoUpdate({
           target: [translation.domain, translation.lang, translation.english],
@@ -137,8 +141,9 @@ export function createTranslationStore(opts: {
   function insertGeneratedAndReadBack(rows: Row[]): Record<string, string> {
     if (rows.length === 0) return {};
 
-    for (const batch of chunk(rows)) {
-      db.insert(translation)
+    for (const batch of dbHandle.chunk(rows)) {
+      dbHandle.db
+        .insert(translation)
         .values(batch.map((r) => ({ ...r, source: "generated" as const })))
         .onConflictDoNothing()
         .run();
@@ -148,8 +153,8 @@ export function createTranslationStore(opts: {
     // All rows here share the same domain/lang (see callers below).
     const { lang } = rows[0]!;
     const keys = rows.map((r) => r.english);
-    for (const batch of chunk(keys)) {
-      const stored = db
+    for (const batch of dbHandle.chunk(keys)) {
+      const stored = dbHandle.db
         .select({
           english: translation.english,
           translated: translation.translated,
@@ -169,7 +174,7 @@ export function createTranslationStore(opts: {
   }
 
   function getFromEnglish(english: string, lang: ForeignLanguage) {
-    const row = db
+    const row = dbHandle.db
       .select({ translated: translation.translated })
       .from(translation)
       .where(
@@ -184,7 +189,7 @@ export function createTranslationStore(opts: {
   }
 
   function getToEnglish(translated: string, lang: ForeignLanguage) {
-    const row = db
+    const row = dbHandle.db
       .select({ english: translation.english })
       .from(translation)
       .where(
@@ -212,7 +217,7 @@ export function createTranslationStore(opts: {
 
   if (opts.yamlFile) {
     const yamlFile = opts.yamlFile;
-    const synced = syncSource(domain, yamlFile, (parsed) => {
+    const synced = dbHandle.syncSource(domain, yamlFile, (parsed) => {
       const result = TranslationMappingSchema.safeParse(parsed);
       if (!result.success) {
         console.warn(

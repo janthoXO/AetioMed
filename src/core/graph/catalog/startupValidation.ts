@@ -1,17 +1,5 @@
 import { readDeclaredTranslations } from "../03repo/predefinedList.js";
-import {
-  PredefinedProcedureNames,
-  PROCEDURES_TRANSLATIONS_FILE,
-} from "../03repo/procedures.repo.js";
-import {
-  AnamnesisCategoryDefaults,
-  ANAMNESIS_TRANSLATIONS_FILE,
-} from "../03repo/anamnesis.repo.js";
-import {
-  getAllDiagnoses,
-  DIAGNOSIS_TRANSLATIONS_FILE,
-} from "../03repo/diagnosis.repo.js";
-import { LABELS_TRANSLATIONS_FILE } from "../03repo/labels.repo.js";
+import type { Repos } from "../03repo/index.js";
 import { getKnownLabels } from "../utils/nodeWrapper.js";
 import {
   findUnknownKeys,
@@ -35,9 +23,9 @@ interface CatalogueSpec {
   enforceUnknownKeys: boolean;
 }
 
-function everyDiagnosisKey(): string[] {
+function everyDiagnosisKey(repos: Repos): string[] {
   const keys: string[] = [];
-  for (const diagnosis of getAllDiagnoses()) {
+  for (const diagnosis of repos.diagnosis.getAllDiagnoses()) {
     keys.push(diagnosis.name);
     for (const alt of diagnosis.alternativeNames ?? []) {
       keys.push(alt);
@@ -46,27 +34,27 @@ function everyDiagnosisKey(): string[] {
   return keys;
 }
 
-function loadCatalogueSpecs(): CatalogueSpec[] {
+function loadCatalogueSpecs(repos: Repos): CatalogueSpec[] {
   return [
     {
       catalogue: "procedures",
-      file: PROCEDURES_TRANSLATIONS_FILE,
-      baseKeys: PredefinedProcedureNames ?? [],
-      translations: readDeclaredTranslations(PROCEDURES_TRANSLATIONS_FILE),
+      file: repos.procedures.translationsFile,
+      baseKeys: repos.procedures.getEffectiveProcedureList() ?? [],
+      translations: readDeclaredTranslations(repos.procedures.translationsFile),
       enforceUnknownKeys: true,
     },
     {
       catalogue: "anamnesisCategories",
-      file: ANAMNESIS_TRANSLATIONS_FILE,
-      baseKeys: AnamnesisCategoryDefaults ?? [],
-      translations: readDeclaredTranslations(ANAMNESIS_TRANSLATIONS_FILE),
+      file: repos.anamnesis.translationsFile,
+      baseKeys: repos.anamnesis.getEffectiveCategoryList() ?? [],
+      translations: readDeclaredTranslations(repos.anamnesis.translationsFile),
       enforceUnknownKeys: true,
     },
     {
       catalogue: "diagnosis",
-      file: DIAGNOSIS_TRANSLATIONS_FILE,
-      baseKeys: everyDiagnosisKey(),
-      translations: readDeclaredTranslations(DIAGNOSIS_TRANSLATIONS_FILE),
+      file: repos.diagnosis.translationsFile,
+      baseKeys: everyDiagnosisKey(repos),
+      translations: readDeclaredTranslations(repos.diagnosis.translationsFile),
       // The one catalogue exempt from the unknown-key rule, deliberately.
       //
       // The other three stores exist only to render a catalogue value into a
@@ -87,13 +75,13 @@ function loadCatalogueSpecs(): CatalogueSpec[] {
     },
     {
       catalogue: "labels",
-      file: LABELS_TRANSLATIONS_FILE,
-      // `getKnownLabels()` is populated by `traceNode` as the graph modules
-      // are constructed at *import time*. See the comment on the call site
-      // of `validateCatalogsOrExit()` in `graph/index.ts` for why this is
-      // safe to read here.
+      file: repos.labels.translationsFile,
+      // `getKnownLabels()` is populated by `traceNode` as `buildCaseGraph()`
+      // constructs the graph modules. See the comment on the call site of
+      // `validateCatalogsOrExit()` in `graph/index.ts` for why this is safe
+      // to read here.
       baseKeys: getKnownLabels(),
-      translations: readDeclaredTranslations(LABELS_TRANSLATIONS_FILE),
+      translations: readDeclaredTranslations(repos.labels.translationsFile),
       enforceUnknownKeys: true,
     },
   ];
@@ -156,8 +144,8 @@ function printSummary(specs: CatalogueSpec[]): void {
  * (across every catalogue) is printed and the process exits non-zero once —
  * a deployer fixing typos should not have to restart four times.
  */
-export function validateCatalogsOrExit(): void {
-  const specs = loadCatalogueSpecs();
+export function validateCatalogsOrExit(repos: Repos): void {
+  const specs = loadCatalogueSpecs(repos);
 
   printSummary(specs);
 

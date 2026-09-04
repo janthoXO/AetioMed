@@ -1,35 +1,34 @@
 import path from "node:path";
 
 /**
- * `CATALOG_DIR` and `CACHE_DIR` are read directly from `process.env` here,
- * rather than through `config.ts`, and resolved once at module scope.
+ * `CATALOG_DIR` and `CACHE_DIR` resolution. Both used to be read directly
+ * from the process environment at this module's own scope; now the
+ * composition root (`app.ts`) reads them once — via
+ * `resolveCatalogDir`/`resolveCacheDir`, explicitly passed the environment —
+ * and passes the resolved absolute paths into the `03repo/` constructors.
+ * That is what lets importing a `03repo/` module perform no I/O: nothing
+ * here runs until a constructor is called with an already-resolved path.
  *
- * That is deliberate: the repos in this directory do their file-loading work
- * at module-import time (top-level `syncSource(...)` calls etc.), which
- * happens long before `initGraph()` parses the graph config. `src/index.ts`
- * runs `import "dotenv/config"` as its very first statement, so `.env` is
- * already loaded into `process.env` before any graph module — this one
- * included — is imported. If that ordering ever changes, this module (and
- * every repo that depends on it) needs to be revisited.
- *
- * Every other module that needs a data-file path imports `CATALOG_DIR`,
- * `CACHE_DIR` or `catalogFile()` from here rather than resolving its own
- * path against `process.cwd()`.
+ * Env variable names, defaults and resolution behaviour are unchanged from
+ * before this move: `CATALOG_DIR` defaults to `"data"`, `CACHE_DIR` to
+ * `"data/cache"`, both resolved against `process.cwd()`.
  */
 
 /** Deployer-owned, read-only catalogue inputs (YAML/JSON config files). */
-export const CATALOG_DIR = path.resolve(
-  process.cwd(),
-  process.env.CATALOG_DIR ?? "data"
-);
+export function resolveCatalogDir(
+  env: Record<string, string | undefined>
+): string {
+  return path.resolve(process.cwd(), env.CATALOG_DIR ?? "data");
+}
 
 /** Generated, writable output — the embedded SQLite database lives here. */
-export const CACHE_DIR = path.resolve(
-  process.cwd(),
-  process.env.CACHE_DIR ?? "data/cache"
-);
+export function resolveCacheDir(
+  env: Record<string, string | undefined>
+): string {
+  return path.resolve(process.cwd(), env.CACHE_DIR ?? "data/cache");
+}
 
-/** Join a catalogue file name onto the resolved `CATALOG_DIR`. */
-export function catalogFile(name: string): string {
-  return path.join(CATALOG_DIR, name);
+/** Join a catalogue file name onto an already-resolved `catalogDir`. */
+export function catalogFile(catalogDir: string, name: string): string {
+  return path.join(catalogDir, name);
 }

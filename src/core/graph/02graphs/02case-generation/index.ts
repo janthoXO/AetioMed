@@ -6,6 +6,7 @@ import { buildFieldGenerationGraph } from "./02presentation/generation/index.js"
 import { buildProcedureGraph } from "./03procedure/index.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { Config } from "@/core/graph/config.js";
+import type { SymptomsRepo } from "@/core/graph/03repo/symptoms.repo.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 // ─── graph ────────────────────────────────────────────────────────────────────
@@ -13,6 +14,7 @@ import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 export function buildCaseGenerationGraph(
   runtime: GraphRuntime,
   config: Config,
+  symptomsRepo: SymptomsRepo,
   traceNode: ReturnType<typeof createTraceNode>
 ) {
   return (
@@ -20,7 +22,10 @@ export function buildCaseGenerationGraph(
       // The presentation phase is the field-generation graph mounted directly:
       // consistency is judged on the outline inside its evaluate ⇄ revise loop,
       // so there is no post-fan-out consistency check.
-      .addNode("symptom_phase", buildSymptomsGraph(runtime, traceNode))
+      .addNode(
+        "symptom_phase",
+        buildSymptomsGraph(runtime, symptomsRepo, traceNode)
+      )
       .addNode(
         "presentation_phase",
         buildFieldGenerationGraph(runtime, traceNode)

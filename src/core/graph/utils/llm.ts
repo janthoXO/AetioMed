@@ -2,16 +2,7 @@ import { ChatOllama, type ChatOllamaInput } from "@langchain/ollama";
 import { ChatGoogle, type ChatGoogleParams } from "@langchain/google";
 import { ChatOpenAI, type ChatOpenAIFields } from "@langchain/openai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import {
-  JsonOutputParser,
-  StructuredOutputParser,
-} from "@langchain/core/output_parsers";
 import { ModelUnreachableError } from "@/core/graph/errors/AppError.js";
-import { tool } from "@langchain/core/tools";
-import z from "zod";
-import { Ollama } from "ollama";
-import type { Message } from "@langchain/core/messages";
-import { jsonrepair } from "jsonrepair";
 import {
   LLMConfigSchema,
   type LLMConfig,
@@ -129,36 +120,6 @@ export function getLLM(
   return chat;
 }
 
-export function getSearchTool(llmConfig: LLMConfig) {
-  switch (llmConfig.provider) {
-    case "ollama": {
-      return tool(
-        async ({ query }: { query: string }) => {
-          return await new Ollama({
-            headers: {
-              Authorization: "Bearer " + llmConfig.apiKey,
-            },
-          }).webSearch({ query: query });
-        },
-        {
-          name: "web_search",
-          description: "Searches the web for information related to a query.",
-          schema: z.object({
-            query: z.string().describe("The query to search for on the web"),
-          }),
-        }
-      );
-    }
-    case "google": {
-      return {
-        googleSearch: {},
-      };
-    }
-    default:
-      throw new Error(`Unsupported LLM Provider: ${llmConfig.provider}`);
-  }
-}
-
 /**
  * Get a low-temperature LLM for deterministic tasks: judges/evaluations,
  * yes-no decisions, translations, and factual enumeration where accuracy
@@ -193,50 +154,6 @@ export function getCreativeLLM(
   llmConfig: Partial<Omit<LLMConfig, "temperature">> = {}
 ): BaseChatModel {
   return llm.chat({ ...llmConfig, temperature: 0.7 });
-}
-
-/**
- * Decodes a string into an object based on the configured LLM format.
- * @param input
- * @returns
- */
-export async function decodeObject(
-  input: string,
-  schema?: z.ZodObject
-): Promise<object> {
-  const parser = schema
-    ? new StructuredOutputParser(schema)
-    : new JsonOutputParser();
-  return parser.parse(input);
-}
-
-export function parseStructuredResponse<T>(
-  response: string,
-  schema: z.ZodSchema<T>
-): T {
-  try {
-    return schema.parse(JSON.parse(response));
-  } catch {
-    const repaired = jsonrepair(response);
-    console.debug("Repaired JSON:", repaired);
-    return schema.parse(JSON.parse(repaired));
-  }
-}
-
-export function parseStructuredResponseAgent<T>(
-  result: { messages: Message[]; structuredResponse?: T },
-  schema: z.ZodSchema<T>
-): T {
-  if (result.structuredResponse) {
-    return result.structuredResponse;
-  }
-
-  const content = result.messages[result.messages.length - 1]?.content;
-  if (typeof content !== "string") {
-    throw new Error("LLM response content is not a string");
-  }
-
-  return parseStructuredResponse(content, schema);
 }
 
 export function handleLangchainError(error: Error): never {

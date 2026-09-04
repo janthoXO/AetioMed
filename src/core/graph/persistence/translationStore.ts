@@ -54,7 +54,7 @@ export interface TranslationStore {
    *
    * Never throws: a key that cannot be translated after retries is simply
    * absent from the result, and the caller is expected to fall back to the
-   * English key (as `resolveLabel` in `utils/nodeWrapper.ts` already does).
+   * English key (as the `tracing` module's label localization already does).
    */
   translateMissing(
     englishKeys: string[],
@@ -309,8 +309,8 @@ export function createTranslationStore(
     ).catch((err: unknown) => {
       // Ultimate failure: reject the remaining waiters *and* delete their
       // in-flight entries, so the next request starts fresh rather than
-      // inheriting a cached rejection (see extensions/persistency/redis.ts
-      // for the bug this avoids).
+      // inheriting a cached rejection (the classic bug where a
+      // module-scope `Promise` memoizes a failure forever).
       for (const key of remaining) {
         settle(key, (d) => d.reject(err));
       }

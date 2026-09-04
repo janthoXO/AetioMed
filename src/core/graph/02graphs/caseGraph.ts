@@ -11,8 +11,7 @@ import { LanguageSchema, type Language } from "../models/Language.js";
 import type { Difficulty } from "../models/Difficulty.js";
 import { GenerationError } from "../errors/AppError.js";
 import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
-import { getKnownLabels, createTraceNode } from "../utils/nodeWrapper.js";
-import { translateLabelsFromEnglish } from "../03aigateway/labels.aigateway.js";
+import { createTraceNode } from "../utils/nodeWrapper.js";
 import type { GraphRuntime } from "../runtime.js";
 import type { Config } from "../config.js";
 import type { EventBus } from "../../event-bus.js";
@@ -40,7 +39,7 @@ export function buildCaseGraph(
   config: Config,
   repos: Pick<Repos, "symptoms" | "anamnesis" | "procedures">
 ) {
-  const traceNode = createTraceNode(bus, runtime.catalogs.labels);
+  const traceNode = createTraceNode(bus);
 
   // Compiled once, not per-request.
   const caseGraph = new StateGraph(CaseStateSchema, RequestContextSchema)
@@ -104,25 +103,6 @@ export function buildCaseGraph(
 
     const context = getRequestContext();
 
-    // Warm the trace-label translation cache once, up front, so trace events can
-    // resolve labels into the target language synchronously during generation.
-    if (language && language !== "English") {
-      try {
-        await runtime.catalogs.labels.ensureTranslated(
-          getKnownLabels(),
-          language,
-          (missing, lang, ctx) =>
-            translateLabelsFromEnglish(runtime, missing, lang, ctx),
-          context
-        );
-      } catch (err) {
-        console.warn(
-          "[CaseGraph] Failed to warm up trace label translations, falling back to English labels:",
-          err
-        );
-      }
-    }
-
     const result = await caseGraph.invoke(
       {
         diagnosis,
@@ -135,7 +115,6 @@ export function buildCaseGraph(
         context: {
           llmConfig: context?.llmConfig,
           jobId: context?.jobId,
-          language,
         },
         ...(context?.signal !== undefined ? { signal: context.signal } : {}),
       }

@@ -165,8 +165,8 @@ describe("translateMissing fallback at the call site", () => {
       failing
     );
 
-    // The call site (e.g. resolveLabel in nodeWrapper.ts) does exactly this:
-    // fall back to the English key when no translation is present.
+    // The call site (the `tracing` module's label localization) does exactly
+    // this: fall back to the English key when no translation is present.
     const resolved = translations[englishKey] ?? englishKey;
     expect(resolved).toBe(englishKey);
   });

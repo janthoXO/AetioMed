@@ -2,6 +2,7 @@ import * as fs from "node:fs/promises";
 import type { CompiledGraph } from "@langchain/langgraph";
 import { run } from "@mermaid-js/mermaid-cli";
 import { buildCaseGraph, graphTopologyKey } from "./caseGraph.js";
+import { createMedicalBasisRegistry } from "../medicalBasis/registry.js";
 import type { Node, Graph } from "@langchain/core/runnables/graph";
 import { EventBus } from "../../event-bus.js";
 import type { GraphRuntime } from "../runtime.js";
@@ -163,15 +164,23 @@ const minimalProceduresRepo: ProceduresRepo = {
   getEffectiveProcedureList: () => undefined,
 };
 
+// Mirrors the composition root (`graph/index.ts`): the registry always has
+// the one UMLS-symptom provider today, so the exported topology shows
+// `basis_resolve` exactly as a real deployment's graph would.
+const medicalBasisRegistry = createMedicalBasisRegistry({
+  runtime: minimalRuntime,
+  symptomsRepo: minimalSymptomsRepo,
+});
+
 const { getCaseGraph } = buildCaseGraph(
   minimalRuntime,
   new EventBus(),
   minimalConfig,
   {
-    symptoms: minimalSymptomsRepo,
     anamnesis: minimalAnamnesisRepo,
     procedures: minimalProceduresRepo,
-  }
+  },
+  medicalBasisRegistry
 );
 
 await fs.mkdir("docs/graphs", { recursive: true });

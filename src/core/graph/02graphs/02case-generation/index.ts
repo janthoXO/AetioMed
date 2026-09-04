@@ -1,48 +1,119 @@
-import { END, START, StateGraph } from "@langchain/langgraph";
-import { CaseGenerationStateSchema } from "./state.js";
-import { RequestContextSchema } from "@/core/graph/utils/context.js";
-import { buildSymptomsGraph } from "./01symptom/index.js";
+import { END, START, StateGraph, type Runtime } from "@langchain/langgraph";
+import {
+  CaseGenerationStateSchema,
+  type CaseGenerationState,
+} from "./state.js";
+import {
+  RequestContextSchema,
+  type RequestContext,
+} from "@/core/graph/utils/context.js";
 import { buildFieldGenerationGraph } from "./02presentation/generation/index.js";
 import { buildProcedureGraph } from "./03procedure/index.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
+import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
+import { resolveAllFragments } from "@/core/graph/medicalBasis/registry.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
+import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
 import type { ProcedureStrategy } from "./03procedure/strategy/index.js";
+
+// ─── node: resolve the medical basis ──────────────────────────────────────
+//
+// Runs every registered provider (concurrently) and concatenates their
+// fragments in *registry* order, not completion order — see
+// `medicalBasis/registry.ts`'s `resolveAllFragments`. Only compiled into the
+// graph when the registry is non-empty (see `buildCaseGenerationGraph`
+// below); with zero providers there is no basis section at all and nothing
+// here runs.
+
+function makeResolveMedicalBasis(
+  runtime: GraphRuntime,
+  providers: MedicalBasisProvider[]
+) {
+  return async function resolveMedicalBasis(
+    state: Pick<
+      CaseGenerationState,
+      "diagnosis" | "difficulty" | "userInstructions"
+    >,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<Pick<CaseGenerationState, "basisFragments">> {
+    const basisFragments = await resolveAllFragments(
+      providers,
+      {
+        diagnosis: state.diagnosis,
+        difficulty: state.difficulty,
+        userInstructions: renderUserInstructions(state.userInstructions),
+      },
+      runtime.log,
+      lgRuntime?.context
+    );
+
+    return { basisFragments };
+  };
+}
 
 // ─── graph ────────────────────────────────────────────────────────────────────
 
 export function buildCaseGenerationGraph(
   runtime: GraphRuntime,
   procedureStrategy: ProcedureStrategy,
-  symptomsRepo: SymptomsRepo,
+  medicalBasisRegistry: MedicalBasisProvider[],
   traceNode: ReturnType<typeof createTraceNode>
 ) {
+  const presentationPhase = buildFieldGenerationGraph(runtime, traceNode);
+  const procedurePhase = buildProcedureGraph(
+    runtime,
+    procedureStrategy,
+    traceNode
+  );
+
+  const gotoProcedureOrEnd = (state: { generationFlags: string[] }) =>
+    state.generationFlags.includes("procedures") ? "generate" : "skip";
+
+  // The two branches are written out in full rather than conditionally
+  // chained, mirroring `caseGraph.ts`'s `assembleCaseGraph`: LangGraph
+  // accumulates node names into the builder's type parameter, so a
+  // conditionally-extended builder loses the very typing that makes
+  // `addEdge(...)` checkable. An empty registry is the absent-capability-⇒
+  // -absent-node rule again (see `medicalBasis/registry.ts`'s
+  // `createMedicalBasisRegistry` doc comment) — with zero providers,
+  // `basis_resolve` does not exist in the compiled graph at all, not a node
+  // that runs and does nothing.
+  if (medicalBasisRegistry.length === 0) {
+    return new StateGraph(CaseGenerationStateSchema, RequestContextSchema)
+      .addNode("presentation_phase", presentationPhase)
+      .addNode("procedure_phase", procedurePhase)
+
+      .addEdge(START, "presentation_phase")
+      .addConditionalEdges("presentation_phase", gotoProcedureOrEnd, {
+        generate: "procedure_phase",
+        skip: END,
+      })
+      .addEdge("procedure_phase", END)
+      .compile();
+  }
+
   return (
     new StateGraph(CaseGenerationStateSchema, RequestContextSchema)
-      // The presentation phase is the field-generation graph mounted directly:
-      // consistency is judged on the outline inside its evaluate ⇄ revise loop,
-      // so there is no post-fan-out consistency check.
       .addNode(
-        "symptom_phase",
-        buildSymptomsGraph(runtime, symptomsRepo, traceNode)
+        "basis_resolve",
+        traceNode(
+          "basis_resolve",
+          makeResolveMedicalBasis(runtime, medicalBasisRegistry),
+          "Resolving medical basis"
+        )
       )
-      .addNode(
-        "presentation_phase",
-        buildFieldGenerationGraph(runtime, traceNode)
-      )
-      .addNode(
-        "procedure_phase",
-        buildProcedureGraph(runtime, procedureStrategy, traceNode)
-      )
+      // The presentation phase is the field-generation graph mounted
+      // directly: consistency is judged on the outline inside its evaluate ⇄
+      // revise loop, so there is no post-fan-out consistency check.
+      .addNode("presentation_phase", presentationPhase)
+      .addNode("procedure_phase", procedurePhase)
 
-      .addEdge(START, "symptom_phase")
-      .addEdge("symptom_phase", "presentation_phase")
-      .addConditionalEdges(
-        "presentation_phase",
-        (state) =>
-          state.generationFlags.includes("procedures") ? "generate" : "skip",
-        { generate: "procedure_phase", skip: END }
-      )
+      .addEdge(START, "basis_resolve")
+      .addEdge("basis_resolve", "presentation_phase")
+      .addConditionalEdges("presentation_phase", gotoProcedureOrEnd, {
+        generate: "procedure_phase",
+        skip: END,
+      })
       .addEdge("procedure_phase", END)
       .compile()
   );

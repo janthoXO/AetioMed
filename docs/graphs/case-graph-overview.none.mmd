@@ -1,16 +1,16 @@
 %%{init: {'flowchart': {'curve': 'linear'}}}%%
 graph TD;
 	__start__(<p>__start__</p>)
-	generation_phase_symptom_phase(symptom_phase)
+	generation_phase_basis_resolve(basis_resolve)
 	generation_phase_presentation_phase(presentation_phase)
 	generation_phase_procedure_phase(procedure_phase)
 	__end__(<p>__end__</p>)
 	translation_to_english_phase(translation_to_english_phase)
 	translation_from_english_phase(translation_from_english_phase)
-	__start__ --> generation_phase_symptom_phase;
+	__start__ --> generation_phase_basis_resolve;
 	generation_phase_procedure_phase --> __end__;
 	subgraph generation_phase
-	generation_phase_symptom_phase --> generation_phase_presentation_phase;
+	generation_phase_basis_resolve --> generation_phase_presentation_phase;
 	generation_phase_presentation_phase -. &nbsp;generate&nbsp; .-> generation_phase_procedure_phase;
 	end
 	classDef default fill:#f2f0ff,line-height:1.2;

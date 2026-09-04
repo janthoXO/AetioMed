@@ -1,16 +1,21 @@
-// Composition helper: opens the embedded database and constructs every
-// `03repo/` repo from it. Importing this module performs no I/O — nothing
-// runs until `createRepos()` is called, from the composition root
-// (`app.ts`) or a test.
-import { createDb, type DbHandle } from "./db.js";
+// Composition helper: opens the embedded database and constructs every repo
+// from it. Importing this module performs no I/O — nothing runs until
+// `createRepos()` is called, from the composition root (`app.ts`) or a test.
+import { createDb, type DbHandle } from "./persistence/db.js";
 import {
   createProceduresRepo,
   type ProceduresRepo,
-} from "./procedures.repo.js";
-import { createAnamnesisRepo, type AnamnesisRepo } from "./anamnesis.repo.js";
-import { createLabelsRepo, type LabelsRepo } from "./labels.repo.js";
-import { createDiagnosisRepo, type DiagnosisRepo } from "./diagnosis.repo.js";
-import { createSymptomsRepo, type SymptomsRepo } from "./symptoms.repo.js";
+} from "./catalog/procedures/index.js";
+import {
+  createAnamnesisRepo,
+  type AnamnesisRepo,
+} from "./catalog/anamnesis/index.js";
+import { createLabelsRepo, type LabelsRepo } from "./catalog/labels/index.js";
+import {
+  createDiagnosisRepo,
+  type DiagnosisRepo,
+} from "./catalog/diagnosis/index.js";
+import { createSymptomsRepo, type SymptomsRepo } from "./symptoms/repo.js";
 
 export interface Repos {
   db: DbHandle;

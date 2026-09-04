@@ -16,7 +16,7 @@ import { translateLabelsFromEnglish } from "../03aigateway/labels.aigateway.js";
 import type { GraphRuntime } from "../runtime.js";
 import type { Config } from "../config.js";
 import type { EventBus } from "../../event-bus.js";
-import type { Repos } from "../03repo/index.js";
+import type { Repos } from "../repos.js";
 
 const CaseStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,

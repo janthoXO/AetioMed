@@ -3,9 +3,9 @@ import { ICDCodeSchema, type ICDCode } from "../models/Diagnosis.js";
 import fs from "fs";
 import z from "zod";
 import { eq } from "drizzle-orm";
-import type { DbHandle } from "./db.js";
-import { symptomCache } from "./schema.js";
-import { catalogFile } from "./paths.js";
+import type { DbHandle } from "../persistence/db.js";
+import { symptomCache } from "../persistence/schema.js";
+import { catalogFile } from "../persistence/paths.js";
 
 const SymptomMapSchema = z.record(
   ICDCodeSchema,

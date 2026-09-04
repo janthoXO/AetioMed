@@ -1,7 +1,7 @@
 import { END, START, StateGraph, type Runtime } from "@langchain/langgraph";
 import { CaseGenerationStateSchema } from "../state.js";
 import z from "zod";
-import type { SymptomsRepo } from "@/core/graph/03repo/symptoms.repo.js";
+import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
 import {
   RequestContextSchema,
   type RequestContext,

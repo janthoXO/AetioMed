@@ -4,7 +4,7 @@ import { ConfigSchema, type Config } from "./config.js";
 import { validateCatalogsOrExit } from "./catalog/startupValidation.js";
 import { buildCaseGraph } from "./02graphs/caseGraph.js";
 import { createYamlCatalogs } from "./catalog/index.js";
-import { createRepos } from "./03repo/index.js";
+import { createRepos } from "./repos.js";
 import { createLlmPort } from "./utils/llm.js";
 import { createLogger } from "./utils/logger.js";
 import type { GraphRuntime } from "./runtime.js";
@@ -58,9 +58,9 @@ export { ConfigSchema };
 export function initGraph(opts: {
   bus: EventBus;
   config: Config;
-  /** Already-resolved absolute path (see `03repo/paths.ts`). */
+  /** Already-resolved absolute path (see `persistence/paths.ts`). */
   catalogDir: string;
-  /** Already-resolved absolute path (see `03repo/paths.ts`). */
+  /** Already-resolved absolute path (see `persistence/paths.ts`). */
   cacheDir: string;
   symptomCacheTtlDays: number;
 }): GraphAppContext {

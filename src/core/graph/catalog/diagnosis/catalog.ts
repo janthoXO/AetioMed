@@ -1,7 +1,7 @@
-import type { Diagnosis, ICDCode } from "../models/Diagnosis.js";
-import type { ForeignLanguage } from "../models/Language.js";
-import type { DiagnosisRepo } from "../03repo/diagnosis.repo.js";
-import type { DiagnosisCatalog } from "./ports.js";
+import type { Diagnosis, ICDCode } from "../../models/Diagnosis.js";
+import type { ForeignLanguage } from "../../models/Language.js";
+import type { DiagnosisRepo } from "./repo.js";
+import type { DiagnosisCatalog } from "../ports.js";
 
 /** Reads/writes through an injected `DiagnosisRepo`. */
 export class YamlDiagnosisCatalog implements DiagnosisCatalog {

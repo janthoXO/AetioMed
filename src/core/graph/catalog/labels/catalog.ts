@@ -1,7 +1,7 @@
-import type { ForeignLanguage } from "../models/Language.js";
-import type { RequestContext } from "../utils/context.js";
-import type { LabelsRepo } from "../03repo/labels.repo.js";
-import type { LabelCatalog } from "./ports.js";
+import type { ForeignLanguage } from "../../models/Language.js";
+import type { RequestContext } from "../../utils/context.js";
+import type { LabelsRepo } from "./repo.js";
+import type { LabelCatalog } from "../ports.js";
 
 /** Reads/writes through an injected `LabelsRepo`'s translation store. */
 export class YamlLabelCatalog implements LabelCatalog {

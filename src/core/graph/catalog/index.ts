@@ -1,13 +1,13 @@
 // Composition helper: builds the full `GraphRuntime["catalogs"]` bundle from
-// a constructed `Repos` bundle (see `03repo/index.ts`). Callers needing a
+// a constructed `Repos` bundle (see `repos.ts`). Callers needing a
 // single catalogue in isolation (tests, InMemory adapters) should import the
 // adapter classes directly rather than going through this bundle.
 import type { GraphRuntime } from "../runtime.js";
-import type { Repos } from "../03repo/index.js";
-import { YamlProcedureCatalog } from "./procedureCatalog.js";
-import { YamlAnamnesisCatalog } from "./anamnesisCatalog.js";
-import { YamlLabelCatalog } from "./labelCatalog.js";
-import { YamlDiagnosisCatalog } from "./diagnosisCatalog.js";
+import type { Repos } from "../repos.js";
+import { YamlProcedureCatalog } from "./procedures/index.js";
+import { YamlAnamnesisCatalog } from "./anamnesis/index.js";
+import { YamlLabelCatalog } from "./labels/index.js";
+import { YamlDiagnosisCatalog } from "./diagnosis/index.js";
 
 export function createYamlCatalogs(repos: Repos): GraphRuntime["catalogs"] {
   return {

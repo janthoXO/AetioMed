@@ -5,15 +5,15 @@ import { buildCaseGraph } from "./caseGraph.js";
 import type { Node, Graph } from "@langchain/core/runnables/graph";
 import { EventBus } from "../../event-bus.js";
 import type { GraphRuntime } from "../runtime.js";
-import { InMemoryProcedureCatalog } from "../catalog/procedureCatalog.js";
-import { InMemoryAnamnesisCatalog } from "../catalog/anamnesisCatalog.js";
-import { InMemoryLabelCatalog } from "../catalog/labelCatalog.js";
-import { InMemoryDiagnosisCatalog } from "../catalog/diagnosisCatalog.js";
+import { InMemoryProcedureCatalog } from "../catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "../catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "../catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "../catalog/diagnosis/index.js";
 import { createLogger } from "../utils/logger.js";
 import type { Config } from "../config.js";
-import type { SymptomsRepo } from "../03repo/symptoms.repo.js";
-import type { AnamnesisRepo } from "../03repo/anamnesis.repo.js";
-import type { ProceduresRepo } from "../03repo/procedures.repo.js";
+import type { SymptomsRepo } from "../symptoms/repo.js";
+import type { AnamnesisRepo } from "../catalog/anamnesis/index.js";
+import type { ProceduresRepo } from "../catalog/procedures/index.js";
 
 function collapseSubgraphs(g: Graph, subgraphPrefixes: string[]) {
   const newNodes: Record<string, Node> = {};

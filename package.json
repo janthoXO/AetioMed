@@ -12,8 +12,8 @@
     "start": "node dist/index.js",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "format": "prettier --write .",
-    "format:check": "prettier --check .",
+    "format": "prettier --write src",
+    "format:check": "prettier --check src",
     "graph:export": "tsx src/core/graph/02graphs/exportGraphs.ts",
     "swagger": "tsx src/extensions/swagger/swagger.ts"
   },

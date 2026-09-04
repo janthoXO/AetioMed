@@ -1,7 +1,7 @@
 // Assembly is pure wiring, so these tests need no LLM, no filesystem and no
 // SQLite — just a minimal runtime and no-op repos, mirroring the stand-ins
 // `exportGraphs.ts` already uses for the same reason.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   ALL_GRAPH_FLAGS,
   assembleCaseGraph,
@@ -172,6 +172,10 @@ describe("language routing reads ALS, never graph state (issue 09 §2)", () => {
     alsLanguage?: string;
     /** Passed as an (unschemad) extra key on the invoke input — must be a no-op. */
     stateLanguage?: string;
+    /** Provenance for the translate-**in** edge (issue 12 §3). Defaults to
+     * `true` so the pre-existing tests below, written before that trigger
+     * existed, keep exercising the translate-in phase on a German request. */
+    callerSuppliedFreeText?: boolean;
   }): Promise<string[]> {
     const bus = new EventBus();
     const started: string[] = [];
@@ -189,6 +193,7 @@ describe("language routing reads ALS, never graph state (issue 09 §2)", () => {
             generationFlags: ["patient"],
             difficulty: "medium",
             case: {},
+            callerSuppliedFreeText: opts.callerSuppliedFreeText ?? true,
             // Excess key: `CaseStateSchema` has no `language` field, so
             // LangGraph's input-channel filtering must drop this silently —
             // proving routing cannot be driven by state even if a caller
@@ -228,6 +233,84 @@ describe("language routing reads ALS, never graph state (issue 09 §2)", () => {
       stateLanguage: "German",
     });
     expect(nodes).not.toContain("translate_diagnosis");
+  });
+});
+
+describe("translate-in trigger reads provenance, not just language (issue 12 §3)", () => {
+  it("a German request with callerSuppliedFreeText enters translate-to-English", async () => {
+    // Re-exercises the routing predicate directly (rather than relying on
+    // the default in `startedNodes` above), naming the fix explicitly.
+    const bus = new EventBus();
+    const started: string[] = [];
+    bus.on("Node Started", (e) => started.push(e.node));
+    const deps = { ...buildDeps(), traceNode: createTraceNode(bus) };
+    const graph = assembleCaseGraph(deps, flags(true, false));
+
+    await runWithContext(
+      async () => {
+        try {
+          await graph.invoke({
+            diagnosis: { name: "Influenza" },
+            generationFlags: ["patient"],
+            difficulty: "medium",
+            case: {},
+            callerSuppliedFreeText: true,
+          });
+        } catch {
+          // Expected: the fake LLM throws once real generation work starts.
+        }
+      },
+      undefined,
+      undefined,
+      "German"
+    );
+
+    expect(started).toContain("translate_diagnosis");
+  });
+
+  it("an ICD-only German request (no free text) skips translate-to-English entirely and writes no identity translations", async () => {
+    const bus = new EventBus();
+    const started: string[] = [];
+    bus.on("Node Started", (e) => started.push(e.node));
+
+    const diagnosisCatalog = new InMemoryDiagnosisCatalog([
+      { name: "Influenza", icd: "1E32" },
+    ]);
+    const saveTranslations = vi.spyOn(diagnosisCatalog, "saveTranslations");
+    const deps = buildDeps();
+    deps.runtime.catalogs.diagnosis = diagnosisCatalog;
+    const graph = assembleCaseGraph(
+      { ...deps, traceNode: createTraceNode(bus) },
+      flags(true, false)
+    );
+
+    await runWithContext(
+      async () => {
+        try {
+          await graph.invoke({
+            // Resolved from the icd by `CaseGenerationService` before the
+            // graph ever runs — already the catalogue's English name.
+            diagnosis: { name: "Influenza", icd: "1E32" },
+            generationFlags: ["patient"],
+            difficulty: "medium",
+            case: {},
+            callerSuppliedFreeText: false,
+          });
+        } catch {
+          // Expected: the fake LLM throws once real generation work starts.
+        }
+      },
+      undefined,
+      undefined,
+      "German"
+    );
+
+    expect(started).not.toContain("translate_diagnosis");
+    // Assert on the translation store itself, not just call counts on a
+    // mock — this is the store the old `language !== "English"` predicate
+    // used to pollute with `German: { "Influenza": "Influenza" }`.
+    expect(saveTranslations).not.toHaveBeenCalled();
+    expect(diagnosisCatalog.toEnglish("Influenza", "German")).toBeUndefined();
   });
 });
 

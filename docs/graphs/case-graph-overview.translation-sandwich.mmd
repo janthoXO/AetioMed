@@ -1,0 +1,22 @@
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	generation_phase_symptom_phase(symptom_phase)
+	generation_phase_presentation_phase(presentation_phase)
+	generation_phase_procedure_phase(procedure_phase)
+	translation_to_english_phase(translation_to_english_phase)
+	__end__([<p>__end__</p>]):::last
+	translation_from_english_phase(translation_from_english_phase)
+	translation_from_english_phase --> __end__;
+	translation_to_english_phase --> generation_phase_symptom_phase;
+	__start__ -. &nbsp;translate&nbsp; .-> translation_to_english_phase;
+	__start__ -. &nbsp;skip&nbsp; .-> generation_phase_symptom_phase;
+	generation_phase_procedure_phase -. &nbsp;translate&nbsp; .-> translation_from_english_phase;
+	generation_phase_procedure_phase -. &nbsp;skip&nbsp; .-> __end__;
+	subgraph generation_phase
+	generation_phase_symptom_phase --> generation_phase_presentation_phase;
+	generation_phase_presentation_phase -. &nbsp;generate&nbsp; .-> generation_phase_procedure_phase;
+	end
+	classDef default fill:#f2f0ff,line-height:1.2;
+	classDef first fill-opacity:0;
+	classDef last fill:#bfb6fc;

@@ -1,12 +1,10 @@
-import { CaseGenerationRequestSchema } from "@/extensions/api/CaseGenerationRequest.js";
+import { makeCaseGenerationRequestSchema } from "@/extensions/api/CaseGenerationRequest.js";
 import { getJetStreamClient, getNatsConnection } from "./client.js";
 import { AckPolicy, jetstreamManager, type JsMsg } from "@nats-io/jetstream";
-import {
-  generateCase,
-  bus,
-  runWithContext,
-  cancelManager,
-} from "@/core/graph/index.js";
+import { runWithContext } from "@/core/graph/utils/context.js";
+import * as cancelManager from "@/core/graph/utils/cancelManager.js";
+import type { EventBus } from "@/core/event-bus.js";
+import type { GraphAppContext } from "@/core/graph/appContext.js";
 import { publishCaseGenerationResponse } from "./cases.publisher.js";
 import { IcdToDiagnosisName } from "@/core/graph/03repo/diagnosis.repo.js";
 import { AppError } from "@/core/graph/errors/AppError.js";
@@ -24,10 +22,15 @@ const CancelMessageSchema = z.object({
   jobId: z.string().optional(),
 });
 
-const NatsCaseGenerationRequestSchema =
-  CaseGenerationRequestSchema.and(JobIdSchema);
+async function consumeCaseGenerateMessage(
+  msg: JsMsg,
+  graph: GraphAppContext,
+  bus: EventBus
+) {
+  const NatsCaseGenerationRequestSchema = makeCaseGenerationRequestSchema(
+    graph.config
+  ).and(JobIdSchema);
 
-async function consumeCaseGenerateMessage(msg: JsMsg) {
   // Extract jobId before try/catch so it's accessible in the error handler
   const jobIdResult = JobIdSchema.safeParse(msg.json());
   const jobId = jobIdResult.data?.jobId ?? crypto.randomUUID();
@@ -52,7 +55,7 @@ async function consumeCaseGenerateMessage(msg: JsMsg) {
     console.log(`[NATS] Generating case for ${diagnosis} (jobId=${jobId})`);
     const generatedCase = await runWithContext(
       () =>
-        generateCase(
+        graph.generateCase(
           { name: diagnosis, icd },
           generationFlags,
           userInstructions,
@@ -142,7 +145,10 @@ function startCancelSubscription() {
   })();
 }
 
-export async function startCaseGenerationConsumer() {
+export async function startCaseGenerationConsumer(
+  graph: GraphAppContext,
+  bus: EventBus
+) {
   const nc = getNatsConnection();
   const js = getJetStreamClient();
   const jsm = await jetstreamManager(nc);
@@ -178,6 +184,6 @@ export async function startCaseGenerationConsumer() {
   const consumer = await js.consumers.get(STREAM_NAME, CONSUMER_NAME);
   const messages = await consumer.consume({ max_messages: 1 });
   for await (const msg of messages) {
-    consumeCaseGenerateMessage(msg);
+    consumeCaseGenerateMessage(msg, graph, bus);
   }
 }

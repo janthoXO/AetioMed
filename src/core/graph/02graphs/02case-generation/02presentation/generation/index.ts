@@ -6,7 +6,6 @@ import {
   StateGraph,
   type Runtime,
 } from "@langchain/langgraph";
-import { bus } from "@/core/graph/index.js";
 import { CaseGenerationStateSchema } from "../../state.js";
 import z from "zod";
 import {
@@ -17,8 +16,9 @@ import { passthrough } from "@/core/graph/02graphs/graph.utils.js";
 import type { PickNested } from "@/core/graph/utils/pickNested.js";
 import { fieldGenerationBlueprintTools } from "./tools.js";
 import { generationTools } from "../../tools.js";
-import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
+import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
+import type { GraphRuntime } from "@/core/graph/runtime.js";
 
 const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
 
@@ -36,36 +36,35 @@ type GenerationGraphState = z.infer<typeof GenerationGraphStateSchema>;
 
 // ─── blueprint node ───────────────────────────────────────────────────────────
 
-async function generateCaseOutline(
-  state: GenerationGraphState,
-  runtime?: Runtime<RequestContext>
-): Promise<Pick<GenerationGraphState, "outline">> {
-  const outline = await fieldGenerationBlueprintTools.generateCaseOutline
-    .invoke(
-      {
-        diagnosis: state.diagnosis,
-        generationFlags: state.generationFlags,
-        symptoms: state.symptoms,
-        difficulty: state.difficulty,
-        userInstructions: renderUserInstructions(state.userInstructions),
-      },
-      runtime?.context
-    )
-    .catch((error) => {
-      bus.emit("Generation Log", {
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-        msg: `[GenerationGraph] Error generating case outline: ${error}`,
+function makeGenerateCaseOutline(runtime: GraphRuntime) {
+  return async function generateCaseOutline(
+    state: GenerationGraphState,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<Pick<GenerationGraphState, "outline">> {
+    const outline = await fieldGenerationBlueprintTools.generateCaseOutline
+      .invoke(
+        {
+          diagnosis: state.diagnosis,
+          generationFlags: state.generationFlags,
+          symptoms: state.symptoms,
+          difficulty: state.difficulty,
+          userInstructions: renderUserInstructions(state.userInstructions),
+        },
+        runtime,
+        lgRuntime?.context
+      )
+      .catch((error) => {
+        runtime.log.error(
+          `[GenerationGraph] Error generating case outline: ${error}`
+        );
+        throw error;
       });
-      throw error;
-    });
 
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Case outline generated:\n\`\`\` ${outline}\`\`\``,
-  });
-  return { outline };
+    runtime.log.info(
+      `[GenerationGraph] Case outline generated:\n\`\`\` ${outline}\`\`\``
+    );
+    return { outline };
+  };
 }
 
 // ─── outline evaluate (obviousness + consistency) / regenerate loop ──────────
@@ -125,98 +124,94 @@ function buildFieldGenerationSends(state: GenerationGraphState): Send[] {
   return sends;
 }
 
-async function outlineEvaluate(
-  state: GenerationGraphState,
-  runtime?: Runtime<RequestContext>
-): Promise<Command> {
-  if (state.outlineEvaluationIterationsRemaining <= 0) {
-    bus.emit("Generation Log", {
-      logLevel: "info",
-      timestamp: new Date().toISOString(),
-      msg: `[GenerationGraph] Outline evaluation iteration cap reached — proceeding with current outline.`,
-    });
-    return new Command({ goto: buildFieldGenerationSends(state) });
-  }
+function makeOutlineEvaluate(runtime: GraphRuntime) {
+  return async function outlineEvaluate(
+    state: GenerationGraphState,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<Command> {
+    if (state.outlineEvaluationIterationsRemaining <= 0) {
+      runtime.log.info(
+        `[GenerationGraph] Outline evaluation iteration cap reached — proceeding with current outline.`
+      );
+      return new Command({ goto: buildFieldGenerationSends(state) });
+    }
 
-  const evaluation = await fieldGenerationBlueprintTools.evaluateOutline
-    .invoke(
-      {
-        diagnosis: state.diagnosis,
-        outline: state.outline,
-        difficulty: state.difficulty,
-        userInstructions: renderUserInstructions(state.userInstructions),
-      },
-      runtime?.context
-    )
-    .catch((error) => {
-      bus.emit("Generation Log", {
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-        msg: `[GenerationGraph] Error evaluating outline: ${error}`,
+    const evaluation = await fieldGenerationBlueprintTools.evaluateOutline
+      .invoke(
+        {
+          diagnosis: state.diagnosis,
+          outline: state.outline,
+          difficulty: state.difficulty,
+          userInstructions: renderUserInstructions(state.userInstructions),
+        },
+        runtime,
+        lgRuntime?.context
+      )
+      .catch((error) => {
+        runtime.log.error(
+          `[GenerationGraph] Error evaluating outline: ${error}`
+        );
+        throw error;
       });
-      throw error;
+
+    runtime.log.info(
+      `[GenerationGraph] Outline evaluation (${state.outlineEvaluationIterationsRemaining} iter left):\n\`\`\`json\n${JSON.stringify(evaluation, null, 2)}\n\`\`\``
+    );
+
+    if (evaluation.accepted) {
+      return new Command({ goto: buildFieldGenerationSends(state) });
+    }
+
+    const feedback = evaluation.suggestion
+      ? [...evaluation.reasons, evaluation.suggestion]
+      : evaluation.reasons;
+
+    return new Command({
+      update: { outlineFeedback: feedback },
+      goto: "outline_regenerate",
     });
-
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Outline evaluation (${state.outlineEvaluationIterationsRemaining} iter left):\n\`\`\`json\n${JSON.stringify(evaluation, null, 2)}\n\`\`\``,
-  });
-
-  if (evaluation.accepted) {
-    return new Command({ goto: buildFieldGenerationSends(state) });
-  }
-
-  const feedback = evaluation.suggestion
-    ? [...evaluation.reasons, evaluation.suggestion]
-    : evaluation.reasons;
-
-  return new Command({
-    update: { outlineFeedback: feedback },
-    goto: "outline_regenerate",
-  });
+  };
 }
 
-async function outlineRegenerate(
-  state: GenerationGraphState,
-  runtime?: Runtime<RequestContext>
-): Promise<Command> {
-  const outline = await fieldGenerationBlueprintTools.generateCaseOutline
-    .invoke(
-      {
-        diagnosis: state.diagnosis,
-        generationFlags: state.generationFlags,
-        symptoms: state.symptoms,
-        difficulty: state.difficulty,
-        userInstructions: renderUserInstructions(state.userInstructions),
-        feedback: state.outlineFeedback,
-        previousOutline: state.outline,
-      },
-      runtime?.context
-    )
-    .catch((error) => {
-      bus.emit("Generation Log", {
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-        msg: `[GenerationGraph] Error regenerating case outline: ${error}`,
+function makeOutlineRegenerate(runtime: GraphRuntime) {
+  return async function outlineRegenerate(
+    state: GenerationGraphState,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<Command> {
+    const outline = await fieldGenerationBlueprintTools.generateCaseOutline
+      .invoke(
+        {
+          diagnosis: state.diagnosis,
+          generationFlags: state.generationFlags,
+          symptoms: state.symptoms,
+          difficulty: state.difficulty,
+          userInstructions: renderUserInstructions(state.userInstructions),
+          feedback: state.outlineFeedback,
+          previousOutline: state.outline,
+        },
+        runtime,
+        lgRuntime?.context
+      )
+      .catch((error) => {
+        runtime.log.error(
+          `[GenerationGraph] Error regenerating case outline: ${error}`
+        );
+        throw error;
       });
-      throw error;
+
+    runtime.log.info(
+      `[GenerationGraph] Case outline regenerated:\n\`\`\` ${outline}\`\`\``
+    );
+
+    return new Command({
+      update: {
+        outline,
+        outlineEvaluationIterationsRemaining:
+          state.outlineEvaluationIterationsRemaining - 1,
+      },
+      goto: "outline_evaluate",
     });
-
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Case outline regenerated:\n\`\`\` ${outline}\`\`\``,
-  });
-
-  return new Command({
-    update: {
-      outline,
-      outlineEvaluationIterationsRemaining:
-        state.outlineEvaluationIterationsRemaining - 1,
-    },
-    goto: "outline_evaluate",
-  });
+  };
 }
 
 // ─── fan-out field nodes ──────────────────────────────────────────────────────
@@ -226,39 +221,34 @@ type PatientNodeInput = Pick<
   "diagnosis" | "outline" | "userInstructions"
 >;
 
-async function generatePatient(
-  state: PatientNodeInput,
-  runtime?: Runtime<RequestContext>
-): Promise<PickNested<GenerationGraphState, "case", "patient">> {
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Generating patient…`,
-  });
-  const patient = await generationTools.generatePatientFromOutline
-    .invoke(
-      {
-        diagnosis: state.diagnosis,
-        outline: state.outline,
-        userInstructions: renderUserInstructions(state.userInstructions),
-      },
-      runtime?.context
-    )
-    .catch((error) => {
-      bus.emit("Generation Log", {
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-        msg: `[GenerationGraph] Error generating patient: ${error}`,
+function makeGeneratePatient(runtime: GraphRuntime) {
+  return async function generatePatient(
+    state: PatientNodeInput,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<PickNested<GenerationGraphState, "case", "patient">> {
+    runtime.log.info(`[GenerationGraph] Generating patient…`);
+    const patient = await generationTools.generatePatientFromOutline
+      .invoke(
+        {
+          diagnosis: state.diagnosis,
+          outline: state.outline,
+          userInstructions: renderUserInstructions(state.userInstructions),
+        },
+        runtime,
+        lgRuntime?.context
+      )
+      .catch((error) => {
+        runtime.log.error(
+          `[GenerationGraph] Error generating patient: ${error}`
+        );
+        throw error;
       });
-      throw error;
-    });
 
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Patient generated:\n\`\`\`json\n${JSON.stringify(patient, null, 2)}\n\`\`\``,
-  });
-  return { case: { patient } };
+    runtime.log.info(
+      `[GenerationGraph] Patient generated:\n\`\`\`json\n${JSON.stringify(patient, null, 2)}\n\`\`\``
+    );
+    return { case: { patient } };
+  };
 }
 
 type ChiefComplaintNodeInput = Pick<
@@ -266,39 +256,35 @@ type ChiefComplaintNodeInput = Pick<
   "diagnosis" | "outline" | "userInstructions"
 >;
 
-async function generateChiefComplaint(
-  state: ChiefComplaintNodeInput,
-  runtime?: Runtime<RequestContext>
-): Promise<PickNested<GenerationGraphState, "case", "chiefComplaint">> {
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Generating chief complaint…`,
-  });
-  const chiefComplaint = await generationTools.generateChiefComplaintFromOutline
-    .invoke(
-      {
-        diagnosis: state.diagnosis,
-        outline: state.outline,
-        userInstructions: renderUserInstructions(state.userInstructions),
-      },
-      runtime?.context
-    )
-    .catch((error) => {
-      bus.emit("Generation Log", {
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-        msg: `[GenerationGraph] Error generating chief complaint: ${error}`,
-      });
-      throw error;
-    });
+function makeGenerateChiefComplaint(runtime: GraphRuntime) {
+  return async function generateChiefComplaint(
+    state: ChiefComplaintNodeInput,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<PickNested<GenerationGraphState, "case", "chiefComplaint">> {
+    runtime.log.info(`[GenerationGraph] Generating chief complaint…`);
+    const chiefComplaint =
+      await generationTools.generateChiefComplaintFromOutline
+        .invoke(
+          {
+            diagnosis: state.diagnosis,
+            outline: state.outline,
+            userInstructions: renderUserInstructions(state.userInstructions),
+          },
+          runtime,
+          lgRuntime?.context
+        )
+        .catch((error) => {
+          runtime.log.error(
+            `[GenerationGraph] Error generating chief complaint: ${error}`
+          );
+          throw error;
+        });
 
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Chief complaint generated:\n\`\`\` ${chiefComplaint}\`\`\``,
-  });
-  return { case: { chiefComplaint } };
+    runtime.log.info(
+      `[GenerationGraph] Chief complaint generated:\n\`\`\` ${chiefComplaint}\`\`\``
+    );
+    return { case: { chiefComplaint } };
+  };
 }
 
 type AnamnesisNodeInput = Pick<
@@ -306,105 +292,114 @@ type AnamnesisNodeInput = Pick<
   "diagnosis" | "outline" | "userInstructions"
 >;
 
-async function generateAnamnesis(
-  state: AnamnesisNodeInput,
-  runtime?: Runtime<RequestContext>
-): Promise<PickNested<GenerationGraphState, "case", "anamnesis">> {
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Generating anamnesis…`,
-  });
-  const anamnesis = await generationTools.generateAnamnesisFromOutline
-    .invoke(
-      {
-        diagnosis: state.diagnosis,
-        outline: state.outline,
-        userInstructions: renderUserInstructions(state.userInstructions),
-      },
-      runtime?.context
-    )
-    .catch((error) => {
-      bus.emit("Generation Log", {
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-        msg: `[GenerationGraph] Error generating anamnesis: ${error}`,
+function makeGenerateAnamnesis(runtime: GraphRuntime) {
+  return async function generateAnamnesis(
+    state: AnamnesisNodeInput,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<PickNested<GenerationGraphState, "case", "anamnesis">> {
+    runtime.log.info(`[GenerationGraph] Generating anamnesis…`);
+    const anamnesis = await generationTools.generateAnamnesisFromOutline
+      .invoke(
+        {
+          diagnosis: state.diagnosis,
+          outline: state.outline,
+          userInstructions: renderUserInstructions(state.userInstructions),
+        },
+        runtime,
+        lgRuntime?.context
+      )
+      .catch((error) => {
+        runtime.log.error(
+          `[GenerationGraph] Error generating anamnesis: ${error}`
+        );
+        throw error;
       });
-      throw error;
-    });
 
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[GenerationGraph] Anamnesis generated:\n\`\`\`json\n${JSON.stringify(anamnesis, null, 2)}\n\`\`\``,
-  });
-  return { case: { anamnesis } };
+    runtime.log.info(
+      `[GenerationGraph] Anamnesis generated:\n\`\`\`json\n${JSON.stringify(anamnesis, null, 2)}\n\`\`\``
+    );
+    return { case: { anamnesis } };
+  };
 }
 
 // ─── graph ────────────────────────────────────────────────────────────────────
 
-export const fieldGenerationGraph = new StateGraph(
-  GenerationGraphStateSchema,
-  RequestContextSchema
-)
-  .addNode(
-    "case_outline_generate",
-    traceNode(
+export function buildFieldGenerationGraph(
+  runtime: GraphRuntime,
+  traceNode: ReturnType<typeof createTraceNode>
+) {
+  return new StateGraph(GenerationGraphStateSchema, RequestContextSchema)
+    .addNode(
       "case_outline_generate",
-      generateCaseOutline,
-      "Generating case outline"
+      traceNode(
+        "case_outline_generate",
+        makeGenerateCaseOutline(runtime),
+        "Generating case outline"
+      )
     )
-  )
-  .addNode(
-    "outline_evaluate",
-    traceNode("outline_evaluate", outlineEvaluate, "Evaluating case outline"),
-    {
-      ends: [
-        "outline_regenerate",
-        "patient_generate",
-        "chief_complaint_generate",
-        "anamnesis_generate",
-      ],
-    }
-  )
-  .addNode(
-    "outline_regenerate",
-    traceNode(
+    .addNode(
+      "outline_evaluate",
+      traceNode(
+        "outline_evaluate",
+        makeOutlineEvaluate(runtime),
+        "Evaluating case outline"
+      ),
+      {
+        ends: [
+          "outline_regenerate",
+          "patient_generate",
+          "chief_complaint_generate",
+          "anamnesis_generate",
+        ],
+      }
+    )
+    .addNode(
       "outline_regenerate",
-      outlineRegenerate,
-      "Regenerating case outline"
-    ),
-    { ends: ["outline_evaluate"] }
-  )
-  .addNode(
-    "patient_generate",
-    traceNode("patient_generate", generatePatient, "Generating patient")
-  )
-  .addNode(
-    "chief_complaint_generate",
-    traceNode(
+      traceNode(
+        "outline_regenerate",
+        makeOutlineRegenerate(runtime),
+        "Regenerating case outline"
+      ),
+      { ends: ["outline_evaluate"] }
+    )
+    .addNode(
+      "patient_generate",
+      traceNode(
+        "patient_generate",
+        makeGeneratePatient(runtime),
+        "Generating patient"
+      )
+    )
+    .addNode(
       "chief_complaint_generate",
-      generateChiefComplaint,
-      "Generating chief complaint"
+      traceNode(
+        "chief_complaint_generate",
+        makeGenerateChiefComplaint(runtime),
+        "Generating chief complaint"
+      )
     )
-  )
-  .addNode(
-    "anamnesis_generate",
-    traceNode("anamnesis_generate", generateAnamnesis, "Generating anamnesis")
-  )
-  .addNode(
-    "case_fan_in",
-    traceNode(
+    .addNode(
+      "anamnesis_generate",
+      traceNode(
+        "anamnesis_generate",
+        makeGenerateAnamnesis(runtime),
+        "Generating anamnesis"
+      )
+    )
+    .addNode(
       "case_fan_in",
-      passthrough<GenerationGraphState>,
-      "Assembling case fields"
+      traceNode(
+        "case_fan_in",
+        passthrough<GenerationGraphState>,
+        "Assembling case fields"
+      )
     )
-  )
 
-  .addEdge(START, "case_outline_generate")
-  .addEdge("case_outline_generate", "outline_evaluate")
-  .addEdge("patient_generate", "case_fan_in")
-  .addEdge("chief_complaint_generate", "case_fan_in")
-  .addEdge("anamnesis_generate", "case_fan_in")
-  .addEdge("case_fan_in", END)
-  .compile();
+    .addEdge(START, "case_outline_generate")
+    .addEdge("case_outline_generate", "outline_evaluate")
+    .addEdge("patient_generate", "case_fan_in")
+    .addEdge("chief_complaint_generate", "case_fan_in")
+    .addEdge("anamnesis_generate", "case_fan_in")
+    .addEdge("case_fan_in", END)
+    .compile();
+}

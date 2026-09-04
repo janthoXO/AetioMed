@@ -3,8 +3,6 @@ import {
   type Anamnesis,
   type AnamnesisCategory,
 } from "../models/Anamnesis.js";
-import { anamnesisCatalog } from "../catalog/index.js";
-import { bus } from "@/core/graph/index.js";
 import type { Language } from "../models/Language.js";
 import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
 import {
@@ -19,14 +17,16 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
 import { translateTermsKeyed } from "./translate.helper.js";
+import type { GraphRuntime } from "../runtime.js";
 
 export async function generateAnamnesis(
+  runtime: GraphRuntime,
   diagnosis: Diagnosis,
   outline: string,
   userInstructions?: string,
   context?: RequestContext
 ): Promise<Anamnesis> {
-  const effectiveCategories = anamnesisCatalog.list();
+  const effectiveCategories = runtime.catalogs.anamnesis.list();
   const systemPrompt = buildPrompt(
     section(
       "Role",
@@ -78,7 +78,7 @@ ${renderSchemaForPrompt(z.object({ anamnesis: buildAnamnesisSchema() }))}`
 
     const anamnesis: Anamnesis = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM(context?.llmConfig)
+        const result = await getCreativeLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(AnamnesisSchemaWrapper)
           .invoke(
             [
@@ -110,11 +110,7 @@ ${renderSchemaForPrompt(z.object({ anamnesis: buildAnamnesisSchema() }))}`
       (error, attempt) => {
         const msg = `[GenerateAnamnesisFromOutline] Attempt ${attempt} failed with error: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -132,11 +128,12 @@ ${renderSchemaForPrompt(z.object({ anamnesis: buildAnamnesisSchema() }))}`
  * @returns a record mapping English categories to their translations in the target language
  */
 export async function generateAnamnesisCategoriesFromEnglish(
+  runtime: GraphRuntime,
   englishCategories: AnamnesisCategory[],
   language: Language,
   context?: RequestContext
 ): Promise<Record<AnamnesisCategory, AnamnesisCategory>> {
-  return translateTermsKeyed({
+  return translateTermsKeyed(runtime, {
     logTag: "GenerateAnamnesisCategoriesFromEnglish",
     taskDescription: `Translate the provided anamnesis categories from English to a target language.`,
     contextLines: [`Target language: ${language}`],

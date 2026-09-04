@@ -1,5 +1,4 @@
 import z from "zod";
-import { bus } from "@/core/graph/index.js";
 import { retry } from "../utils/retry.js";
 import { getDeterministicLLM, handleLangchainError } from "../utils/llm.js";
 import {
@@ -9,6 +8,7 @@ import {
 } from "../utils/prompt.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
+import type { GraphRuntime } from "../runtime.js";
 
 const KEYED_FORMAT_INSTRUCTION = `Return ONLY a JSON object mapping each provided term, exactly as given, to its translation:
 { "term 1": "translation 1", "term 2": "translation 2" }
@@ -20,15 +20,18 @@ Include every provided term as a key. Do not add, remove, merge, rename, or reor
  * dropped or reordered term is detected (the term is missing as a key) and the
  * attempt is retried with the missing terms fed back into the prompt.
  */
-export async function translateTermsKeyed(opts: {
-  logTag: string;
-  /** One-line description of the translation task, e.g. "Translate the provided procedures from English to a target language." */
-  taskDescription: string;
-  /** Extra user-prompt lines, e.g. `Target language: German` or `Source language: German`. */
-  contextLines: string[];
-  terms: string[];
-  context?: RequestContext | undefined;
-}): Promise<Record<string, string>> {
+export async function translateTermsKeyed(
+  runtime: GraphRuntime,
+  opts: {
+    logTag: string;
+    /** One-line description of the translation task, e.g. "Translate the provided procedures from English to a target language." */
+    taskDescription: string;
+    /** Extra user-prompt lines, e.g. `Target language: German` or `Source language: German`. */
+    contextLines: string[];
+    terms: string[];
+    context?: RequestContext | undefined;
+  }
+): Promise<Record<string, string>> {
   const { logTag, taskDescription, contextLines, terms, context } = opts;
 
   if (terms.length === 0) return {};
@@ -48,7 +51,10 @@ export async function translateTermsKeyed(opts: {
 
   return retry(
     async (attempt: number, previousError?: Error) => {
-      const response = await getDeterministicLLM(context?.llmConfig)
+      const response = await getDeterministicLLM(
+        runtime.llm,
+        context?.llmConfig
+      )
         .withStructuredOutput(z.record(z.string(), z.string()))
         .invoke(
           [
@@ -86,11 +92,7 @@ export async function translateTermsKeyed(opts: {
     (error, attempt) => {
       const msg = `[${logTag}] Attempt ${attempt} failed with error: ${error.message}`;
       console.error(msg);
-      bus.emit("Generation Log", {
-        msg,
-        logLevel: "error",
-        timestamp: new Date().toISOString(),
-      });
+      runtime.log.error(msg);
     }
   );
 }

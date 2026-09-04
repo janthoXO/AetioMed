@@ -4,15 +4,14 @@ import {
   section,
   summarizeValidationError,
 } from "../utils/prompt.js";
-import { bus } from "@/core/graph/index.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { Symptom } from "../models/Symptom.js";
-import { anamnesisCatalog } from "../catalog/index.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
 import type { GenerationFlag } from "../models/GenerationFlags.js";
 import type { Difficulty } from "../models/Difficulty.js";
+import type { GraphRuntime } from "../runtime.js";
 
 const DIFFICULTY_STRATEGY: Record<Difficulty, string> = {
   easy: `- Feature a clear, classic subset of this diagnosis's hallmark symptoms only. Do not include distractor symptoms from other conditions.
@@ -27,6 +26,7 @@ const DIFFICULTY_STRATEGY: Record<Difficulty, string> = {
 };
 
 export async function generateCaseOutline(
+  runtime: GraphRuntime,
   diagnosis: Diagnosis,
   generationFlags: GenerationFlag[],
   symptoms: Symptom[],
@@ -37,7 +37,7 @@ export async function generateCaseOutline(
   context?: RequestContext
 ): Promise<string> {
   const effectiveCategories = generationFlags.includes("anamnesis")
-    ? anamnesisCatalog.list()
+    ? runtime.catalogs.anamnesis.list()
     : undefined;
 
   const systemPrompt = buildPrompt(
@@ -114,7 +114,7 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
   try {
     const outline: string = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM({
+        const result = await getCreativeLLM(runtime.llm, {
           ...context?.llmConfig,
           outputFormat: "text",
         })
@@ -148,11 +148,7 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
       (error, attempt) => {
         const msg = `[GenerateCaseOutline] Attempt ${attempt} failed with error: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 

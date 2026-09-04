@@ -5,7 +5,6 @@ import {
   StateGraph,
   type Runtime,
 } from "@langchain/langgraph";
-import { bus, config } from "@/core/graph/index.js";
 import { CaseGenerationStateSchema } from "../state.js";
 import z from "zod";
 import {
@@ -18,14 +17,15 @@ import {
 } from "@/core/graph/models/Procedure.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import { procedureTools } from "./tools.js";
-import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
+import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
 import type {
   Presentation,
   BlindedProcedureStepResult,
 } from "@/core/graph/03aigateway/procedures.aigateway.js";
-import { procedureCatalog } from "@/core/graph/catalog/index.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
+import type { GraphRuntime } from "@/core/graph/runtime.js";
+import type { Config } from "@/core/graph/config.js";
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
@@ -94,17 +94,14 @@ function appendProcedures(
 
 /** Invoke a tool, logging any error to the generation log before rethrowing. */
 async function invokeLogged<TInput, TOutput>(
+  runtime: GraphRuntime,
   tool: Tool<TInput, TOutput>,
   input: TInput,
   context: RequestContext | undefined,
   errorLabel: string
 ): Promise<TOutput> {
-  return tool.invoke(input, context).catch((error) => {
-    bus.emit("Generation Log", {
-      logLevel: "error",
-      timestamp: new Date().toISOString(),
-      msg: `[ProcedureGraph] ${errorLabel}: ${error}`,
-    });
+  return tool.invoke(input, runtime, context).catch((error) => {
+    runtime.log.error(`[ProcedureGraph] ${errorLabel}: ${error}`);
     throw error;
   });
 }
@@ -114,8 +111,10 @@ async function invokeLogged<TInput, TOutput>(
  * when `LLM_SMALL` is set AND the approved procedure list actually has real
  * categories — a flat (uncategorized) list has nothing to filter on.
  */
-function useSmallModelSplit(): boolean {
-  return config.LLM_SMALL && procedureCatalog.categories().length > 0;
+function useSmallModelSplit(runtime: GraphRuntime, config: Config): boolean {
+  return (
+    !!config.LLM_SMALL && runtime.catalogs.procedures.categories().length > 0
+  );
 }
 
 // ─── Node 1: blinded_step ─────────────────────────────────────────────────────
@@ -137,6 +136,7 @@ function useSmallModelSplit(): boolean {
  * from the response schema entirely, forcing a pick.
  */
 async function resolveBlindedStepViaCategories(
+  runtime: GraphRuntime,
   presentation: Presentation,
   previousProcedures: ProcedureResult[],
   ruledOutDiagnoses: string[],
@@ -145,6 +145,7 @@ async function resolveBlindedStepViaCategories(
   context: RequestContext | undefined
 ): Promise<BlindedProcedureStepResult> {
   const categoryStep = await invokeLogged(
+    runtime,
     procedureTools.generateBlindedCategoryStep,
     {
       presentation,
@@ -157,11 +158,9 @@ async function resolveBlindedStepViaCategories(
     "Error in blinded category step"
   );
 
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[ProcedureGraph] Blinded category step:\n\`\`\`json\n${JSON.stringify(categoryStep, null, 2)}\n\`\`\``,
-  });
+  runtime.log.info(
+    `[ProcedureGraph] Blinded category step:\n\`\`\`json\n${JSON.stringify(categoryStep, null, 2)}\n\`\`\``
+  );
 
   if (categoryStep.action === "diagnose") {
     return categoryStep;
@@ -175,7 +174,7 @@ async function resolveBlindedStepViaCategories(
     return { action: "procedure", procedures: undefined };
   }
 
-  const allCategories = procedureCatalog.categories();
+  const allCategories = runtime.catalogs.procedures.categories();
   const scope = new Set(categoryStep.categories);
 
   for (let expansions = 0; ; expansions++) {
@@ -185,6 +184,7 @@ async function resolveBlindedStepViaCategories(
         : [];
 
     const pick = await invokeLogged(
+      runtime,
       procedureTools.generateBlindedProcedureStepFromCategories,
       {
         presentation,
@@ -199,21 +199,17 @@ async function resolveBlindedStepViaCategories(
 
     if (pick.action === "expand" && pick.categories.length > 0) {
       for (const category of pick.categories) scope.add(category);
-      bus.emit("Generation Log", {
-        logLevel: "info",
-        timestamp: new Date().toISOString(),
-        msg: `[ProcedureGraph] Blinded procedure step expanded its scope with [${pick.categories.join(", ")}] (expansion ${expansions + 1}/${MAX_CATEGORY_EXPANSIONS})${pick.reasoning ? ` — ${pick.reasoning}` : ""}`,
-      });
+      runtime.log.info(
+        `[ProcedureGraph] Blinded procedure step expanded its scope with [${pick.categories.join(", ")}] (expansion ${expansions + 1}/${MAX_CATEGORY_EXPANSIONS})${pick.reasoning ? ` — ${pick.reasoning}` : ""}`
+      );
       continue;
     }
 
     const procedures = pick.action === "procedures" ? pick.procedures : [];
 
-    bus.emit("Generation Log", {
-      logLevel: "info",
-      timestamp: new Date().toISOString(),
-      msg: `[ProcedureGraph] Blinded procedure step picked ${procedures.length} procedure(s) from [${[...scope].join(", ")}]:\n\`\`\`json\n${JSON.stringify(procedures, null, 2)}\n\`\`\``,
-    });
+    runtime.log.info(
+      `[ProcedureGraph] Blinded procedure step picked ${procedures.length} procedure(s) from [${[...scope].join(", ")}]:\n\`\`\`json\n${JSON.stringify(procedures, null, 2)}\n\`\`\``
+    );
 
     return {
       action: "procedure",
@@ -223,109 +219,110 @@ async function resolveBlindedStepViaCategories(
   }
 }
 
-async function blindedStep(
-  state: ProcedureGraphState,
-  runtime?: Runtime<RequestContext>
-): Promise<Command> {
-  // Force the bridge if we've exhausted the iteration budget.
-  if (state.solverIterationsRemaining <= 0) {
-    bus.emit("Generation Log", {
-      logLevel: "info",
-      timestamp: new Date().toISOString(),
-      msg: `[ProcedureGraph] Iteration cap reached — bridging to diagnosis.`,
-    });
-    return new Command({ goto: "bridge" });
-  }
+function makeBlindedStep(runtime: GraphRuntime, config: Config) {
+  return async function blindedStep(
+    state: ProcedureGraphState,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<Command> {
+    // Force the bridge if we've exhausted the iteration budget.
+    if (state.solverIterationsRemaining <= 0) {
+      runtime.log.info(
+        `[ProcedureGraph] Iteration cap reached — bridging to diagnosis.`
+      );
+      return new Command({ goto: "bridge" });
+    }
 
-  const presentation = presentationOf(state.case);
-  const previousProcedures = state.case.procedures ?? [];
-  const userInstructions = userInstructionsForProcedures(
-    state.userInstructions
-  );
+    const presentation = presentationOf(state.case);
+    const previousProcedures = state.case.procedures ?? [];
+    const userInstructions = userInstructionsForProcedures(
+      state.userInstructions
+    );
 
-  const step = useSmallModelSplit()
-    ? await resolveBlindedStepViaCategories(
-        presentation,
-        previousProcedures,
-        state.ruledOutDiagnoses,
-        userInstructions,
-        state.solverIterationsRemaining,
-        runtime?.context
-      )
-    : await invokeLogged(
-        procedureTools.generateBlindedProcedureStep,
-        {
+    const step = useSmallModelSplit(runtime, config)
+      ? await resolveBlindedStepViaCategories(
+          runtime,
           presentation,
           previousProcedures,
-          ruledOutDiagnoses: state.ruledOutDiagnoses,
+          state.ruledOutDiagnoses,
           userInstructions,
-          iterationsRemaining: state.solverIterationsRemaining,
+          state.solverIterationsRemaining,
+          lgRuntime?.context
+        )
+      : await invokeLogged(
+          runtime,
+          procedureTools.generateBlindedProcedureStep,
+          {
+            presentation,
+            previousProcedures,
+            ruledOutDiagnoses: state.ruledOutDiagnoses,
+            userInstructions,
+            iterationsRemaining: state.solverIterationsRemaining,
+          },
+          lgRuntime?.context,
+          "Error in blinded step"
+        );
+
+    runtime.log.info(
+      `[ProcedureGraph] Blinded step (${state.solverIterationsRemaining} iter left):\n\`\`\`json\n${JSON.stringify(step, null, 2)}\n\`\`\``
+    );
+
+    // ── action: order a batch of mutually-independent procedures ───────────────
+    if (step.action === "procedure" && step.procedures?.length) {
+      return new Command({
+        update: {
+          pendingProcedures: step.procedures,
+          solverIterationsRemaining: state.solverIterationsRemaining - 1,
         },
-        runtime?.context,
-        "Error in blinded step"
+        goto: "result_step",
+      });
+    }
+
+    // ── action: commit to a diagnosis ──────────────────────────────────────────
+    if (step.action === "diagnose" && step.diagnosisName) {
+      return handleDiagnoseAction(
+        runtime,
+        state,
+        lgRuntime,
+        step.diagnosisName
       );
+    }
 
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[ProcedureGraph] Blinded step (${state.solverIterationsRemaining} iter left):\n\`\`\`json\n${JSON.stringify(step, null, 2)}\n\`\`\``,
-  });
+    // ── empty pick: nothing left worth ordering ────────────────────────────────
+    if (step.action === "procedure" && step.procedures) {
+      // The solver had nothing to order (e.g. all useful candidates already
+      // ordered) yet didn't diagnose — bridging is the clinically sensible end.
+      runtime.log.info(
+        `[ProcedureGraph] Blinded step returned an empty pick — bridging to diagnosis.`
+      );
+      return new Command({ goto: "bridge" });
+    }
 
-  // ── action: order a batch of mutually-independent procedures ───────────────
-  if (step.action === "procedure" && step.procedures?.length) {
-    return new Command({
-      update: {
-        pendingProcedures: step.procedures,
-        solverIterationsRemaining: state.solverIterationsRemaining - 1,
-      },
-      goto: "result_step",
-    });
-  }
-
-  // ── action: commit to a diagnosis ──────────────────────────────────────────
-  if (step.action === "diagnose" && step.diagnosisName) {
-    return handleDiagnoseAction(state, runtime, step.diagnosisName);
-  }
-
-  // ── empty pick: nothing left worth ordering ────────────────────────────────
-  if (step.action === "procedure" && step.procedures) {
-    // The solver had nothing to order (e.g. all useful candidates already
-    // ordered) yet didn't diagnose — bridging is the clinically sensible end.
-    bus.emit("Generation Log", {
-      logLevel: "info",
-      timestamp: new Date().toISOString(),
-      msg: `[ProcedureGraph] Blinded step returned an empty pick — bridging to diagnosis.`,
-    });
+    // Unexpected response shape — fall back to bridge.
+    runtime.log.warn(
+      `[ProcedureGraph] Blinded step returned unexpected shape — bridging.`
+    );
     return new Command({ goto: "bridge" });
-  }
-
-  // Unexpected response shape — fall back to bridge.
-  bus.emit("Generation Log", {
-    logLevel: "warn",
-    timestamp: new Date().toISOString(),
-    msg: `[ProcedureGraph] Blinded step returned unexpected shape — bridging.`,
-  });
-  return new Command({ goto: "bridge" });
+  };
 }
 
 /** Shared diagnose-action handling for `blinded_step` (direct or split path). */
 async function handleDiagnoseAction(
+  runtime: GraphRuntime,
   state: ProcedureGraphState,
-  runtime: Runtime<RequestContext> | undefined,
+  lgRuntime: Runtime<RequestContext> | undefined,
   diagnosisName: string
 ): Promise<Command> {
   const matches = await invokeLogged(
+    runtime,
     procedureTools.matchDiagnosis,
     { proposedName: diagnosisName, diagnosis: state.diagnosis },
-    runtime?.context,
+    lgRuntime?.context,
     "Error matching diagnosis"
   );
 
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[ProcedureGraph] Diagnosis "${diagnosisName}" → ${matches ? "✓ match — done" : "✗ no match — continuing"}`,
-  });
+  runtime.log.info(
+    `[ProcedureGraph] Diagnosis "${diagnosisName}" → ${matches ? "✓ match — done" : "✗ no match — continuing"}`
+  );
 
   if (matches) {
     return new Command({ goto: END });
@@ -343,52 +340,51 @@ async function handleDiagnoseAction(
 
 // ─── Node 2: result_step ──────────────────────────────────────────────────────
 
-async function resultStep(
-  state: ProcedureGraphState,
-  runtime?: Runtime<RequestContext>
-): Promise<Command> {
-  const pending = state.pendingProcedures;
-  if (!pending.length) {
-    // Guard: should not happen in normal flow.
-    bus.emit("Generation Log", {
-      logLevel: "warn",
-      timestamp: new Date().toISOString(),
-      msg: `[ProcedureGraph] result_step called without any pending procedures — skipping.`,
+function makeResultStep(runtime: GraphRuntime) {
+  return async function resultStep(
+    state: ProcedureGraphState,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<Command> {
+    const pending = state.pendingProcedures;
+    if (!pending.length) {
+      // Guard: should not happen in normal flow.
+      runtime.log.warn(
+        `[ProcedureGraph] result_step called without any pending procedures — skipping.`
+      );
+      return new Command({ goto: "blinded_step" });
+    }
+
+    const completedProcedures: ProcedureResult[] = await invokeLogged(
+      runtime,
+      procedureTools.generateProcedureResults,
+      {
+        presentation: presentationOf(state.case),
+        diagnosis: state.diagnosis,
+        procedureSteps: pending,
+        outline: state.outline,
+        userInstructions: userInstructionsForProcedures(state.userInstructions),
+      },
+      lgRuntime?.context,
+      `Error generating results for batch [${pending.map((p) => p.name).join(", ")}]`
+    );
+
+    const updatedProcedures = appendProcedures(
+      state.case.procedures,
+      completedProcedures
+    );
+
+    runtime.log.info(
+      `[ProcedureGraph] Results for batch of ${completedProcedures.length} procedure(s):\n\`\`\`json\n${JSON.stringify(completedProcedures, null, 2)}\n\`\`\``
+    );
+
+    return new Command({
+      update: {
+        case: { procedures: updatedProcedures },
+        pendingProcedures: [],
+      },
+      goto: "blinded_step",
     });
-    return new Command({ goto: "blinded_step" });
-  }
-
-  const completedProcedures: ProcedureResult[] = await invokeLogged(
-    procedureTools.generateProcedureResults,
-    {
-      presentation: presentationOf(state.case),
-      diagnosis: state.diagnosis,
-      procedureSteps: pending,
-      outline: state.outline,
-      userInstructions: userInstructionsForProcedures(state.userInstructions),
-    },
-    runtime?.context,
-    `Error generating results for batch [${pending.map((p) => p.name).join(", ")}]`
-  );
-
-  const updatedProcedures = appendProcedures(
-    state.case.procedures,
-    completedProcedures
-  );
-
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[ProcedureGraph] Results for batch of ${completedProcedures.length} procedure(s):\n\`\`\`json\n${JSON.stringify(completedProcedures, null, 2)}\n\`\`\``,
-  });
-
-  return new Command({
-    update: {
-      case: { procedures: updatedProcedures },
-      pendingProcedures: [],
-    },
-    goto: "blinded_step",
-  });
+  };
 }
 
 // ─── Node 3: bridge ───────────────────────────────────────────────────────────
@@ -404,6 +400,7 @@ async function resultStep(
  * categories in a single retry.
  */
 async function resolveBridgeViaCategories(
+  runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: ProcedureGraphState["diagnosis"],
   previousProcedures: ProcedureResult[],
@@ -411,22 +408,22 @@ async function resolveBridgeViaCategories(
   context: RequestContext | undefined
 ): Promise<ProcedureResult[]> {
   const categories = await invokeLogged(
+    runtime,
     procedureTools.generateBridgeCategoryStep,
     { presentation, diagnosis, previousProcedures, userInstructions },
     context,
     "Error in bridge category step"
   );
 
-  const allCategories = procedureCatalog.categories();
+  const allCategories = runtime.catalogs.procedures.categories();
   const selectedCategories = categories.length ? categories : allCategories;
 
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[ProcedureGraph] Bridge category step selected: [${selectedCategories.join(", ")}]${categories.length ? "" : " (fallback: all categories)"}`,
-  });
+  runtime.log.info(
+    `[ProcedureGraph] Bridge category step selected: [${selectedCategories.join(", ")}]${categories.length ? "" : " (fallback: all categories)"}`
+  );
 
   const scopedResults = await invokeLogged(
+    runtime,
     procedureTools.generateBridgeProcedureStepFromCategories,
     {
       presentation,
@@ -446,13 +443,12 @@ async function resolveBridgeViaCategories(
     return scopedResults;
   }
 
-  bus.emit("Generation Log", {
-    logLevel: "warn",
-    timestamp: new Date().toISOString(),
-    msg: `[ProcedureGraph] Bridge pick from [${selectedCategories.join(", ")}] returned no procedures — retrying with all categories.`,
-  });
+  runtime.log.warn(
+    `[ProcedureGraph] Bridge pick from [${selectedCategories.join(", ")}] returned no procedures — retrying with all categories.`
+  );
 
   return invokeLogged(
+    runtime,
     procedureTools.generateBridgeProcedureStepFromCategories,
     {
       presentation,
@@ -466,79 +462,94 @@ async function resolveBridgeViaCategories(
   );
 }
 
-async function bridge(
-  state: ProcedureGraphState,
-  runtime?: Runtime<RequestContext>
-): Promise<Command> {
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[ProcedureGraph] Generating bridge procedures to confirm diagnosis…`,
-  });
+function makeBridge(runtime: GraphRuntime, config: Config) {
+  return async function bridge(
+    state: ProcedureGraphState,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<Command> {
+    runtime.log.info(
+      `[ProcedureGraph] Generating bridge procedures to confirm diagnosis…`
+    );
 
-  const presentation = presentationOf(state.case);
-  const previousProcedures = state.case.procedures ?? [];
-  const userInstructions = userInstructionsForProcedures(
-    state.userInstructions
-  );
+    const presentation = presentationOf(state.case);
+    const previousProcedures = state.case.procedures ?? [];
+    const userInstructions = userInstructionsForProcedures(
+      state.userInstructions
+    );
 
-  const bridgeProcedures = useSmallModelSplit()
-    ? await resolveBridgeViaCategories(
-        presentation,
-        state.diagnosis,
-        previousProcedures,
-        userInstructions,
-        runtime?.context
-      )
-    : await invokeLogged(
-        procedureTools.generateDiagnosisBridge,
-        {
+    const bridgeProcedures = useSmallModelSplit(runtime, config)
+      ? await resolveBridgeViaCategories(
+          runtime,
           presentation,
-          diagnosis: state.diagnosis,
+          state.diagnosis,
           previousProcedures,
           userInstructions,
-        },
-        runtime?.context,
-        "Error generating bridge procedures"
-      );
+          lgRuntime?.context
+        )
+      : await invokeLogged(
+          runtime,
+          procedureTools.generateDiagnosisBridge,
+          {
+            presentation,
+            diagnosis: state.diagnosis,
+            previousProcedures,
+            userInstructions,
+          },
+          lgRuntime?.context,
+          "Error generating bridge procedures"
+        );
 
-  const updatedProcedures = appendProcedures(
-    state.case.procedures,
-    bridgeProcedures
-  );
+    const updatedProcedures = appendProcedures(
+      state.case.procedures,
+      bridgeProcedures
+    );
 
-  bus.emit("Generation Log", {
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-    msg: `[ProcedureGraph] Bridge complete — ${bridgeProcedures.length} procedure(s) added:\n\`\`\`json\n${JSON.stringify(bridgeProcedures, null, 2)}\n\`\`\``,
-  });
+    runtime.log.info(
+      `[ProcedureGraph] Bridge complete — ${bridgeProcedures.length} procedure(s) added:\n\`\`\`json\n${JSON.stringify(bridgeProcedures, null, 2)}\n\`\`\``
+    );
 
-  return new Command({
-    update: { case: { procedures: updatedProcedures } },
-    goto: END,
-  });
+    return new Command({
+      update: { case: { procedures: updatedProcedures } },
+      goto: END,
+    });
+  };
 }
 
 // ─── Graph ────────────────────────────────────────────────────────────────────
 
-export const procedureGraph = new StateGraph(
-  ProcedureGraphStateSchema,
-  RequestContextSchema
-)
-  .addNode(
-    "blinded_step",
-    traceNode("blinded_step", blindedStep, "Choosing next procedure"),
-    { ends: ["result_step", "bridge", END] }
-  )
-  .addNode(
-    "result_step",
-    traceNode("result_step", resultStep, "Generating procedure result"),
-    { ends: ["blinded_step"] }
-  )
-  .addNode(
-    "bridge",
-    traceNode("bridge", bridge, "Bridging workup to diagnosis"),
-    { ends: [END] }
-  )
-  .addEdge(START, "blinded_step")
-  .compile();
+export function buildProcedureGraph(
+  runtime: GraphRuntime,
+  config: Config,
+  traceNode: ReturnType<typeof createTraceNode>
+) {
+  return new StateGraph(ProcedureGraphStateSchema, RequestContextSchema)
+    .addNode(
+      "blinded_step",
+      traceNode(
+        "blinded_step",
+        makeBlindedStep(runtime, config),
+        "Choosing next procedure"
+      ),
+      { ends: ["result_step", "bridge", END] }
+    )
+    .addNode(
+      "result_step",
+      traceNode(
+        "result_step",
+        makeResultStep(runtime),
+        "Generating procedure result"
+      ),
+      { ends: ["blinded_step"] }
+    )
+    .addNode(
+      "bridge",
+      traceNode(
+        "bridge",
+        makeBridge(runtime, config),
+        "Bridging workup to diagnosis"
+      ),
+      { ends: [END] }
+    )
+    .addEdge(START, "blinded_step")
+    .compile();
+}

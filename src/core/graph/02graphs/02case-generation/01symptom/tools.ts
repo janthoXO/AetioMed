@@ -18,8 +18,13 @@ export const generateSymptoms: Tool<
   description:
     "Generate a list of clinically accurate symptoms for a given diagnosis using an LLM.",
   inputSchema: GenerateSymptomsInputSchema,
-  invoke: ({ diagnosis, symptomsToExclude, userInstructions }, context) =>
+  invoke: (
+    { diagnosis, symptomsToExclude, userInstructions },
+    runtime,
+    context
+  ) =>
     generateSymptomsOneShot(
+      runtime,
       diagnosis,
       userInstructions,
       symptomsToExclude,

@@ -58,9 +58,11 @@ export const generateBlindedProcedureStepTool: Tool<
       userInstructions,
       iterationsRemaining,
     },
+    runtime,
     context
   ) =>
     generateBlindedProcedureStep(
+      runtime,
       presentation,
       previousProcedures,
       ruledOutDiagnoses,
@@ -96,9 +98,11 @@ export const generateBlindedCategoryStepTool: Tool<
       userInstructions,
       iterationsRemaining,
     },
+    runtime,
     context
   ) =>
     generateBlindedCategoryStep(
+      runtime,
       presentation,
       previousProcedures,
       ruledOutDiagnoses,
@@ -134,9 +138,11 @@ export const generateBlindedProcedureStepFromCategoriesTool: Tool<
       expandableCategories,
       userInstructions,
     },
+    runtime,
     context
   ) =>
     generateBlindedProcedureStepFromCategories(
+      runtime,
       presentation,
       previousProcedures,
       selectedCategories,
@@ -166,9 +172,11 @@ export const generateProcedureResultsTool: Tool<
   inputSchema: GenerateProcedureResultsInputSchema,
   invoke: (
     { presentation, diagnosis, procedureSteps, outline, userInstructions },
+    runtime,
     context
   ) =>
     generateProcedureResults(
+      runtime,
       presentation,
       diagnosis,
       procedureSteps,
@@ -197,9 +205,11 @@ export const generateDiagnosisBridgeTool: Tool<
   inputSchema: GenerateDiagnosisBridgeInputSchema,
   invoke: (
     { presentation, diagnosis, previousProcedures, userInstructions },
+    runtime,
     context
   ) =>
     generateDiagnosisBridge(
+      runtime,
       presentation,
       diagnosis,
       previousProcedures,
@@ -227,9 +237,11 @@ export const generateBridgeCategoryStepTool: Tool<
   inputSchema: GenerateBridgeCategoryStepInputSchema,
   invoke: (
     { presentation, diagnosis, previousProcedures, userInstructions },
+    runtime,
     context
   ) =>
     generateBridgeCategoryStep(
+      runtime,
       presentation,
       diagnosis,
       previousProcedures,
@@ -264,9 +276,11 @@ export const generateBridgeProcedureStepFromCategoriesTool: Tool<
       selectedCategories,
       userInstructions,
     },
+    runtime,
     context
   ) =>
     generateBridgeProcedureStepFromCategories(
+      runtime,
       presentation,
       diagnosis,
       previousProcedures,
@@ -291,8 +305,8 @@ export const matchDiagnosisTool: Tool<
   description:
     "LLM judge: determine whether a proposed diagnosis name is equivalent to the true diagnosis, accounting for synonyms and alternative names.",
   inputSchema: MatchDiagnosisInputSchema,
-  invoke: ({ proposedName, diagnosis }, context) =>
-    matchDiagnosisGateway(proposedName, diagnosis, context),
+  invoke: ({ proposedName, diagnosis }, runtime, context) =>
+    matchDiagnosisGateway(runtime, proposedName, diagnosis, context),
 };
 
 // ─── Export ───────────────────────────────────────────────────────────────────

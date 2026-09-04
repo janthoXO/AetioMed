@@ -4,7 +4,6 @@ import {
   type LLMConfig,
 } from "@/core/graph/models/LLMConfig.js";
 import { LanguageSchema } from "@/core/graph/models/Language.js";
-import { setupTracing } from "@/extensions/tracing/traceManager.js";
 import * as cancelManager from "./cancelManager.js";
 import z from "zod";
 
@@ -20,6 +19,21 @@ export type RequestContext = z.infer<typeof RequestContextSchema> & {
 
 export const requestContext = new AsyncLocalStorage<RequestContext>();
 
+/**
+ * Core-owned hook a per-job resource can register itself against, without
+ * core importing the extension that provides it (see the `tracing`
+ * extension's `setup()`, which calls `registerJobHook`). `runWithContext`
+ * calls the registered hook, if any, for every job. With no hook registered
+ * (`TRACING` unset) this allocates nothing — no `TraceBus`, no per-request
+ * work — unlike the previous unconditional `setupTracing()` import/call.
+ */
+type JobHook = (jobId: string) => { cleanup: () => void };
+let jobHook: JobHook | undefined;
+
+export function registerJobHook(hook: JobHook): void {
+  jobHook = hook;
+}
+
 export function runWithContext<T>(
   fn: () => T,
   jobId?: string,
@@ -29,7 +43,7 @@ export function runWithContext<T>(
   let cleanup: (() => void) | undefined;
 
   if (jobId) {
-    ({ cleanup } = setupTracing(jobId));
+    ({ cleanup } = jobHook?.(jobId) ?? {});
     cancelManager.register(jobId, controller);
   }
 

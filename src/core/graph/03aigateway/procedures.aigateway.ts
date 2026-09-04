@@ -1,4 +1,3 @@
-import { bus } from "@/core/graph/index.js";
 import { retry } from "../utils/retry.js";
 import z from "zod";
 import {
@@ -22,7 +21,6 @@ import {
   type ProcedureRelevance,
   type ProcedureResult,
 } from "../models/Procedure.js";
-import { procedureCatalog } from "../catalog/index.js";
 import {
   UNCATEGORIZED_CATEGORY,
   type ProcedurePickMode,
@@ -34,6 +32,7 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
 import type { ForeignLanguage } from "../models/Language.js";
 import { translateTermsKeyed } from "./translate.helper.js";
+import type { GraphRuntime } from "../runtime.js";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -146,6 +145,7 @@ function buildStepSchema(procedureFieldSchema: z.ZodTypeAny) {
  *   • action "diagnose"  — a diagnosis it commits to based on available evidence.
  */
 export async function generateBlindedProcedureStep(
+  runtime: GraphRuntime,
   presentation: Presentation,
   previousProcedures: ProcedureResult[],
   ruledOutDiagnoses: string[],
@@ -153,7 +153,7 @@ export async function generateBlindedProcedureStep(
   iterationsRemaining?: number,
   context?: RequestContext
 ): Promise<BlindedProcedureStepResult> {
-  const candidates = procedureCatalog
+  const candidates = runtime.catalogs.procedures
     .candidates()
     .exclude(previousProcedures.map((p) => p.name));
 
@@ -225,7 +225,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       async (attempt, previousError) => {
         // Balanced: this is clinical decision-making, not creative writing —
         // lower temperature keeps procedure choices focused and output short.
-        const res = await getBalancedLLM(context?.llmConfig)
+        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(StepSchema)
           .invoke(
             [
@@ -252,11 +252,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       (error, attempt) => {
         const msg = `[GenerateBlindedProcedureStep] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -325,6 +321,7 @@ function buildCategoryStepSchema(categories?: string[]) {
  * the same `matchDiagnosis` / ruled-out-diagnoses flow for either path.
  */
 export async function generateBlindedCategoryStep(
+  runtime: GraphRuntime,
   presentation: Presentation,
   previousProcedures: ProcedureResult[],
   ruledOutDiagnoses: string[],
@@ -335,7 +332,7 @@ export async function generateBlindedCategoryStep(
   // Categories are picked from the duplicate-filtered candidate set: fully
   // ordered categories vanish from the menu, and the size/sample hints
   // reflect only the procedures still available to order.
-  const candidates = procedureCatalog
+  const candidates = runtime.catalogs.procedures
     .candidates()
     .exclude(previousProcedures.map((p) => p.name));
   const categories = candidates.categories();
@@ -398,7 +395,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       async (attempt, previousError) => {
         // Thinking off: the category shortlist is a constrained pick and the
         // split into two small steps exists precisely to keep each call fast.
-        const res = await getBalancedLLM({
+        const res = await getBalancedLLM(runtime.llm, {
           ...context?.llmConfig,
           enableThinking: false,
         })
@@ -428,11 +425,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       (error, attempt) => {
         const msg = `[GenerateBlindedCategoryStep] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -498,6 +491,7 @@ function scopedPickSchema(
  * forces a pick.
  */
 export async function generateBlindedProcedureStepFromCategories(
+  runtime: GraphRuntime,
   presentation: Presentation,
   previousProcedures: ProcedureResult[],
   selectedCategories: string[],
@@ -506,9 +500,11 @@ export async function generateBlindedProcedureStepFromCategories(
   context?: RequestContext
 ): Promise<ScopedProcedurePickResult> {
   const ordered = previousProcedures.map((p) => p.name);
-  const scoped = procedureCatalog.scope(selectedCategories).exclude(ordered);
+  const scoped = runtime.catalogs.procedures
+    .scope(selectedCategories)
+    .exclude(ordered);
   // Only offer expansion into categories that still have unordered candidates.
-  const all = procedureCatalog.candidates().exclude(ordered);
+  const all = runtime.catalogs.procedures.candidates().exclude(ordered);
   const expandable = expandableCategories.filter((category) =>
     all.categories().includes(category)
   );
@@ -590,7 +586,7 @@ ${all.categoryMenu(expandable)}`
       async (attempt, previousError) => {
         // Thinking off: same rationale as the category step — the candidate
         // set is already scoped, so the pick doesn't need a reasoning phase.
-        const res = await getBalancedLLM({
+        const res = await getBalancedLLM(runtime.llm, {
           ...context?.llmConfig,
           enableThinking: false,
         })
@@ -620,11 +616,7 @@ ${all.categoryMenu(expandable)}`
       (error, attempt) => {
         const msg = `[GenerateBlindedProcedureStepFromCategories] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -674,6 +666,7 @@ const ResultsSchema = z.object({
  * both `relevance` and `result` are decided here instead.
  */
 export async function generateProcedureResults(
+  runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
   procedureSteps: Procedure[],
@@ -740,7 +733,7 @@ ${outline}`
       async (attempt, previousError) => {
         // Balanced: results must follow the blueprint's workup strategy and
         // stay clinically plausible — specific values, not invention.
-        const res = await getBalancedLLM(context?.llmConfig)
+        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(ResultsSchema)
           .invoke(
             [
@@ -767,11 +760,7 @@ ${outline}`
       (error, attempt) => {
         const msg = `[GenerateProcedureResults] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -926,13 +915,14 @@ function assembleBridgeResults(
  * presentation as the blinded step.
  */
 export async function generateDiagnosisBridge(
+  runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
   previousProcedures: ProcedureResult[],
   userInstructions?: string,
   context?: RequestContext
 ): Promise<ProcedureResult[]> {
-  const candidates = procedureCatalog
+  const candidates = runtime.catalogs.procedures
     .candidates()
     .exclude(previousProcedures.map((p) => p.name));
 
@@ -995,7 +985,7 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates
       async (attempt, previousError) => {
         // Balanced: confirmatory procedures for a known diagnosis — the most
         // clinically standard choices are exactly what we want.
-        const res = await getBalancedLLM(context?.llmConfig)
+        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(BridgeSchema)
           .invoke(
             [
@@ -1022,18 +1012,14 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates
       (error, attempt) => {
         const msg = `[GenerateDiagnosisBridge] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
     return assembleBridgeResults(
       candidates.mode,
       rawProcedures,
-      procedureCatalog.list()
+      runtime.catalogs.procedures.list()
     );
   } catch (error) {
     console.error("[GenerateDiagnosisBridge] Error:", error);
@@ -1067,6 +1053,7 @@ function buildBridgeCategoryStepSchema(categories?: string[]) {
  * plausibly contain the confirmatory procedures, over-inclusive by design.
  */
 export async function generateBridgeCategoryStep(
+  runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
   previousProcedures: ProcedureResult[],
@@ -1076,7 +1063,7 @@ export async function generateBridgeCategoryStep(
   // Same duplicate-filtered candidate set as the blinded category step: fully
   // ordered categories vanish, and size/sample hints reflect remaining
   // candidates.
-  const candidates = procedureCatalog
+  const candidates = runtime.catalogs.procedures
     .candidates()
     .exclude(previousProcedures.map((p) => p.name));
   const categories = candidates.categories();
@@ -1125,7 +1112,7 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
 
     const categoriesResult = await retry(
       async (attempt, previousError) => {
-        const res = await getBalancedLLM(context?.llmConfig)
+        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(CategoryStepSchema)
           .invoke(
             [
@@ -1152,11 +1139,7 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
       (error, attempt) => {
         const msg = `[GenerateBridgeCategoryStep] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -1178,6 +1161,7 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
  * categories.
  */
 export async function generateBridgeProcedureStepFromCategories(
+  runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
   previousProcedures: ProcedureResult[],
@@ -1185,7 +1169,7 @@ export async function generateBridgeProcedureStepFromCategories(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<ProcedureResult[]> {
-  const scoped = procedureCatalog
+  const scoped = runtime.catalogs.procedures
     .scope(selectedCategories)
     .exclude(previousProcedures.map((p) => p.name));
 
@@ -1246,7 +1230,7 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(scoped.mod
   try {
     const rawProcedures = await retry(
       async (attempt, previousError) => {
-        const res = await getBalancedLLM(context?.llmConfig)
+        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(BridgeSchema)
           .invoke(
             [
@@ -1273,18 +1257,14 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(scoped.mod
       (error, attempt) => {
         const msg = `[GenerateBridgeProcedureStepFromCategories] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
     return assembleBridgeResults(
       scoped.mode,
       rawProcedures,
-      procedureCatalog.list()
+      runtime.catalogs.procedures.list()
     );
   } catch (error) {
     console.error("[GenerateBridgeProcedureStepFromCategories] Error:", error);
@@ -1309,6 +1289,7 @@ const MatchSchema = z.object({
  * and specificity differences (e.g. "Type 2 Diabetes" ≡ "Diabetes Mellitus Type 2").
  */
 export async function matchDiagnosis(
+  runtime: GraphRuntime,
   proposedName: string,
   diagnosis: Diagnosis,
   context?: RequestContext
@@ -1347,7 +1328,7 @@ ${renderSchemaForPrompt(MatchSchema)}`
   try {
     const matches = await retry(
       async (attempt, previousError) => {
-        const res = await getDeterministicLLM(context?.llmConfig)
+        const res = await getDeterministicLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(MatchSchema)
           .invoke(
             [
@@ -1374,11 +1355,7 @@ ${renderSchemaForPrompt(MatchSchema)}`
       (error, attempt) => {
         const msg = `[MatchDiagnosis] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -1390,11 +1367,12 @@ ${renderSchemaForPrompt(MatchSchema)}`
 }
 
 export async function generateProceduresFromEnglish(
+  runtime: GraphRuntime,
   procedureNames: string[],
   language: ForeignLanguage,
   context?: RequestContext
 ): Promise<Record<string, string>> {
-  return translateTermsKeyed({
+  return translateTermsKeyed(runtime, {
     logTag: "GenerateProceduresFromEnglish",
     taskDescription: `Translate the provided procedures from English to a target language.`,
     contextLines: [`Target language: ${language}`],

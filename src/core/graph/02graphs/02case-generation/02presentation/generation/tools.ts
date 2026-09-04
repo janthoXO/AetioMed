@@ -36,9 +36,11 @@ export const generateCaseOutline: Tool<
       feedback,
       previousOutline,
     },
+    runtime,
     context
   ) =>
     generateCaseOutlineGateway(
+      runtime,
       diagnosis,
       generationFlags.filter((f) => f !== "procedures"),
       symptoms,
@@ -67,8 +69,13 @@ export const evaluateOutline: Tool<
   description:
     "Judge in one call whether a case blueprint is too obvious for the requested difficulty and whether it is clinically consistent.",
   inputSchema: EvaluateOutlineInputSchema,
-  invoke: ({ diagnosis, outline, difficulty, userInstructions }, context) =>
+  invoke: (
+    { diagnosis, outline, difficulty, userInstructions },
+    runtime,
+    context
+  ) =>
     evaluateOutlineGateway(
+      runtime,
       diagnosis,
       outline,
       difficulty,

@@ -20,12 +20,13 @@ export async function createApp(
 
   const graphConfig = GraphConfigSchema.parse(process.env);
   const eventBus = new EventBus();
-  initGraph({ bus: eventBus, config: graphConfig });
+  const graph = initGraph({ bus: eventBus, config: graphConfig });
 
   await loadExtensions({
     extensions: [...extensions],
     enabledFlags: new Set(features),
     bus: eventBus,
+    graph,
   });
 
   return { bus: eventBus };

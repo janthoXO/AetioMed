@@ -3,10 +3,9 @@ import cors from "cors";
 import morgan from "morgan";
 import { z } from "zod";
 import { defineExtension } from "../../core/extension.js";
-import casesRouter from "./routes/cases.router.js";
+import createCasesRouter from "./routes/cases.router.js";
 import diagnosisRouter from "./routes/diagnosis.router.js";
-import proceduresRouter from "./routes/procedures.router.js";
-import { config } from "@/core/graph/index.js";
+import createProceduresRouter from "./routes/procedures.router.js";
 import { extension as apiExtension } from "../api/index.js";
 
 /** Shared router mounted at /api — other extensions import this to mount sub-routes. */
@@ -30,7 +29,7 @@ export const extension = defineExtension({
   envSchema: RestEnvSchema,
   dependsOn: [apiExtension] as const,
 
-  async setup({ config: { port, features } }) {
+  async setup({ config: { port, features }, graph, bus }) {
     const app = express();
     app.use(express.json());
 
@@ -46,11 +45,11 @@ export const extension = defineExtension({
     apiRouter.get("/features", (_req, res) => res.json(features));
     app.use("/api", apiRouter);
 
-    apiRouter.use("/cases", casesRouter);
+    apiRouter.use("/cases", createCasesRouter(graph, bus));
     apiRouter.use("/diagnosis", diagnosisRouter);
-    apiRouter.use("/procedures", proceduresRouter);
+    apiRouter.use("/procedures", createProceduresRouter(graph));
     apiRouter.get("/allowedLlms", (_req, res) =>
-      res.json(config.allowedLlms || [])
+      res.json(graph.config.allowedLlms || [])
     );
 
     await new Promise<void>((resolve) =>

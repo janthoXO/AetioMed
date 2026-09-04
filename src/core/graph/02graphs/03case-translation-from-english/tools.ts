@@ -38,7 +38,11 @@ export const translateCase: Tool<
   description:
     "Translate all value fields in a generated medical case to the target language.",
   inputSchema: TranslateCaseInputSchema,
-  invoke: async ({ case: caseData, language, generationFlags }, context) => {
+  invoke: async (
+    { case: caseData, language, generationFlags },
+    runtime,
+    context
+  ) => {
     const systemPrompt = `You are a medical translator.
 Your task is to translate the provided medical case JSON content into ${language}.
 ${generationFlags.includes("procedures") ? "Do NOT translate the procedures relevance field, keep it as is." : ""}
@@ -50,7 +54,7 @@ RULES:
     const userPrompt = `Case to translate:\n${JSON.stringify(caseData)}`;
 
     // Deterministic: translation must be faithful, not creative.
-    const llm = getDeterministicLLM(context?.llmConfig);
+    const llm = getDeterministicLLM(runtime.llm, context?.llmConfig);
 
     return retry(
       async () => {
@@ -88,7 +92,7 @@ export const translateAnamnesisCategoriesFromEnglish: Tool<
   description:
     "Translate anamnesis category names from English to the target language, using a cache.",
   inputSchema: TranslateAnamnesisCategoriesFromEnglishInputSchema,
-  invoke: async ({ categories, language }, context) => {
+  invoke: async ({ categories, language }, runtime, context) => {
     const translations: Record<AnamnesisCategory, AnamnesisCategory> = {};
     const missing: AnamnesisCategory[] = [];
 
@@ -106,6 +110,7 @@ export const translateAnamnesisCategoriesFromEnglish: Tool<
 
     if (missing.length > 0) {
       const generated = await generateAnamnesisCategoriesFromEnglish(
+        runtime,
         missing,
         language,
         context
@@ -133,7 +138,7 @@ export const translateProcedureNamesFromEnglish: Tool<
   description:
     "Translate procedure names from English to the target language, using a cache.",
   inputSchema: TranslateProcedureNamesFromEnglishInputSchema,
-  invoke: async ({ procedureNames, language }, context) => {
+  invoke: async ({ procedureNames, language }, runtime, context) => {
     const translations: Record<ProcedureName, ProcedureName> = {};
     const missing: ProcedureName[] = [];
 
@@ -148,6 +153,7 @@ export const translateProcedureNamesFromEnglish: Tool<
 
     if (missing.length > 0) {
       const generated = await generateProceduresFromEnglish(
+        runtime,
         missing,
         language,
         context

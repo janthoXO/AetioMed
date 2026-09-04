@@ -8,12 +8,14 @@ import {
   section,
 } from "../utils/prompt.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import type { GraphRuntime } from "../runtime.js";
 
 const responseSchema = z.object({
   diagnosis: z.string().describe("the diagnosis translated to English"),
 });
 
 export async function generateDiagnosisToEnglish(
+  runtime: GraphRuntime,
   diagnosis: string,
   language: ForeignLanguage,
   context?: RequestContext
@@ -40,7 +42,7 @@ ${renderSchemaForPrompt(responseSchema)}`
     `[GenerateDiagnosisToEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const response = await getDeterministicLLM(context?.llmConfig)
+  const response = await getDeterministicLLM(runtime.llm, context?.llmConfig)
     .withStructuredOutput(responseSchema)
     .invoke(
       [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],

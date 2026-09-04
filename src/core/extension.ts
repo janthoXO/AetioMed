@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { EventBus } from "./event-bus.js";
+import type { GraphAppContext } from "./graph/appContext.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyExt = Extension<any, any>;
@@ -18,6 +19,14 @@ export interface ExtensionSetupCtx<
 > {
   config: TSchema extends z.ZodTypeAny ? z.infer<TSchema> : undefined;
   bus: EventBus;
+  /**
+   * The case-generation graph's public surface — resolved graph config,
+   * the constructed `GraphRuntime` (for its catalogues) and the bound
+   * `generateCase` — built once in `app.ts` before extensions load, so
+   * transport extensions (rest, nats) never import graph internals
+   * directly.
+   */
+  graph: GraphAppContext;
   dep<D extends TDeps[number]>(ext: D): InferConfig<D>;
 }
 

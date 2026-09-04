@@ -1,15 +1,21 @@
 import express from "express";
-import { procedureCatalog } from "@/core/graph/catalog/index.js";
+import type { GraphAppContext } from "@/core/graph/appContext.js";
 
-const router = express.Router();
+export default function createProceduresRouter(graph: GraphAppContext) {
+  const router = express.Router();
 
-router.use((_req, _res, next) => {
-  /* #swagger.tags = ['Procedures'] */
-  next();
-});
+  router.use((_req, _res, next) => {
+    /* #swagger.tags = ['Procedures'] */
+    next();
+  });
 
-router.get("/", async (_, res) => {
-  res.status(200).json(procedureCatalog.list()?.map((p) => ({ name: p })));
-});
+  router.get("/", async (_, res) => {
+    res
+      .status(200)
+      .json(
+        graph.runtime.catalogs.procedures.list()?.map((p) => ({ name: p }))
+      );
+  });
 
-export default router;
+  return router;
+}

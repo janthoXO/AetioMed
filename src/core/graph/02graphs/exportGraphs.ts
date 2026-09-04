@@ -1,8 +1,16 @@
 import * as fs from "node:fs/promises";
 import type { CompiledGraph } from "@langchain/langgraph";
 import { run } from "@mermaid-js/mermaid-cli";
-import { caseGraph } from "./caseGraph.js";
+import { buildCaseGraph } from "./caseGraph.js";
 import type { Node, Graph } from "@langchain/core/runnables/graph";
+import { EventBus } from "../../event-bus.js";
+import type { GraphRuntime } from "../runtime.js";
+import { InMemoryProcedureCatalog } from "../catalog/procedureCatalog.js";
+import { InMemoryAnamnesisCatalog } from "../catalog/anamnesisCatalog.js";
+import { InMemoryLabelCatalog } from "../catalog/labelCatalog.js";
+import { InMemoryDiagnosisCatalog } from "../catalog/diagnosisCatalog.js";
+import { createLogger } from "../utils/logger.js";
+import type { Config } from "../config.js";
 
 function collapseSubgraphs(g: Graph, subgraphPrefixes: string[]) {
   const newNodes: Record<string, Node> = {};
@@ -86,6 +94,45 @@ export async function exportGraphOverviewPng(
     console.error(error);
   }
 }
+
+// Minimal runtime — this script only renders topology, it never calls the
+// LLM or touches the filesystem-backed catalogues, so every port is a bare
+// in-memory/no-op stand-in rather than the real app's composition root.
+const minimalConfig: Config = {
+  llm: {
+    provider: "ollama",
+    model: "unused",
+    temperature: 0.7,
+    apiKey: undefined,
+    url: undefined,
+  },
+  allowedLlms: undefined,
+  LLM_SMALL: false,
+};
+
+const minimalRuntime: GraphRuntime = {
+  llm: {
+    chat() {
+      throw new Error(
+        "exportGraphs: the LLM is never called while exporting graph topology."
+      );
+    },
+  },
+  catalogs: {
+    procedures: new InMemoryProcedureCatalog(),
+    anamnesis: new InMemoryAnamnesisCatalog(),
+    labels: new InMemoryLabelCatalog(),
+    diagnosis: new InMemoryDiagnosisCatalog(),
+  },
+  log: createLogger(new EventBus()),
+  clock: () => new Date(),
+};
+
+const { caseGraph } = buildCaseGraph(
+  minimalRuntime,
+  new EventBus(),
+  minimalConfig
+);
 
 await Promise.all([
   exportGraphPng(caseGraph, "case-graph"),

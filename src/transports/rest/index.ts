@@ -5,7 +5,7 @@ import { z } from "zod";
 import createCasesRouter from "./routes/cases.router.js";
 import createDiagnosisRouter from "./routes/diagnosis.router.js";
 import createProceduresRouter from "./routes/procedures.router.js";
-import { mountTracingRest } from "../tracingRest/index.js";
+import { mountTracingRest } from "../../tracing/sse/index.js";
 import type { GraphAppContext } from "../../core/graph/appContext.js";
 import type { CaseGenerationService } from "../../core/caseGenerationService.js";
 

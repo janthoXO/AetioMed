@@ -1,7 +1,7 @@
 // Proves issue 05's §5: terminal events ("Generation Completed"/"Failure"/
 // "Cancelled") are emitted by CaseGenerationService itself, not by a
 // transport — so a direct call with no transport involved still produces
-// them. Before this refactor only the rest/nats extensions emitted these,
+// them. Before this refactor only the rest/nats transports emitted these,
 // so any other caller (this test included) got none.
 import { describe, it, expect, vi } from "vitest";
 import { EventBus } from "@/core/event-bus.js";

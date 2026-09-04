@@ -6,9 +6,9 @@ import {
   resolveCacheDir,
 } from "./graph/persistence/paths.js";
 import { createCaseGenerationService } from "./caseGenerationService.js";
-import { startRestServer } from "../extensions/rest/index.js";
-import { startNatsTransport } from "../extensions/nats/index.js";
-import { wireTracing } from "../extensions/tracing/index.js";
+import { startRestServer } from "../transports/rest/index.js";
+import { startNatsTransport } from "../transports/nats/index.js";
+import { wireTracing } from "../tracing/index.js";
 
 const AppEnvSchema = z
   .object({

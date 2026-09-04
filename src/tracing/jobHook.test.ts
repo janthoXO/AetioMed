@@ -1,5 +1,5 @@
 // Proves the tracing inversion from issue 04: `utils/context.ts` no longer
-// imports the tracing extension, and with no hook registered (as when
+// imports the tracing module, and with no hook registered (as when
 // `TRACING` is unset) `runWithContext` allocates no `TraceBus` at all.
 import { describe, expect, it, vi } from "vitest";
 import { registerJobHook, runWithContext } from "@/core/graph/utils/context.js";
@@ -15,8 +15,8 @@ describe("tracing job hook registration", () => {
     expect(traceManager.getTraceBus("job-unset")).toBeUndefined();
   });
 
-  it("TRACING enabled (extension registers the hook): runWithContext constructs a TraceBus via it", () => {
-    // Exactly what the `tracing` extension's setup() does.
+  it("TRACING enabled (the tracing module registers the hook): runWithContext constructs a TraceBus via it", () => {
+    // Exactly what the `tracing` module's setup() does.
     registerJobHook(traceManager.setupTracing);
 
     runWithContext(() => "ok", "job-set");

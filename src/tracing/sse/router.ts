@@ -1,5 +1,5 @@
 import express from "express";
-import { getTraceBus } from "../tracing/index.js";
+import { getTraceBus } from "../index.js";
 
 const router = express.Router();
 

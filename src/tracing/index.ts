@@ -1,8 +1,8 @@
 import { getTraceBus, getJobLanguage, setupTracing } from "./traceManager.js";
 import type { TraceEvent } from "./traceManager.js";
-import { registerJobHook } from "../../core/graph/utils/context.js";
-import type { EventBus } from "../../core/event-bus.js";
-import type { LabelCatalog } from "../../core/graph/catalog/ports.js";
+import { registerJobHook } from "../core/graph/utils/context.js";
+import type { EventBus } from "../core/event-bus.js";
+import type { LabelCatalog } from "../core/graph/catalog/ports.js";
 
 export { setupTracing, getTraceBus };
 export type { TraceEvent };
@@ -11,7 +11,7 @@ export type { TraceEvent };
  * Localize an English trace label into the job's request language, falling
  * back to English — core (`utils/nodeWrapper.ts`) always emits English, this
  * is the one place that translates it for a live consumer (SSE today; see
- * `tracingRest/router.ts`).
+ * `sse/router.ts`).
  */
 function localizeLabel(
   labels: LabelCatalog,
@@ -44,7 +44,7 @@ function emitToTraceBus(
 /**
  * Wire the tracing module into the app: registers the per-job `TraceBus`
  * hook (`registerJobHook`) and forwards the graph's bus events onto each
- * job's `TraceBus`, so a live consumer (SSE — `tracingRest`) can subscribe
+ * job's `TraceBus`, so a live consumer (SSE — `sse/`) can subscribe
  * per jobId. Called once from the composition root (`app.ts`) when the
  * `TRACING` flag is set.
  */

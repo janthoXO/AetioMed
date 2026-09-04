@@ -95,3 +95,53 @@ describe("CaseGenerationService — terminal events, no transport involved", () 
     });
   });
 });
+
+describe("CaseGenerationService — generationFlags expansion and projection", () => {
+  const fullCase: Case = {
+    patient: { name: "Jane", age: 40, sex: "female" },
+    chiefComplaint: "Cough for three days",
+    anamnesis: [{ category: "History", answer: "Nothing of note" }],
+    procedures: [{ name: "CBC", relevance: "obligatory", result: "Normal" }],
+  };
+
+  it("generates the presentation internally for a procedures-only request, then projects it out", async () => {
+    // The blinded solver reasons from the presentation, so it has to exist —
+    // but the caller asked for procedures, so that is all they get back.
+    const generateCase = vi.fn(async () => fullCase);
+    const service = createCaseGenerationService(
+      fakeGraph(generateCase),
+      new EventBus()
+    );
+
+    const result = await service.generate({
+      diagnosis: "Influenza",
+      generationFlags: ["procedures"],
+    });
+
+    expect(generateCase.mock.calls[0]?.[1]).toEqual([
+      "procedures",
+      "patient",
+      "chiefComplaint",
+      "anamnesis",
+    ]);
+    expect(result.case).toEqual({ procedures: fullCase.procedures });
+  });
+
+  it("passes a request that already names a presentation field through untouched", async () => {
+    const generateCase = vi.fn(async () => fullCase);
+    const service = createCaseGenerationService(
+      fakeGraph(generateCase),
+      new EventBus()
+    );
+
+    const result = await service.generate({
+      diagnosis: "Influenza",
+      generationFlags: ["procedures", "patient"],
+    });
+
+    expect(generateCase.mock.calls[0]?.[1]).toEqual(["procedures", "patient"]);
+    // No expansion means no projection either — the case comes back as the
+    // graph produced it.
+    expect(result.case).toBe(fullCase);
+  });
+});

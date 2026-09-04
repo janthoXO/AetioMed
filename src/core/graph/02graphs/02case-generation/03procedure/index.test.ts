@@ -24,7 +24,6 @@ import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
 import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.js";
 import { EventBus } from "@/core/event-bus.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
-import { ConfigSchema } from "@/core/graph/config.js";
 
 // ─── Fakes ──────────────────────────────────────────────────────────────────
 
@@ -231,19 +230,9 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
     ]);
     const runtime = buildFakeRuntime(makeQueuedLlmPort({}), categorizedCatalog);
     const traceNode = createTraceNode(new EventBus());
-    const baseConfig = ConfigSchema.parse({
-      LLM_PROVIDER: "ollama",
-      LLM_MODEL: "test-model",
-    });
 
-    const directStrategy = createProcedureStrategy(runtime, {
-      ...baseConfig,
-      PROCEDURE_PRESELECTION: false,
-    });
-    const scopedStrategy = createProcedureStrategy(runtime, {
-      ...baseConfig,
-      PROCEDURE_PRESELECTION: true,
-    });
+    const directStrategy = createProcedureStrategy(runtime, false);
+    const scopedStrategy = createProcedureStrategy(runtime, true);
 
     expect(directStrategy.id).toBe("direct-pick");
     expect(scopedStrategy.id).toBe("category-scoped-pick");
@@ -293,13 +282,8 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
     // No "Category: Name" prefixes ⇒ categories() is empty.
     const flatCatalog = new InMemoryProcedureCatalog(["CBC", "CT chest"]);
     const runtime = buildFakeRuntime(makeQueuedLlmPort({}), flatCatalog);
-    const config = ConfigSchema.parse({
-      LLM_PROVIDER: "ollama",
-      LLM_MODEL: "test-model",
-      PROCEDURE_PRESELECTION: "true",
-    });
 
-    const strategy = createProcedureStrategy(runtime, config);
+    const strategy = createProcedureStrategy(runtime, true);
 
     expect(strategy.id).toBe("direct-pick");
   });

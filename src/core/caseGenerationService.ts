@@ -5,6 +5,10 @@ import type { CaseGenerationRequest } from "@/api/index.js";
 import { runWithContext } from "./graph/utils/context.js";
 import * as cancelManager from "./graph/utils/cancelManager.js";
 import { AppError } from "./graph/errors/AppError.js";
+import {
+  expandFlagsForSolver,
+  projectCaseToFlags,
+} from "./graph/models/GenerationFlags.js";
 
 export type CaseGenerationResultError = {
   code: string;
@@ -65,12 +69,18 @@ export function createCaseGenerationService(
         }
       }
 
+      // A `procedures`-only request needs a presentation for the blinded
+      // solver to reason from, so one is generated internally and projected
+      // back out below. See `expandFlagsForSolver` for why the plan outline
+      // is not used instead.
+      const effectiveFlags = expandFlagsForSolver(req.generationFlags);
+
       try {
-        const generatedCase = await runWithContext(
+        const fullCase = await runWithContext(
           () =>
             graph.generateCase(
               { name: diagnosisName!, icd: req.icd },
-              req.generationFlags,
+              effectiveFlags,
               req.userInstructions,
               req.language,
               req.difficulty
@@ -79,6 +89,11 @@ export function createCaseGenerationService(
           req.llmConfig,
           req.language
         );
+
+        const generatedCase =
+          effectiveFlags === req.generationFlags
+            ? fullCase
+            : projectCaseToFlags(fullCase, req.generationFlags);
 
         bus.emit("Generation Completed", { case: generatedCase, jobId });
 

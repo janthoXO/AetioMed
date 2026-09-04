@@ -1,7 +1,7 @@
 import * as fs from "node:fs/promises";
 import type { CompiledGraph } from "@langchain/langgraph";
 import { run } from "@mermaid-js/mermaid-cli";
-import { buildCaseGraph } from "./caseGraph.js";
+import { buildCaseGraph, graphTopologyKey } from "./caseGraph.js";
 import type { Node, Graph } from "@langchain/core/runnables/graph";
 import { EventBus } from "../../event-bus.js";
 import type { GraphRuntime } from "../runtime.js";
@@ -65,8 +65,8 @@ export async function exportGraphPng(
       .getGraphAsync({ xray: true })
       .then((g) => collapseSubgraphs(g, subgraphsToCollapse))
       .then((g) => g.drawMermaid());
-    const mmdPath = `docs/${exportName}.mmd` as `${string}.mmd`;
-    const pngPath = `docs/${exportName}.svg` as `${string}.svg`;
+    const mmdPath = `docs/graphs/${exportName}.mmd` as `${string}.mmd`;
+    const pngPath = `docs/graphs/${exportName}.svg` as `${string}.svg`;
     await fs.writeFile(mmdPath, mermaidDef, "utf-8");
     await run(mmdPath, pngPath);
   } catch (error) {
@@ -89,8 +89,8 @@ export async function exportGraphOverviewPng(
         ])
       )
       .then((g) => g.drawMermaid());
-    const mmdPath = `docs/${exportName}.mmd` as `${string}.mmd`;
-    const pngPath = `docs/${exportName}.svg` as `${string}.svg`;
+    const mmdPath = `docs/graphs/${exportName}.mmd` as `${string}.mmd`;
+    const pngPath = `docs/graphs/${exportName}.svg` as `${string}.svg`;
     await fs.writeFile(mmdPath, mermaidDef, "utf-8");
     await run(mmdPath, pngPath);
   } catch (error) {
@@ -120,6 +120,7 @@ const minimalConfig: Config = {
   },
   allowedLlms: undefined,
   PROCEDURE_PRESELECTION: false,
+  TRANSLATION_SANDWICH: true,
 };
 
 const minimalRuntime: GraphRuntime = {
@@ -162,7 +163,7 @@ const minimalProceduresRepo: ProceduresRepo = {
   getEffectiveProcedureList: () => undefined,
 };
 
-const { caseGraph } = buildCaseGraph(
+const { getCaseGraph } = buildCaseGraph(
   minimalRuntime,
   new EventBus(),
   minimalConfig,
@@ -173,7 +174,19 @@ const { caseGraph } = buildCaseGraph(
   }
 );
 
-await Promise.all([
-  exportGraphPng(caseGraph, "case-graph"),
-  exportGraphOverviewPng(caseGraph, "case-graph-overview"),
-]);
+await fs.mkdir("docs/graphs", { recursive: true });
+
+// Two topologies, not four. `PROCEDURE_PRESELECTION` swaps a
+// `ProcedureStrategy` adapter and leaves the procedure graph at three nodes
+// either way (issue 07), so the two preselection variants of each topology
+// would render byte-identically. `graphTopologyKey` is the authority on this
+// and `caseGraph.test.ts` asserts the premise still holds — if that test ever
+// fails, this loop is what needs to grow back to four.
+for (const translationSandwich of [false, true]) {
+  const flags = { translationSandwich, procedurePreselection: false };
+  const graph = getCaseGraph(flags);
+  const name = graphTopologyKey(flags);
+
+  await exportGraphPng(graph, `case-graph.${name}`);
+  await exportGraphOverviewPng(graph, `case-graph-overview.${name}`);
+}

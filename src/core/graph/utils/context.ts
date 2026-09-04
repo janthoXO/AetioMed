@@ -20,7 +20,7 @@ export const requestContext = new AsyncLocalStorage<RequestContext>();
 
 /**
  * Core-owned hook a per-job resource can register itself against, without
- * core importing the extension that provides it (see the `tracing`
+ * core importing the module that provides it (see the `tracing`
  * module's `wireTracing()`, which calls `registerJobHook`). `runWithContext`
  * calls the registered hook, if any, for every job, passing along the
  * request's language purely so that hook can localize per-job output (e.g.

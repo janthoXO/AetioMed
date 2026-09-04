@@ -7,6 +7,6 @@ import traceRouter from "./router.js";
  * `TRACING` are enabled.
  */
 export function mountTracingRest(apiRouter: express.Router): void {
-  console.log("[tracingRest] Mounting live trace stream route...");
+  console.log("[tracing/sse] Mounting live trace stream route...");
   apiRouter.use("/", traceRouter);
 }

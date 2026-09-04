@@ -9,9 +9,12 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildPrompt,
+  buildSystemPrompt,
   renderUserInstructions,
   section,
 } from "@/core/graph/utils/prompt.js";
+import { requestContext } from "@/core/graph/utils/context.js";
+import type { GraphRuntime } from "@/core/graph/runtime.js";
 
 describe("buildPrompt", () => {
   it("joins parts with blank lines between them", () => {
@@ -57,5 +60,69 @@ describe("renderUserInstructions", () => {
     expect(renderUserInstructions(undefined)).toBeUndefined();
     expect(renderUserInstructions({})).toBeUndefined();
     expect(renderUserInstructions({ a: undefined, b: "" })).toBeUndefined();
+  });
+});
+
+// Issue 09 §3/§6: the language directive is appended only for
+// `"user-facing"` prompts, only when a foreign language is bound, and never
+// when `runtime.languageOverride` forces English (the sandwich-on binding —
+// see `GraphRuntime.languageOverride`, `runtime.ts`).
+describe("buildSystemPrompt", () => {
+  const fakeRuntime: GraphRuntime = {
+    llm: {
+      for: () => {
+        throw new Error("prompt.test: must never call the LLM");
+      },
+    },
+    catalogs: {} as GraphRuntime["catalogs"],
+    log: { info() {}, warn() {}, error() {} },
+    clock: () => new Date("2024-01-01T00:00:00.000Z"),
+  };
+
+  function withLanguage<T>(language: string | undefined, fn: () => T): T {
+    return requestContext.run({ language }, fn);
+  }
+
+  it("internal roles get no directive even with a foreign language bound", () => {
+    const prompt = withLanguage("German", () =>
+      buildSystemPrompt(fakeRuntime, "internal", "body text")
+    );
+    expect(prompt).toBe("body text");
+    expect(prompt).not.toContain("Output language");
+  });
+
+  it("user-facing roles get no directive for English", () => {
+    const prompt = withLanguage("English", () =>
+      buildSystemPrompt(fakeRuntime, "user-facing", "body text")
+    );
+    expect(prompt).not.toContain("Output language");
+  });
+
+  it("user-facing roles get no directive when no language is bound at all", () => {
+    const prompt = withLanguage(undefined, () =>
+      buildSystemPrompt(fakeRuntime, "user-facing", "body text")
+    );
+    expect(prompt).not.toContain("Output language");
+  });
+
+  it("user-facing roles get the directive naming the bound foreign language", () => {
+    const prompt = withLanguage("German", () =>
+      buildSystemPrompt(fakeRuntime, "user-facing", "body text")
+    );
+    expect(prompt).toContain("Output language: German.");
+    expect(prompt.startsWith("body text")).toBe(true);
+  });
+
+  it("a runtime with languageOverride: English suppresses the directive even with a foreign ambient language — the sandwich-on binding", () => {
+    const englishOnlyRuntime: GraphRuntime = {
+      ...fakeRuntime,
+      languageOverride: "English",
+    };
+
+    const prompt = withLanguage("German", () =>
+      buildSystemPrompt(englishOnlyRuntime, "user-facing", "body text")
+    );
+
+    expect(prompt).not.toContain("Output language");
   });
 });

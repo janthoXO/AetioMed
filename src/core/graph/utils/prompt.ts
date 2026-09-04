@@ -1,5 +1,7 @@
 import { stringify as stringifyYaml } from "yaml";
 import z from "zod";
+import { getRequestContext } from "./context.js";
+import type { GraphRuntime } from "../runtime.js";
 
 /**
  * Concatenates the provided prompt sections with blank lines between them and
@@ -7,6 +9,62 @@ import z from "zod";
  */
 export function buildPrompt(...parts: (string | undefined)[]): string {
   return parts.filter((s): s is string => !!s).join("\n\n");
+}
+
+/**
+ * Which of the two audiences (issue 09 §3) a system prompt is written for:
+ * - `"internal"` — the plan, the plan judge, the blinded solver,
+ *   `matchDiagnosis`, the symptom/basis provider. Stays English in every
+ *   mode; that is what keeps the generation core language-agnostic.
+ * - `"user-facing"` — chief complaint, anamnesis answers, patient, procedure
+ *   result text. Gets the language directive below when a foreign language
+ *   is bound and the translation sandwich is off.
+ */
+export type PromptAudience = "internal" | "user-facing";
+
+/**
+ * Appended as the final line of the system message, never the user message
+ * — constant per language, so it stays inside the stable prefix and does
+ * not disturb prompt caching. The second sentence is load-bearing: under
+ * structured output, a model told to "answer in German" will translate JSON
+ * keys and enum members too; `relevance` is
+ * `obligatory | optional | contraindicated`, and the grammar rejects a
+ * translated value, but the retry costs a call.
+ */
+function languageDirective(language: string): string {
+  return `Output language: ${language}.
+Write all free-text field VALUES in ${language}.
+Field names, enum values and identifiers are fixed by the schema —
+reproduce them exactly, untranslated.`;
+}
+
+/**
+ * `buildPrompt`, but for system prompts specifically: appends the language
+ * directive (§3 above) as the final section, for `audience: "user-facing"`
+ * calls only, and only when a foreign language is actually bound.
+ *
+ * The language comes off `runtime.languageOverride` when the bound runtime
+ * sets one, else off the request's ambient `getRequestContext()?.language`
+ * (`AsyncLocalStorage`) — never off LangGraph's own runtime context, and
+ * never off graph state (issue 09 §2). This function does not need to know
+ * separately whether the translation sandwich is on: `assembleCaseGraph`
+ * (`02graphs/caseGraph.ts`) binds the generation phase to a runtime with
+ * `languageOverride: "English"` whenever the sandwich is compiled in (see
+ * `GraphRuntime`'s doc comment), so "a foreign language is bound" already
+ * means "sandwich off and a non-English request" by the time any gateway
+ * call reaches here.
+ */
+export function buildSystemPrompt(
+  runtime: GraphRuntime,
+  audience: PromptAudience,
+  ...parts: (string | undefined)[]
+): string {
+  const language = runtime.languageOverride ?? getRequestContext()?.language;
+  const directive =
+    audience === "user-facing" && language && language !== "English"
+      ? languageDirective(language)
+      : undefined;
+  return buildPrompt(...parts, directive);
 }
 
 /**

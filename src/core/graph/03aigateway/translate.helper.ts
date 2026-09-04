@@ -36,6 +36,12 @@ export async function translateTermsKeyed(
 
   if (terms.length === 0) return {};
 
+  // Deliberately `buildPrompt`, not `buildSystemPrompt` (issue 09 §3): this
+  // is shared translator-role machinery (`translate_*_from_english`) whose
+  // target language is already explicit in `contextLines` below, passed by
+  // the caller rather than read off the ambient request language — the
+  // generic directive would be redundant here, not wrong, but this stays
+  // out of the "every generation gateway" conversion on purpose.
   const systemPrompt = buildPrompt(
     section("Role", taskDescription),
     section("Output format", KEYED_FORMAT_INSTRUCTION)

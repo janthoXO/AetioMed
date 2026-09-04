@@ -1,23 +1,38 @@
 import { START, StateGraph, END, Send } from "@langchain/langgraph";
 import { CaseTranslationToEnglishStateSchema } from "./state.js";
-import { RequestContextSchema } from "@/core/graph/utils/context.js";
+import {
+  RequestContextSchema,
+  getRequestContext,
+} from "@/core/graph/utils/context.js";
 import { type CaseTranslationToEnglishState } from "./state.js";
 import { translationToEnglishTools } from "./tools.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { Runtime } from "@langchain/langgraph";
 import type { RequestContext } from "@/core/graph/utils/context.js";
+import { GenerationError } from "@/core/graph/errors/AppError.js";
 
 function makeTranslateDiagnosis(runtime: GraphRuntime) {
   return async function translateDiagnosis(
     state: CaseTranslationToEnglishState,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Pick<CaseTranslationToEnglishState, "diagnosis"> | undefined> {
+    // Read off ALS, not graph state (issue 09 §2) — this phase is only ever
+    // entered when `requestNeedsTranslation` (`caseGraph.ts`) already found
+    // a bound, non-English language, so an absent value here is a real bug,
+    // not a legitimate "no language" case.
+    const language = getRequestContext()?.language;
+    if (!language) {
+      throw new GenerationError(
+        "translate_diagnosis reached without a language bound on the request context"
+      );
+    }
+
     const diagnosis =
       await translationToEnglishTools.translateDiagnosisToEnglish.invoke(
         {
           diagnosis: state.diagnosis,
-          language: state.language,
+          language,
         },
         runtime,
         lgRuntime?.context

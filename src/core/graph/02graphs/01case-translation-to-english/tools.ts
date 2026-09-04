@@ -2,12 +2,14 @@ import z from "zod";
 import { generateDiagnosisToEnglish } from "@/core/graph/03aigateway/diagnosis.aigateway.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
 import type { Diagnosis } from "@/core/graph/models/Diagnosis.js";
-import { ForeignLanguageSchema } from "@/core/graph/models/Language.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
 
+// `language` is a plain `string` (issue 09 §1): the supported set is
+// deployment configuration, validated once at the API boundary
+// (`api/CaseGenerationRequest.ts`), not re-validated here.
 const TranslateDiagnosisInputSchema = z.object({
   diagnosis: DiagnosisSchema,
-  language: ForeignLanguageSchema,
+  language: z.string(),
 });
 
 export const translateDiagnosisToEnglish: Tool<

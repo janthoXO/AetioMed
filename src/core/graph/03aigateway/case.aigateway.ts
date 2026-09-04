@@ -1,6 +1,7 @@
 import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   section,
   summarizeValidationError,
 } from "../utils/prompt.js";
@@ -41,7 +42,13 @@ export async function generateCaseOutline(
     ? runtime.catalogs.anamnesis.list()
     : undefined;
 
-  const systemPrompt = buildPrompt(
+  // Internal artifact (issue 09 §3): the outline is the blueprint downstream
+  // generators render, never shown to the student as-is, and it must stay
+  // English in both sandwich modes for the generation core to stay
+  // language-agnostic — so this never gets the language directive.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are an expert medical educator tasked with creating a concrete outline for a clinical practice case based on a specific diagnosis.

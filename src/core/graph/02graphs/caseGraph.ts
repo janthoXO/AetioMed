@@ -8,7 +8,7 @@ import { buildCaseGenerationGraph } from "./02case-generation/index.js";
 import { CaseGenerationStateSchema } from "./02case-generation/state.js";
 import { createProcedureStrategy } from "./02case-generation/03procedure/strategy/index.js";
 import { buildCaseTranslationFromEnglishGraph } from "./03case-translation-from-english/index.js";
-import { LanguageSchema, type Language } from "../models/Language.js";
+import type { Language } from "../models/Language.js";
 import type { Difficulty } from "../models/Difficulty.js";
 import { GenerationError } from "../errors/AppError.js";
 import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
@@ -19,15 +19,32 @@ import type { EventBus } from "../../event-bus.js";
 import type { Repos } from "../repos.js";
 import type { MedicalBasisProvider } from "../medicalBasis/ports.js";
 
+// No `language` field (issue 09 §2, §4 of the issue doc): the outer graph
+// resolves language before invoke and binds ports to it via
+// `AsyncLocalStorage` (`utils/context.ts`), never via graph state — a
+// narrower state schema is a real, runtime-enforced boundary (subgraph
+// state is filtered), unlike LangGraph's own runtime context, which is not.
 const CaseStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
   generationFlags: true,
   difficulty: true,
   case: true,
-}).extend({
-  language: LanguageSchema.default("English"),
 });
+
+/**
+ * Both conditional edges below route on the same question: does this
+ * *request* need translation? (`state.language` no longer exists — the
+ * deployer's `TRANSLATION_SANDWICH` flag already decided whether the
+ * translation nodes are compiled in at all; this decides, per request,
+ * whether to enter them.) Reads `getRequestContext()?.language` off ALS,
+ * never off graph state or LangGraph's own runtime context — see the
+ * `CaseStateSchema` comment above and `utils/context.ts`.
+ */
+function requestNeedsTranslation(): "translate" | "skip" {
+  const language = getRequestContext()?.language;
+  return language && language !== "English" ? "translate" : "skip";
+}
 
 /** The repos the case graph's phases need. */
 type CaseGraphRepos = Pick<Repos, "anamnesis" | "procedures">;
@@ -107,16 +124,18 @@ export function graphTopologyKey(
  * `TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config
  * and are compiled away — **an absent flag means an absent node**, not a
  * node that is skipped and not an edge that always chooses `skip`. With the
- * sandwich off, the two translation nodes and the two conditional edges on
- * `state.language` do not exist at all.
+ * sandwich off, the two translation nodes and the two `requestNeedsTranslation`
+ * conditional edges do not exist at all.
  *
  * `generationFlags`, `difficulty` and `language` are per-request and stay
- * runtime branches. That is why, with the sandwich *on*, the conditional
- * edges on `state.language` remain: whether this deployment can translate is
- * the deployer's choice, but whether this particular request needs to is the
- * caller's. Likewise the conditional edge on the `procedures` generation
- * flag in `02case-generation/index.ts` stays a conditional edge in every
- * variant.
+ * runtime branches. That is why, with the sandwich *on*, the two
+ * `requestNeedsTranslation` conditional edges remain: whether this
+ * deployment can translate is the deployer's choice, but whether this
+ * particular request needs to is the caller's — `language` itself never
+ * reaches graph state (see `CaseStateSchema`'s comment); the edges read it
+ * off ALS instead. Likewise the conditional edge on the `procedures`
+ * generation flag in `02case-generation/index.ts` stays a conditional edge
+ * in every variant.
  *
  * Pure wiring: same `(deps, flags)` gives a structurally identical graph, and
  * nothing here performs I/O.
@@ -124,24 +143,40 @@ export function graphTopologyKey(
 export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
   const { runtime, repos, medicalBasisRegistry, traceNode } = deps;
 
-  const generationPhase = buildCaseGenerationGraph(
-    runtime,
-    createProcedureStrategy(runtime, flags.procedurePreselection),
-    medicalBasisRegistry,
-    traceNode
-  );
-
   // The two branches are written out in full rather than conditionally
   // chained: LangGraph accumulates node names into the builder's type
   // parameter, so a conditionally-extended builder loses the very typing
   // that makes `addEdge("generation_phase", …)` checkable.
   if (!flags.translationSandwich) {
+    const generationPhase = buildCaseGenerationGraph(
+      runtime,
+      createProcedureStrategy(runtime, flags.procedurePreselection),
+      medicalBasisRegistry,
+      traceNode
+    );
     return new StateGraph(CaseStateSchema, RequestContextSchema)
       .addNode("generation_phase", generationPhase)
       .addEdge(START, "generation_phase")
       .addEdge("generation_phase", END)
       .compile();
   }
+
+  // With the sandwich compiled in, generation always runs in English (issue
+  // 09 §3/§4) — the request's real target language only ever reaches the
+  // translate-out phase below, built from the *unmodified* `runtime`. This
+  // is the one `languageOverride` binding today: see `GraphRuntime`'s doc
+  // comment (`runtime.ts`) and `buildSystemPrompt` (`utils/prompt.ts`),
+  // which is what actually reads it.
+  const generationRuntime: GraphRuntime = {
+    ...runtime,
+    languageOverride: "English",
+  };
+  const generationPhase = buildCaseGenerationGraph(
+    generationRuntime,
+    createProcedureStrategy(generationRuntime, flags.procedurePreselection),
+    medicalBasisRegistry,
+    traceNode
+  );
 
   return new StateGraph(CaseStateSchema, RequestContextSchema)
     .addNode("generation_phase", generationPhase)
@@ -158,25 +193,15 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
       )
     )
 
-    .addConditionalEdges(
-      START,
-      (state) =>
-        state.language && state.language !== "English" ? "translate" : "skip",
-      {
-        translate: "translation_to_english_phase",
-        skip: "generation_phase",
-      }
-    )
+    .addConditionalEdges(START, requestNeedsTranslation, {
+      translate: "translation_to_english_phase",
+      skip: "generation_phase",
+    })
     .addEdge("translation_to_english_phase", "generation_phase")
-    .addConditionalEdges(
-      "generation_phase",
-      (state) =>
-        state.language && state.language !== "English" ? "translate" : "skip",
-      {
-        translate: "translation_from_english_phase",
-        skip: END,
-      }
-    )
+    .addConditionalEdges("generation_phase", requestNeedsTranslation, {
+      translate: "translation_from_english_phase",
+      skip: END,
+    })
     .addEdge("translation_from_english_phase", END)
     .compile();
 }
@@ -243,6 +268,13 @@ export function buildCaseGraph(
 
   /**
    * Execute the case generator graph.
+   *
+   * `language` is accepted for the public signature's sake, but is not
+   * threaded into the graph's state (`CaseStateSchema` has no such field —
+   * see its comment above): by the time this runs, `runWithContext`
+   * (called by `caseGenerationService.ts`, the only real caller) has already
+   * bound it on ALS from this same value, so `requestNeedsTranslation` and
+   * every generation gateway already see it via `getRequestContext()`.
    */
   async function generateCase(
     diagnosis: Diagnosis,
@@ -254,7 +286,7 @@ export function buildCaseGraph(
     console.log(
       `[CaseGraph] Starting case generation for:\n`,
       JSON.stringify(
-        { diagnosis, userInstructions, generationFlags, difficulty },
+        { diagnosis, userInstructions, generationFlags, difficulty, language },
         null,
         2
       )
@@ -267,7 +299,6 @@ export function buildCaseGraph(
         diagnosis,
         generationFlags,
         userInstructions,
-        language,
         difficulty,
       },
       {

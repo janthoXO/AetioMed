@@ -14,6 +14,7 @@ import {
 import { EventBus } from "@/core/event-bus.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { createLogger } from "@/core/graph/utils/logger.js";
+import { runWithContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import { ConfigSchema } from "@/core/graph/config.js";
 import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
@@ -158,6 +159,75 @@ describe("assembleCaseGraph", () => {
       const on = await nodeIds(assembleCaseGraph(deps, flags(sandwich, true)));
       expect(on).toEqual(off);
     }
+  });
+});
+
+describe("language routing reads ALS, never graph state (issue 09 §2)", () => {
+  // The fake runtime's `llm.for()` throws (see `buildDeps`), so a full
+  // generation always fails partway through — that's fine here, we only
+  // care which nodes started *before* the throw, via "Node Started" bus
+  // events, not whether generation completes.
+  async function startedNodes(opts: {
+    /** Bound on ALS, via `runWithContext` — the real read path. */
+    alsLanguage?: string;
+    /** Passed as an (unschemad) extra key on the invoke input — must be a no-op. */
+    stateLanguage?: string;
+  }): Promise<string[]> {
+    const bus = new EventBus();
+    const started: string[] = [];
+    bus.on("Node Started", (e) => started.push(e.node));
+
+    const deps = { ...buildDeps(), traceNode: createTraceNode(bus) };
+    const graph = assembleCaseGraph(deps, flags(true, false));
+
+    await runWithContext(
+      async () => {
+        try {
+          await graph.invoke({
+            diagnosis: { name: "Influenza" },
+            userInstructions: undefined,
+            generationFlags: ["patient"],
+            difficulty: "medium",
+            case: {},
+            // Excess key: `CaseStateSchema` has no `language` field, so
+            // LangGraph's input-channel filtering must drop this silently —
+            // proving routing cannot be driven by state even if a caller
+            // tried to.
+            ...(opts.stateLanguage !== undefined
+              ? { language: opts.stateLanguage }
+              : {}),
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          } as any);
+        } catch {
+          // Expected: the fake LLM throws once real generation work starts.
+        }
+      },
+      undefined,
+      undefined,
+      opts.alsLanguage
+    );
+
+    return started;
+  }
+
+  it("a German request bound on ALS enters the translate-to-English phase", async () => {
+    const nodes = await startedNodes({ alsLanguage: "German" });
+    expect(nodes).toContain("translate_diagnosis");
+  });
+
+  it("an English (default) request bound on ALS enters neither translation phase", async () => {
+    const nodes = await startedNodes({ alsLanguage: undefined });
+    expect(nodes).not.toContain("translate_diagnosis");
+  });
+
+  it("a `language` key on the invoke input has no effect — only ALS is read", async () => {
+    // ALS says English (skip), state input says German — if routing ever
+    // read state, this would translate; it must not.
+    const nodes = await startedNodes({
+      alsLanguage: undefined,
+      stateLanguage: "German",
+    });
+    expect(nodes).not.toContain("translate_diagnosis");
   });
 });
 

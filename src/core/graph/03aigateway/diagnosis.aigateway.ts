@@ -19,6 +19,10 @@ export async function generateDiagnosisToEnglish(
   language: ForeignLanguage,
   context?: RequestContext
 ): Promise<string> {
+  // Deliberately `buildPrompt`, not `buildSystemPrompt` (issue 09 §3): this
+  // is a translator call whose target is always English — the language
+  // directive (which only ever names the *foreign* target) never applies
+  // here, and the source language is already explicit in the prompt below.
   const systemPrompt = buildPrompt(
     section(
       "Role",

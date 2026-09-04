@@ -8,6 +8,7 @@ import type { Language } from "../models/Language.js";
 import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
   summarizeValidationError,
@@ -28,7 +29,12 @@ export async function generateAnamnesis(
   context?: RequestContext
 ): Promise<Anamnesis> {
   const effectiveCategories = runtime.catalogs.anamnesis.list();
-  const systemPrompt = buildPrompt(
+  // User-facing (issue 09 §3): anamnesis answers are read by the student, so
+  // this gets the language directive when a foreign language is bound and
+  // the sandwich is off.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
     section(
       "Role",
       `You are an AI generating data for a medical training simulator.

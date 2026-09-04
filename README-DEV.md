@@ -50,6 +50,7 @@ Copy `.env.example` to `.env` and adjust. The most important variable is `FEATUR
 | `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | — | Optional per-role override for the `translator` role (same per-field fallback) |
 | `TRANSLATION_SANDWICH` | `true` | `false`/`0` compiles the translation phases out of the graph entirely |
 | `PROCEDURE_PRESELECTION` | `false` | `true`/`1` selects the category-scoped procedure strategy (splits procedure picks into category-then-procedure) |
+| `LANGUAGES` | `English,German` | Comma-separated deployment language set; must include `English`. A request's `language` is validated against this set (400 if outside it) |
 | `ALLOWED_LLMS` | — | `ollama:model1,google:model2` — requires the `ALLOW_LLMS` flag |
 | `NATS_URL` | `nats://localhost:4222` | `nats://nats:4222` inside docker compose |
 | `NATS_USER` / `NATS_PASSWORD` | `nats` / `nats` | |

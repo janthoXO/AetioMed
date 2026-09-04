@@ -3,6 +3,7 @@ import z from "zod";
 import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   renderForPrompt,
   renderSchemaForPrompt,
   section,
@@ -168,7 +169,10 @@ export async function generateBlindedProcedureStep(
     return { action: "procedure", procedures: [] };
   }
 
-  const systemPrompt = buildPrompt(
+  // Internal artifact (issue 09 §3): the blinded solver, English always.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are an attending physician working up a patient in a clinical training simulator.
@@ -344,7 +348,11 @@ export async function generateBlindedCategoryStep(
     .exclude(previousProcedures.map((p) => p.name));
   const categories = candidates.categories();
 
-  const systemPrompt = buildPrompt(
+  // Internal artifact (issue 09 §3): the blinded solver's category pick,
+  // English always.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are an attending physician working up a patient in a clinical training simulator.
@@ -533,7 +541,11 @@ Every procedure name MUST be an exact name from the provided list, placed under 
 
   const expandRules = `If — and ONLY if — none of the in-scope procedures is clinically appropriate as the next step, respond with action "expand" and name the additional categories you need (exact names from the "Other available categories" section); they will be shown in full next. Otherwise always prefer action "procedures".`;
 
-  const systemPrompt = buildPrompt(
+  // Internal artifact (issue 09 §3): the blinded solver's scoped pick,
+  // English always.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are an attending physician working up a patient in a clinical training simulator.
@@ -683,7 +695,11 @@ export async function generateProcedureResults(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<ProcedureResult[]> {
-  const systemPrompt = buildPrompt(
+  // User-facing (issue 09 §3): the procedure result text is read by the
+  // student.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
     section(
       "Role",
       `You are a medical simulator generating realistic results for a batch of diagnostic procedures ordered at the same time.
@@ -946,7 +962,11 @@ export async function generateDiagnosisBridge(
     return [];
   }
 
-  const systemPrompt = buildPrompt(
+  // User-facing (issue 09 §3): bridge results are procedure result text,
+  // read by the student.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
     section(
       "Role",
       `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
@@ -1086,7 +1106,11 @@ export async function generateBridgeCategoryStep(
     .exclude(previousProcedures.map((p) => p.name));
   const categories = candidates.categories();
 
-  const systemPrompt = buildPrompt(
+  // Internal (issue 09 §3): a category shortlist, no free text ever reaches
+  // the student from this step — the second step's results do.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
@@ -1203,7 +1227,10 @@ export async function generateBridgeProcedureStepFromCategories(
     return [];
   }
 
-  const systemPrompt = buildPrompt(
+  // User-facing (issue 09 §3): bridge results are procedure result text.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
     section(
       "Role",
       `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
@@ -1320,7 +1347,11 @@ export async function matchDiagnosis(
   diagnosis: Diagnosis,
   context?: RequestContext
 ): Promise<boolean> {
-  const systemPrompt = buildPrompt(
+  // Internal (issue 09 §3): matchDiagnosis is explicitly named in the
+  // audience split — English always.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are a medical knowledge expert. Determine whether a proposed diagnosis is equivalent to the true diagnosis.

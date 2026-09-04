@@ -136,7 +136,7 @@ graph is assembled from the deployer's flags by `assembleCaseGraph(deps, flags)`
 2. **`02case-generation/`** — the core generation pipeline (see below)
 3. **`03case-translation-from-english/`** — fans out via `Send` to translate anamnesis categories / procedure names, then translates values back to the target language
 
-`generateCase(diagnosis, generationFlags, userInstructions?, language?, difficulty?)` invokes the top-level graph with a runtime context carrying `jobId`, `llmConfig`, `language`, and an abort `signal`.
+`generateCase(diagnosis, generationFlags, userInstructions?, language?, difficulty?)` invokes the top-level graph. `language` is **not** threaded into graph state or LangGraph's own runtime context — by the time this runs, `runWithContext` (called by `CaseGenerationService`) has already bound it on `AsyncLocalStorage`, which is what the translation-routing edges and every generation gateway actually read. See the Language section below.
 
 The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs up to three phases — the first is compiled in only when the medical-basis registry is non-empty:
 
@@ -150,12 +150,15 @@ The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs up to three ph
 backwards: **compile on what the deployer chose; branch on what the caller asked for.**
 `TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are compiled
 away — an _absent flag means an absent node_, not a node that is skipped. With
-`TRANSLATION_SANDWICH=false` the two translation nodes and the two conditional edges on
-`state.language` do not exist. `generationFlags`, `difficulty` and `language` are per-request
-and stay runtime branches — which is why, with the sandwich _on_, the conditional edges on
-`state.language` remain (whether this deployment can translate is the deployer's choice;
-whether this request needs to is the caller's), and why the conditional edge on the
-`procedures` generation flag stays a conditional edge in every variant.
+`TRANSLATION_SANDWICH=false` the two translation nodes and their two
+`requestNeedsTranslation` conditional edges do not exist. `generationFlags`, `difficulty` and
+`language` are per-request and stay runtime branches — which is why, with the sandwich _on_,
+the two `requestNeedsTranslation` conditional edges remain (whether this deployment can
+translate is the deployer's choice; whether this request needs to is the caller's). Unlike the
+other per-request values, `language` never reaches `CaseStateSchema` at all — the edges call
+`requestNeedsTranslation()`, which reads `getRequestContext()?.language` off ALS (see the
+Language section below). The conditional edge on the `procedures` generation flag stays a
+conditional edge in every variant, for the same "deployer compiles, caller branches" reason.
 
 `buildCaseGraph` compiles **all four** flag combinations eagerly at boot into a map keyed by
 `graphVariantKey`, and binds `generateCase` to the one the config selects. Only one is ever
@@ -308,34 +311,98 @@ generation goes through `CaseGenerationService`:
 
 ### Request Context
 
-`runWithContext(fn, jobId?, llmConfig?, language?)` in `src/core/graph/utils/context.ts` uses `AsyncLocalStorage` to propagate `jobId`, optional `llmConfig` and an abort `signal` through the entire async call chain, and registers an `AbortController` with `cancelManager` (`utils/cancelManager.ts`) so generations can be cancelled by jobId. Graph nodes access it via `runtime?.context` (LangGraph passes `RequestContextSchema` as the runtime context schema) or `getRequestContext()`.
+`runWithContext(fn, jobId?, llmConfig?, language?)` in `src/core/graph/utils/context.ts` uses `AsyncLocalStorage` to propagate `jobId`, optional `llmConfig`, optional `language` and an abort `signal` through the entire async call chain, and registers an `AbortController` with `cancelManager` (`utils/cancelManager.ts`) so generations can be cancelled by jobId. Graph nodes read it via `getRequestContext()` — `RequestContextSchema` also doubles as LangGraph's own runtime-context schema at every `new StateGraph(state, RequestContextSchema)` call site, but `language` is never read from _that_ copy (see Language below); only `getRequestContext()` (ALS) is the real read path.
 
 Core does not import the tracing module: `registerJobHook()` is a core-owned registry the
 `tracing` module registers against. With `TRACING` unset nothing is registered and no
 per-job trace bus is allocated.
 
+### Language
+
+Language is a property of the **bound ports**, not of graph state and not of LangGraph's own
+runtime context (subgraph _state_ is filtered by the child's schema; subgraph _context_ is
+not, so a narrower context schema would not actually stop a leak — removing the field would).
+Concretely:
+
+- **`LANGUAGES`** (env, `config.ts`) is the deployer-declared supported set — comma-separated,
+  trimmed, de-duplicated, order preserved, defaulting to `English,German`. `English` is
+  mandatory (startup fails otherwise): it is the pivot language the translation sandwich turns
+  on and the base catalogue's identity space. `models/Language.ts`'s `Language`/
+  `ForeignLanguage` are plain `string` aliases (not a literal-union enum) precisely because the
+  supported set is runtime configuration — `makeLanguageSchema(languages)` builds the real
+  validator from it. `makeCaseGenerationRequestSchema(config)` validates a request's `language`
+  against `config.LANGUAGES`, so an unsupported language is a **400** from the API boundary,
+  never a 500 from deep in the graph. `validateCatalogsOrExit` (extended, not duplicated, from
+  its existing per-language summary) exits non-zero naming any catalogue that has zero
+  translation entries for a configured non-English language, and warns (does not fail) for a
+  translated language that is declared in a YAML file but not in `LANGUAGES`.
+- **ALS, not state.** `runWithContext` stores the request's `language` on the same
+  `AsyncLocalStorage`-carried `RequestContext` that already carries `llmConfig` and the abort
+  `signal`. `CaseStateSchema` (`caseGraph.ts`) has no `language` field; the two conditional
+  edges that decide whether to enter the translation phases call `requestNeedsTranslation()`,
+  which reads `getRequestContext()?.language`. The translation subgraphs
+  (`01case-translation-to-english/`, `03case-translation-from-english/`) likewise dropped their
+  own `language` state field and read it off ALS inside their node functions. Known limitation,
+  carried over from `llmConfig`: ALS-carried values are invisible to checkpoints, so anything
+  resumable (F09) must rebuild `language` from the original request rather than expect it to
+  survive a resume.
+- **Audience split.** Every LLM call site is `audience: "internal"` (the plan, the plan judge,
+  the blinded solver, `matchDiagnosis`, the symptom/basis provider — English in both sandwich
+  modes, which is what keeps the generation core language-agnostic) or `"user-facing"` (chief
+  complaint, anamnesis answers, patient, procedure result text). `buildSystemPrompt(runtime,
+audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one seam: for
+  `"user-facing"` calls it appends the language directive as the system message's final line
+  (never the user message, so it stays inside the stable prefix and doesn't disturb prompt
+  caching) whenever a foreign language is bound — `internal` calls and English never get it.
+  Every gateway in `03aigateway/` that generates case content uses this builder instead of
+  `buildPrompt` for its system prompt; a file that still calls `buildPrompt` for its system
+  prompt is either a translator utility with an explicit, already-stated target language
+  (`diagnosis.aigateway.ts`, `translate.helper.ts` — deliberately out of the conversion, see
+  their comments) or has forgotten to convert.
+- **Sandwich-on forces English at the port, not per call.** With `TRANSLATION_SANDWICH` on,
+  generation must run entirely in English regardless of the request's real target language —
+  `assembleCaseGraph` builds the generation phase from a runtime with
+  `languageOverride: "English"` (`GraphRuntime.languageOverride`, `runtime.ts`), which
+  `buildSystemPrompt` prefers over the ambient ALS language. That is a compile-time binding
+  (one per compiled variant), not a per-request branch, and it is why `buildSystemPrompt` never
+  needs to know the sandwich exists: "a foreign language is bound" already means "sandwich off
+  and non-English" by the time any gateway call reaches it.
+- **Non-sandwich mode's known gap.** With the sandwich off, free-text fields (chief complaint,
+  anamnesis answers, procedure result text, patient narrative) are generated natively in the
+  target language via the directive above. **Controlled vocabulary stays English**:
+  `procedures[].name` and `anamnesis[].category` are literal-union grammar picks from the
+  English catalogue (issue 01's Rule 4 deletion made catalogue reads language-independent), so
+  there is no translate-out step to localize them and they come back English. This is a known,
+  documented gap, not an oversight — localizing them is a catalogue dictionary lookup, which is
+  issue 12's defined pass; building a second copy of that machinery here would just be
+  duplicated by 12 immediately after. Localized candidate grammars for non-sandwich mode
+  (picking directly from a target-language catalogue) are tracked separately —
+  `docs/issues/16-localized-candidate-grammars.md` — because they reverse issue 01's Rule 4
+  deletion and deserve their own decision.
+
 ## Environment Variables
 
-| Variable                                                   | Default                 | Notes                                                                                                                                         |
-| ---------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                                                     | `3030`                  | Server port                                                                                                                                   |
-| `FEATURES`                                                 | `""`                    | Comma-separated flags: `REST`, `NATS`, `TRACING`, `ALLOW_LLMS`                                                                                |
-| `LLM_PROVIDER`                                             | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                               |
-| `LLM_MODEL`                                                | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                     |
-| `LLM_API_KEY`                                              | —                       | API key for Google/OpenAI                                                                                                                     |
-| `LLM_URL`                                                  | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                          |
-| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`  | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                     |
-| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`      | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                    |
-| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                               |
-| `TRANSLATION_SANDWICH`                                     | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                         |
-| `PROCEDURE_PRESELECTION`                                   | `false`                 | `true`/`1` selects the `CategoryScopedPick` procedure strategy (splits the blinded procedure step into a category pick then a procedure pick) |
-| `ALLOWED_LLMS`                                             | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                            |
-| `CATALOG_DIR`                                              | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                  |
-| `CACHE_DIR`                                                | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative |
-| `NATS_URL`                                                 | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                          |
-| `NATS_USER` / `NATS_PASSWORD`                              | `nats` / `nats`         |                                                                                                                                               |
-| `SYMPTOM_CACHE_TTL_DAYS`                                   | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                |
-| `MAX_CONTENT_PART_BYTES`                                   | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                        |
+| Variable                                                   | Default                 | Notes                                                                                                                                                                                            |
+| ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`                                                     | `3030`                  | Server port                                                                                                                                                                                      |
+| `FEATURES`                                                 | `""`                    | Comma-separated flags: `REST`, `NATS`, `TRACING`, `ALLOW_LLMS`                                                                                                                                   |
+| `LLM_PROVIDER`                                             | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                                                  |
+| `LLM_MODEL`                                                | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                                        |
+| `LLM_API_KEY`                                              | —                       | API key for Google/OpenAI                                                                                                                                                                        |
+| `LLM_URL`                                                  | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                                                                             |
+| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`  | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                                                                        |
+| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`      | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                                                                       |
+| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                  |
+| `TRANSLATION_SANDWICH`                                     | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                            |
+| `PROCEDURE_PRESELECTION`                                   | `false`                 | `true`/`1` selects the `CategoryScopedPick` procedure strategy (splits the blinded procedure step into a category pick then a procedure pick)                                                    |
+| `LANGUAGES`                                                | `English,German`        | Comma-separated deployment language set, trimmed/de-duplicated/order-preserved; must include `English`. Validated at startup and against every request's `language` (see Language section below) |
+| `ALLOWED_LLMS`                                             | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                               |
+| `CATALOG_DIR`                                              | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                     |
+| `CACHE_DIR`                                                | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                    |
+| `NATS_URL`                                                 | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                             |
+| `NATS_USER` / `NATS_PASSWORD`                              | `nats` / `nats`         |                                                                                                                                                                                                  |
+| `SYMPTOM_CACHE_TTL_DAYS`                                   | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                                                                   |
+| `MAX_CONTENT_PART_BYTES`                                   | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
 
 Note: the `REST` flag is required for the HTTP API to load — include it in `FEATURES` when running the server.
 

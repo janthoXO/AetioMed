@@ -1,9 +1,6 @@
 import z from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import {
-  ForeignLanguageSchema,
-  type ForeignLanguage,
-} from "../models/Language.js";
+import type { ForeignLanguage } from "../models/Language.js";
 import type { RequestContext } from "../utils/context.js";
 import { retry } from "../utils/retry.js";
 import type { DbHandle } from "./db.js";
@@ -68,8 +65,13 @@ export interface TranslationStore {
   ): Promise<Record<string, string>>;
 }
 
+// Language keys are plain strings here (issue 09 §1): the supported set is
+// deployment configuration, not a source-level enum, and this schema has no
+// config to validate against at parse time — `validateCatalogsOrExit`
+// (`catalog/startupValidation.ts`) is what checks a YAML file's declared
+// languages against the deployment's configured `LANGUAGES`.
 export const TranslationMappingSchema = z.partialRecord(
-  ForeignLanguageSchema,
+  z.string(),
   z.record(z.string(), z.string())
 );
 

@@ -99,7 +99,7 @@ export function initGraph(opts: {
   // (utils/nodeWrapper.ts), which `traceNode` populates as `buildCaseGraph`
   // constructs the graph modules above. Running the validation any earlier
   // would validate labels against an empty set and silently pass.
-  validateCatalogsOrExit(repos);
+  validateCatalogsOrExit(repos, config.LANGUAGES);
 
   if (config.allowedLlms) {
     console.log("[graph] Initialized with dynamic LLMs configuration.");

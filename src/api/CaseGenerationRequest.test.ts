@@ -39,3 +39,32 @@ describe("CaseGenerationRequestSchema — generationFlags", () => {
     expect(result.generationFlags).toEqual(["procedures"]);
   });
 });
+
+describe("CaseGenerationRequestSchema — language (issue 09 §1)", () => {
+  it("accepts a language in the deployment's configured LANGUAGES", () => {
+    const configuredSchema = makeCaseGenerationRequestSchema(
+      ConfigSchema.parse({
+        LLM_PROVIDER: "ollama",
+        LLM_MODEL: "llama3.1",
+        LANGUAGES: "English,German,French",
+      })
+    );
+
+    const result = configuredSchema.safeParse({
+      diagnosis: "Influenza",
+      language: "French",
+    });
+
+    expect(result.success).toBe(true);
+  });
+
+  it("rejects a language outside the deployment's configured LANGUAGES as a validation (400-worthy) failure, not a 500", () => {
+    // Default LANGUAGES is English, German — Spanish is not configured.
+    const result = schema.safeParse({
+      diagnosis: "Influenza",
+      language: "Spanish",
+    });
+
+    expect(result.success).toBe(false);
+  });
+});

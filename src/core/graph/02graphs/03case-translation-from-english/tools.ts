@@ -16,7 +16,6 @@ import type { ProcedureName } from "@/core/graph/models/Procedure.js";
 import { PatientSchema } from "@/core/graph/models/Patient.js";
 import { textOf, textPart } from "@/core/graph/models/ContentPart.js";
 import { GenerationFlagSchema } from "@/core/graph/models/GenerationFlags.js";
-import { ForeignLanguageSchema } from "@/core/graph/models/Language.js";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import type { Tool } from "@/core/graph/utils/tool.js";
 
@@ -24,7 +23,7 @@ import type { Tool } from "@/core/graph/utils/tool.js";
 
 const TranslateCaseInputSchema = z.object({
   case: CaseSchema,
-  language: ForeignLanguageSchema,
+  language: z.string(),
   generationFlags: z.array(GenerationFlagSchema),
 });
 
@@ -172,7 +171,7 @@ RULES:
 
 const TranslateAnamnesisCategoriesFromEnglishInputSchema = z.object({
   categories: z.array(AnamnesisCategorySchema),
-  language: ForeignLanguageSchema,
+  language: z.string(),
 });
 
 /**
@@ -228,7 +227,7 @@ export function createTranslateAnamnesisCategoriesFromEnglish(
 
 const TranslateProcedureNamesFromEnglishInputSchema = z.object({
   procedureNames: z.array(ProcedureNameSchema),
-  language: ForeignLanguageSchema,
+  language: z.string(),
 });
 
 export function createTranslateProcedureNamesFromEnglish(

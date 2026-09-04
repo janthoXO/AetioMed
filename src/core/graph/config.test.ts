@@ -110,3 +110,42 @@ describe("ConfigSchema — LLM role resolution", () => {
     }
   });
 });
+
+describe("ConfigSchema — LANGUAGES (issue 09 §1)", () => {
+  const base = { LLM_PROVIDER: "ollama" as const, LLM_MODEL: "llama3.1" };
+
+  it("defaults to English, German when unset", () => {
+    const config = ConfigSchema.parse(base);
+    expect(config.LANGUAGES).toEqual(["English", "German"]);
+  });
+
+  it("parses a comma-separated list, trimming whitespace", () => {
+    const config = ConfigSchema.parse({
+      ...base,
+      LANGUAGES: "English, German , French",
+    });
+    expect(config.LANGUAGES).toEqual(["English", "German", "French"]);
+  });
+
+  it("de-duplicates while preserving first-seen order", () => {
+    const config = ConfigSchema.parse({
+      ...base,
+      LANGUAGES: "German,English,German,French,English",
+    });
+    expect(config.LANGUAGES).toEqual(["German", "English", "French"]);
+  });
+
+  it("rejects a set that omits English", () => {
+    expect(() =>
+      ConfigSchema.parse({ ...base, LANGUAGES: "German,French" })
+    ).toThrowError(/must include "English"/);
+  });
+
+  it("treats a blank LANGUAGES string as unset, falling back to the default", () => {
+    // Not a rejection: an operator who exports LANGUAGES= with nothing after
+    // it means "I did not configure this", and the default already includes
+    // English, so there is nothing to fail on.
+    const config = ConfigSchema.parse({ ...base, LANGUAGES: "   " });
+    expect(config.LANGUAGES).toEqual(["English", "German"]);
+  });
+});

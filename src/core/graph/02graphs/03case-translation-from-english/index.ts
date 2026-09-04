@@ -1,6 +1,9 @@
 import { START, StateGraph, END } from "@langchain/langgraph";
 import { CaseTranslationFromEnglishStateSchema } from "./state.js";
-import { RequestContextSchema } from "@/core/graph/utils/context.js";
+import {
+  RequestContextSchema,
+  getRequestContext,
+} from "@/core/graph/utils/context.js";
 import { type CaseTranslationFromEnglishState } from "./state.js";
 import { type Runtime, Send } from "@langchain/langgraph";
 import type { RequestContext } from "@/core/graph/utils/context.js";
@@ -10,6 +13,23 @@ import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
 import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
+import { GenerationError } from "@/core/graph/errors/AppError.js";
+
+/**
+ * Read off ALS, not graph state (issue 09 §2). This subgraph is only ever
+ * entered when `requestNeedsTranslation` (`caseGraph.ts`) already found a
+ * bound, non-English language, so an absent value here is a real bug, not a
+ * legitimate "no language" case.
+ */
+function requiredTargetLanguage(): string {
+  const language = getRequestContext()?.language;
+  if (!language) {
+    throw new GenerationError(
+      "translate-from-english reached without a language bound on the request context"
+    );
+  }
+  return language;
+}
 
 function makeTranslateAnamnesisCategory(
   runtime: GraphRuntime,
@@ -21,9 +41,10 @@ function makeTranslateAnamnesisCategory(
   ): Promise<
     PickNested<CaseTranslationFromEnglishState, "case", "anamnesis"> | undefined
   > {
+    const language = requiredTargetLanguage();
     console.debug(
       "[Translation] Translating anamnesis categories to",
-      state.language
+      language
     );
 
     if (!state.case.anamnesis?.length) {
@@ -35,7 +56,7 @@ function makeTranslateAnamnesisCategory(
       await tools.translateAnamnesisCategoriesFromEnglish.invoke(
         {
           categories: state.case.anamnesis.map((a) => a.category),
-          language: state.language,
+          language,
         },
         runtime,
         lgRuntime?.context
@@ -61,10 +82,8 @@ function makeTranslateProcedureNames(
     | PickNested<CaseTranslationFromEnglishState, "case", "procedures">
     | undefined
   > {
-    console.debug(
-      "[Translation] Translating procedure names to",
-      state.language
-    );
+    const language = requiredTargetLanguage();
+    console.debug("[Translation] Translating procedure names to", language);
 
     if (!state.case.procedures?.length) {
       console.debug("[Translation] No procedures to translate.");
@@ -74,7 +93,7 @@ function makeTranslateProcedureNames(
     const translations = await tools.translateProcedureNamesFromEnglish.invoke(
       {
         procedureNames: state.case.procedures.map((p) => p.name),
-        language: state.language,
+        language,
       },
       runtime,
       lgRuntime?.context
@@ -97,12 +116,13 @@ function makeTranslateValues(
     state: CaseTranslationFromEnglishState,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Pick<CaseTranslationFromEnglishState, "case">> {
-    console.debug("[Translation] Translating case values to", state.language);
+    const language = requiredTargetLanguage();
+    console.debug("[Translation] Translating case values to", language);
 
     const translatedCase = await tools.translateCase.invoke(
       {
         case: state.case,
-        language: state.language,
+        language,
         generationFlags: state.generationFlags,
       },
       runtime,

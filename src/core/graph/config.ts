@@ -101,6 +101,20 @@ export const ConfigSchema = z
       .string()
       .optional()
       .transform((v) => v === "true" || v === "1"),
+    /**
+     * Whether the translation sandwich is compiled into the graph at all.
+     * Deployment config, so it is compiled away rather than branched on
+     * (see `assembleCaseGraph`) — with this off the translation nodes do not
+     * exist, which is different from existing and never being entered.
+     *
+     * Defaults to **true**: the translation phases exist today and are
+     * entered whenever the requested language is not English, so anything
+     * else would silently change behaviour for every current deployment.
+     */
+    TRANSLATION_SANDWICH: z
+      .string()
+      .optional()
+      .transform((v) => v !== "false" && v !== "0"),
     ALLOWED_LLMS: z
       .string()
       .regex(allowedLlmsRegex)

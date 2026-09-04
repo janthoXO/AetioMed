@@ -70,6 +70,18 @@ call. It owns ICD→name resolution, jobId minting, `runWithContext`, terminal e
 job shape (`{ jobId, status, case?, error? }`) rather than a bare `Case`. Transports are
 protocol translation only.
 
+It also owns **generation-flag normalisation**
+(`models/GenerationFlags.ts`: `expandFlagsForSolver` / `projectCaseToFlags`). A
+`generationFlags: ["procedures"]` request cannot be served literally — the blinded solver
+reasons from the patient presentation, and would otherwise be handed an empty one after the
+plan and its judge loop had already been paid for. So the three presentation fields are
+generated **internally** and projected back out of the response, and the caller gets exactly
+the fields they asked for. The cheaper-looking alternative — reusing the plan outline as the
+solver's presentation — is unsafe: `state.outline` is free-text markdown that by construction
+contains a "Workup / Procedure Results Strategy" section, so slicing a presentation out of it
+by heading is a parse whose failure mode is silently leaking that strategy into the _blinded_
+solver. See `expandFlagsForSolver`'s doc comment.
+
 **Modules under `src/transports/` and `src/tracing/`** are ordinary modules with a start
 function, not plugins: `transports/rest/` (`startRestServer`), `transports/nats/`
 (`startNatsTransport`), `tracing/` (`wireTracing`, which registers a job hook on the
@@ -116,7 +128,9 @@ as the graph is built.
 
 ### Case Generation Pipeline (LangGraph)
 
-All AI generation uses LangGraph. Graphs live in `src/core/graph/02graphs/`. The top-level graph (`caseGraph.ts`) sequences three subgraphs, skipping translation when the language is English:
+All AI generation uses LangGraph. Graphs live in `src/core/graph/02graphs/`. The top-level
+graph is assembled from the deployer's flags by `assembleCaseGraph(deps, flags)`
+(`caseGraph.ts`) and sequences up to three subgraphs:
 
 1. **`01case-translation-to-english/`** — translates the input diagnosis to English
 2. **`02case-generation/`** — the core generation pipeline (see below)
@@ -131,6 +145,29 @@ The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs three phases:
 - **`03procedure/`** — only when the `procedures` flag is set. A **blinded solver** loop (max 6 iterations) with exactly 3 nodes: `blinded_step` orders procedures without knowing the true diagnosis, `result_step` generates their results non-blinded; when the solver commits to a diagnosis, an LLM judge checks the match (loop continues with `ruledOutDiagnoses` on mismatch). On exhaustion, a `bridge` node generates confirmatory procedures for the true diagnosis. The approved procedure list is presented (and picked) grouped by category (`{ "Category": ["Name", …] }`, with uncategorized procedures under a synthetic `"General"` bucket) rather than as one flat list — this applies to both the blinded pick and the (non-blinded) bridge pick, the latter grouping full `{name, relevance, result}` objects per category. Procedure selection is a `ProcedureStrategy` port (`03procedure/strategy/`: `ports.ts`, `directPick.ts`, `categoryScopedPick.ts`, `index.ts`'s `createProcedureStrategy`) rather than a branch of a global config read inside the node — `blinded_step` and `bridge` call `strategy.nextStep()` / `strategy.bridge()` and never read `PROCEDURE_PRESELECTION` themselves; the strategy is selected once at graph-assembly time and threaded down as a constructed object. `DirectPick` is one LLM call against the full candidate list per step (the default). `CategoryScopedPick` — selected only when `PROCEDURE_PRESELECTION` is set **and** the approved list has real categories (a flat catalogue has nothing to scope on) — splits that single call into two sequential calls (a category-only pick, over-inclusive, followed by a procedure/results-only pick scoped to those categories plus `"General"`); the graph shape stays fixed at 3 nodes regardless of which strategy runs. The blinded scoped pick may answer with an `expand` action requesting additional categories: a bounded loop in `CategoryScopedPick.nextStep` unions them into a local scope set and retries (max 2 expansions per `blinded_step`; the expand grammar only admits categories not yet in scope, and past the cap the branch is removed from the schema entirely — the visited set lives in code, never the model). The bridge's scoped pick instead retries deterministically once with all categories if it returns empty. The blinded step's own compiled child graph (built once per strategy, invoked — not added as a node — from inside `blinded_step`) has a state schema that structurally omits `diagnosis`: the `BlindedView` type already makes passing it a compile error, and the child graph is a runtime backstop on top of that (LangGraph filters input against a graph's state schema before it reaches a channel). `matchDiagnosis` stays in the parent node, outside the blinded path, since it's an oracle call. Additional guards: already-ordered procedures are excluded from every candidate list/grammar (duplicate orders are impossible by construction), category-pick prompts show per-category counts plus sample names, and blinded prompts include the remaining iteration budget as convergence pressure.
 
 **Tool pattern:** each subgraph directory has a `tools.ts` exporting `Tool<TInput, TOutput>` objects (`src/core/graph/utils/tool.ts`). Graph nodes are thin — prompt building, LLM calls, retries, and structured-output parsing live in the aigateway behind the tools. Nodes are wrapped with `traceNode()` (`utils/nodeWrapper.ts`) to emit "Node Started/Completed" bus events with translated labels.
+
+**Assembly** (`caseGraph.ts`) follows one rule, and the next person to touch it will get it
+backwards: **compile on what the deployer chose; branch on what the caller asked for.**
+`TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are compiled
+away — an _absent flag means an absent node_, not a node that is skipped. With
+`TRANSLATION_SANDWICH=false` the two translation nodes and the two conditional edges on
+`state.language` do not exist. `generationFlags`, `difficulty` and `language` are per-request
+and stay runtime branches — which is why, with the sandwich _on_, the conditional edges on
+`state.language` remain (whether this deployment can translate is the deployer's choice;
+whether this request needs to is the caller's), and why the conditional edge on the
+`procedures` generation flag stays a conditional edge in every variant.
+
+`buildCaseGraph` compiles **all four** flag combinations eagerly at boot into a map keyed by
+`graphVariantKey`, and binds `generateCase` to the one the config selects. Only one is ever
+served; the other three prove every variant compiles at boot rather than at config-change
+time, and give `exportGraphs.ts` and the tests a single source of assembly truth rather than a
+parallel code path that can drift. Compilation is pure wiring with no I/O, so four is cheap.
+
+`pnpm graph:export` writes **two** topologies to `docs/graphs/`, not four:
+`PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter and leaves the procedure graph at
+three nodes either way, so it is not a shape (`graphTopologyKey` is the authority, and
+`caseGraph.test.ts` asserts the premise still holds). Each topology gets the two views the
+script already produced — detailed, and an overview with the translation phases collapsed.
 
 **Generation flags** (`src/core/graph/models/GenerationFlags.ts`): `patient`, `chiefComplaint`, `anamnesis`, `procedures`. Requests also carry a **difficulty** (`models/Difficulty.ts`: `easy | medium | hard`, default `medium`).
 
@@ -237,6 +274,7 @@ per-job trace bus is allocated.
 | `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`  | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                     |
 | `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`      | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                    |
 | `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                               |
+| `TRANSLATION_SANDWICH`                                     | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                         |
 | `PROCEDURE_PRESELECTION`                                   | `false`                 | `true`/`1` selects the `CategoryScopedPick` procedure strategy (splits the blinded procedure step into a category pick then a procedure pick) |
 | `ALLOWED_LLMS`                                             | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                            |
 | `CATALOG_DIR`                                              | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                  |

@@ -20,6 +20,10 @@ const BaseCaseGenerationRequestSchema = z.object({
   ),
   generationFlags: z
     .array(GenerationFlagSchema)
+    // `.min(1)` mirrors `CaseGenerationStateSchema`, which already declares
+    // it — without it here an explicit `[]` passed the API and then threw a
+    // Zod error deep inside the graph, surfacing as a 500 rather than a 400.
+    .min(1, "generationFlags must name at least one field to generate")
     .default(AllGenerationFlags)
     .describe("Generation flags to specify case fields to generate"),
   language: LanguageSchema.optional().describe(

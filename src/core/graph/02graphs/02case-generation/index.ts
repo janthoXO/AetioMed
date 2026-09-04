@@ -4,24 +4,19 @@ import { RequestContextSchema } from "@/core/graph/utils/context.js";
 import { buildSymptomsGraph } from "./01symptom/index.js";
 import { buildFieldGenerationGraph } from "./02presentation/generation/index.js";
 import { buildProcedureGraph } from "./03procedure/index.js";
-import { createProcedureStrategy } from "./03procedure/strategy/index.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import type { Config } from "@/core/graph/config.js";
 import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
+import type { ProcedureStrategy } from "./03procedure/strategy/index.js";
 
 // ─── graph ────────────────────────────────────────────────────────────────────
 
 export function buildCaseGenerationGraph(
   runtime: GraphRuntime,
-  config: Config,
+  procedureStrategy: ProcedureStrategy,
   symptomsRepo: SymptomsRepo,
   traceNode: ReturnType<typeof createTraceNode>
 ) {
-  // Assembly-time only: the constructed strategy, not `config`, is threaded
-  // into `buildProcedureGraph` — no node reads `PROCEDURE_PRESELECTION`.
-  const procedureStrategy = createProcedureStrategy(runtime, config);
-
   return (
     new StateGraph(CaseGenerationStateSchema, RequestContextSchema)
       // The presentation phase is the field-generation graph mounted directly:

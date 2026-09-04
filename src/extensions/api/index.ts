@@ -2,7 +2,7 @@ import { defineExtension } from "../../core/extension.js";
 import z from "zod";
 
 export {
-  CaseGenerationRequestSchema,
+  makeCaseGenerationRequestSchema,
   type CaseGenerationRequest,
 } from "./CaseGenerationRequest.js";
 

@@ -1,9 +1,5 @@
 import z from "zod";
 import { generateDiagnosisToEnglish } from "@/core/graph/03aigateway/diagnosis.aigateway.js";
-import {
-  getDiagnosisTranslationToEnglish,
-  saveDiagnosisTranslations,
-} from "@/core/graph/03repo/diagnosis.repo.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
 import type { Diagnosis } from "@/core/graph/models/Diagnosis.js";
 import { ForeignLanguageSchema } from "@/core/graph/models/Language.js";
@@ -22,18 +18,22 @@ export const translateDiagnosisToEnglish: Tool<
   description:
     "Translate a diagnosis name to English, using a cache for known translations.",
   inputSchema: TranslateDiagnosisInputSchema,
-  invoke: async ({ diagnosis, language }, context) => {
-    let englishName = getDiagnosisTranslationToEnglish(
+  invoke: async ({ diagnosis, language }, runtime, context) => {
+    let englishName = runtime.catalogs.diagnosis.toEnglish(
       diagnosis.name,
       language
     );
     if (!englishName) {
       englishName = await generateDiagnosisToEnglish(
+        runtime,
         diagnosis.name,
         language,
         context
       );
-      saveDiagnosisTranslations({ [englishName]: diagnosis.name }, language);
+      runtime.catalogs.diagnosis.saveTranslations(
+        { [englishName]: diagnosis.name },
+        language
+      );
     }
     return { ...diagnosis, name: englishName };
   },

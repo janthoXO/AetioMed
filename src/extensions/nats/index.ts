@@ -9,14 +9,14 @@ export const extension = defineExtension({
   requiredFlags: ["NATS"],
   dependsOn: [apiExtension] as const,
   envSchema: ConfigSchema,
-  async setup({ config }) {
+  async setup({ config, graph, bus }) {
     console.log("[NATS] Initializing NATS extension...");
     try {
       const connected = await connectNats(config);
       if (!connected) {
         return;
       }
-      startCaseGenerationConsumer().catch(() => {
+      startCaseGenerationConsumer(graph, bus).catch(() => {
         console.error("[NATS] Failed to start case generation consumer");
       });
     } catch (error) {

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { defineExtension } from "../../core/extension.js";
 import { getTraceBus, setupTracing } from "./traceManager.js";
 import type { TraceEvent } from "./traceManager.js";
+import { registerJobHook } from "../../core/graph/utils/context.js";
 
 export { setupTracing, getTraceBus };
 export type { TraceEvent };
@@ -30,6 +31,8 @@ export const extension = defineExtension({
   envSchema: z.object({}),
   async setup({ bus }) {
     console.log("[tracing] Initializing Tracing extension...");
+
+    registerJobHook(setupTracing);
 
     bus.on("Node Started", ({ jobId, node, timestamp }) => {
       emitToTraceBus(jobId, "Node Started", { node, timestamp });

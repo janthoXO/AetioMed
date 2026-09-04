@@ -1,8 +1,17 @@
-import { CaseGenerationRequestSchema } from "@/extensions/api/CaseGenerationRequest.js";
+import "dotenv/config";
+import { makeCaseGenerationRequestSchema } from "@/extensions/api/CaseGenerationRequest.js";
 import swaggerAutogen from "swagger-autogen";
 import { createSchema } from "zod-openapi";
 import * as fs from "node:fs/promises";
 import { CaseGenerationResponseSchema } from "@/extensions/api/CaseGenerationResponse.js";
+import { ConfigSchema } from "@/core/graph/config.js";
+
+// Standalone doc-generation script (`pnpm swagger`) — not part of the
+// running server, so it resolves its own graph config from `process.env`
+// rather than receiving one from `createApp()`.
+const graphConfig = ConfigSchema.parse(process.env);
+const CaseGenerationRequestSchema =
+  makeCaseGenerationRequestSchema(graphConfig);
 
 const { schemas } = Object.entries({
   CaseGenerationRequest: CaseGenerationRequestSchema,

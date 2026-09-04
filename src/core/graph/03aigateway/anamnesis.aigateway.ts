@@ -3,7 +3,7 @@ import {
   type Anamnesis,
   type AnamnesisCategory,
 } from "../models/Anamnesis.js";
-import { getEffectiveCategoryList } from "../03repo/anamnesis.repo.js";
+import { anamnesisCatalog } from "../catalog/index.js";
 import { bus } from "@/core/graph/index.js";
 import type { Language } from "../models/Language.js";
 import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
@@ -26,7 +26,7 @@ export async function generateAnamnesis(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<Anamnesis> {
-  const effectiveCategories = getEffectiveCategoryList(context?.language);
+  const effectiveCategories = anamnesisCatalog.list();
   const systemPrompt = buildPrompt(
     section(
       "Role",

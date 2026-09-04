@@ -62,18 +62,13 @@ export function readDeclaredEnglishKeys(relativeYamlFile: string): string[] {
  * Validate and return the static effective predefined list for a domain
  * (anamnesis categories, procedure names) by applying the following rules:
  *
- * 1. No defaults, no translationKeys  → `undefined` (open schema; generation
- *                                       invents freely for all languages)
+ * 1. No defaults                      → `undefined` (open schema; generation
+ *                                       invents freely)
  * 2. Defaults only                    → use defaults
  * 3. Defaults + translationKeys       → every translation key must be a known
  *                                       default; extras → `process.exit(1)`
- * 4. translationKeys only             → `undefined` here; the effective list is
- *                                       resolved at runtime per target language
- *                                       via `getEffective*List()` in the models.
  *
- * Run once at module load. For Rule 4, call `getEffective*List(language)` from
- * the relevant model at generation time to get the language-specific English
- * keys from the translation table.
+ * Run once at module load.
  */
 export function resolvePredefinedList({
   defaults,
@@ -87,8 +82,7 @@ export function resolvePredefinedList({
   const hasDefaults = defaults !== undefined && defaults.length > 0;
   const hasTranslations = translationKeys.length > 0;
 
-  // Rule 1 & 4: no defaults → always undefined at the module level.
-  // (Rule 4's per-language effective list is resolved at runtime.)
+  // Rule 1: no defaults → always undefined.
   if (!hasDefaults) {
     return undefined;
   }

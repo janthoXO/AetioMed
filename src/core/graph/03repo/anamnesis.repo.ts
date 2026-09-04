@@ -10,7 +10,7 @@ import {
   type AnamnesisCategory,
   AnamnesisCategorySchema,
 } from "../models/Anamnesis.js";
-import { type ForeignLanguage, type Language } from "../models/Language.js";
+import { type ForeignLanguage } from "../models/Language.js";
 import { createTranslationStore } from "./translationStore.js";
 
 /**
@@ -30,18 +30,6 @@ export function getAnamnesisCategoryTranslationFromEnglish(
   language: ForeignLanguage
 ): AnamnesisCategory | undefined {
   return store.getFromEnglish(category, language);
-}
-
-/**
- * Return all English category keys that have a known translation for the given
- * target language. Used when no static default list is configured (Rule 4): the
- * English keys for a specific language define the generation constraint so the
- * from-English output translator can always resolve them.
- */
-export function getAnamnesisCategoryListForLanguage(
-  language: ForeignLanguage
-): AnamnesisCategory[] {
-  return store.getAllEnglishKeysForLanguage(language);
 }
 
 /**
@@ -122,24 +110,11 @@ export const AnamnesisCategoryDefaults: AnamnesisCategory[] | undefined =
   });
 
 /**
- * Resolve the effective anamnesis category list for a given generation language.
+ * Resolve the effective anamnesis category list.
  *
- * - If a static default list is configured (Rules 2 & 3) it is always returned
- *   regardless of language.
- * - If no defaults are configured but translation mappings exist for the given
- *   non-English language (Rule 4), the English keys for that language are
- *   returned so the from-English output translator can always resolve them.
+ * - If a static default list is configured (Rules 2 & 3) it is returned.
  * - Otherwise `undefined` is returned and the LLM may invent categories freely.
  */
-export function getEffectiveCategoryList(
-  language?: Language
-): AnamnesisCategory[] | undefined {
-  if (AnamnesisCategoryDefaults !== undefined) {
-    return AnamnesisCategoryDefaults;
-  }
-  if (language && language !== "English") {
-    const keys = getAnamnesisCategoryListForLanguage(language);
-    return keys.length > 0 ? keys : undefined;
-  }
-  return undefined;
+export function getEffectiveCategoryList(): AnamnesisCategory[] | undefined {
+  return AnamnesisCategoryDefaults;
 }

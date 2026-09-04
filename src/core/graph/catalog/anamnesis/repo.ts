@@ -1,15 +1,15 @@
 import { z } from "zod/v4";
 import { asc, eq } from "drizzle-orm";
-import type { DbHandle } from "./db.js";
-import { predefinedItem } from "./schema.js";
-import { resolvePredefinedList } from "./predefinedList.js";
+import type { DbHandle } from "../../persistence/db.js";
+import { predefinedItem } from "../../persistence/schema.js";
+import { resolvePredefinedList } from "../../persistence/predefinedList.js";
 import {
   type AnamnesisCategory,
   AnamnesisCategorySchema,
-} from "../models/Anamnesis.js";
-import { type ForeignLanguage } from "../models/Language.js";
-import { createTranslationStore } from "./translationStore.js";
-import { catalogFile } from "./paths.js";
+} from "../../models/Anamnesis.js";
+import { type ForeignLanguage } from "../../models/Language.js";
+import { createTranslationStore } from "../../persistence/translationStore.js";
+import { catalogFile } from "../../persistence/paths.js";
 
 export interface AnamnesisRepo {
   /** Absolute path of the translations YAML, for the startup catalogue validator. */

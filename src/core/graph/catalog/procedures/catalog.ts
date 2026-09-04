@@ -1,12 +1,12 @@
-import type { ProcedureName } from "../models/Procedure.js";
-import type { ProceduresRepo } from "../03repo/procedures.repo.js";
-import { ProcedureCandidatesImpl } from "./procedureCandidates.js";
+import type { ProcedureName } from "../../models/Procedure.js";
+import type { ProceduresRepo } from "./repo.js";
+import { ProcedureCandidatesImpl } from "./candidates.js";
 import {
   UNCATEGORIZED_CATEGORY,
   type ProcedureCandidates,
   type ProcedureCatalog,
   type ProcedurePickMode,
-} from "./ports.js";
+} from "../ports.js";
 
 /**
  * Split a procedure's full name into its category and bare name, on the

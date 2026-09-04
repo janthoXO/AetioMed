@@ -1,13 +1,13 @@
-// Issue 04, Commit 2: every `03repo/` module moved its I/O behind a
-// constructor. Proves the claim directly — importing these modules must not
-// touch the filesystem or open the embedded database. No environment
-// variable dance, no dynamic import: these are plain static imports, which
-// is itself part of the proof (a module with import-time side effects
-// couldn't be imported this way without them firing first).
+// Issue 04, Commit 2: every repo module moved its I/O behind a constructor.
+// Proves the claim directly — importing these modules must not touch the
+// filesystem or open the embedded database. No environment variable dance,
+// no dynamic import: these are plain static imports, which is itself part
+// of the proof (a module with import-time side effects couldn't be imported
+// this way without them firing first).
 import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 
-describe("03repo/ modules perform no I/O on import", () => {
+describe("repo modules perform no I/O on import", () => {
   // Both proofs share one import, deliberately. ESM modules execute once per
   // test file, so a second test importing the same modules would observe a
   // cached registry and pass vacuously — it would prove nothing at all.
@@ -24,14 +24,14 @@ describe("03repo/ modules perform no I/O on import", () => {
     const readFileSpy = vi.spyOn(fs, "readFileSync");
 
     await Promise.all([
-      import("@/core/graph/03repo/db.ts"),
-      import("@/core/graph/03repo/translationStore.ts"),
-      import("@/core/graph/03repo/procedures.repo.ts"),
-      import("@/core/graph/03repo/anamnesis.repo.ts"),
-      import("@/core/graph/03repo/labels.repo.ts"),
-      import("@/core/graph/03repo/diagnosis.repo.ts"),
-      import("@/core/graph/03repo/symptoms.repo.ts"),
-      import("@/core/graph/03repo/index.ts"),
+      import("@/core/graph/persistence/db.ts"),
+      import("@/core/graph/persistence/translationStore.ts"),
+      import("@/core/graph/catalog/procedures/repo.ts"),
+      import("@/core/graph/catalog/anamnesis/repo.ts"),
+      import("@/core/graph/catalog/labels/repo.ts"),
+      import("@/core/graph/catalog/diagnosis/repo.ts"),
+      import("@/core/graph/symptoms/repo.ts"),
+      import("@/core/graph/repos.ts"),
     ]);
 
     expect(mkdirSpy).not.toHaveBeenCalled();

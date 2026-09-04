@@ -8,8 +8,8 @@ import type { PickNested } from "@/core/graph/utils/pickNested.js";
 import { createTranslationFromEnglishTools } from "./tools.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import type { AnamnesisRepo } from "@/core/graph/03repo/anamnesis.repo.js";
-import type { ProceduresRepo } from "@/core/graph/03repo/procedures.repo.js";
+import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
+import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 
 function makeTranslateAnamnesisCategory(
   runtime: GraphRuntime,

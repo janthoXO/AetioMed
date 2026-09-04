@@ -1,6 +1,6 @@
-import type { AnamnesisCategory } from "../models/Anamnesis.js";
-import type { AnamnesisRepo } from "../03repo/anamnesis.repo.js";
-import type { AnamnesisCatalog } from "./ports.js";
+import type { AnamnesisCategory } from "../../models/Anamnesis.js";
+import type { AnamnesisRepo } from "./repo.js";
+import type { AnamnesisCatalog } from "../ports.js";
 
 class StaticAnamnesisCatalog implements AnamnesisCatalog {
   constructor(

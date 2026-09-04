@@ -1,8 +1,8 @@
-import { type ForeignLanguage } from "../models/Language.js";
-import type { RequestContext } from "../utils/context.js";
-import type { DbHandle } from "./db.js";
-import { createTranslationStore } from "./translationStore.js";
-import { catalogFile } from "./paths.js";
+import { type ForeignLanguage } from "../../models/Language.js";
+import type { RequestContext } from "../../utils/context.js";
+import type { DbHandle } from "../../persistence/db.js";
+import { createTranslationStore } from "../../persistence/translationStore.js";
+import { catalogFile } from "../../persistence/paths.js";
 
 export interface LabelsRepo {
   /** Absolute path of the translations YAML, for the startup catalogue validator. */

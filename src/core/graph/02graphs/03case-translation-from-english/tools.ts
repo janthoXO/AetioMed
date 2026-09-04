@@ -4,8 +4,8 @@ import { generateProceduresFromEnglish } from "@/core/graph/03aigateway/procedur
 import { getDeterministicLLM } from "@/core/graph/utils/llm.js";
 import { retry } from "@/core/graph/utils/retry.js";
 import { GenerationError } from "@/core/graph/errors/AppError.js";
-import type { AnamnesisRepo } from "@/core/graph/03repo/anamnesis.repo.js";
-import type { ProceduresRepo } from "@/core/graph/03repo/procedures.repo.js";
+import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
+import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import { CaseSchema, type Case } from "@/core/graph/models/Case.js";
 import { AnamnesisCategorySchema } from "@/core/graph/models/Anamnesis.js";
 import type { AnamnesisCategory } from "@/core/graph/models/Anamnesis.js";

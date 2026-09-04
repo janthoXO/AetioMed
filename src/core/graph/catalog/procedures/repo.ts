@@ -1,15 +1,15 @@
 import z from "zod";
 import { asc, eq } from "drizzle-orm";
-import type { DbHandle } from "./db.js";
-import { predefinedItem } from "./schema.js";
-import { resolvePredefinedList } from "./predefinedList.js";
+import type { DbHandle } from "../../persistence/db.js";
+import { predefinedItem } from "../../persistence/schema.js";
+import { resolvePredefinedList } from "../../persistence/predefinedList.js";
 import {
   type ProcedureName,
   ProcedureNameSchema,
-} from "../models/Procedure.js";
-import { type ForeignLanguage } from "../models/Language.js";
-import { createTranslationStore } from "./translationStore.js";
-import { catalogFile } from "./paths.js";
+} from "../../models/Procedure.js";
+import { type ForeignLanguage } from "../../models/Language.js";
+import { createTranslationStore } from "../../persistence/translationStore.js";
+import { catalogFile } from "../../persistence/paths.js";
 
 export interface ProceduresRepo {
   /** Absolute path of the translations YAML, for the startup catalogue validator. */

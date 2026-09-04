@@ -3,7 +3,10 @@ import { EventBus } from "./event-bus.js";
 import { loadExtensions } from "./loader.js";
 import type { AnyExt } from "./extension.js";
 import { ConfigSchema as GraphConfigSchema, initGraph } from "./graph/index.js";
-import { resolveCatalogDir, resolveCacheDir } from "./graph/03repo/paths.js";
+import {
+  resolveCatalogDir,
+  resolveCacheDir,
+} from "./graph/persistence/paths.js";
 
 const AppEnvSchema = z
   .object({

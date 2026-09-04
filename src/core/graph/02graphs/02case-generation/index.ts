@@ -6,7 +6,7 @@ import { buildFieldGenerationGraph } from "./02presentation/generation/index.js"
 import { buildProcedureGraph } from "./03procedure/index.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { Config } from "@/core/graph/config.js";
-import type { SymptomsRepo } from "@/core/graph/03repo/symptoms.repo.js";
+import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 // ─── graph ────────────────────────────────────────────────────────────────────

@@ -1,5 +1,5 @@
-import { readDeclaredTranslations } from "../03repo/predefinedList.js";
-import type { Repos } from "../03repo/index.js";
+import { readDeclaredTranslations } from "../persistence/predefinedList.js";
+import type { Repos } from "../repos.js";
 import { getKnownLabels } from "../utils/nodeWrapper.js";
 import {
   findUnknownKeys,

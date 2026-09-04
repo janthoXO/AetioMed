@@ -7,9 +7,9 @@ import os from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import type { ForeignLanguage } from "@/core/graph/models/Language.js";
-import { createDb, type DbHandle } from "@/core/graph/03repo/db.js";
-import { createTranslationStore } from "@/core/graph/03repo/translationStore.js";
-import { translation } from "@/core/graph/03repo/schema.js";
+import { createDb, type DbHandle } from "@/core/graph/persistence/db.js";
+import { createTranslationStore } from "@/core/graph/persistence/translationStore.js";
+import { translation } from "@/core/graph/persistence/schema.js";
 
 let dbHandle: DbHandle;
 let tmpDir: string;

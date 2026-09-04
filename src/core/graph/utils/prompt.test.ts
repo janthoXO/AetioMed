@@ -1,10 +1,10 @@
 // Smoke test for the test harness itself (issue 00). Do NOT import anything
-// under `src/core/graph/03repo/` from a test — those modules do filesystem
-// and SQLite work at module scope (see `03repo/db.ts`, `symptoms.repo.ts`,
-// and the module-scope `createTranslationStore(...)` calls in
-// `procedures.repo.ts` / `anamnesis.repo.ts` / `labels.repo.ts`). Issues 01
-// and 04 move that behind constructors; until then, keep tests to pure
-// modules like this one.
+// under `src/core/graph/persistence/` from a test — those modules do
+// filesystem and SQLite work at module scope (see `persistence/db.ts`,
+// `symptoms/repo.ts`, and the module-scope `createTranslationStore(...)`
+// calls in `catalog/procedures/repo.ts` / `catalog/anamnesis/repo.ts` /
+// `catalog/labels/repo.ts`). Issues 01 and 04 move that behind constructors;
+// until then, keep tests to pure modules like this one.
 import { describe, expect, it } from "vitest";
 
 import {

@@ -1,14 +1,14 @@
 // Proves the whole point of the seam: a `GraphRuntime` built entirely from
 // fakes — no real LLM, no filesystem, no SQLite — can run an actual graph
 // node (the tool a LangGraph node calls into) and observe its LLM call
-// count. No `03repo/` import, no network.
+// count. No repo/persistence import, no network.
 import { describe, expect, it } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import type { GraphRuntime, LlmPort } from "@/core/graph/runtime.js";
-import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedureCatalog.js";
-import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesisCatalog.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labelCatalog.js";
-import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosisCatalog.js";
+import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.js";
 import { translateDiagnosisToEnglish } from "@/core/graph/02graphs/01case-translation-to-english/tools.js";
 
 /** Counts every `chat()` call and returns a canned JSON response each time. */

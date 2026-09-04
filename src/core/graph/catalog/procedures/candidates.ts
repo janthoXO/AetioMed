@@ -1,16 +1,16 @@
 import z from "zod";
-import { renderForPrompt, section } from "../utils/prompt.js";
+import { renderForPrompt, section } from "../../utils/prompt.js";
 import {
   buildProcedureSchema,
   ProcedureSchema,
   type Procedure,
   type ProcedureName,
-} from "../models/Procedure.js";
+} from "../../models/Procedure.js";
 import {
   UNCATEGORIZED_CATEGORY,
   type ProcedureCandidates,
   type ProcedurePickMode,
-} from "./ports.js";
+} from "../ports.js";
 
 /**
  * Remove already-ordered procedures from a grouped candidate map, comparing

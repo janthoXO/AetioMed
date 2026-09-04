@@ -5,9 +5,10 @@ import path from "node:path";
  * from the process environment at this module's own scope; now the
  * composition root (`app.ts`) reads them once — via
  * `resolveCatalogDir`/`resolveCacheDir`, explicitly passed the environment —
- * and passes the resolved absolute paths into the `03repo/` constructors.
- * That is what lets importing a `03repo/` module perform no I/O: nothing
- * here runs until a constructor is called with an already-resolved path.
+ * and passes the resolved absolute paths into the repo constructors (see
+ * `repos.ts`). That is what lets importing a repo module perform no I/O:
+ * nothing here runs until a constructor is called with an already-resolved
+ * path.
  *
  * Env variable names, defaults and resolution behaviour are unchanged from
  * before this move: `CATALOG_DIR` defaults to `"data"`, `CACHE_DIR` to

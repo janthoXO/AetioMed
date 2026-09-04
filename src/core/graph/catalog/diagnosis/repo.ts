@@ -1,15 +1,15 @@
 import z from "zod";
 import { asc, eq } from "drizzle-orm";
-import type { DbHandle } from "./db.js";
-import { diagnosis } from "./schema.js";
+import type { DbHandle } from "../../persistence/db.js";
+import { diagnosis } from "../../persistence/schema.js";
 import {
   ICDCodeSchema,
   type ICDCode,
   type Diagnosis,
-} from "../models/Diagnosis.js";
-import { type ForeignLanguage } from "../models/Language.js";
-import { createTranslationStore } from "./translationStore.js";
-import { catalogFile } from "./paths.js";
+} from "../../models/Diagnosis.js";
+import { type ForeignLanguage } from "../../models/Language.js";
+import { createTranslationStore } from "../../persistence/translationStore.js";
+import { catalogFile } from "../../persistence/paths.js";
 
 export interface DiagnosisRepo {
   /** Absolute path of the translations YAML, for the startup catalogue validator. */

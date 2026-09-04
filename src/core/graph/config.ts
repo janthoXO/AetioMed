@@ -115,6 +115,17 @@ export const ConfigSchema = z
       .string()
       .optional()
       .transform((v) => v !== "false" && v !== "0"),
+    /**
+     * Ceiling on one content part's decoded byte size (issue 11). Inline
+     * base64 inflates by ~33% and the whole case is held in memory,
+     * persisted and returned in one response, so a part beyond this fails
+     * loudly rather than silently shipping an oversized document.
+     */
+    MAX_CONTENT_PART_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(5_000_000),
     ALLOWED_LLMS: z
       .string()
       .regex(allowedLlmsRegex)

@@ -5,8 +5,6 @@ import {
 } from "@/core/graph/03aigateway/procedures.aigateway.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
 import { PatientSchema } from "@/core/graph/models/Patient.js";
-import { ChiefComplaintSchema } from "@/core/graph/models/ChiefComplaint.js";
-import { AnamnesisSchema } from "@/core/graph/models/Anamnesis.js";
 import {
   ProcedureSchema,
   type ProcedureResult,
@@ -18,14 +16,17 @@ import type { Tool } from "@/core/graph/utils/tool.js";
 // Mirrors the `Presentation` type (03aigateway/procedures.aigateway.ts) as a
 // Zod schema — used here for tool-input validation, and reused by
 // `03procedure/index.ts` as the blinded solver's child-graph state schema
-// (both need the exact same shape). `zod` and `zod/v4` are the same v4
-// package's default-export and subpath-export forms of the same schemas —
-// not a version mismatch — so composing `AnamnesisSchema` (imported via
-// `zod/v4`) here works exactly as it does in `models/Case.ts`.
+// (both need the exact same shape). This is a **text projection**, not the
+// domain `ChiefComplaint`/`Anamnesis` shape: `presentationOf`
+// (`03procedure/index.ts`) builds it from the domain `Case` via `textOf`
+// (issue 11 §4) — bytes must never reach a prompt, so this schema's fields
+// are `string`, never `ContentPart[]`.
 export const PresentationSchema = z.object({
   patient: PatientSchema.optional(),
-  chiefComplaint: ChiefComplaintSchema.optional(),
-  anamnesis: AnamnesisSchema.optional(),
+  chiefComplaint: z.string().optional(),
+  anamnesis: z
+    .array(z.object({ category: z.string(), answer: z.string() }))
+    .optional(),
 });
 
 // ─── generateProcedureResults ─────────────────────────────────────────────────

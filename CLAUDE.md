@@ -179,6 +179,54 @@ script already produced — detailed, and an overview with the translation phase
 
 The underlying adapter supports three providers: `ollama`, `google`, `openai` (the `openai` provider also serves OpenAI-compatible endpoints via `LLM_URL`). Provider/model come from env — a general `LLM_PROVIDER`/`LLM_MODEL` plus optional per-role `LLM_GENERATOR_*`/`LLM_JUDGE_*`/`LLM_TRANSLATOR_*` overrides, each field falling back individually to the general value — or from a per-request `llmConfig` passed via `RequestContext` (AsyncLocalStorage), which applies uniformly to all three roles. The `ALLOW_LLMS` feature flag enables per-request LLM selection from an allowlist (`ALLOWED_LLMS=ollama:llama3.1,google:gemini-2.0-flash`); when set, no global LLM (and no per-role default) is configured and requests must supply `llmConfig` (exposed via `GET /api/allowedLlms`). Temperature is never part of `llmConfig`'s effective behavior — it is always the call site's fixed class.
 
+### Content Parts
+
+`chiefComplaint`, `anamnesis[].answer` and `procedures[].result` are `ContentPart[]`
+(`src/core/graph/models/ContentPart.ts`), not plain strings — the shape that lets a future
+non-LLM provider (e.g. an image model reached over MCP) contribute to a field:
+
+```ts
+type ContentPart = {
+  type: string; // MIME type
+  value: Uint8Array; // the rendered artifact
+  alt: string; // plain text: what this part conveys — the render request, retained
+};
+```
+
+**Additive parts, all rendered.** The array is an ordered list of parts that together
+_compose_ one field value — **not** a list of alternative renditions to choose between. Order
+is meaningful, and an empty array is never a valid field value (`.min(1)` on the schema): a
+field that exists has at least one part, a field that does not exist is absent.
+
+**`value` is derived for text parts.** `textPart(alt)` is the only constructor for a
+`text/plain` part — `value` is always `utf8(alt)`, never authored independently, so the two
+cannot drift. **`textOf(parts)` is the only path from content parts to a prompt** —
+`parts.map(p => p.alt).join("\n\n")`, with no MIME branching. Prompt builders take `string`,
+never `ContentPart[]`; the `Presentation` type in `03aigateway/procedures.aigateway.ts` is a
+text projection built by `presentationOf` (`03procedure/index.ts`), not the domain `Case`
+shape — bytes must never reach a prompt. `utils/prompt.ts`'s `renderForPrompt(value: unknown)`
+still accepts anything; that `unknown` is a known hole, not a guarantee.
+
+**The LLM never emits bytes.** Field generators produce ordinary strings under their own
+`z.string()`-based schemas (`ChiefComplaintJsonSchema`, `buildAnamnesisSchema`,
+`ProcedureResultTextSchema`/`buildProcedureResultTextSchema`) — the domain `CaseSchema` (with
+its `ContentPart[]` fields) is never used as an LLM output schema. The gateway wraps the raw
+string with `textPart()` before returning the domain shape.
+
+**Wire encoding** lives in exactly one place, `src/api/contentWire.ts` (`encodeCase`/
+`decodeCase`, `CaseWireSchema`) — a boundary concern, not a domain one. `value` serializes to a
+JSON string: UTF-8 verbatim for `text/*`, base64 for everything else; `alt` is omitted on the
+wire for `text/*` parts (derivable from `value`) and restored on decode. Both the REST
+(`transports/rest/routes/cases.router.ts`) and NATS (`transports/nats/cases.handler.ts`)
+transports encode through it before a case leaves the process — without this, `Uint8Array`
+would JSON-stringify to `{"0":102,"1":101,…}`. A part beyond `MAX_CONTENT_PART_BYTES` fails
+loudly, naming the field and size, instead of silently shipping an oversized document.
+
+The translate-out node (`03case-translation-from-english/tools.ts`'s `translateCase`) projects
+the case to this same text shape before it ever reaches the translation prompt, and rebuilds
+`ContentPart[]` with `textPart()` afterwards — see that file's comments for the (deliberately
+preserved, issue-12-owned) overwrite bug and the issue-13 multi-part ordering constraint.
+
 ### Repo Layer (embedded SQLite via Drizzle)
 
 The data layer is organized as vertical slices rather than one `repo/` directory. Shared
@@ -287,6 +335,7 @@ per-job trace bus is allocated.
 | `NATS_URL`                                                 | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                          |
 | `NATS_USER` / `NATS_PASSWORD`                              | `nats` / `nats`         |                                                                                                                                               |
 | `SYMPTOM_CACHE_TTL_DAYS`                                   | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                |
+| `MAX_CONTENT_PART_BYTES`                                   | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                        |
 
 Note: the `REST` flag is required for the HTTP API to load — include it in `FEATURES` when running the server.
 

@@ -61,7 +61,11 @@ export async function createApp(): Promise<{ bus: EventBus }> {
   const service = createCaseGenerationService(graph, bus);
 
   if (features.has("TRACING")) {
-    wireTracing(bus, graph.runtime.catalogs.labels);
+    wireTracing(
+      bus,
+      graph.runtime.catalogs.labels,
+      graph.config.MAX_CONTENT_PART_BYTES
+    );
   }
 
   if (features.has("REST")) {

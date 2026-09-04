@@ -1,4 +1,5 @@
 import z from "zod";
+import { ContentPartsSchema } from "./ContentPart.js";
 
 export const ProcedureNameSchema = z
   .string()
@@ -35,12 +36,17 @@ export function buildProcedureSchema(procedureNames?: ProcedureName[]) {
  * its result generated. `relevance` is a judgment relative to the TRUE
  * diagnosis (which the blinded solver never sees), so it cannot be produced
  * by the blinded step — see `procedures.aigateway.ts`.
+ *
+ * `result` is a domain content-parts field (issue 11): one or more content
+ * parts. See `ContentPart.ts` for additive-parts semantics.
  */
 export const ProcedureResultSchema = ProcedureSchema.extend({
   relevance: ProcedureRelevanceSchema.describe(
     "Relevance of the procedure to the diagnosis"
   ),
-  result: z.string().describe("Result of the procedure, if applicable"),
+  result: ContentPartsSchema.describe(
+    "Result of the procedure, as one or more content parts"
+  ),
 });
 export type ProcedureResult = z.infer<typeof ProcedureResultSchema>;
 
@@ -51,4 +57,29 @@ export function buildProcedureResultSchema(procedureNames?: ProcedureName[]) {
     });
   }
   return ProcedureResultSchema;
+}
+
+/**
+ * LLM-facing counterpart to `ProcedureResultSchema`: `result` stays a plain
+ * `z.string()` — the LLM is never asked to emit bytes or base64 (issue 11
+ * §3). Callers wrap `result` with `textPart()` to build a domain
+ * `ProcedureResult` (`Procedure` type above).
+ */
+export const ProcedureResultTextSchema = ProcedureSchema.extend({
+  relevance: ProcedureRelevanceSchema.describe(
+    "Relevance of the procedure to the diagnosis"
+  ),
+  result: z.string().describe("Result of the procedure, if applicable"),
+});
+export type ProcedureResultText = z.infer<typeof ProcedureResultTextSchema>;
+
+export function buildProcedureResultTextSchema(
+  procedureNames?: ProcedureName[]
+) {
+  if (procedureNames?.length) {
+    return ProcedureResultTextSchema.extend({
+      name: z.literal(procedureNames).describe("Name of the medical procedure"),
+    });
+  }
+  return ProcedureResultTextSchema;
 }

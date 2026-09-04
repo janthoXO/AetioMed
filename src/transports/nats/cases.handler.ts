@@ -5,6 +5,7 @@ import * as cancelManager from "@/core/graph/utils/cancelManager.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { CaseGenerationService } from "@/core/caseGenerationService.js";
 import { publishCaseGenerationResponse } from "./cases.publisher.js";
+import { encodeCase } from "@/api/contentWire.js";
 import z from "zod";
 
 const STREAM_NAME = "cases";
@@ -42,7 +43,10 @@ export async function consumeCaseGenerateMessage(
     if (result.status === "done") {
       await publishCaseGenerationResponse(
         jobId,
-        result.case as Record<string, unknown>
+        encodeCase(result.case!, graph.config.MAX_CONTENT_PART_BYTES) as Record<
+          string,
+          unknown
+        >
       );
     } else {
       await publishCaseGenerationResponse(jobId, {

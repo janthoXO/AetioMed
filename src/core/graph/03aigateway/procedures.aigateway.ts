@@ -10,20 +10,19 @@ import {
 } from "../utils/prompt.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import {
-  buildProcedureResultSchema,
+  buildProcedureResultTextSchema,
   ProcedureRelevanceSchema,
   type Procedure,
   type ProcedureName,
   type ProcedureRelevance,
   type ProcedureResult,
 } from "../models/Procedure.js";
+import { textOf, textPart } from "../models/ContentPart.js";
 import {
   UNCATEGORIZED_CATEGORY,
   type ProcedurePickMode,
 } from "../catalog/ports.js";
 import type { Patient } from "../models/Patient.js";
-import type { Anamnesis } from "../models/Anamnesis.js";
-import type { ChiefComplaint } from "../models/ChiefComplaint.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
 import type { ForeignLanguage } from "../models/Language.js";
@@ -32,11 +31,17 @@ import type { GraphRuntime } from "../runtime.js";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
-/** The patient's presentation as seen by the blinded solver — no diagnosis. */
+/**
+ * The patient's presentation as seen by the blinded solver — no diagnosis.
+ * A **text projection** (issue 11 §4), not the domain `Case` shape: bytes
+ * must never reach a prompt, so every prompt builder's parameters are
+ * strings. `presentationOf` (`03procedure/index.ts`) is the one place that
+ * builds this from a domain `Case`, via `textOf`.
+ */
 export type Presentation = {
   patient?: Patient | undefined;
-  chiefComplaint?: ChiefComplaint | undefined;
-  anamnesis?: Anamnesis | undefined;
+  chiefComplaint?: string | undefined;
+  anamnesis?: { category: string; answer: string }[] | undefined;
 };
 
 export type BlindedProcedureStepResult =
@@ -88,7 +93,7 @@ function previousProceduresSection(previousProcedures: ProcedureResult[]) {
     "Procedures ordered so far (with results)",
     previousProcedures.length > 0
       ? previousProcedures
-          .map((p, i) => `${i + 1}. ${p.name} -> ${p.result}`)
+          .map((p, i) => `${i + 1}. ${p.name} -> ${textOf(p.result)}`)
           .join("\n")
       : "No procedures have been ordered yet."
   );
@@ -780,7 +785,7 @@ ${outline}`
       return {
         ...step,
         relevance: match?.relevance ?? "optional",
-        result: match?.result ?? "",
+        result: [textPart(match?.result ?? "")],
       };
     });
   } catch (error) {
@@ -804,8 +809,8 @@ const GenericResultLeafSchema = z.object({
 });
 
 /**
- * The bare-name-scoped counterpart to {@link buildProcedureResultSchema} —
- * used inside a grouped-by-category bridge pick, where "name" only needs to
+ * The bare-name-scoped counterpart to {@link buildProcedureResultTextSchema}
+ * — used inside a grouped-by-category bridge pick, where "name" only needs to
  * be unique within its category group (the category key supplies the rest).
  */
 function bareProcedureResultSchema(bareNames?: ProcedureName[]) {
@@ -828,7 +833,7 @@ function bridgePickGrammarSchema(mode: ProcedurePickMode): z.ZodTypeAny {
   switch (mode.kind) {
     case "freeform":
       return z
-        .array(buildProcedureResultSchema())
+        .array(buildProcedureResultTextSchema())
         .describe("bridge procedures that confirm the diagnosis");
     case "flat":
       return z
@@ -890,7 +895,7 @@ function assembleBridgeResults(
       .map((leaf) => ({
         name: leaf.name,
         relevance: leaf.relevance,
-        result: leaf.result,
+        result: [textPart(leaf.result)],
       }));
   }
 
@@ -907,7 +912,7 @@ function assembleBridgeResults(
         result.push({
           name: full,
           relevance: leaf.relevance,
-          result: leaf.result,
+          result: [textPart(leaf.result)],
         });
       }
     }

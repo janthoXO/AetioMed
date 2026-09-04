@@ -17,6 +17,7 @@ import {
   type ProcedureResult,
 } from "@/core/graph/models/Procedure.js";
 import type { Case } from "@/core/graph/models/Case.js";
+import { textOf } from "@/core/graph/models/ContentPart.js";
 import { procedureTools, PresentationSchema } from "./tools.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
@@ -101,12 +102,24 @@ type BlindedSolverGraph = ReturnType<typeof buildBlindedSolverGraph>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Extract the presentation slice (no diagnosis, no procedures) from the case. */
+/**
+ * Extract the presentation slice (no diagnosis, no procedures) from the
+ * case, projected to text via `textOf` — bytes must never reach a prompt
+ * (issue 11 §4), and `Presentation`'s own fields are `string`, not
+ * `ContentPart[]`, so this is the one place that conversion happens.
+ */
 function presentationOf(c: Case): Presentation {
   return {
     ...(c.patient !== undefined && { patient: c.patient }),
-    ...(c.chiefComplaint !== undefined && { chiefComplaint: c.chiefComplaint }),
-    ...(c.anamnesis !== undefined && { anamnesis: c.anamnesis }),
+    ...(c.chiefComplaint !== undefined && {
+      chiefComplaint: textOf(c.chiefComplaint),
+    }),
+    ...(c.anamnesis !== undefined && {
+      anamnesis: c.anamnesis.map((a) => ({
+        category: a.category,
+        answer: textOf(a.answer),
+      })),
+    }),
   };
 }
 

@@ -8,8 +8,13 @@ import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import { CaseSchema, type Case } from "@/core/graph/models/Case.js";
 import { AnamnesisCategorySchema } from "@/core/graph/models/Anamnesis.js";
 import type { AnamnesisCategory } from "@/core/graph/models/Anamnesis.js";
-import { ProcedureNameSchema } from "@/core/graph/models/Procedure.js";
+import {
+  ProcedureNameSchema,
+  ProcedureRelevanceSchema,
+} from "@/core/graph/models/Procedure.js";
 import type { ProcedureName } from "@/core/graph/models/Procedure.js";
+import { PatientSchema } from "@/core/graph/models/Patient.js";
+import { textOf, textPart } from "@/core/graph/models/ContentPart.js";
 import { GenerationFlagSchema } from "@/core/graph/models/GenerationFlags.js";
 import { ForeignLanguageSchema } from "@/core/graph/models/Language.js";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
@@ -22,6 +27,93 @@ const TranslateCaseInputSchema = z.object({
   language: ForeignLanguageSchema,
   generationFlags: z.array(GenerationFlagSchema),
 });
+
+/**
+ * LLM-facing translation shape (issue 11 §6): the same fields as `Case`,
+ * but the three `ContentPart[]` fields collapsed to plain strings via
+ * `textOf` before the case ever reaches this tool's prompt, and rebuilt
+ * with `textPart()` from the translated strings afterwards. `value` (bytes)
+ * never reaches the translator; only `alt` text does.
+ *
+ * NOTE (issue 12): this still translates the WHOLE case in one LLM call,
+ * and that response overwrites — via the state's shallow-merge reducer —
+ * the anamnesis-category / procedure-name translations already produced by
+ * the deterministic, cache-backed translators upstream
+ * (`translate_anamnesis_category`, `translate_procedures_names`). That is a
+ * real bug: the controlled vocabulary is silently overwritten by free-text
+ * LLM output. It is preserved here on purpose — fixing it is issue 12's job
+ * (disjoint defined/rest passes plus an explicit merge), and fixing it here
+ * would make any quality regression unattributable between two changes.
+ *
+ * NOTE (issue 13): multi-part fields do not exist yet — every field has
+ * exactly one part today. If that ever changes while this projection is
+ * still in place, `textOf`'s join collapses the parts into one string
+ * before translation; this code must be retired (by issue 12) before a
+ * field can have more than one part.
+ */
+const TranslatableCaseSchema = z.object({
+  patient: PatientSchema.optional(),
+  chiefComplaint: z.string().optional(),
+  anamnesis: z
+    .array(z.object({ category: z.string(), answer: z.string() }))
+    .optional(),
+  procedures: z
+    .array(
+      z.object({
+        name: z.string(),
+        relevance: ProcedureRelevanceSchema,
+        result: z.string(),
+      })
+    )
+    .optional(),
+});
+type TranslatableCase = z.infer<typeof TranslatableCaseSchema>;
+
+/** Project a domain `Case` to the text-only shape the translator sees. */
+function projectCaseToText(c: Case): TranslatableCase {
+  return {
+    ...(c.patient !== undefined && { patient: c.patient }),
+    ...(c.chiefComplaint !== undefined && {
+      chiefComplaint: textOf(c.chiefComplaint),
+    }),
+    ...(c.anamnesis !== undefined && {
+      anamnesis: c.anamnesis.map((a) => ({
+        category: a.category,
+        answer: textOf(a.answer),
+      })),
+    }),
+    ...(c.procedures !== undefined && {
+      procedures: c.procedures.map((p) => ({
+        name: p.name,
+        relevance: p.relevance,
+        result: textOf(p.result),
+      })),
+    }),
+  };
+}
+
+/** Rebuild a domain `Case` from the translator's text-only response. */
+function reconstructCase(t: TranslatableCase): Case {
+  return {
+    ...(t.patient !== undefined && { patient: t.patient }),
+    ...(t.chiefComplaint !== undefined && {
+      chiefComplaint: [textPart(t.chiefComplaint)],
+    }),
+    ...(t.anamnesis !== undefined && {
+      anamnesis: t.anamnesis.map((a) => ({
+        category: a.category,
+        answer: [textPart(a.answer)],
+      })),
+    }),
+    ...(t.procedures !== undefined && {
+      procedures: t.procedures.map((p) => ({
+        name: p.name,
+        relevance: p.relevance,
+        result: [textPart(p.result)],
+      })),
+    }),
+  };
+}
 
 export const translateCase: Tool<
   z.infer<typeof TranslateCaseInputSchema>,
@@ -44,7 +136,8 @@ RULES:
 2. Translate only the VALUES. Do not translate keys.
 3. Return ONLY the JSON content, no additional text`;
 
-    const userPrompt = `Case to translate:\n${JSON.stringify(caseData)}`;
+    const projectedCase = projectCaseToText(caseData);
+    const userPrompt = `Case to translate:\n${JSON.stringify(projectedCase)}`;
 
     // Deterministic: translation must be faithful, not creative.
     const llm = runtime.llm.for(
@@ -52,11 +145,11 @@ RULES:
       context?.llmConfig
     );
 
-    return retry(
+    const translated = await retry(
       async () => {
         try {
           return await llm
-            .withStructuredOutput(CaseSchema)
+            .withStructuredOutput(TranslatableCaseSchema)
             .invoke([
               new SystemMessage(systemPrompt),
               new HumanMessage(userPrompt),
@@ -70,6 +163,8 @@ RULES:
       2,
       0
     );
+
+    return reconstructCase(translated);
   },
 };
 

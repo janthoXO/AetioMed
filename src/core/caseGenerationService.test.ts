@@ -9,6 +9,7 @@ import { createCaseGenerationService } from "@/core/caseGenerationService.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import { AppError } from "@/core/graph/errors/AppError.js";
 import type { Case } from "@/core/graph/models/Case.js";
+import { textPart } from "@/core/graph/models/ContentPart.js";
 
 function fakeGraph(
   generateCase: GraphAppContext["generateCase"]
@@ -99,9 +100,11 @@ describe("CaseGenerationService — terminal events, no transport involved", () 
 describe("CaseGenerationService — generationFlags expansion and projection", () => {
   const fullCase: Case = {
     patient: { name: "Jane", age: 40, sex: "female" },
-    chiefComplaint: "Cough for three days",
-    anamnesis: [{ category: "History", answer: "Nothing of note" }],
-    procedures: [{ name: "CBC", relevance: "obligatory", result: "Normal" }],
+    chiefComplaint: [textPart("Cough for three days")],
+    anamnesis: [{ category: "History", answer: [textPart("Nothing of note")] }],
+    procedures: [
+      { name: "CBC", relevance: "obligatory", result: [textPart("Normal")] },
+    ],
   };
 
   it("generates the presentation internally for a procedures-only request, then projects it out", async () => {

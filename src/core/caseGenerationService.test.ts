@@ -17,7 +17,7 @@ function fakeGraph(
     config: {
       llm: { provider: "ollama", model: "test-model", temperature: 0.7 },
       allowedLlms: undefined,
-      LLM_SMALL: false,
+      PROCEDURE_PRESELECTION: false,
     },
     runtime: {
       catalogs: {

@@ -119,7 +119,7 @@ const minimalConfig: Config = {
     translator: minimalLlmRole,
   },
   allowedLlms: undefined,
-  LLM_SMALL: false,
+  PROCEDURE_PRESELECTION: false,
 };
 
 const minimalRuntime: GraphRuntime = {

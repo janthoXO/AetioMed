@@ -34,7 +34,7 @@ function fakeGraph(): GraphAppContext {
         temperature: 0.7,
       },
       allowedLlms: undefined,
-      LLM_SMALL: false,
+      PROCEDURE_PRESELECTION: false,
     },
     runtime: {} as GraphAppContext["runtime"],
     generateCase: vi.fn(),

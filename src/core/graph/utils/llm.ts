@@ -8,33 +8,58 @@ import {
   type LLMConfig,
 } from "@/core/graph/models/LLMConfig.js";
 import type { Config } from "@/core/graph/config.js";
-import type { LlmPort } from "@/core/graph/runtime.js";
+import type { LlmPort, LlmTemperature } from "@/core/graph/runtime.js";
+
+/**
+ * Fixed policy classes, not configuration — see `docs/issues/06-llm-roles.md`
+ * §1: `LLM_TEMPERATURE` was dead config (every call site went through one of
+ * these three fixed values, which always won the merge), so it was deleted
+ * rather than made per-role. These values are what each class has always
+ * used; this issue only changes *who* is called (role), never *how hot*.
+ */
+const TEMPERATURE_BY_CLASS: Record<LlmTemperature, number> = {
+  /** Judges/evaluations, yes-no decisions, translations, and factual
+   * enumeration where accuracy matters and variety is unwanted. */
+  deterministic: 0.1,
+  /** Grounded structured generation: clinical decision-making and outputs
+   * whose content is already pinned down by an outline/blueprint, where
+   * fidelity beats variety but a little flexibility in wording is useful. */
+  balanced: 0.4,
+  /** Open-ended narrative generation (case outlines, patient voice,
+   * demographics) where run-to-run variety is a feature. */
+  creative: 0.7,
+};
 
 /**
  * The concrete `LlmPort` used outside tests: constructs a real LangChain
- * chat model via `getLLM`, closing over the process's global default config
- * (from env) so callers never read a module-scope singleton.
+ * chat model via `getLLM`, closing over the process's per-role default
+ * configs (from env) so callers never read a module-scope singleton.
  */
 export function createLlmPort(defaultConfig: Config): LlmPort {
   return {
-    chat(llmConfig) {
-      return getLLM(defaultConfig, llmConfig);
+    for(opts, llmConfig) {
+      const roleConfig = defaultConfig.llmRoles?.[opts.role];
+      return getLLM(roleConfig, {
+        ...llmConfig,
+        temperature: TEMPERATURE_BY_CLASS[opts.temperature],
+      });
     },
   };
 }
 
 /**
- * Get an LLM instance for the given global default config, overridden by
+ * Get an LLM instance for the given role's default config (undefined under
+ * `ALLOW_LLMS`, where every field must come from `llmConfig`), overridden by
  * `llmConfig`. Callers no longer read a module-scope config singleton — the
  * default comes from whatever `LlmPort` (see `runtime.ts`) they were built
  * against, which is what makes this injectable/fakeable in tests.
  */
-export function getLLM(
-  defaultConfig: Config,
+function getLLM(
+  roleConfig: Partial<LLMConfig> | undefined,
   llmConfig: Partial<LLMConfig> = {}
 ): BaseChatModel {
   const fullConfig = LLMConfigSchema.parse({
-    ...defaultConfig.llm,
+    ...roleConfig,
     ...llmConfig,
   });
 
@@ -118,42 +143,6 @@ export function getLLM(
   }
 
   return chat;
-}
-
-/**
- * Get a low-temperature LLM for deterministic tasks: judges/evaluations,
- * yes-no decisions, translations, and factual enumeration where accuracy
- * matters and variety is unwanted.
- */
-export function getDeterministicLLM(
-  llm: LlmPort,
-  llmConfig: Partial<Omit<LLMConfig, "temperature">> = {}
-): BaseChatModel {
-  return llm.chat({ ...llmConfig, temperature: 0.1 });
-}
-
-/**
- * Get a mid-temperature LLM for grounded structured generation: clinical
- * decision-making and outputs whose content is already pinned down by an
- * outline/blueprint, where fidelity beats variety but a little flexibility
- * in wording is still useful.
- */
-export function getBalancedLLM(
-  llm: LlmPort,
-  llmConfig: Partial<Omit<LLMConfig, "temperature">> = {}
-): BaseChatModel {
-  return llm.chat({ ...llmConfig, temperature: 0.4 });
-}
-
-/**
- * Get a creative LLM for open-ended narrative generation (case outlines,
- * patient voice, demographics) where run-to-run variety is a feature.
- */
-export function getCreativeLLM(
-  llm: LlmPort,
-  llmConfig: Partial<Omit<LLMConfig, "temperature">> = {}
-): BaseChatModel {
-  return llm.chat({ ...llmConfig, temperature: 0.7 });
 }
 
 export function handleLangchainError(error: Error): never {

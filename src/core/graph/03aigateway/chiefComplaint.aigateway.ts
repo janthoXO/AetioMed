@@ -1,4 +1,4 @@
-import { getBalancedLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
   renderSchemaForPrompt,
@@ -62,7 +62,11 @@ ${renderSchemaForPrompt(ChiefComplaintJsonSchema)}`
       async (attempt: number, previousError?: Error) => {
         // Balanced: one clinical sentence whose facts come from the outline —
         // fidelity matters more than variety.
-        const result = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const result = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(ChiefComplaintJsonSchema)
           .invoke(
             [

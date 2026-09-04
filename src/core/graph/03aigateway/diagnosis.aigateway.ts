@@ -1,7 +1,6 @@
 import z from "zod";
 import type { ForeignLanguage } from "../models/Language.js";
 import type { RequestContext } from "../utils/context.js";
-import { getDeterministicLLM } from "../utils/llm.js";
 import {
   buildPrompt,
   renderSchemaForPrompt,
@@ -42,7 +41,11 @@ ${renderSchemaForPrompt(responseSchema)}`
     `[GenerateDiagnosisToEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const response = await getDeterministicLLM(runtime.llm, context?.llmConfig)
+  const response = await runtime.llm
+    .for(
+      { role: "translator", temperature: "deterministic" },
+      context?.llmConfig
+    )
     .withStructuredOutput(responseSchema)
     .invoke(
       [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],

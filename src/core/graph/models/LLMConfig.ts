@@ -5,7 +5,17 @@ export const LLMConfigSchema = z.object({
   model: z.string(),
   apiKey: z.string().optional(),
   url: z.url().optional(),
-  temperature: z.coerce.number().min(0).max(1).default(0.7),
+  temperature: z.coerce
+    .number()
+    .min(0)
+    .max(1)
+    .default(0.7)
+    .describe(
+      "Accepted for schema compatibility only — the effective temperature is " +
+        "always overridden by the call site's fixed temperature class " +
+        "(deterministic/balanced/creative, see `LlmPort.for` in " +
+        "`core/graph/runtime.ts`). Setting this field has no effect."
+    ),
   outputFormat: z.enum(["json", "text"]).default("json"),
   /**
    * Controls the model's hidden "thinking"/reasoning phase on providers that

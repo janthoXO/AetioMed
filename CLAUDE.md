@@ -136,9 +136,11 @@ The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs three phases:
 
 ### AI Gateway Layer
 
-`src/core/graph/03aigateway/` contains one file per generated field (case, symptoms, patient, chiefComplaint, anamnesis, outlineEvaluation, procedures, diagnosis, labels, plus `translate.helper.ts`). Each gateway builds prompts, calls `getLLM()` / `getDeterministicLLM()` (temp 0.1) / `getCreativeLLM()` (temp 0.8) from `src/core/graph/utils/llm.ts`, and wraps calls with `retry()`.
+`src/core/graph/03aigateway/` contains one file per generated field (case, symptoms, patient, chiefComplaint, anamnesis, outlineEvaluation, procedures, diagnosis, labels, plus `translate.helper.ts`). Each gateway builds prompts, calls `runtime.llm.for({ role, temperature }, context?.llmConfig)` (from `src/core/graph/runtime.ts`, implemented in `src/core/graph/utils/llm.ts`), and wraps calls with `retry()`.
 
-`getLLM()` supports three providers: `ollama`, `google`, `openai` (the `openai` provider also serves OpenAI-compatible endpoints via `LLM_URL`). Provider/model come from env (`LLM_PROVIDER`, `LLM_MODEL`) or from per-request `llmConfig` passed via `RequestContext` (AsyncLocalStorage). The `ALLOW_LLMS` feature flag enables per-request LLM selection from an allowlist (`ALLOWED_LLMS=ollama:llama3.1,google:gemini-2.0-flash`); when set, no global LLM is configured and requests must supply `llmConfig` (exposed via `GET /api/allowedLlms`).
+**LLM roles** (`LlmPort.for`, `src/core/graph/runtime.ts`) model two independent dimensions per call: `role` (`generator` | `judge` | `translator` — each independently configurable, e.g. a small local model generating against a stronger judge) and `temperature` (a fixed policy class, not configuration: `deterministic` = 0.1, `balanced` = 0.4, `creative` = 0.7, read from `utils/llm.ts`). Every call site's role/temperature pairing is fixed by what it does, not by config. Judges (`outlineEvaluation.aigateway.ts`, `matchDiagnosis` in `procedures.aigateway.ts`) and translators (`diagnosis.aigateway.ts`, `translate.helper.ts`, the from-English translation tools) are the two roles that diverge from `generator`, which is everything else, including `generateSymptomsOneShot` (clinical content generation, not translation).
+
+The underlying adapter supports three providers: `ollama`, `google`, `openai` (the `openai` provider also serves OpenAI-compatible endpoints via `LLM_URL`). Provider/model come from env — a general `LLM_PROVIDER`/`LLM_MODEL` plus optional per-role `LLM_GENERATOR_*`/`LLM_JUDGE_*`/`LLM_TRANSLATOR_*` overrides, each field falling back individually to the general value — or from a per-request `llmConfig` passed via `RequestContext` (AsyncLocalStorage), which applies uniformly to all three roles. The `ALLOW_LLMS` feature flag enables per-request LLM selection from an allowlist (`ALLOWED_LLMS=ollama:llama3.1,google:gemini-2.0-flash`); when set, no global LLM (and no per-role default) is configured and requests must supply `llmConfig` (exposed via `GET /api/allowedLlms`). Temperature is never part of `llmConfig`'s effective behavior — it is always the call site's fixed class.
 
 ### Repo Layer (embedded SQLite via Drizzle)
 
@@ -224,22 +226,24 @@ per-job trace bus is allocated.
 
 ## Environment Variables
 
-| Variable                      | Default                 | Notes                                                                                                                                         |
-| ----------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `PORT`                        | `3030`                  | Server port                                                                                                                                   |
-| `FEATURES`                    | `""`                    | Comma-separated flags: `REST`, `NATS`, `TRACING`, `ALLOW_LLMS`                                                                                |
-| `LLM_PROVIDER`                | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                               |
-| `LLM_MODEL`                   | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                     |
-| `LLM_API_KEY`                 | —                       | API key for Google/OpenAI                                                                                                                     |
-| `LLM_URL`                     | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                          |
-| `LLM_TEMPERATURE`             | `0.7`                   | 0–1                                                                                                                                           |
-| `LLM_SMALL`                   | `false`                 | `true`/`1` enables small-model-friendly prompting (e.g. splits the blinded procedure step into a category pick then a procedure pick)         |
-| `ALLOWED_LLMS`                | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                            |
-| `CATALOG_DIR`                 | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                  |
-| `CACHE_DIR`                   | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative |
-| `NATS_URL`                    | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                          |
-| `NATS_USER` / `NATS_PASSWORD` | `nats` / `nats`         |                                                                                                                                               |
-| `SYMPTOM_CACHE_TTL_DAYS`      | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                |
+| Variable                                                   | Default                 | Notes                                                                                                                                         |
+| ---------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                                     | `3030`                  | Server port                                                                                                                                   |
+| `FEATURES`                                                 | `""`                    | Comma-separated flags: `REST`, `NATS`, `TRACING`, `ALLOW_LLMS`                                                                                |
+| `LLM_PROVIDER`                                             | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                               |
+| `LLM_MODEL`                                                | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                     |
+| `LLM_API_KEY`                                              | —                       | API key for Google/OpenAI                                                                                                                     |
+| `LLM_URL`                                                  | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                          |
+| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`  | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                     |
+| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`      | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                    |
+| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                               |
+| `LLM_SMALL`                                                | `false`                 | `true`/`1` enables small-model-friendly prompting (e.g. splits the blinded procedure step into a category pick then a procedure pick)         |
+| `ALLOWED_LLMS`                                             | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                            |
+| `CATALOG_DIR`                                              | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                  |
+| `CACHE_DIR`                                                | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative |
+| `NATS_URL`                                                 | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                          |
+| `NATS_USER` / `NATS_PASSWORD`                              | `nats` / `nats`         |                                                                                                                                               |
+| `SYMPTOM_CACHE_TTL_DAYS`                                   | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                |
 
 Note: the `REST` flag is required for the HTTP API to load — include it in `FEATURES` when running the server.
 

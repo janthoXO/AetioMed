@@ -1,6 +1,6 @@
 import z from "zod";
 import { retry } from "../utils/retry.js";
-import { getDeterministicLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
   section,
@@ -51,10 +51,11 @@ export async function translateTermsKeyed(
 
   return retry(
     async (attempt: number, previousError?: Error) => {
-      const response = await getDeterministicLLM(
-        runtime.llm,
-        context?.llmConfig
-      )
+      const response = await runtime.llm
+        .for(
+          { role: "translator", temperature: "deterministic" },
+          context?.llmConfig
+        )
         .withStructuredOutput(z.record(z.string(), z.string()))
         .invoke(
           [

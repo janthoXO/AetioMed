@@ -1,10 +1,6 @@
 import { retry } from "../utils/retry.js";
 import z from "zod";
-import {
-  getBalancedLLM,
-  getDeterministicLLM,
-  handleLangchainError,
-} from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
   renderForPrompt,
@@ -225,7 +221,11 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       async (attempt, previousError) => {
         // Balanced: this is clinical decision-making, not creative writing —
         // lower temperature keeps procedure choices focused and output short.
-        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(StepSchema)
           .invoke(
             [
@@ -395,10 +395,11 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       async (attempt, previousError) => {
         // Thinking off: the category shortlist is a constrained pick and the
         // split into two small steps exists precisely to keep each call fast.
-        const res = await getBalancedLLM(runtime.llm, {
-          ...context?.llmConfig,
-          enableThinking: false,
-        })
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            { ...context?.llmConfig, enableThinking: false }
+          )
           .withStructuredOutput(CategoryStepSchema)
           .invoke(
             [
@@ -586,10 +587,11 @@ ${all.categoryMenu(expandable)}`
       async (attempt, previousError) => {
         // Thinking off: same rationale as the category step — the candidate
         // set is already scoped, so the pick doesn't need a reasoning phase.
-        const res = await getBalancedLLM(runtime.llm, {
-          ...context?.llmConfig,
-          enableThinking: false,
-        })
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            { ...context?.llmConfig, enableThinking: false }
+          )
           .withStructuredOutput(OutputSchema)
           .invoke(
             [
@@ -733,7 +735,11 @@ ${outline}`
       async (attempt, previousError) => {
         // Balanced: results must follow the blueprint's workup strategy and
         // stay clinically plausible — specific values, not invention.
-        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(ResultsSchema)
           .invoke(
             [
@@ -985,7 +991,11 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates
       async (attempt, previousError) => {
         // Balanced: confirmatory procedures for a known diagnosis — the most
         // clinically standard choices are exactly what we want.
-        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(BridgeSchema)
           .invoke(
             [
@@ -1112,7 +1122,11 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
 
     const categoriesResult = await retry(
       async (attempt, previousError) => {
-        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(CategoryStepSchema)
           .invoke(
             [
@@ -1230,7 +1244,11 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(scoped.mod
   try {
     const rawProcedures = await retry(
       async (attempt, previousError) => {
-        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(BridgeSchema)
           .invoke(
             [
@@ -1328,7 +1346,11 @@ ${renderSchemaForPrompt(MatchSchema)}`
   try {
     const matches = await retry(
       async (attempt, previousError) => {
-        const res = await getDeterministicLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "judge", temperature: "deterministic" },
+            context?.llmConfig
+          )
           .withStructuredOutput(MatchSchema)
           .invoke(
             [

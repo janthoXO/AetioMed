@@ -1,5 +1,4 @@
 import type { Diagnosis } from "../models/Diagnosis.js";
-import { bus } from "@/core/graph/index.js";
 import { PatientSchema, type Patient } from "../models/Patient.js";
 import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
 import {
@@ -11,8 +10,10 @@ import {
 import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import type { GraphRuntime } from "../runtime.js";
 
 export async function generatePatient(
+  runtime: GraphRuntime,
   diagnosis: Diagnosis, // provided by the user
   outline: string,
   userInstructions?: string, // provided by the user | undefined
@@ -54,7 +55,7 @@ ${renderSchemaForPrompt(PatientSchema)}`
   try {
     const patient: Patient = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM(context?.llmConfig)
+        const result = await getCreativeLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(PatientSchema)
           .invoke(
             [
@@ -86,11 +87,7 @@ ${renderSchemaForPrompt(PatientSchema)}`
       (error, attempt) => {
         const msg = `[GeneratePatientFromOutline] Attempt ${attempt} failed with error: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 

@@ -16,14 +16,36 @@ import {
   LLMConfigSchema,
   type LLMConfig,
 } from "@/core/graph/models/LLMConfig.js";
-import { config } from "@/core/graph/index.js";
+import type { Config } from "@/core/graph/config.js";
+import type { LlmPort } from "@/core/graph/runtime.js";
 
 /**
- * Get an LLM instance based on current configuration.
- * Easily extendable to support cloud providers.
+ * The concrete `LlmPort` used outside tests: constructs a real LangChain
+ * chat model via `getLLM`, closing over the process's global default config
+ * (from env) so callers never read a module-scope singleton.
  */
-export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
-  const fullConfig = LLMConfigSchema.parse({ ...config.llm, ...llmConfig });
+export function createLlmPort(defaultConfig: Config): LlmPort {
+  return {
+    chat(llmConfig) {
+      return getLLM(defaultConfig, llmConfig);
+    },
+  };
+}
+
+/**
+ * Get an LLM instance for the given global default config, overridden by
+ * `llmConfig`. Callers no longer read a module-scope config singleton — the
+ * default comes from whatever `LlmPort` (see `runtime.ts`) they were built
+ * against, which is what makes this injectable/fakeable in tests.
+ */
+export function getLLM(
+  defaultConfig: Config,
+  llmConfig: Partial<LLMConfig> = {}
+): BaseChatModel {
+  const fullConfig = LLMConfigSchema.parse({
+    ...defaultConfig.llm,
+    ...llmConfig,
+  });
 
   console.debug("LLM Configuration:", fullConfig);
 
@@ -143,9 +165,10 @@ export function getSearchTool(llmConfig: LLMConfig) {
  * matters and variety is unwanted.
  */
 export function getDeterministicLLM(
-  config: Partial<Omit<LLMConfig, "temperature">> = {}
+  llm: LlmPort,
+  llmConfig: Partial<Omit<LLMConfig, "temperature">> = {}
 ): BaseChatModel {
-  return getLLM({ ...config, temperature: 0.1 });
+  return llm.chat({ ...llmConfig, temperature: 0.1 });
 }
 
 /**
@@ -155,9 +178,10 @@ export function getDeterministicLLM(
  * in wording is still useful.
  */
 export function getBalancedLLM(
-  config: Partial<Omit<LLMConfig, "temperature">> = {}
+  llm: LlmPort,
+  llmConfig: Partial<Omit<LLMConfig, "temperature">> = {}
 ): BaseChatModel {
-  return getLLM({ ...config, temperature: 0.4 });
+  return llm.chat({ ...llmConfig, temperature: 0.4 });
 }
 
 /**
@@ -165,9 +189,10 @@ export function getBalancedLLM(
  * patient voice, demographics) where run-to-run variety is a feature.
  */
 export function getCreativeLLM(
-  config: Partial<Omit<LLMConfig, "temperature">> = {}
+  llm: LlmPort,
+  llmConfig: Partial<Omit<LLMConfig, "temperature">> = {}
 ): BaseChatModel {
-  return getLLM({ ...config, temperature: 0.7 });
+  return llm.chat({ ...llmConfig, temperature: 0.7 });
 }
 
 /**

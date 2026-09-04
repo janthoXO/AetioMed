@@ -1,6 +1,9 @@
 import type z from "zod";
 import type { AnamnesisCategory } from "../models/Anamnesis.js";
 import type { Procedure, ProcedureName } from "../models/Procedure.js";
+import type { Diagnosis, ICDCode } from "../models/Diagnosis.js";
+import type { ForeignLanguage } from "../models/Language.js";
+import type { RequestContext } from "../utils/context.js";
 
 /**
  * Synthetic category bucket for procedure names with no `"Category: Name"`
@@ -66,4 +69,45 @@ export interface ProcedureCandidates {
 
 export interface AnamnesisCatalog {
   list(): AnamnesisCategory[] | undefined;
+}
+
+/**
+ * Trace node label translations, as consumed by `utils/nodeWrapper.ts`
+ * (synchronous per-label lookup on the trace hot path) and
+ * `02graphs/caseGraph.ts` (batch warm-up before generation starts).
+ */
+export interface LabelCatalog {
+  /** Synchronous lookup of a label's cached translation, or `undefined` if uncached. */
+  translate(label: string, lang: ForeignLanguage): string | undefined;
+  /**
+   * Translate every requested label not already cached, in one deduped
+   * batch, persisting the results. Never throws — a label that cannot be
+   * translated is simply absent from the result.
+   */
+  ensureTranslated(
+    labels: string[],
+    lang: ForeignLanguage,
+    generate: (
+      missing: string[],
+      lang: ForeignLanguage,
+      ctx?: RequestContext
+    ) => Promise<Record<string, string>>,
+    ctx?: RequestContext
+  ): Promise<Record<string, string>>;
+}
+
+/**
+ * Predefined ICD-11 diagnoses and their translations, as consumed by
+ * `02graphs/01case-translation-to-english/tools.ts`, `03repo/diagnosis.repo.ts`'s
+ * other consumers and the `/diagnosis` REST route.
+ */
+export interface DiagnosisCatalog {
+  byIcd(icd: ICDCode): Diagnosis | undefined;
+  all(): Diagnosis[];
+  /** Reverse lookup: a translated diagnosis name back to its English form. */
+  toEnglish(diagnosis: string, lang: ForeignLanguage): string | undefined;
+  saveTranslations(
+    englishToTarget: Record<string, string>,
+    lang: ForeignLanguage
+  ): void;
 }

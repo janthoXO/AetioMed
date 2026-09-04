@@ -1,11 +1,13 @@
 import { z } from "zod";
 import type { AnyExt } from "./extension.js";
 import type { EventBus } from "./event-bus.js";
+import type { GraphAppContext } from "./graph/appContext.js";
 
 export interface LoaderOptions {
   extensions: AnyExt[];
   enabledFlags: Set<string>;
   bus: EventBus;
+  graph: GraphAppContext;
 }
 
 function topoSort(extensions: AnyExt[]): AnyExt[] {
@@ -36,7 +38,7 @@ function topoSort(extensions: AnyExt[]): AnyExt[] {
 }
 
 export async function loadExtensions(opts: LoaderOptions): Promise<void> {
-  const { extensions, enabledFlags, bus } = opts;
+  const { extensions, enabledFlags, bus, graph } = opts;
   const sorted = topoSort(extensions);
   const resolvedConfigs = new Map<string, object>();
   const skipped = new Set<string>();
@@ -83,6 +85,7 @@ export async function loadExtensions(opts: LoaderOptions): Promise<void> {
     await ext.setup({
       config,
       bus,
+      graph,
       dep(depExt: AnyExt) {
         if (!resolvedConfigs.has(depExt.name))
           throw new Error(

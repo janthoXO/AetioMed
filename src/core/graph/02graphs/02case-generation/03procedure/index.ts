@@ -167,7 +167,10 @@ async function resolveBlindedStepViaCategories(
     return categoryStep;
   }
 
-  if (categoryStep.action !== "categories" || !categoryStep.categories?.length) {
+  if (
+    categoryStep.action !== "categories" ||
+    !categoryStep.categories?.length
+  ) {
     // Unexpected shape — let the caller's existing fallback handle it.
     return { action: "procedure", procedures: undefined };
   }
@@ -236,7 +239,9 @@ async function blindedStep(
 
   const presentation = presentationOf(state.case);
   const previousProcedures = state.case.procedures ?? [];
-  const userInstructions = userInstructionsForProcedures(state.userInstructions);
+  const userInstructions = userInstructionsForProcedures(
+    state.userInstructions
+  );
 
   const step = useSmallModelSplit(runtime?.context?.language)
     ? await resolveBlindedStepViaCategories(
@@ -423,7 +428,13 @@ async function resolveBridgeViaCategories(
 
   const scopedResults = await invokeLogged(
     procedureTools.generateBridgeProcedureStepFromCategories,
-    { presentation, diagnosis, previousProcedures, selectedCategories, userInstructions },
+    {
+      presentation,
+      diagnosis,
+      previousProcedures,
+      selectedCategories,
+      userInstructions,
+    },
     context,
     "Error in bridge procedure step"
   );
@@ -467,7 +478,9 @@ async function bridge(
 
   const presentation = presentationOf(state.case);
   const previousProcedures = state.case.procedures ?? [];
-  const userInstructions = userInstructionsForProcedures(state.userInstructions);
+  const userInstructions = userInstructionsForProcedures(
+    state.userInstructions
+  );
 
   const bridgeProcedures = useSmallModelSplit(runtime?.context?.language)
     ? await resolveBridgeViaCategories(

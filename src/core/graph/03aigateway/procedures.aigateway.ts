@@ -52,8 +52,9 @@ export type BlindedProcedureStepResult =
     };
 
 /**
- * Result of a category-scoped procedure pick (LLM_SMALL step 2): either the
- * actual pick, or a request to pull additional categories into scope. The
+ * Result of a category-scoped procedure pick (PROCEDURE_PRESELECTION step 2):
+ * either the actual pick, or a request to pull additional categories into
+ * scope. The
  * expand action is only offered while the caller still allows it — the
  * grammar constraint restricts it to categories NOT already in scope, so the
  * model can never re-request one it has already seen.
@@ -273,7 +274,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
   }
 }
 
-// ─── generateBlindedCategoryStep (LLM_SMALL: step 1 of 2) ────────────────────
+// ─── generateBlindedCategoryStep (PROCEDURE_PRESELECTION: step 1 of 2) ───────
 
 export type BlindedCategoryStepResult =
   | {
@@ -313,8 +314,9 @@ function buildCategoryStepSchema(categories?: string[]) {
 
 /**
  * Step 1 of the small-model-friendly split of the blinded procedure pick
- * (enabled via `LLM_SMALL`, dispatched from the `blinded_step` node): choose
- * the plausibly-relevant procedure categories — over-inclusive, since
+ * (enabled via `PROCEDURE_PRESELECTION`, dispatched from the
+ * `CategoryScopedPick` strategy adapter): choose the plausibly-relevant
+ * procedure categories — over-inclusive, since
  * {@link generateBlindedProcedureStepFromCategories} narrows down to actual
  * procedures next — or commit to a diagnosis. The diagnose handling mirrors
  * {@link generateBlindedProcedureStep} exactly, so the graph node can reuse
@@ -437,7 +439,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
   }
 }
 
-// ─── generateBlindedProcedureStepFromCategories (LLM_SMALL: step 2 of 2) ─────
+// ─── generateBlindedProcedureStepFromCategories (preselection: step 2 of 2) ──
 
 /**
  * Assemble the scoped-pick response schema from its optional branches — used
@@ -1037,7 +1039,7 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates
   }
 }
 
-// ─── generateBridgeCategoryStep (LLM_SMALL: bridge step 1 of 2) ──────────────
+// ─── generateBridgeCategoryStep (PROCEDURE_PRESELECTION: bridge step 1 of 2) ──
 
 /**
  * Same grammar-vs-prompt split as {@link buildCategoryStepSchema}: the
@@ -1057,8 +1059,9 @@ function buildBridgeCategoryStepSchema(categories?: string[]) {
 
 /**
  * Step 1 of the small-model-friendly split of the bridge (enabled via
- * `LLM_SMALL`): unlike the blinded step's category pick, this is non-blinded
- * (the true diagnosis is already known) and has no "diagnose" branch — its
+ * `PROCEDURE_PRESELECTION`): unlike the blinded step's category pick, this
+ * is non-blinded (the true diagnosis is already known) and has no "diagnose"
+ * branch — its
  * only job is narrowing the workup down to a shortlist of categories that
  * plausibly contain the confirmatory procedures, over-inclusive by design.
  */
@@ -1164,7 +1167,7 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
   }
 }
 
-// ─── generateBridgeProcedureStepFromCategories (LLM_SMALL: bridge step 2) ────
+// ─── generateBridgeProcedureStepFromCategories (preselection: bridge step 2) ─
 
 /**
  * Step 2 of the small-model-friendly split of the bridge: generate the

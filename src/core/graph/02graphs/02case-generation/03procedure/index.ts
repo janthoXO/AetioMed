@@ -13,33 +13,21 @@ import {
 } from "@/core/graph/utils/context.js";
 import {
   ProcedureSchema,
+  ProcedureResultSchema,
   type ProcedureResult,
 } from "@/core/graph/models/Procedure.js";
 import type { Case } from "@/core/graph/models/Case.js";
-import { procedureTools } from "./tools.js";
+import { procedureTools, PresentationSchema } from "./tools.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
-import type {
-  Presentation,
-  BlindedProcedureStepResult,
-} from "@/core/graph/03aigateway/procedures.aigateway.js";
+import type { Presentation } from "@/core/graph/03aigateway/procedures.aigateway.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import type { Config } from "@/core/graph/config.js";
+import type { ProcedureStrategy, SolverMove } from "./strategy/ports.js";
 
 // ─── State ────────────────────────────────────────────────────────────────────
 
 const SOLVER_MAX_ITERATIONS = 6;
-
-/**
- * Hard cap on category-scope expansions within a single blinded pick
- * (LLM_SMALL): once reached, {@link resolveBlindedStepViaCategories} passes
- * an empty expandable list, which removes the expand branch from the
- * response schema entirely and forces a pick. Expansions do NOT consume
- * `solverIterationsRemaining` — the solver budget bounds diagnostic steps,
- * this cap bounds retrieval within one step.
- */
-const MAX_CATEGORY_EXPANSIONS = 2;
 
 const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
@@ -59,6 +47,57 @@ const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
 });
 
 type ProcedureGraphState = z.infer<typeof ProcedureGraphStateSchema>;
+
+/**
+ * The blinded solver's own compiled graph, whose state schema **omits
+ * `diagnosis` entirely**. `BlindedView` (`strategy/ports.ts`) already makes
+ * passing the diagnosis into the blinded path a compile error — that is the
+ * primary defence, and is what actually matters. This compiled child graph
+ * is a *runtime* backstop on top of it, not a topology decision: LangGraph
+ * filters input against a graph's state schema before it ever reaches a
+ * channel (`@langchain/langgraph/dist/pregel/io.js:81`), so a `diagnosis`
+ * key would be silently dropped here even if a future edit mistakenly
+ * widened `BlindedView` to carry one — the guarantee survives that edit,
+ * the type alone would not.
+ *
+ * It exists for its input schema, not for topology: it is `.invoke()`d
+ * directly from inside `blinded_step`, never `addNode`'d, so the compiled
+ * procedure graph below still has exactly three nodes.
+ */
+const BlindedSolverStateSchema = z.object({
+  presentation: PresentationSchema,
+  previousProcedures: z.array(ProcedureResultSchema).default([]),
+  ruledOutDiagnoses: z.array(z.string()).default([]),
+  userInstructions: z.string().optional(),
+  iterationsRemaining: z.number(),
+  /** Output-only: the strategy's decision, set by the graph's single node. */
+  move: z.custom<SolverMove>().optional(),
+});
+
+/**
+ * Exported for `index.test.ts` only, to assert the runtime filtering
+ * guarantee directly (not just the `BlindedView` type) — production code
+ * never calls this outside `buildProcedureGraph`.
+ */
+export function buildBlindedSolverGraph(strategy: ProcedureStrategy) {
+  return new StateGraph(BlindedSolverStateSchema, RequestContextSchema)
+    .addNode("solve", async (state, lgRuntime?: Runtime<RequestContext>) => {
+      const move = await strategy.nextStep({
+        presentation: state.presentation,
+        previousProcedures: state.previousProcedures,
+        ruledOutDiagnoses: state.ruledOutDiagnoses,
+        userInstructions: state.userInstructions,
+        iterationsRemaining: state.iterationsRemaining,
+        context: lgRuntime?.context,
+      });
+      return { move };
+    })
+    .addEdge(START, "solve")
+    .addEdge("solve", END)
+    .compile();
+}
+
+type BlindedSolverGraph = ReturnType<typeof buildBlindedSolverGraph>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -107,119 +146,23 @@ async function invokeLogged<TInput, TOutput>(
 }
 
 /**
- * Whether the small-model-friendly category/procedure split applies: only
- * when `LLM_SMALL` is set AND the approved procedure list actually has real
- * categories — a flat (uncategorized) list has nothing to filter on.
+ * Propagates the parent's request context to the child blinded-solver
+ * graph's `.invoke()` — the same shape `02graphs/caseGraph.ts`'s
+ * `generateCase` uses to invoke the top-level graph.
  */
-function useSmallModelSplit(runtime: GraphRuntime, config: Config): boolean {
-  return (
-    !!config.LLM_SMALL && runtime.catalogs.procedures.categories().length > 0
-  );
+function childInvokeConfig(context: RequestContext | undefined) {
+  return {
+    context: { llmConfig: context?.llmConfig, jobId: context?.jobId },
+    ...(context?.signal !== undefined ? { signal: context.signal } : {}),
+  };
 }
 
 // ─── Node 1: blinded_step ─────────────────────────────────────────────────────
 
-/**
- * Small-model-friendly resolution of the blinded step: a category pick
- * followed by a procedure pick, instead of one call against the full list.
- * Not a graph node — just splits the LLM work into sequential tool calls
- * within `blinded_step`'s single invocation, returning a result shaped
- * exactly like {@link BlindedProcedureStepResult} so the caller's existing
- * action-handling logic doesn't need to know which path produced it.
- *
- * The procedure pick may answer with an "expand" action requesting more
- * categories; the loop below unions them into the scope and retries. The
- * visited set is the local `scope` variable — never the model's memory —
- * and termination is guaranteed twice: the expand grammar only admits
- * categories not yet in scope (monotone scope growth), and once
- * {@link MAX_CATEGORY_EXPANSIONS} is reached the expand branch is removed
- * from the response schema entirely, forcing a pick.
- */
-async function resolveBlindedStepViaCategories(
+function makeBlindedStep(
   runtime: GraphRuntime,
-  presentation: Presentation,
-  previousProcedures: ProcedureResult[],
-  ruledOutDiagnoses: string[],
-  userInstructions: string | undefined,
-  iterationsRemaining: number,
-  context: RequestContext | undefined
-): Promise<BlindedProcedureStepResult> {
-  const categoryStep = await invokeLogged(
-    runtime,
-    procedureTools.generateBlindedCategoryStep,
-    {
-      presentation,
-      previousProcedures,
-      ruledOutDiagnoses,
-      userInstructions,
-      iterationsRemaining,
-    },
-    context,
-    "Error in blinded category step"
-  );
-
-  runtime.log.info(
-    `[ProcedureGraph] Blinded category step:\n\`\`\`json\n${JSON.stringify(categoryStep, null, 2)}\n\`\`\``
-  );
-
-  if (categoryStep.action === "diagnose") {
-    return categoryStep;
-  }
-
-  if (
-    categoryStep.action !== "categories" ||
-    !categoryStep.categories?.length
-  ) {
-    // Unexpected shape — let the caller's existing fallback handle it.
-    return { action: "procedure", procedures: undefined };
-  }
-
-  const allCategories = runtime.catalogs.procedures.categories();
-  const scope = new Set(categoryStep.categories);
-
-  for (let expansions = 0; ; expansions++) {
-    const expandableCategories =
-      expansions < MAX_CATEGORY_EXPANSIONS
-        ? allCategories.filter((category) => !scope.has(category))
-        : [];
-
-    const pick = await invokeLogged(
-      runtime,
-      procedureTools.generateBlindedProcedureStepFromCategories,
-      {
-        presentation,
-        previousProcedures,
-        selectedCategories: [...scope],
-        expandableCategories,
-        userInstructions,
-      },
-      context,
-      "Error in blinded procedure step"
-    );
-
-    if (pick.action === "expand" && pick.categories.length > 0) {
-      for (const category of pick.categories) scope.add(category);
-      runtime.log.info(
-        `[ProcedureGraph] Blinded procedure step expanded its scope with [${pick.categories.join(", ")}] (expansion ${expansions + 1}/${MAX_CATEGORY_EXPANSIONS})${pick.reasoning ? ` — ${pick.reasoning}` : ""}`
-      );
-      continue;
-    }
-
-    const procedures = pick.action === "procedures" ? pick.procedures : [];
-
-    runtime.log.info(
-      `[ProcedureGraph] Blinded procedure step picked ${procedures.length} procedure(s) from [${[...scope].join(", ")}]:\n\`\`\`json\n${JSON.stringify(procedures, null, 2)}\n\`\`\``
-    );
-
-    return {
-      action: "procedure",
-      procedures,
-      reasoning: pick.reasoning ?? categoryStep.reasoning,
-    };
-  }
-}
-
-function makeBlindedStep(runtime: GraphRuntime, config: Config) {
+  blindedSolverGraph: BlindedSolverGraph
+) {
   return async function blindedStep(
     state: ProcedureGraphState,
     lgRuntime?: Runtime<RequestContext>
@@ -238,39 +181,34 @@ function makeBlindedStep(runtime: GraphRuntime, config: Config) {
       state.userInstructions
     );
 
-    const step = useSmallModelSplit(runtime, config)
-      ? await resolveBlindedStepViaCategories(
-          runtime,
-          presentation,
-          previousProcedures,
-          state.ruledOutDiagnoses,
-          userInstructions,
-          state.solverIterationsRemaining,
-          lgRuntime?.context
-        )
-      : await invokeLogged(
-          runtime,
-          procedureTools.generateBlindedProcedureStep,
-          {
-            presentation,
-            previousProcedures,
-            ruledOutDiagnoses: state.ruledOutDiagnoses,
-            userInstructions,
-            iterationsRemaining: state.solverIterationsRemaining,
-          },
-          lgRuntime?.context,
-          "Error in blinded step"
-        );
+    // Builds the child input from state — there is no `diagnosis` field to
+    // pass, by construction (see `BlindedSolverStateSchema` above).
+    const { move: rawMove } = await blindedSolverGraph.invoke(
+      {
+        presentation,
+        previousProcedures,
+        ruledOutDiagnoses: state.ruledOutDiagnoses,
+        userInstructions,
+        iterationsRemaining: state.solverIterationsRemaining,
+      },
+      childInvokeConfig(lgRuntime?.context)
+    );
+    // Defensive fallback only — the child graph's single node always
+    // returns a move from a well-typed `ProcedureStrategy`.
+    const move: SolverMove = rawMove ?? {
+      action: "exhausted",
+      reason: "unexpected shape",
+    };
 
     runtime.log.info(
-      `[ProcedureGraph] Blinded step (${state.solverIterationsRemaining} iter left):\n\`\`\`json\n${JSON.stringify(step, null, 2)}\n\`\`\``
+      `[ProcedureGraph] Blinded step (${state.solverIterationsRemaining} iter left):\n\`\`\`json\n${JSON.stringify(move, null, 2)}\n\`\`\``
     );
 
     // ── action: order a batch of mutually-independent procedures ───────────────
-    if (step.action === "procedure" && step.procedures?.length) {
+    if (move.action === "order") {
       return new Command({
         update: {
-          pendingProcedures: step.procedures,
+          pendingProcedures: move.procedures,
           solverIterationsRemaining: state.solverIterationsRemaining - 1,
         },
         goto: "result_step",
@@ -278,34 +216,33 @@ function makeBlindedStep(runtime: GraphRuntime, config: Config) {
     }
 
     // ── action: commit to a diagnosis ──────────────────────────────────────────
-    if (step.action === "diagnose" && step.diagnosisName) {
+    if (move.action === "diagnose") {
       return handleDiagnoseAction(
         runtime,
         state,
         lgRuntime,
-        step.diagnosisName
+        move.diagnosisName
       );
     }
 
-    // ── empty pick: nothing left worth ordering ────────────────────────────────
-    if (step.action === "procedure" && step.procedures) {
-      // The solver had nothing to order (e.g. all useful candidates already
-      // ordered) yet didn't diagnose — bridging is the clinically sensible end.
+    // ── action: exhausted — `reason` distinguishes an empty pick (the
+    // solver had nothing left worth ordering, a clinically sensible reason
+    // to bridge, logged at info) from an unexpected response shape (a real
+    // symptom of a misbehaving model, logged at warn) ──────────────────────
+    if (move.reason === "unexpected shape") {
+      runtime.log.warn(
+        `[ProcedureGraph] Blinded step returned unexpected shape — bridging.`
+      );
+    } else {
       runtime.log.info(
         `[ProcedureGraph] Blinded step returned an empty pick — bridging to diagnosis.`
       );
-      return new Command({ goto: "bridge" });
     }
-
-    // Unexpected response shape — fall back to bridge.
-    runtime.log.warn(
-      `[ProcedureGraph] Blinded step returned unexpected shape — bridging.`
-    );
     return new Command({ goto: "bridge" });
   };
 }
 
-/** Shared diagnose-action handling for `blinded_step` (direct or split path). */
+/** Shared diagnose-action handling for `blinded_step` (either strategy). */
 async function handleDiagnoseAction(
   runtime: GraphRuntime,
   state: ProcedureGraphState,
@@ -389,80 +326,7 @@ function makeResultStep(runtime: GraphRuntime) {
 
 // ─── Node 3: bridge ───────────────────────────────────────────────────────────
 
-/**
- * Small-model-friendly resolution of the bridge: a category pick followed by
- * a results pick, instead of one call against the full list. Not a graph
- * node — the bridge is terminal (no retry loop), so if the category pick
- * comes back empty this falls back to every real category rather than
- * stalling on an unusable candidate set. Unlike the blinded step there is no
- * model-driven expand loop here: the diagnosis is known, so when the scoped
- * pick yields nothing the scope is deterministically widened to all
- * categories in a single retry.
- */
-async function resolveBridgeViaCategories(
-  runtime: GraphRuntime,
-  presentation: Presentation,
-  diagnosis: ProcedureGraphState["diagnosis"],
-  previousProcedures: ProcedureResult[],
-  userInstructions: string | undefined,
-  context: RequestContext | undefined
-): Promise<ProcedureResult[]> {
-  const categories = await invokeLogged(
-    runtime,
-    procedureTools.generateBridgeCategoryStep,
-    { presentation, diagnosis, previousProcedures, userInstructions },
-    context,
-    "Error in bridge category step"
-  );
-
-  const allCategories = runtime.catalogs.procedures.categories();
-  const selectedCategories = categories.length ? categories : allCategories;
-
-  runtime.log.info(
-    `[ProcedureGraph] Bridge category step selected: [${selectedCategories.join(", ")}]${categories.length ? "" : " (fallback: all categories)"}`
-  );
-
-  const scopedResults = await invokeLogged(
-    runtime,
-    procedureTools.generateBridgeProcedureStepFromCategories,
-    {
-      presentation,
-      diagnosis,
-      previousProcedures,
-      selectedCategories,
-      userInstructions,
-    },
-    context,
-    "Error in bridge procedure step"
-  );
-
-  if (
-    scopedResults.length > 0 ||
-    selectedCategories.length >= allCategories.length
-  ) {
-    return scopedResults;
-  }
-
-  runtime.log.warn(
-    `[ProcedureGraph] Bridge pick from [${selectedCategories.join(", ")}] returned no procedures — retrying with all categories.`
-  );
-
-  return invokeLogged(
-    runtime,
-    procedureTools.generateBridgeProcedureStepFromCategories,
-    {
-      presentation,
-      diagnosis,
-      previousProcedures,
-      selectedCategories: allCategories,
-      userInstructions,
-    },
-    context,
-    "Error in bridge procedure step"
-  );
-}
-
-function makeBridge(runtime: GraphRuntime, config: Config) {
+function makeBridge(runtime: GraphRuntime, strategy: ProcedureStrategy) {
   return async function bridge(
     state: ProcedureGraphState,
     lgRuntime?: Runtime<RequestContext>
@@ -477,27 +341,13 @@ function makeBridge(runtime: GraphRuntime, config: Config) {
       state.userInstructions
     );
 
-    const bridgeProcedures = useSmallModelSplit(runtime, config)
-      ? await resolveBridgeViaCategories(
-          runtime,
-          presentation,
-          state.diagnosis,
-          previousProcedures,
-          userInstructions,
-          lgRuntime?.context
-        )
-      : await invokeLogged(
-          runtime,
-          procedureTools.generateDiagnosisBridge,
-          {
-            presentation,
-            diagnosis: state.diagnosis,
-            previousProcedures,
-            userInstructions,
-          },
-          lgRuntime?.context,
-          "Error generating bridge procedures"
-        );
+    const bridgeProcedures = await strategy.bridge({
+      presentation,
+      diagnosis: state.diagnosis,
+      previousProcedures,
+      userInstructions,
+      context: lgRuntime?.context,
+    });
 
     const updatedProcedures = appendProcedures(
       state.case.procedures,
@@ -519,15 +369,17 @@ function makeBridge(runtime: GraphRuntime, config: Config) {
 
 export function buildProcedureGraph(
   runtime: GraphRuntime,
-  config: Config,
+  strategy: ProcedureStrategy,
   traceNode: ReturnType<typeof createTraceNode>
 ) {
+  const blindedSolverGraph = buildBlindedSolverGraph(strategy);
+
   return new StateGraph(ProcedureGraphStateSchema, RequestContextSchema)
     .addNode(
       "blinded_step",
       traceNode(
         "blinded_step",
-        makeBlindedStep(runtime, config),
+        makeBlindedStep(runtime, blindedSolverGraph),
         "Choosing next procedure"
       ),
       { ends: ["result_step", "bridge", END] }
@@ -545,7 +397,7 @@ export function buildProcedureGraph(
       "bridge",
       traceNode(
         "bridge",
-        makeBridge(runtime, config),
+        makeBridge(runtime, strategy),
         "Bridging workup to diagnosis"
       ),
       { ends: [END] }

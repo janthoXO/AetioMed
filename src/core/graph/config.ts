@@ -91,9 +91,13 @@ export const ConfigSchema = z
     LLM_TRANSLATOR_API_KEY: z.string().optional(),
     LLM_TRANSLATOR_URL: z.url().optional(),
     /**
-     * When set, small-model-friendly prompting adjustments are enabled
+     * When set, enables the category-then-procedure preselection strategy
+     * for the blinded procedure solver — small-model-friendly prompting
+     * that splits a single pick against the full candidate list into a
+     * category pick followed by a scoped procedure pick. See
+     * `02case-generation/03procedure/strategy/`.
      */
-    LLM_SMALL: z
+    PROCEDURE_PRESELECTION: z
       .string()
       .optional()
       .transform((v) => v === "true" || v === "1"),

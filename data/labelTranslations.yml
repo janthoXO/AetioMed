@@ -7,7 +7,9 @@ German:
   Regenerating case outline: Fallübersicht wird überarbeitet
   Generating patient: Patient wird generiert
   Generating chief complaint: Hauptbeschwerde wird generiert
+  Rendering chief complaint content: Inhalt der Hauptbeschwerde wird gerendert
   Generating anamnesis: Anamnese wird generiert
+  Rendering anamnesis content: Anamnese-Inhalt wird gerendert
   Assembling case fields: Fall wird zusammengestellt
   Choosing next procedure: Nächste Untersuchung wird ausgewählt
   Generating procedure result: Untersuchungsergebnis wird generiert

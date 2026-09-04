@@ -19,6 +19,7 @@ import type { Config } from "../config.js";
 import type { EventBus } from "../../event-bus.js";
 import type { Repos } from "../repos.js";
 import type { MedicalBasisProvider } from "../medicalBasis/ports.js";
+import type { ModalityProvider } from "../modality/ports.js";
 
 // No `language` field (issue 09 §2, §4 of the issue doc): the outer graph
 // resolves language before invoke and binds ports to it via
@@ -101,6 +102,16 @@ export type AssemblyDeps = {
   runtime: GraphRuntime;
   repos: CaseGraphRepos;
   medicalBasisRegistry: MedicalBasisProvider[];
+  /**
+   * The modality registry (issue 13 §4) — in `AssemblyDeps`, not
+   * `GraphFlags`, for exactly `medicalBasisRegistry`'s reason above: fixed
+   * per deployment, shared by all four flag variants. Its *size* changes
+   * the compiled shape of `chiefComplaintGraph`/`anamnesisGraph`
+   * (`02presentation/generation/`) — whether `decide_modality` exists at
+   * all — the same absent-capability-⇒-absent-node rule, just driven by
+   * this list's length.
+   */
+  modalityRegistry: ModalityProvider[];
   traceNode: ReturnType<typeof createTraceNode>;
 };
 
@@ -177,7 +188,8 @@ export function graphTopologyKey(
  * nothing here performs I/O.
  */
 export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
-  const { runtime, repos, medicalBasisRegistry, traceNode } = deps;
+  const { runtime, repos, medicalBasisRegistry, modalityRegistry, traceNode } =
+    deps;
 
   // The two branches are written out in full rather than conditionally
   // chained: LangGraph accumulates node names into the builder's type
@@ -188,6 +200,7 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
       runtime,
       createProcedureStrategy(runtime, flags.procedurePreselection),
       medicalBasisRegistry,
+      modalityRegistry,
       traceNode
     );
     return new StateGraph(CaseStateSchema, RequestContextSchema)
@@ -211,6 +224,7 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
     generationRuntime,
     createProcedureStrategy(generationRuntime, flags.procedurePreselection),
     medicalBasisRegistry,
+    modalityRegistry,
     traceNode
   );
 
@@ -270,12 +284,14 @@ export function buildCaseGraph(
   bus: EventBus,
   config: Config,
   repos: CaseGraphRepos,
-  medicalBasisRegistry: MedicalBasisProvider[]
+  medicalBasisRegistry: MedicalBasisProvider[],
+  modalityRegistry: ModalityProvider[]
 ) {
   const deps: AssemblyDeps = {
     runtime,
     repos,
     medicalBasisRegistry,
+    modalityRegistry,
     traceNode: createTraceNode(bus),
   };
 

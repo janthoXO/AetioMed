@@ -6,35 +6,46 @@ graph TD;
 	generation_phase_presentation_phase_outline_evaluate(outline_evaluate)
 	generation_phase_presentation_phase_outline_regenerate(outline_regenerate)
 	generation_phase_presentation_phase_patient_generate(patient_generate)
-	generation_phase_presentation_phase_chief_complaint_generate(chief_complaint_generate)
-	generation_phase_presentation_phase_anamnesis_generate(anamnesis_generate)
+	generation_phase_presentation_phase_chief_complaint_generate_generate_content(generate_content)
+	generation_phase_presentation_phase_chief_complaint_generate_render_parts(render_parts)
+	generation_phase_presentation_phase_anamnesis_generate_generate_content(generate_content)
+	generation_phase_presentation_phase_anamnesis_generate_render_parts(render_parts)
 	generation_phase_presentation_phase_case_fan_in(case_fan_in)
 	generation_phase_procedure_phase___start__(<p>__start__</p>)
 	generation_phase_procedure_phase_blinded_step(blinded_step)
 	generation_phase_procedure_phase_result_step(result_step)
 	generation_phase_procedure_phase_bridge(bridge)
-	translation_to_english_phase(translation_to_english_phase)
+	translation_to_english_phase___start__(<p>__start__</p>)
+	translation_to_english_phase_translate_diagnosis(translate_diagnosis)
+	translation_to_english_phase_translate_user_instructions(translate_user_instructions)
+	translation_to_english_phase___end__(<p>__end__</p>)
 	translation_from_english_phase___start__(<p>__start__</p>)
-	translation_from_english_phase_translate_anamnesis_category(translate_anamnesis_category)
-	translation_from_english_phase_translate_procedures_names(translate_procedures_names)
-	translation_from_english_phase_translate_values(translate_values)
+	translation_from_english_phase_translate_defined(translate_defined)
+	translation_from_english_phase_translate_rest(translate_rest)
+	translation_from_english_phase_translate_merge(translate_merge)
 	__end__([<p>__end__</p>]):::last
-	translation_from_english_phase_translate_values --> __end__;
-	translation_to_english_phase --> generation_phase_basis_resolve;
-	__start__ -. &nbsp;translate&nbsp; .-> translation_to_english_phase;
+	translation_from_english_phase_translate_merge --> __end__;
+	translation_to_english_phase___end__ --> generation_phase_basis_resolve;
+	__start__ -. &nbsp;translate&nbsp; .-> translation_to_english_phase___start__;
 	__start__ -. &nbsp;skip&nbsp; .-> generation_phase_basis_resolve;
 	generation_phase_procedure_phase_bridge -. &nbsp;translate&nbsp; .-> translation_from_english_phase___start__;
 	generation_phase_procedure_phase_bridge -. &nbsp;skip&nbsp; .-> __end__;
 	subgraph generation_phase
 	subgraph presentation_phase
-	generation_phase_presentation_phase_anamnesis_generate --> generation_phase_presentation_phase_case_fan_in;
+	subgraph chief_complaint_generate
+	generation_phase_presentation_phase_chief_complaint_generate_generate_content --> generation_phase_presentation_phase_chief_complaint_generate_render_parts;
+	end
+	subgraph anamnesis_generate
+	generation_phase_presentation_phase_anamnesis_generate_generate_content --> generation_phase_presentation_phase_anamnesis_generate_render_parts;
+	end
+	generation_phase_presentation_phase_anamnesis_generate_render_parts --> generation_phase_presentation_phase_case_fan_in;
 	generation_phase_presentation_phase_case_outline_generate --> generation_phase_presentation_phase_outline_evaluate;
-	generation_phase_presentation_phase_chief_complaint_generate --> generation_phase_presentation_phase_case_fan_in;
+	generation_phase_presentation_phase_chief_complaint_generate_render_parts --> generation_phase_presentation_phase_case_fan_in;
 	generation_phase_presentation_phase_patient_generate --> generation_phase_presentation_phase_case_fan_in;
 	generation_phase_presentation_phase_outline_evaluate -.-> generation_phase_presentation_phase_outline_regenerate;
 	generation_phase_presentation_phase_outline_evaluate -.-> generation_phase_presentation_phase_patient_generate;
-	generation_phase_presentation_phase_outline_evaluate -.-> generation_phase_presentation_phase_chief_complaint_generate;
-	generation_phase_presentation_phase_outline_evaluate -.-> generation_phase_presentation_phase_anamnesis_generate;
+	generation_phase_presentation_phase_outline_evaluate -.-> generation_phase_presentation_phase_chief_complaint_generate_generate_content;
+	generation_phase_presentation_phase_outline_evaluate -.-> generation_phase_presentation_phase_anamnesis_generate_generate_content;
 	generation_phase_presentation_phase_outline_regenerate -.-> generation_phase_presentation_phase_outline_evaluate;
 	end
 	subgraph procedure_phase
@@ -46,12 +57,19 @@ graph TD;
 	generation_phase_basis_resolve --> generation_phase_presentation_phase_case_outline_generate;
 	generation_phase_presentation_phase_case_fan_in -. &nbsp;generate&nbsp; .-> generation_phase_procedure_phase___start__;
 	end
+	subgraph translation_to_english_phase
+	translation_to_english_phase_translate_diagnosis --> translation_to_english_phase___end__;
+	translation_to_english_phase_translate_user_instructions --> translation_to_english_phase___end__;
+	translation_to_english_phase___start__ -.-> translation_to_english_phase_translate_diagnosis;
+	translation_to_english_phase___start__ -.-> translation_to_english_phase_translate_user_instructions;
+	translation_to_english_phase___start__ -.-> translation_to_english_phase___end__;
+	end
 	subgraph translation_from_english_phase
-	translation_from_english_phase_translate_anamnesis_category --> translation_from_english_phase_translate_values;
-	translation_from_english_phase_translate_procedures_names --> translation_from_english_phase_translate_values;
-	translation_from_english_phase___start__ -.-> translation_from_english_phase_translate_anamnesis_category;
-	translation_from_english_phase___start__ -.-> translation_from_english_phase_translate_procedures_names;
-	translation_from_english_phase___start__ -.-> translation_from_english_phase_translate_values;
+	translation_from_english_phase_translate_defined --> translation_from_english_phase_translate_merge;
+	translation_from_english_phase_translate_rest --> translation_from_english_phase_translate_merge;
+	translation_from_english_phase___start__ -.-> translation_from_english_phase_translate_defined;
+	translation_from_english_phase___start__ -.-> translation_from_english_phase_translate_rest;
+	translation_from_english_phase___start__ -.-> translation_from_english_phase_translate_merge;
 	end
 	classDef default fill:#f2f0ff,line-height:1.2;
 	classDef first fill-opacity:0;

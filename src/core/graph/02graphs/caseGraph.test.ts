@@ -24,6 +24,8 @@ import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.j
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
 import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
+import { createTextModalityProvider } from "@/core/graph/modality/providers/text.js";
+import type { ModalityProvider } from "@/core/graph/modality/ports.js";
 
 const TRANSLATION_NODES = [
   "translation_to_english_phase",
@@ -33,7 +35,8 @@ const TRANSLATION_NODES = [
 function buildDeps(
   medicalBasisRegistry: MedicalBasisProvider[] = [
     { id: "fake-basis", fetch: async () => [] },
-  ]
+  ],
+  modalityRegistry: ModalityProvider[] = [createTextModalityProvider()]
 ): AssemblyDeps {
   const bus = new EventBus();
   const runtime: GraphRuntime = {
@@ -69,6 +72,7 @@ function buildDeps(
     runtime,
     repos: { anamnesis, procedures },
     medicalBasisRegistry,
+    modalityRegistry,
     traceNode: createTraceNode(bus),
   };
 }
@@ -144,6 +148,12 @@ describe("assembleCaseGraph", () => {
       )
     );
     expect(ids.some((id) => id.includes("basis_resolve"))).toBe(true);
+  });
+
+  it("rejects an empty modality registry at assembly time (issue 13 §4)", () => {
+    expect(() =>
+      assembleCaseGraph(buildDeps(undefined, []), flags(false, false))
+    ).toThrow(/modality registry is empty/i);
   });
 
   it("gives the two preselection variants of a topology identical shapes", async () => {
@@ -345,7 +355,8 @@ describe("buildCaseGraph", () => {
       new EventBus(),
       config,
       deps.repos,
-      deps.medicalBasisRegistry
+      deps.medicalBasisRegistry,
+      deps.modalityRegistry
     );
 
     const graphs = ALL_GRAPH_FLAGS.map((f) => getCaseGraph(f));
@@ -359,7 +370,8 @@ describe("buildCaseGraph", () => {
       new EventBus(),
       config,
       deps.repos,
-      deps.medicalBasisRegistry
+      deps.medicalBasisRegistry,
+      deps.modalityRegistry
     );
 
     expect(getCaseGraph(flags(true, false))).toBe(
@@ -379,7 +391,8 @@ describe("buildCaseGraph", () => {
         PROCEDURE_PRESELECTION: "true",
       }),
       deps.repos,
-      deps.medicalBasisRegistry
+      deps.medicalBasisRegistry,
+      deps.modalityRegistry
     );
 
     expect(caseGraph).toBe(getCaseGraph(flags(false, true)));

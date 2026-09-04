@@ -428,6 +428,44 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
   (picking directly from a target-language catalogue) are tracked separately —
   `docs/issues/16-localized-candidate-grammars.md` — because they reverse issue 01's Rule 4
   deletion and deserve their own decision.
+- **Auto-detection is a laddered resolver in `CaseGenerationService`, not the graph**
+  (`src/core/languageDetection/`, issue 10). A caller may omit `language`; the service resolves
+  it once, before `runWithContext` binds anything, via:
+
+  ```
+  1. language explicitly provided       → use it                      (no cost)
+  2. deterministic n-gram detector      → use it if above threshold   (no cost, offline)
+  3. LLM fallback, only if enabled      → one cheap call              (rare, opt-in)
+  4. otherwise                          → configured default (English)
+  ```
+
+  This lives in the communication/service layer because its output _selects the ports_
+  generation binds, and binding happens before invoke — a detection node inside the graph could
+  not inform the thing its answer is for. It is also request normalisation, so it sits beside
+  the ICD→name resolution the service already does; it is **not** a graph flag and never adds a
+  compiled variant. `LANGUAGE_AUTO_DETECT` gates steps 2–3 together; step 3 needs its own further
+  opt-in, `LANGUAGE_DETECT_LLM_FALLBACK`, so a deployer never pays LLM calls unknowingly just for
+  turning on auto-detect.
+
+  Detection runs on `userInstructions` only, **never the diagnosis name** — two decisive
+  reasons: an ICD-only request's diagnosis name is resolved from our own English catalogue, so
+  detecting on it would be circular; and diagnosis names are 2-3 words and frequently Latin
+  (_"Diabetes mellitus"_ is byte-identical in English, German and Spanish). `UserInstructions` is
+  a per-field record of strings, concatenated into one blob for detection; text under ~30
+  characters is too short for n-gram detection and skips straight to step 4.
+
+  The detector is `tinyld` (`languageDetection/tinyldDetector.ts`), wrapped behind a
+  `LanguageDetector` port (`languageDetection/port.ts`) so it is fakeable in tests and swappable
+  later — offline, TypeScript-native, and `detectAll()` returns an explicit
+  `{ lang, accuracy }[]` distribution (`accuracy` reads directly as this port's confidence)
+  rather than `franc`'s relative distances. ISO 639-1 codes are mapped to this deployment's
+  configured language **names** in exactly one place, `languageDetection/mapping.ts`; a
+  configured language the table does not know simply never wins step 2 — it stays fully usable
+  passed explicitly at step 1 — and `validateCatalogsOrExit` (the same reporter as the
+  `LANGUAGES` validation above, not a second one) warns about it by name at startup without
+  failing. The resolved language is echoed back as `language` in
+  `CaseGenerationResponseSchema`'s success branch and the NATS success payload (and on
+  `CaseGenerationResult`), so a client can notice a wrong auto-detect guess and retry explicitly.
 
 ## Environment Variables
 
@@ -445,6 +483,8 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
 | `TRANSLATION_SANDWICH`                                     | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                            |
 | `PROCEDURE_PRESELECTION`                                   | `false`                 | `true`/`1` selects the `CategoryScopedPick` procedure strategy (splits the blinded procedure step into a category pick then a procedure pick)                                                    |
 | `LANGUAGES`                                                | `English,German`        | Comma-separated deployment language set, trimmed/de-duplicated/order-preserved; must include `English`. Validated at startup and against every request's `language` (see Language section below) |
+| `LANGUAGE_AUTO_DETECT`                                     | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                 |
+| `LANGUAGE_DETECT_LLM_FALLBACK`                             | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                            |
 | `ALLOWED_LLMS`                                             | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                               |
 | `CATALOG_DIR`                                              | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                     |
 | `CACHE_DIR`                                                | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                    |

@@ -10,20 +10,27 @@ import type { GraphAppContext } from "@/core/graph/appContext.js";
 import { AppError } from "@/core/graph/errors/AppError.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import { textPart } from "@/core/graph/models/ContentPart.js";
+import type { LanguageDetector } from "@/core/languageDetection/port.js";
 
 function fakeGraph(
-  generateCase: GraphAppContext["generateCase"]
+  generateCase: GraphAppContext["generateCase"],
+  configOverrides: Partial<GraphAppContext["config"]> = {}
 ): GraphAppContext {
   return {
     config: {
       llm: { provider: "ollama", model: "test-model", temperature: 0.7 },
       allowedLlms: undefined,
       PROCEDURE_PRESELECTION: false,
-    },
+      LANGUAGES: ["English", "German"],
+      LANGUAGE_AUTO_DETECT: false,
+      LANGUAGE_DETECT_LLM_FALLBACK: false,
+      ...configOverrides,
+    } as GraphAppContext["config"],
     runtime: {
       catalogs: {
         diagnosis: { byIcd: () => undefined },
       },
+      llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     generateCase,
   };
@@ -199,5 +206,169 @@ describe("CaseGenerationService — callerSuppliedFreeText provenance (issue 12 
     await service.generate({ icd: "1A00", generationFlags: [] });
 
     expect(generateCase.mock.calls[0]?.[0]?.callerSuppliedFreeText).toBe(false);
+  });
+});
+
+describe("CaseGenerationService — language resolution (issue 10)", () => {
+  const fullCase: Case = { patient: { name: "Jane", age: 40, sex: "female" } };
+
+  function fakeDetector(
+    result: { iso: string; confidence: number } | undefined
+  ): LanguageDetector {
+    return { detect: vi.fn().mockReturnValue(result) };
+  }
+
+  it("uses the explicit language and never invokes the detector", async () => {
+    const generateCase = vi.fn(async () => fullCase);
+    const detector = fakeDetector({ iso: "de", confidence: 1 });
+    const graph = fakeGraph(generateCase, { LANGUAGE_AUTO_DETECT: true });
+    const service = createCaseGenerationService(
+      graph,
+      new EventBus(),
+      detector
+    );
+
+    const result = await service.generate({
+      diagnosis: "Influenza",
+      generationFlags: [],
+      language: "German",
+    });
+
+    expect(detector.detect).not.toHaveBeenCalled();
+    expect(generateCase.mock.calls[0]?.[0]?.language).toBe("German");
+    expect(result.language).toBe("German");
+  });
+
+  it("defaults to English and skips detection with LANGUAGE_AUTO_DETECT unset", async () => {
+    const generateCase = vi.fn(async () => fullCase);
+    const detector = fakeDetector({ iso: "de", confidence: 1 });
+    const graph = fakeGraph(generateCase); // LANGUAGE_AUTO_DETECT: false
+    const service = createCaseGenerationService(
+      graph,
+      new EventBus(),
+      detector
+    );
+
+    const result = await service.generate({
+      diagnosis: "Influenza",
+      generationFlags: [],
+      userInstructions: {
+        general: "Bitte einen einfachen Fall mit klassischen Symptomen.",
+      },
+    });
+
+    expect(detector.detect).not.toHaveBeenCalled();
+    expect(result.language).toBe("English");
+  });
+
+  it("resolves German userInstructions to German via the detector", async () => {
+    const generateCase = vi.fn(async () => fullCase);
+    const detector = fakeDetector({ iso: "de", confidence: 1 });
+    const graph = fakeGraph(generateCase, { LANGUAGE_AUTO_DETECT: true });
+    const service = createCaseGenerationService(
+      graph,
+      new EventBus(),
+      detector
+    );
+
+    const result = await service.generate({
+      diagnosis: "Influenza",
+      generationFlags: [],
+      userInstructions: {
+        general: "Bitte einen einfachen Fall mit klassischen Symptomen.",
+      },
+    });
+
+    expect(result.language).toBe("German");
+    expect(generateCase.mock.calls[0]?.[0]?.language).toBe("German");
+  });
+
+  it("falls back to the default when detection confidence is below threshold", async () => {
+    const generateCase = vi.fn(async () => fullCase);
+    const detector = fakeDetector({ iso: "de", confidence: 0.1 });
+    const graph = fakeGraph(generateCase, { LANGUAGE_AUTO_DETECT: true });
+    const service = createCaseGenerationService(
+      graph,
+      new EventBus(),
+      detector
+    );
+
+    const result = await service.generate({
+      diagnosis: "Influenza",
+      generationFlags: [],
+      userInstructions: {
+        general: "Bitte einen einfachen Fall mit klassischen Symptomen.",
+      },
+    });
+
+    expect(result.language).toBe("English");
+  });
+
+  it("never passes the diagnosis name to the detector — only userInstructions", async () => {
+    const generateCase = vi.fn(async () => fullCase);
+    const detector = fakeDetector({ iso: "de", confidence: 1 });
+    const graph = fakeGraph(generateCase, { LANGUAGE_AUTO_DETECT: true });
+    const service = createCaseGenerationService(
+      graph,
+      new EventBus(),
+      detector
+    );
+
+    await service.generate({
+      diagnosis: "Diabetes mellitus",
+      generationFlags: [],
+      userInstructions: {
+        general: "Bitte einen einfachen Fall mit klassischen Symptomen.",
+      },
+    });
+
+    expect(detector.detect).toHaveBeenCalledTimes(1);
+    expect(detector.detect).toHaveBeenCalledWith(
+      "Bitte einen einfachen Fall mit klassischen Symptomen."
+    );
+    expect(detector.detect).not.toHaveBeenCalledWith(
+      expect.stringContaining("Diabetes")
+    );
+  });
+
+  it("does not make an LLM call when auto-detect is on but the LLM fallback is off", async () => {
+    const generateCase = vi.fn(async () => fullCase);
+    const detector = fakeDetector({ iso: "de", confidence: 0.1 });
+    const forSpy = vi.fn();
+    const graph = fakeGraph(generateCase, { LANGUAGE_AUTO_DETECT: true });
+    graph.runtime = {
+      ...graph.runtime,
+      llm: { for: forSpy },
+    } as GraphAppContext["runtime"];
+    const service = createCaseGenerationService(
+      graph,
+      new EventBus(),
+      detector
+    );
+
+    await service.generate({
+      diagnosis: "Influenza",
+      generationFlags: [],
+      userInstructions: {
+        general: "Bitte einen einfachen Fall mit klassischen Symptomen.",
+      },
+    });
+
+    expect(forSpy).not.toHaveBeenCalled();
+  });
+
+  it("echoes the resolved language on a successful result", async () => {
+    const generateCase = vi.fn(async () => fullCase);
+    const graph = fakeGraph(generateCase);
+    const service = createCaseGenerationService(graph, new EventBus());
+
+    const result = await service.generate({
+      diagnosis: "Influenza",
+      generationFlags: [],
+      language: "German",
+    });
+
+    expect(result.status).toBe("done");
+    expect(result.language).toBe("German");
   });
 });

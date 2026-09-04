@@ -123,6 +123,8 @@ const minimalConfig: Config = {
   PROCEDURE_PRESELECTION: false,
   TRANSLATION_SANDWICH: true,
   LANGUAGES: ["English", "German"],
+  LANGUAGE_AUTO_DETECT: false,
+  LANGUAGE_DETECT_LLM_FALLBACK: false,
   MAX_CONTENT_PART_BYTES: 5_000_000,
 };
 

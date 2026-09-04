@@ -51,6 +51,8 @@ Copy `.env.example` to `.env` and adjust. The most important variable is `FEATUR
 | `TRANSLATION_SANDWICH` | `true` | `false`/`0` compiles the translation phases out of the graph entirely |
 | `PROCEDURE_PRESELECTION` | `false` | `true`/`1` selects the category-scoped procedure strategy (splits procedure picks into category-then-procedure) |
 | `LANGUAGES` | `English,German` | Comma-separated deployment language set; must include `English`. A request's `language` is validated against this set (400 if outside it) |
+| `LANGUAGE_AUTO_DETECT` | `false` | `true`/`1` enables offline n-gram detection (+ optional LLM fallback) for a request that omits `language`; not a graph flag |
+| `LANGUAGE_DETECT_LLM_FALLBACK` | `false` | `true`/`1` additionally allows one LLM call when the offline detector is below threshold; requires `LANGUAGE_AUTO_DETECT` |
 | `ALLOWED_LLMS` | — | `ollama:model1,google:model2` — requires the `ALLOW_LLMS` flag |
 | `NATS_URL` | `nats://localhost:4222` | `nats://nats:4222` inside docker compose |
 | `NATS_USER` / `NATS_PASSWORD` | `nats` / `nats` | |

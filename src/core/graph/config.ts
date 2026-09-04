@@ -146,6 +146,29 @@ export const ConfigSchema = z
         return languages;
       }),
     /**
+     * Enables steps 2–3 of the language-detection ladder (issue 10 §1): an
+     * offline n-gram detector (step 2, always tried once this is on) and,
+     * separately opted into via `LANGUAGE_DETECT_LLM_FALLBACK`, an LLM
+     * fallback (step 3). With this unset, an omitted request `language`
+     * resolves straight to the configured default ("English") — no
+     * detection work happens at all. This is communication-layer request
+     * normalisation (`caseGenerationService.ts`), not a graph flag: it
+     * never compiles a graph variant.
+     */
+    LANGUAGE_AUTO_DETECT: z
+      .string()
+      .optional()
+      .transform((v) => v === "true" || v === "1"),
+    /**
+     * Step 3's own opt-in, on top of `LANGUAGE_AUTO_DETECT` — a deployer
+     * enabling auto-detect should never *also* start paying for LLM calls
+     * unknowingly. Ignored when `LANGUAGE_AUTO_DETECT` is unset.
+     */
+    LANGUAGE_DETECT_LLM_FALLBACK: z
+      .string()
+      .optional()
+      .transform((v) => v === "true" || v === "1"),
+    /**
      * Ceiling on one content part's decoded byte size (issue 11). Inline
      * base64 inflates by ~33% and the whole case is held in memory,
      * persisted and returned in one response, so a part beyond this fails

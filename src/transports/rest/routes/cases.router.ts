@@ -44,6 +44,7 @@ export default function createCasesRouter(
       const response = CaseGenerationResponseSchema.parse({
         ...encodeCase(result.case!, graph.config.MAX_CONTENT_PART_BYTES),
         jobId: result.jobId,
+        language: result.language,
       });
       res.status(200).json(response);
       return;

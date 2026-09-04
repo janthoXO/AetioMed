@@ -250,4 +250,35 @@ describe("validateCatalogsOrExit — end to end", () => {
     expect(exitSpy).not.toHaveBeenCalled();
     exitSpy.mockRestore();
   });
+
+  it("warns, but does not exit, for a configured language the detector's mapping table does not know (issue 10 §4)", () => {
+    for (const file of [
+      "procedures.yml",
+      "anamnesisCategoriesTranslations.yml",
+      "diagnosisTranslations.yml",
+      "labelTranslations.yml",
+    ]) {
+      declared.set(file, { Klingon: { x: "y" } });
+    }
+    declared.set("procedures.yml", { Klingon: { "Blood Test": "tlhIngan" } });
+    declared.set("anamnesisCategoriesTranslations.yml", {
+      Klingon: { Symptoms: "tlhIngan" },
+    });
+    declared.set("diagnosisTranslations.yml", {
+      Klingon: { Influenza: "tlhIngan" },
+    });
+    declared.set("labelTranslations.yml", { Klingon: { unused: "tlhIngan" } });
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+    const warnSpy = vi.spyOn(console, "warn");
+
+    validateCatalogsOrExit(fakeRepos(), ["English", "Klingon"]);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Klingon"));
+
+    exitSpy.mockRestore();
+  });
 });

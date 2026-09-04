@@ -41,13 +41,10 @@ export async function consumeCaseGenerateMessage(
     const result = await service.generate({ ...data, jobId });
 
     if (result.status === "done") {
-      await publishCaseGenerationResponse(
-        jobId,
-        encodeCase(result.case!, graph.config.MAX_CONTENT_PART_BYTES) as Record<
-          string,
-          unknown
-        >
-      );
+      await publishCaseGenerationResponse(jobId, {
+        ...encodeCase(result.case!, graph.config.MAX_CONTENT_PART_BYTES),
+        language: result.language,
+      } as Record<string, unknown>);
     } else {
       await publishCaseGenerationResponse(jobId, {
         error: {

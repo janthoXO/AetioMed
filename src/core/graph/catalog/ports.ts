@@ -98,7 +98,7 @@ export interface LabelCatalog {
 
 /**
  * Predefined ICD-11 diagnoses and their translations, as consumed by
- * `02graphs/01case-translation-to-english/tools.ts`, `03repo/diagnosis.repo.ts`'s
+ * `02graphs/01case-translation-to-english/tools.ts`, `catalog/diagnosis/repo.ts`'s
  * other consumers and the `/diagnosis` REST route.
  */
 export interface DiagnosisCatalog {

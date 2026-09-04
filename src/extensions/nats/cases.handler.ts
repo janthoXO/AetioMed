@@ -6,7 +6,6 @@ import * as cancelManager from "@/core/graph/utils/cancelManager.js";
 import type { EventBus } from "@/core/event-bus.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import { publishCaseGenerationResponse } from "./cases.publisher.js";
-import { IcdToDiagnosisName } from "@/core/graph/03repo/diagnosis.repo.js";
 import { AppError } from "@/core/graph/errors/AppError.js";
 import z from "zod";
 
@@ -45,7 +44,7 @@ async function consumeCaseGenerateMessage(
     // fill diagnosis and icdCode - zod makes sure that at least one is filled
     if (!diagnosis) {
       // if diagnosis is missing, icd is provided
-      diagnosis = await IcdToDiagnosisName(icd!);
+      diagnosis = graph.runtime.catalogs.diagnosis.byIcd(icd!)?.name;
       // verify that is set now, otherwise return error
       if (!diagnosis) {
         throw new Error("No diagnosis found for icd");

@@ -1,42 +1,35 @@
-// This is the first test that needs the embedded SQLite database. Issue 02
-// added `CACHE_DIR` (see `paths.ts`); we point it at a fresh temp directory
-// before anything imports `db.ts`, then dynamically `import()` the module
-// under test inside `beforeAll` — a static import is hoisted to the top of
-// the file and would run before `process.env.CACHE_DIR` is set, opening the
-// real database under `data/cache/`. This is a stopgap: issue 04 injects the
-// database directly, which will make this dance unnecessary.
+// The embedded database is now injectable (issue 04): construct a `DbHandle`
+// directly over a temporary directory, no environment-variable dance and no
+// dynamic import required.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
 import type { ForeignLanguage } from "@/core/graph/models/Language.js";
+import { createDb, type DbHandle } from "@/core/graph/persistence/db.js";
+import { createTranslationStore } from "@/core/graph/persistence/translationStore.js";
+import { translation } from "@/core/graph/persistence/schema.js";
 
-let createTranslationStore: typeof import("@/core/graph/03repo/translationStore.js").createTranslationStore;
-let db: typeof import("@/core/graph/03repo/db.js").db;
-let translation: typeof import("@/core/graph/03repo/schema.js").translation;
+let dbHandle: DbHandle;
 let tmpDir: string;
 
 const LANG: ForeignLanguage = "German";
 
-beforeAll(async () => {
+beforeAll(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aetiomed-translationStore-"));
-  process.env.CACHE_DIR = tmpDir;
-
-  ({ createTranslationStore } =
-    await import("@/core/graph/03repo/translationStore.js"));
-  ({ db } = await import("@/core/graph/03repo/db.js"));
-  ({ translation } = await import("@/core/graph/03repo/schema.js"));
+  dbHandle = createDb(tmpDir);
 });
 
 afterAll(() => {
+  dbHandle.close();
   fs.rmSync(tmpDir, { recursive: true, force: true });
 });
 
 let domainCounter = 0;
 function freshStore(opts: { yamlFile?: string } = {}) {
   domainCounter += 1;
-  return createTranslationStore({
+  return createTranslationStore(dbHandle, {
     name: `TestDomain${domainCounter}`,
     yamlFile: opts.yamlFile,
     // Keep tests fast: small retry count, zero backoff.
@@ -204,7 +197,7 @@ describe("provenance", () => {
       `German:\n  "Curated Term": "Kuratierter Begriff"\n`
     );
 
-    const store1 = createTranslationStore({
+    const store1 = createTranslationStore(dbHandle, {
       name: domainName,
       yamlFile: yamlPath,
       retries: 2,
@@ -212,7 +205,7 @@ describe("provenance", () => {
     });
 
     const curatedRow = () =>
-      db
+      dbHandle.db
         .select({
           source: translation.source,
           translated: translation.translated,
@@ -232,7 +225,7 @@ describe("provenance", () => {
     // Runtime fill for a different key.
     store1.save({ "Runtime Term": "Laufzeitbegriff" }, LANG);
 
-    const generatedRowBefore = db
+    const generatedRowBefore = dbHandle.db
       .select({
         source: translation.source,
         translated: translation.translated,
@@ -257,14 +250,14 @@ describe("provenance", () => {
       `German:\n  "Curated Term": "Kuratierter Begriff"\n  "Runtime Term": "Kuratierte Version"\n`
     );
 
-    createTranslationStore({
+    createTranslationStore(dbHandle, {
       name: domainName,
       yamlFile: yamlPath,
       retries: 2,
       retryBaseDelayMs: 0,
     });
 
-    const generatedRowAfter = db
+    const generatedRowAfter = dbHandle.db
       .select({
         source: translation.source,
         translated: translation.translated,

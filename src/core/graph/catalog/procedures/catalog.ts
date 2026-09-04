@@ -1,12 +1,12 @@
-import type { ProcedureName } from "../models/Procedure.js";
-import { getEffectiveProcedureList } from "../03repo/procedures.repo.js";
-import { ProcedureCandidatesImpl } from "./procedureCandidates.js";
+import type { ProcedureName } from "../../models/Procedure.js";
+import type { ProceduresRepo } from "./repo.js";
+import { ProcedureCandidatesImpl } from "./candidates.js";
 import {
   UNCATEGORIZED_CATEGORY,
   type ProcedureCandidates,
   type ProcedureCatalog,
   type ProcedurePickMode,
-} from "./ports.js";
+} from "../ports.js";
 
 /**
  * Split a procedure's full name into its category and bare name, on the
@@ -121,10 +121,10 @@ class StaticProcedureCatalog implements ProcedureCatalog {
   }
 }
 
-/** Reads the effective procedure list from `03repo/procedures.repo.ts` once, at construction. */
+/** Reads the effective procedure list from a `ProceduresRepo` once, at construction. */
 export class YamlProcedureCatalog extends StaticProcedureCatalog {
-  constructor() {
-    super(getEffectiveProcedureList());
+  constructor(repo: ProceduresRepo) {
+    super(repo.getEffectiveProcedureList());
   }
 }
 

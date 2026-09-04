@@ -1,15 +1,14 @@
-import type { ForeignLanguage } from "../models/Language.js";
-import type { RequestContext } from "../utils/context.js";
-import {
-  ensureLabelsTranslated,
-  getLabelTranslation,
-} from "../03repo/labels.repo.js";
-import type { LabelCatalog } from "./ports.js";
+import type { ForeignLanguage } from "../../models/Language.js";
+import type { RequestContext } from "../../utils/context.js";
+import type { LabelsRepo } from "./repo.js";
+import type { LabelCatalog } from "../ports.js";
 
-/** Reads/writes through the `03repo/labels.repo.ts` translation store. */
+/** Reads/writes through an injected `LabelsRepo`'s translation store. */
 export class YamlLabelCatalog implements LabelCatalog {
+  constructor(private readonly repo: LabelsRepo) {}
+
   translate(label: string, lang: ForeignLanguage): string | undefined {
-    return getLabelTranslation(label, lang);
+    return this.repo.getLabelTranslation(label, lang);
   }
 
   ensureTranslated(
@@ -22,7 +21,7 @@ export class YamlLabelCatalog implements LabelCatalog {
     ) => Promise<Record<string, string>>,
     ctx?: RequestContext
   ): Promise<Record<string, string>> {
-    return ensureLabelsTranslated(labels, lang, generate, ctx);
+    return this.repo.ensureLabelsTranslated(labels, lang, generate, ctx);
   }
 }
 

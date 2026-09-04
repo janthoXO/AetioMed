@@ -1,6 +1,6 @@
-import type { AnamnesisCategory } from "../models/Anamnesis.js";
-import { getEffectiveCategoryList } from "../03repo/anamnesis.repo.js";
-import type { AnamnesisCatalog } from "./ports.js";
+import type { AnamnesisCategory } from "../../models/Anamnesis.js";
+import type { AnamnesisRepo } from "./repo.js";
+import type { AnamnesisCatalog } from "../ports.js";
 
 class StaticAnamnesisCatalog implements AnamnesisCatalog {
   constructor(
@@ -12,10 +12,10 @@ class StaticAnamnesisCatalog implements AnamnesisCatalog {
   }
 }
 
-/** Reads the effective category list from `03repo/anamnesis.repo.ts` once, at construction. */
+/** Reads the effective category list from an `AnamnesisRepo` once, at construction. */
 export class YamlAnamnesisCatalog extends StaticAnamnesisCatalog {
-  constructor() {
-    super(getEffectiveCategoryList());
+  constructor(repo: AnamnesisRepo) {
+    super(repo.getEffectiveCategoryList());
   }
 }
 

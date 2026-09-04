@@ -1,9 +1,9 @@
 // InMemoryProcedureCatalog only — no filesystem, no SQLite, nothing imported
-// from `03repo/`. See `src/core/graph/utils/prompt.test.ts` for the house
-// style and the rationale for keeping tests off the `03repo/` modules.
+// from the repo/persistence layer. See `src/core/graph/utils/prompt.test.ts`
+// for the house style and the rationale for keeping tests off those modules.
 import { describe, expect, it } from "vitest";
 
-import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedureCatalog.js";
+import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/catalog.js";
 
 describe("InMemoryProcedureCatalog candidates()", () => {
   it("exclude().grammar() rejects an excluded name and accepts a remaining one", () => {

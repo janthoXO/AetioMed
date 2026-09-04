@@ -16,6 +16,7 @@ import { translateLabelsFromEnglish } from "../03aigateway/labels.aigateway.js";
 import type { GraphRuntime } from "../runtime.js";
 import type { Config } from "../config.js";
 import type { EventBus } from "../../event-bus.js";
+import type { Repos } from "../repos.js";
 
 const CaseStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
@@ -36,7 +37,8 @@ const CaseStateSchema = CaseGenerationStateSchema.pick({
 export function buildCaseGraph(
   runtime: GraphRuntime,
   bus: EventBus,
-  config: Config
+  config: Config,
+  repos: Pick<Repos, "symptoms" | "anamnesis" | "procedures">
 ) {
   const traceNode = createTraceNode(bus, runtime.catalogs.labels);
 
@@ -48,11 +50,15 @@ export function buildCaseGraph(
     )
     .addNode(
       "generation_phase",
-      buildCaseGenerationGraph(runtime, config, traceNode)
+      buildCaseGenerationGraph(runtime, config, repos.symptoms, traceNode)
     )
     .addNode(
       "translation_from_english_phase",
-      buildCaseTranslationFromEnglishGraph(runtime, traceNode)
+      buildCaseTranslationFromEnglishGraph(
+        runtime,
+        { anamnesis: repos.anamnesis, procedures: repos.procedures },
+        traceNode
+      )
     )
 
     .addConditionalEdges(

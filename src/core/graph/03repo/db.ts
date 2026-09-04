@@ -8,6 +8,7 @@ import { drizzle } from "drizzle-orm/node-sqlite";
 import { migrate } from "drizzle-orm/node-sqlite/migrator";
 import * as schema from "./schema.js";
 import { meta } from "./schema.js";
+import { CACHE_DIR } from "./paths.js";
 
 /**
  * Embedded SQLite cache that the various repos sync `data/*.yml` config
@@ -26,10 +27,9 @@ import { meta } from "./schema.js";
  * source files.
  */
 
-const DB_DIR = path.resolve(process.cwd(), "data/cache");
-const DB_PATH = path.join(DB_DIR, "aetiomed.db");
+const DB_PATH = path.join(CACHE_DIR, "aetiomed.db");
 
-fs.mkdirSync(DB_DIR, { recursive: true });
+fs.mkdirSync(CACHE_DIR, { recursive: true });
 
 const client = new DatabaseSync(DB_PATH);
 client.exec("PRAGMA journal_mode = WAL");
@@ -37,6 +37,9 @@ client.exec("PRAGMA synchronous = NORMAL");
 
 export const db = drizzle({ client, schema });
 
+// Drizzle migrations are application assets shipped with the code, not
+// deployer-owned data — they stay resolved against process.cwd() rather
+// than CATALOG_DIR/CACHE_DIR.
 migrate(db, {
   migrationsFolder: path.resolve(process.cwd(), "drizzle"),
 });
@@ -74,21 +77,27 @@ process.once("SIGTERM", () => {
  *
  * Returns `true` if a (re)sync happened, `false` if the file was missing or
  * unchanged (parse + ingest skipped entirely).
+ *
+ * `yamlFile` must already be an absolute path (see `paths.ts`) — this
+ * function resolves nothing itself.
  */
 export function syncSource(
   source: string,
-  relativeYamlFile: string,
+  yamlFile: string,
   ingest: (parsed: unknown) => void
 ): boolean {
-  const filepath = path.resolve(process.cwd(), relativeYamlFile);
-  if (!fs.existsSync(filepath)) {
-    console.warn(`[${source}] No ${relativeYamlFile} found, skipping sync.`);
+  if (!fs.existsSync(yamlFile)) {
+    console.warn(`[${source}] No ${yamlFile} found, skipping sync.`);
     return false;
   }
 
-  const raw = fs.readFileSync(filepath, "utf-8");
+  const raw = fs.readFileSync(yamlFile, "utf-8");
   const hash = crypto.createHash("sha256").update(raw).digest("hex");
 
+  // The `_meta` fingerprint is keyed on `source` (a fixed domain name, e.g.
+  // "diagnosis"), never on the file path — so moving CATALOG_DIR does not
+  // invalidate an existing cache. Unchanged from before this file took an
+  // absolute path.
   const existing = db.select().from(meta).where(eq(meta.source, source)).get();
   if (existing?.hash === hash) {
     return false;
@@ -98,7 +107,7 @@ export function syncSource(
   try {
     parsed = parseYaml(raw);
   } catch (err) {
-    console.error(`[${source}] Failed to parse ${relativeYamlFile}:`, err);
+    console.error(`[${source}] Failed to parse ${yamlFile}:`, err);
     return false;
   }
 

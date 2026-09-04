@@ -9,6 +9,7 @@ import {
 } from "../models/Diagnosis.js";
 import { type ForeignLanguage } from "../models/Language.js";
 import { createTranslationStore } from "./translationStore.js";
+import { catalogFile } from "./paths.js";
 
 export async function IcdToDiagnosisName(
   icdCode: ICDCode
@@ -16,13 +17,18 @@ export async function IcdToDiagnosisName(
   return getDiagnosisByIcd(icdCode)?.name;
 }
 
+/** Exposed for the startup catalogue validator (`catalog/startupValidation.ts`). */
+export const DIAGNOSIS_TRANSLATIONS_FILE = catalogFile(
+  "diagnosisTranslations.yml"
+);
+
 /**
  * Diagnosis name translations.
  * Record<Language, Record<DiagnosisEnglish, DiagnosisTranslation>>
  */
 const store = createTranslationStore({
   name: "Diagnosis",
-  yamlFile: "data/diagnosisTranslations.yml",
+  yamlFile: DIAGNOSIS_TRANSLATIONS_FILE,
 });
 
 /**
@@ -61,51 +67,53 @@ function syncPredefinedDiagnoses() {
     names: z.array(z.string()),
   });
 
-  const synced = syncSource("diagnosis", "data/diagnosis.yml", (parsed) => {
-    const diagnosisEntries = z
-      .record(ICDCodeSchema, DiagnosisEntrySchema.optional().catch(undefined))
-      .transform((entries) => Object.values(entries).filter((e) => !!e))
-      .safeParse(parsed);
+  const synced = syncSource(
+    "diagnosis",
+    catalogFile("diagnosis.yml"),
+    (parsed) => {
+      const diagnosisEntries = z
+        .record(ICDCodeSchema, DiagnosisEntrySchema.optional().catch(undefined))
+        .transform((entries) => Object.values(entries).filter((e) => !!e))
+        .safeParse(parsed);
 
-    if (!diagnosisEntries.success) {
-      console.error(diagnosisEntries.error);
-      console.error(
-        "[Diagnosis] Failed to load predefined diagnoses from YAML"
-      );
-      return;
-    }
-
-    // This source is a plain read-only list (no runtime additions), so a
-    // full replace is safe and keeps removed/renamed entries in sync.
-    db.delete(diagnosis).run();
-
-    const rows: (typeof diagnosis.$inferInsert)[] = [];
-    for (const entry of diagnosisEntries.data) {
-      if (!entry.names || entry.names.length === 0) {
-        console.warn(
-          `[Diagnosis] Skipping entry with code ${entry.code} due to missing names`
+      if (!diagnosisEntries.success) {
+        console.error(diagnosisEntries.error);
+        console.error(
+          "[Diagnosis] Failed to load predefined diagnoses from YAML"
         );
-        continue;
+        return;
       }
-      rows.push({
-        icd: entry.code,
-        name: entry.names[0]!,
-        alternativeNames: JSON.stringify(entry.names.slice(1)),
-      });
-    }
 
-    for (const batch of chunk(rows)) {
-      db.insert(diagnosis).values(batch).run();
+      // This source is a plain read-only list (no runtime additions), so a
+      // full replace is safe and keeps removed/renamed entries in sync.
+      db.delete(diagnosis).run();
+
+      const rows: (typeof diagnosis.$inferInsert)[] = [];
+      for (const entry of diagnosisEntries.data) {
+        if (!entry.names || entry.names.length === 0) {
+          console.warn(
+            `[Diagnosis] Skipping entry with code ${entry.code} due to missing names`
+          );
+          continue;
+        }
+        rows.push({
+          icd: entry.code,
+          name: entry.names[0]!,
+          alternativeNames: JSON.stringify(entry.names.slice(1)),
+        });
+      }
+
+      for (const batch of chunk(rows)) {
+        db.insert(diagnosis).values(batch).run();
+      }
+      console.info(
+        `[Diagnosis] Synced ${rows.length} predefined diagnoses from YAML`
+      );
     }
-    console.info(
-      `[Diagnosis] Synced ${rows.length} predefined diagnoses from YAML`
-    );
-  });
+  );
 
   if (!synced) {
-    console.info(
-      "[Diagnosis] data/diagnosis.yml unchanged, skipped YAML parse."
-    );
+    console.info("[Diagnosis] diagnosis.yml unchanged, skipped YAML parse.");
   }
 }
 

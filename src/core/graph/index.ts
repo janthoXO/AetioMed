@@ -52,8 +52,8 @@ export { ConfigSchema };
 /**
  * Build the `GraphRuntime` (ports), construct the graph as a function of it,
  * and validate the catalogues. Called once from `createApp()`, before any
- * extension loads — there is no module-scope mutable state left for
- * extensions to race against.
+ * transport starts — there is no module-scope mutable state left for
+ * transports to race against.
  */
 export function initGraph(opts: {
   bus: EventBus;

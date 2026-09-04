@@ -23,6 +23,7 @@ Each issue is written to be handed to a coding agent together with **`docs/archi
 | 12  | [Translation split](12-translation-split.md)                                       | 09, 11         | yes — fixes an overwrite bug     |
 | 13  | [Presentation subgraphs and modality](13-presentation-subgraphs.md)                | 11             | yes — new capability             |
 | 14  | [Medical basis registry](14-medical-basis-registry.md)                             | 04             | no                               |
+| 15  | [Node-bound tracing and labels](15-node-bound-tracing-otel.md)                     | 05, 08         | yes — new capability             |
 
 **Hard ordering constraints:** 01–03 before everything; 04 before 06–09; 11 before 12 and 13.
 

@@ -43,10 +43,9 @@ const BaseCaseGenerationRequestSchema = z.object({
  * at import time — that only worked "by luck of load order" against the
  * mutable graph-config singleton this replaces, which could be `undefined`
  * depending on import order. Build it explicitly from the resolved graph
- * config instead: `app.ts` resolves it once and hands it to every extension
- * as `ExtensionSetupCtx.graph.config`, and callers (the `rest`/`nats`
- * transports, the `swagger` doc-generation script) call this with that
- * value.
+ * config instead: `app.ts` resolves it once and hands it to each transport's
+ * start function as `GraphAppContext.config`, and callers (the `rest`/`nats`
+ * transports) call this with that value.
  */
 export function makeCaseGenerationRequestSchema(config: Config) {
   return BaseCaseGenerationRequestSchema.refine(

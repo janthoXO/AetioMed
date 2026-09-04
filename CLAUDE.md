@@ -5,26 +5,34 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Commands
 
 ```bash
-pnpm dev          # generate registry + run with tsx watch (auto-restart, loads .env)
-pnpm build        # generate registry + tsc + tsc-alias
+pnpm dev          # run with tsx watch (auto-restart, loads .env)
+pnpm build        # tsc + tsc-alias
 pnpm start        # run compiled dist/index.js
+pnpm test         # vitest run
+pnpm test:watch   # vitest
 pnpm lint         # eslint
 pnpm lint:fix     # eslint --fix
-pnpm format       # prettier --write
+pnpm format       # prettier --write src (markdown, package.json, workflows and scripts/ are not covered)
+pnpm format:check # prettier --check src
 pnpm graph:export # export LangGraph diagrams as SVGs (src/core/graph/02graphs/exportGraphs.ts)
-pnpm swagger      # regenerate swagger-output.json
-pnpm generate     # regenerate src/extensions/_registry.ts (runs automatically in dev/build)
 pnpm db:generate  # drizzle-kit generate — regenerate SQL migrations in drizzle/
+pnpm translations:generated  # list LLM-generated translation rows for review
 ```
+
+`pnpm format`/`format:check` only cover `src` — markdown, `package.json`, the workflows and
+`scripts/` are not format-checked. Format those manually with
+`npx prettier --write <path>` when touched.
 
 ### Infrastructure
 
 ```bash
-docker compose up --build                                      # server + ollama (NATS/Redis via profiles)
-docker compose --profile NATS --profile PERSISTENCY up -d      # infrastructure only, then run pnpm dev locally
+docker compose up --build                    # server + ollama (NATS via profile)
+docker compose --profile NATS up -d          # infrastructure only, then run pnpm dev locally
 ```
 
-`nats`/`nats-box` are behind the `NATS` compose profile; `redis` behind `PERSISTENCY`.
+`nats`/`nats-box` are behind the `NATS` compose profile. The `PERSISTENCY` profile's
+`redis` service is left over from the removed persistency module and is no longer used by
+the server.
 
 ### Graph diagram generation (requires Chrome via Puppeteer)
 
@@ -37,36 +45,74 @@ pnpm graph:export
 
 This is a backend-only repository (no frontend lives here). Node >= 22.5, pnpm.
 
-### Extension System
+### Composition Root
 
-The server is built around a **plugin/extension architecture**. Extensions live in `src/extensions/` and are auto-discovered by `scripts/generate-registry.ts`, which writes `src/extensions/_registry.ts` (never edit this file manually). Each extension is defined via `defineExtension()` from `src/core/extension.ts`.
+There is no plugin/extension framework — `createApp()` in `src/core/app.ts` constructs
+everything explicitly, in order:
 
-Key properties of each extension:
+1. parses `FEATURES` and the graph config from `process.env`
+2. resolves `CATALOG_DIR` / `CACHE_DIR` (`persistence/paths.ts` — pure functions taking the
+   environment as an argument; nothing under `src/core/graph/` reads `process.env`)
+3. `initGraph()` builds the repos (`repos.ts`'s `createRepos`), the `GraphRuntime`, and the
+   compiled graph, then validates the catalogues
+4. `createCaseGenerationService(graph, bus)`
+5. starts the transports whose flags are set
 
-- `requiredFlags`: feature flags (from `FEATURES` env var) that must be set for the extension to load
-- `dependsOn`: other extensions this one requires; the loader (`src/core/loader.ts`) topologically sorts and cascade-skips
-- `envSchema`: a Zod schema that parses its own slice of `process.env`
-- `setup(ctx)`: async initialization; receives `ctx.config`, `ctx.bus`, and `ctx.dep(otherExt)`
+**`GraphRuntime`** (`src/core/graph/runtime.ts`) is the single seam graph construction goes
+through: the LLM port, the four catalogs, a logger and a clock. It is captured by **closure
+at graph-assembly time**, not threaded through node signatures and not carried on
+LangGraph's runtime context. Nothing under `src/core/graph/` imports a mutable module
+singleton.
 
-Extensions communicate via a typed `EventBus` (`src/core/event-bus.ts`). Extensions augment the `EventMap` interface via TypeScript module augmentation to declare their events.
+**`CaseGenerationService`** (`src/core/caseGenerationService.ts`) is what both transports
+call. It owns ICD→name resolution, jobId minting, `runWithContext`, terminal event emission
+(`Generation Completed` / `Failure` / `Cancelled`) and error→status mapping, and returns a
+job shape (`{ jobId, status, case?, error? }`) rather than a bare `Case`. Transports are
+protocol translation only.
 
-**Currently registered extensions:**
-| Extension | Required Flags | Depends On | Purpose |
-|---|---|---|---|
-| `api` | none | — | Shared request/response Zod schemas (`CaseGenerationRequest/Response`, `ErrorResponse`) |
-| `debugLogger` | `DEBUG` | — | Logs bus events to console |
-| `nats` | `NATS` | `api` | Async case generation via NATS JetStream (`cases.generate`, cancel via `cases.cancel.>`) |
-| `persistency` | `PERSISTENCY` | `rest` | Saves completed cases to Redis; mounts its router |
-| `rest` | `REST` | `api` | Express HTTP server; exports the shared `apiRouter` mounted at `/api` |
-| `swagger` | none | `rest` | Serves Swagger UI |
-| `tracing` | `TRACING` | — | Bridges bus lifecycle events to per-job trace buses (`traceManager.ts`) |
-| `tracingNats` | none | `tracing`, `nats` | Republishes trace events to NATS (`cases.traces.${jobId}`) |
-| `tracingPersistency` | none | `rest`, `persistency`, `tracing` | Persists trace logs to Redis (`traces:${jobId}`, 24h TTL) |
-| `tracingRest` | none | `tracing`, `rest` | SSE live trace streaming: `GET /traces/:jobId/stream` |
+**Modules under `src/transports/` and `src/tracing/`** are ordinary modules with a start
+function, not plugins: `transports/rest/` (`startRestServer`), `transports/nats/`
+(`startNatsTransport`), `tracing/` (`wireTracing`, which registers a job hook on the
+core-owned registry in `utils/context.ts`) and `tracing/sse/` (SSE streaming, mounted onto
+the Express app built by `transports/rest/` — it still depends on `rest/`, which is fine and
+unchanged). `src/api/` holds the shared request/response Zod schemas.
 
-To add a new extension: create `src/extensions/<name>/index.ts` exporting `extension`. The registry regenerates automatically on `pnpm dev` or `pnpm build`.
+The typed **`EventBus`** (`src/core/event-bus.ts`) is kept — it genuinely decouples tracing
+from the graph. Modules augment its `EventMap` interface via TypeScript module
+augmentation.
 
-The case-generation graph itself is **not** an extension: it lives in `src/core/graph/` and is initialized directly by `createApp()` in `src/core/app.ts` via `initGraph()`.
+### Catalog Layer
+
+`src/core/graph/catalog/` owns the catalogue concept behind ports (`ProcedureCatalog`,
+`AnamnesisCatalog`, `LabelCatalog`, `DiagnosisCatalog` in `ports.ts`). Each domain is its own
+vertical slice — `catalog/<domain>/` (`procedures/`, `anamnesis/`, `labels/`, `diagnosis/`) —
+holding both that domain's repo (`repo.ts`) and its port adapters (`catalog.ts`: a `Yaml*`
+adapter over the repo instance and an `InMemory*` adapter for tests), re-exported from the
+slice's `index.ts`. `catalog/index.ts` composes all four `Yaml*` adapters into the
+`GraphRuntime["catalogs"]` bundle (`createYamlCatalogs(repos)`) from an already-constructed
+`Repos` (see `repos.ts` below).
+
+`procedures/index.ts` and `anamnesis/index.ts` export their repo alongside their catalog —
+not just the port adapter — because the from-English translation graph
+(`02graphs/03case-translation-from-english/`) and `02graphs/exportGraphs.ts` still bypass the
+`ProcedureCatalog`/`AnamnesisCatalog` port to reach translation accessors
+(`getProcedureNameTranslationFromEnglish`/`saveProcedureNameTranslation`,
+`getAnamnesisCategoryTranslationFromEnglish`/`saveAnamnesisCategoryTranslations`) that the
+port doesn't expose. `labels/` and `diagnosis/` export their repo too, but only so the
+composition root can construct it — no other module reaches past their port. Issue #89
+collapses this to a single entry point.
+
+`ProcedureCandidates` (`catalog/procedures/candidates.ts`) is where flat-vs-grouped
+presentation, category scoping, exclusion of already-ordered procedures, the literal-union
+grammar and `"Category: Name"` reassembly live — the AI gateway only calls `render()`,
+`grammar()` and `assemble()`.
+
+`startupValidation.ts` checks every translation file against its base catalogue at startup
+and exits non-zero naming every offending key, with a Levenshtein suggestion. **Diagnosis is
+exempt** — its store is also an input index for user-supplied diagnosis names, so keys
+outside the curated catalogue are legitimate. Validation runs after graph construction
+because the labels catalogue's base key set is `getKnownLabels()`, populated by `traceNode`
+as the graph is built.
 
 ### Case Generation Pipeline (LangGraph)
 
@@ -96,13 +142,33 @@ The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs three phases:
 
 ### Repo Layer (embedded SQLite via Drizzle)
 
-`src/core/graph/03repo/` backs all lookups/caches with an embedded SQLite DB at `data/cache/aetiomed.db` (`node:sqlite`, WAL; Drizzle ORM, migrations in `drizzle/`, config in `drizzle.config.ts`):
+The data layer is organized as vertical slices rather than one `repo/` directory. Shared
+SQLite infrastructure lives in `src/core/graph/persistence/`; each catalogue domain's repo
+lives inside its own slice under `src/core/graph/catalog/<domain>/repo.ts`; the symptoms
+cache is its own slice, `src/core/graph/symptoms/`; and `src/core/graph/repos.ts` composes
+all of them into one `Repos` bundle. All of it backs lookups/caches with an embedded SQLite
+DB at `data/cache/aetiomed.db` (`node:sqlite`, WAL; Drizzle ORM, migrations in `drizzle/`,
+config in `drizzle.config.ts`).
 
-- `db.ts` — opens the DB, runs migrations; `syncSource()` re-ingests a YAML file only when its sha256 changed (fingerprints in `_meta`)
+**Every repo module exports a `createXxx(...)` factory and performs no I/O on import** —
+`src/core/graph/repos.test.ts` enforces that by importing `persistence/db.ts`, every
+`catalog/<domain>/repo.ts`, `symptoms/repo.ts` and `repos.ts` itself and asserting neither
+`fs.mkdirSync` nor a catalogue-file `fs.readFileSync` fired. `createRepos()` in `repos.ts`
+constructs them once, from `createApp()`.
+
+`src/core/graph/persistence/`:
+
+- `db.ts` — `createDb(cacheDir)` opens the DB and runs migrations; `syncSource()` re-ingests a YAML file only when its sha256 changed (fingerprints in `_meta`, keyed on the domain name so moving `CATALOG_DIR` does not invalidate the cache)
 - `schema.ts` — tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`
-- `translationStore.ts` — generic cache-aside translation store factory used by diagnosis, procedures, anamnesis categories, and trace labels; AI-generated translations persist in the DB (never written back to YAML)
-- `diagnosis.repo.ts`, `procedures.repo.ts`, `anamnesis.repo.ts`, `labels.repo.ts` — sync their YAML sources and expose lookups / effective per-language lists
-- `symptoms.repo.ts` — static UMLS floor from `data/diagnosis_symptoms.json` + LLM-symptom cache with TTL (`SYMPTOM_CACHE_TTL_DAYS`)
+- `translationStore.ts` — cache-aside translation store used by diagnosis, procedures, anamnesis categories and trace labels. In-flight work is deduped **per key**; retries live inside the shared promise; runtime fills insert-if-absent and read back (first-writer-wins), while a YAML sync overwrites. `source` marks a row `curated` or `generated`; generated values persist in the DB, never back into YAML
+- `paths.ts` — `resolveCatalogDir`/`resolveCacheDir` (`CATALOG_DIR`/`CACHE_DIR` resolution) and `catalogFile()`
+- `predefinedList.ts` — reads a translations YAML file directly (bypassing `syncSource`'s hash cache) for startup validation
+
+`src/core/graph/catalog/<domain>/repo.ts` (`diagnosis/`, `procedures/`, `anamnesis/`,
+`labels/`) — each syncs its YAML source(s) and exposes lookups. **Catalogue lists are
+language-independent**; only the translation accessors take a language.
+
+`src/core/graph/symptoms/repo.ts` — static UMLS floor from `diagnosis_symptoms.json` + LLM-symptom cache with TTL (`SYMPTOM_CACHE_TTL_DAYS`)
 
 ### Numbered Directory Convention
 
@@ -110,42 +176,58 @@ The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs three phases:
 
 - `02graphs/` — LangGraph graphs (subgraph directories are themselves numbered by phase)
 - `03aigateway/` — LLM prompt/call functions
-- `03repo/` — data access (YAML → SQLite sync, caches)
 
-Plus unnumbered `models/` (Zod domain models), `utils/`, `errors/`, `config.ts`.
+`02graphs/` and `03aigateway/` keep their numbers because the numbers encode pipeline order —
+graphs call into the gateway, not the reverse. There used to be a `03repo/` alongside them;
+it is gone, deliberately unnumbered in its replacement (`persistence/`, `catalog/<domain>/`,
+`symptoms/`, `repos.ts`) rather than renumbered, because `03repo/` was a layer _label_, not a
+pipeline step, and that layer no longer exists as one directory — the number would no longer
+mean anything. Read the inconsistency as a decision, not an oversight.
+
+Plus unnumbered `catalog/`, `persistence/`, `symptoms/`, `repos.ts`, `models/` (Zod domain
+models), `utils/`, `errors/`, `config.ts`.
 
 ### REST Layer
 
-`src/extensions/rest/` (requires the `REST` feature flag):
+`src/transports/rest/` (requires the `REST` feature flag). Routes translate protocol only —
+generation goes through `CaseGenerationService`:
 
 - `GET /api/health`, `GET /api/features`, `GET /api/allowedLlms`
-- `routes/cases.router.ts` — `POST /api/cases` (runs `generateCase` inside `runWithContext`; aborts on client disconnect), `DELETE /api/cases/:jobId` (cancel)
+- `routes/cases.router.ts` — `POST /api/cases` (aborts on client disconnect), `DELETE /api/cases/:jobId` (cancel)
 - `routes/diagnosis.router.ts` — `GET /api/diagnosis`
 - `routes/procedures.router.ts` — `GET /api/procedures`
+- `src/tracing/sse/` — `GET /api/traces/:jobId/stream` (SSE), mounted onto the REST app when `TRACING` is set
 
 ### Data Files
 
-`data/` contains files synced into the SQLite cache at startup (only re-parsed when changed):
+`CATALOG_DIR` (default `data/`) contains the files synced into the SQLite cache at startup
+(only re-parsed when changed). Paths below are relative to it:
 
 - `procedures.yml` / `proceduresTranslations.yml` — predefined procedure names (when set, LLM must select from this list only)
 - `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions (static config, no longer a request field)
 - `labelTranslations.yml` — trace-node label translations
 - `diagnosis_symptoms.json` — UMLS-derived symptom floor per ICD code (loaded directly, not via the DB sync)
-- `cache/` — the embedded SQLite DB (generated)
+  The embedded SQLite DB is generated under `CACHE_DIR` (default `data/cache/`), which is
+  deliberately a separate directory so a deployer can mount their own catalogues over
+  `CATALOG_DIR` without clobbering it.
 
-The `procedures/` directory (root level) contains categorized procedure YAML source files and scripts to extract/compile them into `data/procedures.yml`. `scripts/extract-icd11*.ts` build the diagnosis YAML files from ICD-11 source data (run manually).
+`scripts/extract-icd11*.ts` build the diagnosis YAML files from ICD-11 source data (run manually).
 
 ### Request Context
 
-`runWithContext(fn, jobId?, llmConfig?)` in `src/core/graph/utils/context.ts` uses `AsyncLocalStorage` to propagate `jobId`, optional `llmConfig`, and an abort `signal` through the entire async call chain. It also sets up tracing and registers an `AbortController` with `cancelManager` (`utils/cancelManager.ts`) so generations can be cancelled by jobId. Graph nodes access it via `runtime?.context` (LangGraph passes `RequestContextSchema` as the runtime context schema) or `getRequestContext()`.
+`runWithContext(fn, jobId?, llmConfig?, language?)` in `src/core/graph/utils/context.ts` uses `AsyncLocalStorage` to propagate `jobId`, optional `llmConfig` and an abort `signal` through the entire async call chain, and registers an `AbortController` with `cancelManager` (`utils/cancelManager.ts`) so generations can be cancelled by jobId. Graph nodes access it via `runtime?.context` (LangGraph passes `RequestContextSchema` as the runtime context schema) or `getRequestContext()`.
+
+Core does not import the tracing module: `registerJobHook()` is a core-owned registry the
+`tracing` module registers against. With `TRACING` unset nothing is registered and no
+per-job trace bus is allocated.
 
 ## Environment Variables
 
 | Variable                      | Default                 | Notes                                                                                                                                         |
 | ----------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PORT`                        | `3030`                  | Server port                                                                                                                                   |
-| `FEATURES`                    | `""`                    | Comma-separated flags: `REST`, `DEBUG`, `NATS`, `PERSISTENCY`, `TRACING`, `ALLOW_LLMS`                                                        |
+| `FEATURES`                    | `""`                    | Comma-separated flags: `REST`, `NATS`, `TRACING`, `ALLOW_LLMS`                                                                                |
 | `LLM_PROVIDER`                | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                               |
 | `LLM_MODEL`                   | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                     |
 | `LLM_API_KEY`                 | —                       | API key for Google/OpenAI                                                                                                                     |
@@ -157,8 +239,7 @@ The `procedures/` directory (root level) contains categorized procedure YAML sou
 | `CACHE_DIR`                   | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative |
 | `NATS_URL`                    | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                          |
 | `NATS_USER` / `NATS_PASSWORD` | `nats` / `nats`         |                                                                                                                                               |
-| `REDIS_URL`                   | —                       | Required for `PERSISTENCY` extension                                                                                                          |
-| `SYMPTOM_CACHE_TTL_DAYS`      | `30`                    | TTL for cached LLM-generated symptoms (see `03repo/symptoms.repo.ts`)                                                                         |
+| `SYMPTOM_CACHE_TTL_DAYS`      | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                |
 
 Note: the `REST` flag is required for the HTTP API to load — include it in `FEATURES` when running the server.
 

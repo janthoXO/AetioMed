@@ -14,6 +14,8 @@ import {
 } from "@/core/graph/03aigateway/procedures.aigateway.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
 import { PatientSchema } from "@/core/graph/models/Patient.js";
+import { ChiefComplaintSchema } from "@/core/graph/models/ChiefComplaint.js";
+import { AnamnesisSchema } from "@/core/graph/models/Anamnesis.js";
 import {
   ProcedureSchema,
   ProcedureResultSchema,
@@ -23,13 +25,15 @@ import type { Tool } from "@/core/graph/utils/tool.js";
 
 // ─── Shared input types ───────────────────────────────────────────────────────
 
-// Inlined to avoid importing AnamnesisSchema (zod/v4) into a zod v3 file.
+// Mirrors the `Presentation` type (03aigateway/procedures.aigateway.ts) as a
+// Zod schema for tool-input validation. `zod` and `zod/v4` are the same v4
+// package's default-export and subpath-export forms of the same schemas —
+// not a version mismatch — so composing `AnamnesisSchema` (imported via
+// `zod/v4`) here works exactly as it does in `models/Case.ts`.
 const PresentationSchema = z.object({
   patient: PatientSchema.optional(),
-  chiefComplaint: z.string().optional(),
-  anamnesis: z
-    .array(z.object({ category: z.string(), answer: z.string() }))
-    .optional(),
+  chiefComplaint: ChiefComplaintSchema.optional(),
+  anamnesis: AnamnesisSchema.optional(),
 });
 
 // ─── generateBlindedProcedureStep ────────────────────────────────────────────

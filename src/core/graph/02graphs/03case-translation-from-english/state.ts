@@ -2,10 +2,12 @@ import { GenerationFlagSchema } from "@/core/graph/models/GenerationFlags.js";
 import z from "zod";
 import { CaseSchema } from "@/core/graph/models/Case.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
-import { ForeignLanguageSchema } from "@/core/graph/models/Language.js";
 import { UserInstructionsSchema } from "@/core/graph/models/UserInstructions.js";
 import { registry } from "@langchain/langgraph/zod";
 
+// No `language` field (issue 09 §2): this subgraph's target language is the
+// request's, carried on `AsyncLocalStorage` (`utils/context.ts`), not graph
+// state — see `index.ts`'s node functions.
 export const CaseTranslationFromEnglishStateSchema = z.object({
   diagnosis: DiagnosisSchema,
 
@@ -30,11 +32,6 @@ export const CaseTranslationFromEnglishStateSchema = z.object({
       }),
     },
   }),
-
-  /**
-   * Language for the case.
-   */
-  language: ForeignLanguageSchema,
 });
 
 /**

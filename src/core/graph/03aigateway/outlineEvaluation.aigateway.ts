@@ -1,6 +1,7 @@
 import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
   summarizeValidationError,
@@ -39,7 +40,10 @@ export async function evaluateOutline(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<OutlineEvaluation> {
-  const systemPrompt = buildPrompt(
+  // Internal artifact (issue 09 §3): the plan judge, English always.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are an expert medical educator reviewing a clinical case blueprint for a training simulator BEFORE the full case is written out. The blueprint is the single source of truth for all downstream field generation, so it must be sound. Judge it on TWO dimensions and accept it only if BOTH pass.`

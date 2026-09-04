@@ -116,6 +116,36 @@ export const ConfigSchema = z
       .optional()
       .transform((v) => v !== "false" && v !== "0"),
     /**
+     * The deployment's supported language set, comma-separated
+     * (`LANGUAGES=English,German,French`). Trimmed, de-duplicated, order
+     * preserved. Defaults to `["English", "German"]` — today's behaviour.
+     *
+     * "English" is mandatory: it is the pivot language the translation
+     * sandwich turns on and the base catalogue's identity space (issue 09
+     * §1). Parsing fails loudly rather than silently dropping it.
+     */
+    LANGUAGES: z
+      .string()
+      .optional()
+      .transform((v) => {
+        const raw =
+          v && v.trim() !== ""
+            ? v
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : ["English", "German"];
+        const languages = [...new Set(raw)];
+        if (!languages.includes("English")) {
+          throw new Error(
+            `LANGUAGES must include "English" — it is the pivot language the ` +
+              `translation sandwich turns on and the base catalogue's identity ` +
+              `space. Got: ${languages.length > 0 ? languages.join(", ") : "(empty)"}`
+          );
+        }
+        return languages;
+      }),
+    /**
      * Ceiling on one content part's decoded byte size (issue 11). Inline
      * base64 inflates by ~33% and the whole case is held in memory,
      * persisted and returned in one response, so a part beyond this fails

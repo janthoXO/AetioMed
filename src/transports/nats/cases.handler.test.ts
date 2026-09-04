@@ -35,6 +35,7 @@ function fakeGraph(): GraphAppContext {
       },
       allowedLlms: undefined,
       PROCEDURE_PRESELECTION: false,
+      LANGUAGES: ["English", "German"],
     },
     runtime: {} as GraphAppContext["runtime"],
     generateCase: vi.fn(),

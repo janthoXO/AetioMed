@@ -3,6 +3,7 @@ import type { Diagnosis } from "../models/Diagnosis.js";
 import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
   summarizeValidationError,
@@ -24,7 +25,11 @@ export async function generateSymptomsOneShot(
     symptoms: SymptomSchema.array(),
   });
 
-  const systemPrompt = buildPrompt(
+  // Internal artifact (issue 09 §3): the symptom/basis provider feeds the
+  // plan, not the student directly — English always.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are a medical expert tasked with generating symptoms for a given diagnosis.`

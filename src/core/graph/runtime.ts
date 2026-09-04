@@ -1,5 +1,6 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import type { LLMConfig } from "./models/LLMConfig.js";
+import type { Language } from "./models/Language.js";
 import type {
   AnamnesisCatalog,
   ProcedureCatalog,
@@ -34,6 +35,22 @@ export interface GraphRuntime {
   log: Logger;
   /** So tests can freeze time. */
   clock: () => Date;
+  /**
+   * Overrides the language `buildSystemPrompt` (`utils/prompt.ts`) uses for
+   * `"user-facing"` prompts, in place of the per-request ambient language
+   * (`getRequestContext()?.language`, ALS). Bound once at graph-assembly
+   * time, per compiled variant — never mutated per request; this is what
+   * "language is a property of the bound ports" (issue 09 §2) means for the
+   * generation phase specifically.
+   *
+   * The one binding today: `assembleCaseGraph` (`02graphs/caseGraph.ts`)
+   * hands the generation phase a runtime with `languageOverride: "English"`
+   * whenever the translation sandwich is compiled in — generation always
+   * runs in English in that topology (issue 09 §3/§4), regardless of the
+   * request's real target language, which only ever reaches the
+   * translate-out phase (built from the *unmodified* runtime).
+   */
+  languageOverride?: Language;
 }
 
 export const LLM_ROLES = ["generator", "judge", "translator"] as const;

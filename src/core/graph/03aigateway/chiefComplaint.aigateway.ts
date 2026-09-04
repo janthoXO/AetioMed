@@ -1,6 +1,7 @@
 import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
   summarizeValidationError,
@@ -23,7 +24,10 @@ export async function generateChiefComplaint(
   userInstructions?: string, // provided by the user | undefined
   context?: RequestContext
 ): Promise<ChiefComplaint> {
-  const systemPrompt = buildPrompt(
+  // User-facing (issue 09 §3): the chief complaint is read by the student.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
     section(
       "Role",
       `You are an expert attending physician documenting a patient's presentation for a medical training simulator.

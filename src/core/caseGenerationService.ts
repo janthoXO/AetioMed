@@ -53,6 +53,16 @@ export function createCaseGenerationService(
     async generate(req): Promise<CaseGenerationResult> {
       const jobId = req.jobId ?? crypto.randomUUID();
 
+      // Provenance for the translate-in trigger (issue 12 §3): true only
+      // when the caller actually supplied free text — a diagnosis name
+      // (rather than only an `icd`) or any `userInstructions`. Computed
+      // BEFORE ICD→name resolution below, which would otherwise make an
+      // ICD-only request look identical to a free-text one.
+      const callerSuppliedFreeText =
+        Boolean(req.diagnosis) ||
+        (req.userInstructions !== undefined &&
+          Object.keys(req.userInstructions).length > 0);
+
       let diagnosisName = req.diagnosis;
       if (!diagnosisName) {
         diagnosisName = graph.runtime.catalogs.diagnosis.byIcd(req.icd!)?.name;
@@ -78,13 +88,14 @@ export function createCaseGenerationService(
       try {
         const fullCase = await runWithContext(
           () =>
-            graph.generateCase(
-              { name: diagnosisName!, icd: req.icd },
-              effectiveFlags,
-              req.userInstructions,
-              req.language,
-              req.difficulty
-            ),
+            graph.generateCase({
+              diagnosis: { name: diagnosisName!, icd: req.icd },
+              generationFlags: effectiveFlags,
+              userInstructions: req.userInstructions,
+              language: req.language,
+              difficulty: req.difficulty,
+              callerSuppliedFreeText,
+            }),
           jobId,
           req.llmConfig,
           req.language

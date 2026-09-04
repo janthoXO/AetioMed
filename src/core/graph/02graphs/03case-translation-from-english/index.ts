@@ -7,12 +7,17 @@ import {
 import { type CaseTranslationFromEnglishState } from "./state.js";
 import { type Runtime, Send } from "@langchain/langgraph";
 import type { RequestContext } from "@/core/graph/utils/context.js";
-import type { PickNested } from "@/core/graph/utils/pickNested.js";
-import { createTranslationFromEnglishTools } from "./tools.js";
+import {
+  createTranslationFromEnglishTools,
+  caseAltMap,
+  applyCaseAltTranslations,
+} from "./tools.js";
+import type { DefinedTranslations } from "./state.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
 import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
+import type { Case } from "@/core/graph/models/Case.js";
 import { GenerationError } from "@/core/graph/errors/AppError.js";
 
 /**
@@ -31,105 +36,125 @@ function requiredTargetLanguage(): string {
   return language;
 }
 
-function makeTranslateAnamnesisCategory(
+/**
+ * Issue 12 §1's "Defined" pass: catalog dictionary lookups (per-key locked
+ * LLM fill on a miss, issue 03) for `procedures[].name` and
+ * `anamnesis[].category`. The two former nodes are merged into one — they
+ * share a trigger, a language, and now a single output channel
+ * (`definedTranslations`), so two nodes bought nothing once neither writes
+ * `case` directly. Writes ONLY `definedTranslations` — never `case`.
+ */
+function makeTranslateDefined(
   runtime: GraphRuntime,
   tools: ReturnType<typeof createTranslationFromEnglishTools>
 ) {
-  return async function translateAnamnesisCategory(
+  return async function translateDefined(
     state: CaseTranslationFromEnglishState,
     lgRuntime?: Runtime<RequestContext>
-  ): Promise<
-    PickNested<CaseTranslationFromEnglishState, "case", "anamnesis"> | undefined
-  > {
+  ): Promise<Pick<CaseTranslationFromEnglishState, "definedTranslations">> {
     const language = requiredTargetLanguage();
     console.debug(
-      "[Translation] Translating anamnesis categories to",
+      "[Translation] Translating defined vocabulary (procedure names, anamnesis categories) to",
       language
     );
 
-    if (!state.case.anamnesis?.length) {
-      console.debug("[Translation] No anamnesis categories to translate.");
-      return undefined;
-    }
+    const categories = state.case.anamnesis?.map((a) => a.category) ?? [];
+    const procedureNames = state.case.procedures?.map((p) => p.name) ?? [];
 
-    const categoryTranslations =
-      await tools.translateAnamnesisCategoriesFromEnglish.invoke(
-        {
-          categories: state.case.anamnesis.map((a) => a.category),
-          language,
-        },
-        runtime,
-        lgRuntime?.context
-      );
+    const [anamnesisCategories, procedureNameTranslations] = await Promise.all([
+      categories.length
+        ? tools.translateAnamnesisCategoriesFromEnglish.invoke(
+            { categories, language },
+            runtime,
+            lgRuntime?.context
+          )
+        : Promise.resolve({}),
+      procedureNames.length
+        ? tools.translateProcedureNamesFromEnglish.invoke(
+            { procedureNames, language },
+            runtime,
+            lgRuntime?.context
+          )
+        : Promise.resolve({}),
+    ]);
 
-    const updatedAnamnesis = state.case.anamnesis.map((a) => ({
-      ...a,
-      category: categoryTranslations[a.category]!,
-    }));
+    const definedTranslations: DefinedTranslations = {
+      anamnesisCategories,
+      procedureNames: procedureNameTranslations,
+    };
 
-    return { case: { anamnesis: updatedAnamnesis } };
+    return { definedTranslations };
   };
 }
 
-function makeTranslateProcedureNames(
+/**
+ * Issue 12 §1/§2's "Rest" pass: one LLM call over every `ContentPart.alt` in
+ * the case, keyed by stable path (`tools.ts`'s `caseAltMap`). Writes ONLY
+ * `restTranslations` — never `case`, and never sees `value` bytes, procedure
+ * names, or anamnesis categories (those are the defined pass's job).
+ */
+function makeTranslateRest(
   runtime: GraphRuntime,
   tools: ReturnType<typeof createTranslationFromEnglishTools>
 ) {
-  return async function translateProcedureNames(
+  return async function translateRest(
     state: CaseTranslationFromEnglishState,
     lgRuntime?: Runtime<RequestContext>
-  ): Promise<
-    | PickNested<CaseTranslationFromEnglishState, "case", "procedures">
-    | undefined
-  > {
+  ): Promise<Pick<CaseTranslationFromEnglishState, "restTranslations">> {
     const language = requiredTargetLanguage();
-    console.debug("[Translation] Translating procedure names to", language);
+    const values = caseAltMap(state.case);
+    console.debug(
+      `[Translation] Translating ${Object.keys(values).length} free-text fragment(s) to`,
+      language
+    );
 
-    if (!state.case.procedures?.length) {
-      console.debug("[Translation] No procedures to translate.");
-      return undefined;
-    }
-
-    const translations = await tools.translateProcedureNamesFromEnglish.invoke(
-      {
-        procedureNames: state.case.procedures.map((p) => p.name),
-        language,
-      },
+    const restTranslations = await tools.translateRestValues.invoke(
+      { values, language },
       runtime,
       lgRuntime?.context
     );
 
-    const updatedProcedures = state.case.procedures.map((p) => ({
-      ...p,
-      name: translations[p.name] ?? p.name,
-    }));
-
-    return { case: { procedures: updatedProcedures } };
+    return { restTranslations };
   };
 }
 
-function makeTranslateValues(
-  runtime: GraphRuntime,
-  tools: ReturnType<typeof createTranslationFromEnglishTools>
-) {
-  return async function translateValues(
-    state: CaseTranslationFromEnglishState,
-    lgRuntime?: Runtime<RequestContext>
-  ): Promise<Pick<CaseTranslationFromEnglishState, "case">> {
-    const language = requiredTargetLanguage();
-    console.debug("[Translation] Translating case values to", language);
+/**
+ * The only node that writes `case` (issue 12 §1). A pure function of the
+ * two disjoint channels the passes above produced plus the original case —
+ * there is no order between the two passes to be sensitive to, so reversing
+ * their completion order is guaranteed, by construction, to produce an
+ * identical merged case. Exported directly (not behind a factory, since it
+ * needs no runtime/tools closure) so tests can call it with hand-built
+ * `definedTranslations`/`restTranslations` in either order and assert the
+ * outputs are identical.
+ */
+export function translateMerge(
+  state: CaseTranslationFromEnglishState
+): Pick<CaseTranslationFromEnglishState, "case"> {
+  const { anamnesisCategories, procedureNames } = state.definedTranslations;
+  const altFields = applyCaseAltTranslations(
+    state.case,
+    state.restTranslations
+  );
 
-    const translatedCase = await tools.translateCase.invoke(
-      {
-        case: state.case,
-        language,
-        generationFlags: state.generationFlags,
-      },
-      runtime,
-      lgRuntime?.context
-    );
-    return { case: translatedCase };
+  const mergedCase: Case = {
+    ...state.case,
+    ...altFields,
+    ...(state.case.anamnesis && {
+      anamnesis: state.case.anamnesis.map((a, i) => ({
+        ...altFields.anamnesis![i]!,
+        category: anamnesisCategories[a.category] ?? a.category,
+      })),
+    }),
+    ...(state.case.procedures && {
+      procedures: state.case.procedures.map((p, i) => ({
+        ...altFields.procedures![i]!,
+        name: procedureNames[p.name] ?? p.name,
+      })),
+    }),
   };
+
+  return { case: mergedCase };
 }
 
 export function buildCaseTranslationFromEnglishGraph(
@@ -139,50 +164,42 @@ export function buildCaseTranslationFromEnglishGraph(
 ) {
   const tools = createTranslationFromEnglishTools(repos);
 
-  return new StateGraph(
-    CaseTranslationFromEnglishStateSchema,
-    RequestContextSchema
-  )
-    .addNode(
-      "translate_anamnesis_category",
-      traceNode(
-        "translate_anamnesis_category",
-        makeTranslateAnamnesisCategory(runtime, tools),
-        "Translating anamnesis categories"
+  return (
+    new StateGraph(CaseTranslationFromEnglishStateSchema, RequestContextSchema)
+      .addNode(
+        "translate_defined",
+        traceNode(
+          "translate_defined",
+          makeTranslateDefined(runtime, tools),
+          "Translating procedure names and anamnesis categories"
+        )
       )
-    )
-    .addNode(
-      "translate_procedures_names",
-      traceNode(
-        "translate_procedures_names",
-        makeTranslateProcedureNames(runtime, tools),
-        "Translating procedure names"
+      .addNode(
+        "translate_rest",
+        traceNode(
+          "translate_rest",
+          makeTranslateRest(runtime, tools),
+          "Translating case text to target language"
+        )
       )
-    )
-    .addNode(
-      "translate_values",
-      traceNode(
-        "translate_values",
-        makeTranslateValues(runtime, tools),
-        "Translating case to target language"
+      .addNode(
+        "translate_merge",
+        traceNode("translate_merge", translateMerge, "Merging translated case")
       )
-    )
 
-    .addConditionalEdges(START, (state): Send[] => {
-      const sends: Send[] = [];
-      if (state.case.anamnesis?.length) {
-        sends.push(new Send("translate_anamnesis_category", state));
-      }
-      if (state.case.procedures?.length) {
-        sends.push(new Send("translate_procedures_names", state));
-      }
-      if (sends.length === 0) {
-        sends.push(new Send("translate_values", state));
-      }
-      return sends;
-    })
-    .addEdge("translate_anamnesis_category", "translate_values")
-    .addEdge("translate_procedures_names", "translate_values")
-    .addEdge("translate_values", END)
-    .compile();
+      // Both passes fire unconditionally and in parallel from START — there is
+      // no ordering between them to get wrong (issue 12 §1). Each is a no-op
+      // internally when it finds nothing to translate (empty categories/
+      // procedures/content-part map), rather than being skipped by an edge —
+      // that keeps `translate_merge`'s two input channels always populated
+      // (with their schema defaults) instead of conditionally absent.
+      .addConditionalEdges(START, (state): Send[] => [
+        new Send("translate_defined", state),
+        new Send("translate_rest", state),
+      ])
+      .addEdge("translate_defined", "translate_merge")
+      .addEdge("translate_rest", "translate_merge")
+      .addEdge("translate_merge", END)
+      .compile()
+  );
 }

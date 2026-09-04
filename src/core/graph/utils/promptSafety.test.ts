@@ -23,7 +23,11 @@ import { buildPrompt, renderForPrompt, section } from "./prompt.js";
  * of base64 (if something encoded it) or, far more likely here, a YAML
  * sequence of bare integers.
  */
-function looksLikeByteDump(rendered: string): boolean {
+// Exported so other suites that must prove "no bytes reach a prompt" (e.g.
+// issue 12's translation-prompt tests) reuse this exact detector rather than
+// writing a second, weaker one — see the file-level comment on the negative
+// control above.
+export function looksLikeByteDump(rendered: string): boolean {
   const base64Blob = /[A-Za-z0-9+/]{40,}={0,2}/;
   const yamlIntegerRun = /(?:^[ \t]*-[ \t]*\d{1,3}[ \t]*$\n?){8,}/m;
   return (

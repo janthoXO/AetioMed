@@ -1,4 +1,5 @@
 import { START, StateGraph, END } from "@langchain/langgraph";
+import z from "zod";
 import type { Case } from "../models/Case.js";
 import { getRequestContext, RequestContextSchema } from "../utils/context.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
@@ -30,20 +31,55 @@ const CaseStateSchema = CaseGenerationStateSchema.pick({
   generationFlags: true,
   difficulty: true,
   case: true,
+}).extend({
+  /**
+   * Per-request routing input (issue 12 §3), not ALS: whether the *caller*
+   * actually supplied free text — a diagnosis **name** (rather than only an
+   * `icd`) or any `userInstructions`. `CaseGenerationService` is the only
+   * place that knows this (it performs the ICD→name resolution before the
+   * graph ever runs), so it computes this and passes it in. Graph state,
+   * not ALS, is where this belongs — #120's rule is *branch on what the
+   * caller asked for*, and this is per-request routing input, visible in
+   * the graph's input contract; `language` stays on ALS because it is a
+   * property of the bound ports (see the file-level comment above), not a
+   * per-request routing signal like this one.
+   */
+  callerSuppliedFreeText: z.boolean(),
 });
 
 /**
- * Both conditional edges below route on the same question: does this
- * *request* need translation? (`state.language` no longer exists — the
+ * The translate-**out** edge (after generation): does this *request* need
+ * its output translated? (`state.language` no longer exists — the
  * deployer's `TRANSLATION_SANDWICH` flag already decided whether the
  * translation nodes are compiled in at all; this decides, per request,
  * whether to enter them.) Reads `getRequestContext()?.language` off ALS,
  * never off graph state or LangGraph's own runtime context — see the
- * `CaseStateSchema` comment above and `utils/context.ts`.
+ * `CaseStateSchema` comment above and `utils/context.ts`. Always runs when
+ * the language differs, regardless of provenance: generation always runs in
+ * English under the sandwich, so the response must be translated back even
+ * for an ICD-only request that skipped translate-**in** below.
  */
-function requestNeedsTranslation(): "translate" | "skip" {
+function requestNeedsTranslationOut(): "translate" | "skip" {
   const language = getRequestContext()?.language;
   return language && language !== "English" ? "translate" : "skip";
+}
+
+/**
+ * The translate-**in** edge (before generation): issue 12 §3 fixes a bug
+ * here. The old predicate fired on `language !== "English"` alone, so an
+ * ICD-only request — whose name is already the catalogue's English name —
+ * got "translated" anyway, polluting the translation store with identity
+ * entries (`German: { "Diabetes": "Diabetes" }`). Trigger on provenance
+ * instead: only enter this phase when the language differs **and** the
+ * caller actually supplied free text (`state.callerSuppliedFreeText`).
+ */
+function requestNeedsTranslationIn(state: {
+  callerSuppliedFreeText: boolean;
+}): "translate" | "skip" {
+  const language = getRequestContext()?.language;
+  return language && language !== "English" && state.callerSuppliedFreeText
+    ? "translate"
+    : "skip";
 }
 
 /** The repos the case graph's phases need. */
@@ -124,12 +160,12 @@ export function graphTopologyKey(
  * `TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config
  * and are compiled away — **an absent flag means an absent node**, not a
  * node that is skipped and not an edge that always chooses `skip`. With the
- * sandwich off, the two translation nodes and the two `requestNeedsTranslation`
+ * sandwich off, the two translation nodes and the two `requestNeedsTranslation*`
  * conditional edges do not exist at all.
  *
  * `generationFlags`, `difficulty` and `language` are per-request and stay
  * runtime branches. That is why, with the sandwich *on*, the two
- * `requestNeedsTranslation` conditional edges remain: whether this
+ * `requestNeedsTranslation*` conditional edges remain: whether this
  * deployment can translate is the deployer's choice, but whether this
  * particular request needs to is the caller's — `language` itself never
  * reaches graph state (see `CaseStateSchema`'s comment); the edges read it
@@ -193,12 +229,12 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
       )
     )
 
-    .addConditionalEdges(START, requestNeedsTranslation, {
+    .addConditionalEdges(START, requestNeedsTranslationIn, {
       translate: "translation_to_english_phase",
       skip: "generation_phase",
     })
     .addEdge("translation_to_english_phase", "generation_phase")
-    .addConditionalEdges("generation_phase", requestNeedsTranslation, {
+    .addConditionalEdges("generation_phase", requestNeedsTranslationOut, {
       translate: "translation_from_english_phase",
       skip: END,
     })
@@ -269,24 +305,48 @@ export function buildCaseGraph(
   /**
    * Execute the case generator graph.
    *
+   * Takes one options object (issue 12 §3) — a sixth parameter (`callerSuppliedFreeText`)
+   * would have made this five positional scalars deep, an argument order
+   * nobody can read at a call site.
+   *
    * `language` is accepted for the public signature's sake, but is not
-   * threaded into the graph's state (`CaseStateSchema` has no such field —
-   * see its comment above): by the time this runs, `runWithContext`
+   * threaded into the graph's state (`CaseStateSchema` has no `language`
+   * field — see its comment above): by the time this runs, `runWithContext`
    * (called by `caseGenerationService.ts`, the only real caller) has already
-   * bound it on ALS from this same value, so `requestNeedsTranslation` and
-   * every generation gateway already see it via `getRequestContext()`.
+   * bound it on ALS from this same value, so `requestNeedsTranslationIn`/
+   * `requestNeedsTranslationOut` and every generation gateway already see it
+   * via `getRequestContext()`. `callerSuppliedFreeText` *is* threaded into
+   * graph state — it is per-request routing input the translate-in edge
+   * reads directly (see `CaseStateSchema`'s comment).
    */
-  async function generateCase(
-    diagnosis: Diagnosis,
-    generationFlags: GenerationFlag[],
-    userInstructions?: UserInstructions,
-    language?: Language,
-    difficulty?: Difficulty
-  ): Promise<Case> {
+  async function generateCase(opts: {
+    diagnosis: Diagnosis;
+    generationFlags: GenerationFlag[];
+    userInstructions?: UserInstructions | undefined;
+    language?: Language | undefined;
+    difficulty?: Difficulty | undefined;
+    callerSuppliedFreeText: boolean;
+  }): Promise<Case> {
+    const {
+      diagnosis,
+      generationFlags,
+      userInstructions,
+      language,
+      difficulty,
+      callerSuppliedFreeText,
+    } = opts;
+
     console.log(
       `[CaseGraph] Starting case generation for:\n`,
       JSON.stringify(
-        { diagnosis, userInstructions, generationFlags, difficulty, language },
+        {
+          diagnosis,
+          userInstructions,
+          generationFlags,
+          difficulty,
+          language,
+          callerSuppliedFreeText,
+        },
         null,
         2
       )
@@ -300,6 +360,7 @@ export function buildCaseGraph(
         generationFlags,
         userInstructions,
         difficulty,
+        callerSuppliedFreeText,
       },
       {
         context: {

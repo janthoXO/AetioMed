@@ -121,7 +121,7 @@ describe("CaseGenerationService — generationFlags expansion and projection", (
       generationFlags: ["procedures"],
     });
 
-    expect(generateCase.mock.calls[0]?.[1]).toEqual([
+    expect(generateCase.mock.calls[0]?.[0]?.generationFlags).toEqual([
       "procedures",
       "patient",
       "chiefComplaint",
@@ -142,9 +142,62 @@ describe("CaseGenerationService — generationFlags expansion and projection", (
       generationFlags: ["procedures", "patient"],
     });
 
-    expect(generateCase.mock.calls[0]?.[1]).toEqual(["procedures", "patient"]);
+    expect(generateCase.mock.calls[0]?.[0]?.generationFlags).toEqual([
+      "procedures",
+      "patient",
+    ]);
     // No expansion means no projection either — the case comes back as the
     // graph produced it.
     expect(result.case).toBe(fullCase);
+  });
+});
+
+describe("CaseGenerationService — callerSuppliedFreeText provenance (issue 12 §3)", () => {
+  const fullCase: Case = { patient: { name: "Jane", age: 40, sex: "female" } };
+
+  it("is true when the request supplies a diagnosis name", async () => {
+    const generateCase = vi.fn(async () => fullCase);
+    const service = createCaseGenerationService(
+      fakeGraph(generateCase),
+      new EventBus()
+    );
+
+    await service.generate({ diagnosis: "Influenza", generationFlags: [] });
+
+    expect(generateCase.mock.calls[0]?.[0]?.callerSuppliedFreeText).toBe(true);
+  });
+
+  it("is true when the request supplies userInstructions, even icd-only", async () => {
+    const generateCase = vi.fn(async () => fullCase);
+    const graph = fakeGraph(generateCase);
+    graph.runtime = {
+      catalogs: {
+        diagnosis: { byIcd: () => ({ name: "Influenza" }) },
+      },
+    } as unknown as GraphAppContext["runtime"];
+    const service = createCaseGenerationService(graph, new EventBus());
+
+    await service.generate({
+      icd: "1A00",
+      generationFlags: [],
+      userInstructions: { general: "Mach es einfach." },
+    });
+
+    expect(generateCase.mock.calls[0]?.[0]?.callerSuppliedFreeText).toBe(true);
+  });
+
+  it("is false for an icd-only request with no userInstructions", async () => {
+    const generateCase = vi.fn(async () => fullCase);
+    const graph = fakeGraph(generateCase);
+    graph.runtime = {
+      catalogs: {
+        diagnosis: { byIcd: () => ({ name: "Influenza" }) },
+      },
+    } as unknown as GraphAppContext["runtime"];
+    const service = createCaseGenerationService(graph, new EventBus());
+
+    await service.generate({ icd: "1A00", generationFlags: [] });
+
+    expect(generateCase.mock.calls[0]?.[0]?.callerSuppliedFreeText).toBe(false);
   });
 });

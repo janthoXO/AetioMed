@@ -11,6 +11,7 @@ import { createLlmPort } from "./utils/llm.js";
 import { createLogger } from "./utils/logger.js";
 import { LLM_ROLES, type GraphRuntime } from "./runtime.js";
 import type { GraphAppContext } from "./appContext.js";
+import type { NodeTracer } from "./utils/nodeWrapper.js";
 
 declare module "../event-bus.js" {
   interface EventMap {
@@ -46,6 +47,15 @@ declare module "../event-bus.js" {
       jobId?: string;
       timestamp: string;
     };
+    // Issue 15 §2: the defect this fixes is `traceNode` never emitting a
+    // terminal event for a throwing node. This is that terminal event.
+    "Node Failed": {
+      node: string;
+      label?: string;
+      error: string;
+      jobId?: string;
+      timestamp: string;
+    };
   }
 }
 
@@ -65,8 +75,17 @@ export function initGraph(opts: {
   /** Already-resolved absolute path (see `persistence/paths.ts`). */
   cacheDir: string;
   symptomCacheTtlDays: number;
+  /**
+   * The OTel operator channel's port (issue 15 §5), constructed by
+   * `app.ts` via `tracing/otel.ts`'s `createOtelNodeTracer()` — independent
+   * of `FEATURES=TRACING`, gated only by the standard `OTEL_SDK_DISABLED`.
+   * Optional so every other caller of `initGraph` (tests) keeps working
+   * with `buildCaseGraph`'s own no-op default.
+   */
+  tracer?: NodeTracer;
 }): GraphAppContext {
-  const { bus, config, catalogDir, cacheDir, symptomCacheTtlDays } = opts;
+  const { bus, config, catalogDir, cacheDir, symptomCacheTtlDays, tracer } =
+    opts;
 
   const repos = createRepos({ catalogDir, cacheDir, symptomCacheTtlDays });
 
@@ -95,13 +114,14 @@ export function initGraph(opts: {
   // node in this deployment.
   const modalityRegistry = createModalityRegistry();
 
-  const { generateCase } = buildCaseGraph(
+  const { caseGraph, generateCase } = buildCaseGraph(
     runtime,
     bus,
     config,
     repos,
     medicalBasisRegistry,
-    modalityRegistry
+    modalityRegistry,
+    tracer
   );
 
   // Validate catalogue translation files here, and not any earlier: the
@@ -125,7 +145,7 @@ export function initGraph(opts: {
     }
   }
 
-  return { config, runtime, generateCase };
+  return { config, runtime, generateCase, caseGraph };
 }
 
 export { runWithContext, registerJobHook } from "./utils/context.js";

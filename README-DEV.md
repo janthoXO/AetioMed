@@ -58,6 +58,9 @@ Copy `.env.example` to `.env` and adjust. The most important variable is `FEATUR
 | `NATS_USER` / `NATS_PASSWORD` | `nats` / `nats` | |
 | `REDIS_URL` | — | Required by the `PERSISTENCY` extension |
 | `SYMPTOM_CACHE_TTL_DAYS` | `30` | TTL for cached LLM-generated symptoms |
+| `OTEL_SDK_DISABLED` | unset (enabled) | Standard OTel var; `"true"` skips constructing the OTel SDK entirely — independent of `FEATURES=TRACING` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | Standard OTel var, read by the OTLP exporter itself |
+| `OTEL_SERVICE_NAME` | — | Standard OTel var, read via envDetector |
 
 **Per-request LLM selection.** With the `ALLOW_LLMS` flag set, no global LLM is configured; every request must supply its own `llmConfig`, validated against the `ALLOWED_LLMS` allowlist and discoverable via `GET /api/allowedLlms`. Without the flag, `LLM_PROVIDER`/`LLM_MODEL` are required and per-request `llmConfig` is rejected.
 
@@ -243,7 +246,8 @@ Requires the `REST` feature flag.
 | `GET` | `/api/cases` | List persisted cases (`persistency`) |
 | `GET` | `/api/traces` | List persisted trace job ids (`tracingPersistency`) |
 | `GET` | `/api/traces/:jobId` | Fetch a persisted trace log (`tracingPersistency`) |
-| `GET` | `/api/traces/:jobId/stream` | Live SSE trace stream (`tracingRest`) |
+| `GET` | `/api/traces/:jobId/stream` | Live SSE stream: `event: label` (localized) and `event: trace` (English, node-bound) (`TRACING`) |
+| `GET` | `/api/graph` | Compiled graph topology (nodes + edges + English label keys) for this deployment's flags (`TRACING`) |
 
 A request body needs either `icd` or `diagnosis`; `generationFlags` defaults to all four fields and `difficulty` to `medium`.
 

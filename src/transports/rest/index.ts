@@ -52,7 +52,7 @@ export async function startRestServer(opts: {
   );
 
   if (features.has("TRACING")) {
-    mountTracingRest(apiRouter);
+    mountTracingRest(apiRouter, graph.caseGraph);
   }
 
   await new Promise<void>((resolve) =>

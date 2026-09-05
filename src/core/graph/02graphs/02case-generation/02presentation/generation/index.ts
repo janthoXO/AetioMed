@@ -327,11 +327,21 @@ export function buildFieldGenerationGraph(
       // way) — each subgraph traces its own internal nodes instead.
       .addNode(
         "chief_complaint_generate",
-        buildChiefComplaintGraph(runtime, modalityRegistry, traceNode)
+        // Scoped to match the mount name — see `nodeWrapper.ts`'s
+        // `TraceNodeFn.scope` doc comment (issue 15 §3/§4).
+        buildChiefComplaintGraph(
+          runtime,
+          modalityRegistry,
+          traceNode.scope("chief_complaint_generate")
+        )
       )
       .addNode(
         "anamnesis_generate",
-        buildAnamnesisGraph(runtime, modalityRegistry, traceNode)
+        buildAnamnesisGraph(
+          runtime,
+          modalityRegistry,
+          traceNode.scope("anamnesis_generate")
+        )
       )
       .addNode(
         "case_fan_in",

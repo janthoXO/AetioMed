@@ -64,12 +64,15 @@ export function buildCaseGenerationGraph(
   const presentationPhase = buildFieldGenerationGraph(
     runtime,
     modalityRegistry,
-    traceNode
+    // Scoped to match the `"presentation_phase"`/`"procedure_phase"` mount
+    // names below — see `nodeWrapper.ts`'s `TraceNodeFn.scope` doc comment
+    // (issue 15 §3/§4).
+    traceNode.scope("presentation_phase")
   );
   const procedurePhase = buildProcedureGraph(
     runtime,
     procedureStrategy,
-    traceNode
+    traceNode.scope("procedure_phase")
   );
 
   const gotoProcedureOrEnd = (state: { generationFlags: string[] }) =>

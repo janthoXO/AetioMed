@@ -13,7 +13,11 @@ import type { Language } from "../models/Language.js";
 import type { Difficulty } from "../models/Difficulty.js";
 import { GenerationError } from "../errors/AppError.js";
 import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
-import { createTraceNode } from "../utils/nodeWrapper.js";
+import {
+  createTraceNode,
+  noopNodeTracer,
+  type NodeTracer,
+} from "../utils/nodeWrapper.js";
 import type { GraphRuntime } from "../runtime.js";
 import type { Config } from "../config.js";
 import type { EventBus } from "../../event-bus.js";
@@ -201,7 +205,9 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
       createProcedureStrategy(runtime, flags.procedurePreselection),
       medicalBasisRegistry,
       modalityRegistry,
-      traceNode
+      // Scoped to match the `"generation_phase"` mount name below — see
+      // `nodeWrapper.ts`'s `TraceNodeFn.scope` doc comment (issue 15 §3/§4).
+      traceNode.scope("generation_phase")
     );
     return new StateGraph(CaseStateSchema, RequestContextSchema)
       .addNode("generation_phase", generationPhase)
@@ -225,21 +231,24 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
     createProcedureStrategy(generationRuntime, flags.procedurePreselection),
     medicalBasisRegistry,
     modalityRegistry,
-    traceNode
+    traceNode.scope("generation_phase")
   );
 
   return new StateGraph(CaseStateSchema, RequestContextSchema)
     .addNode("generation_phase", generationPhase)
     .addNode(
       "translation_to_english_phase",
-      buildCaseTranslationToEnglishGraph(runtime, traceNode)
+      buildCaseTranslationToEnglishGraph(
+        runtime,
+        traceNode.scope("translation_to_english_phase")
+      )
     )
     .addNode(
       "translation_from_english_phase",
       buildCaseTranslationFromEnglishGraph(
         runtime,
         { anamnesis: repos.anamnesis, procedures: repos.procedures },
-        traceNode
+        traceNode.scope("translation_from_english_phase")
       )
     )
 
@@ -285,14 +294,22 @@ export function buildCaseGraph(
   config: Config,
   repos: CaseGraphRepos,
   medicalBasisRegistry: MedicalBasisProvider[],
-  modalityRegistry: ModalityProvider[]
+  modalityRegistry: ModalityProvider[],
+  // The OTel operator channel's port (issue 15 §5) — optional and
+  // defaulted to the no-op so every existing caller (`exportGraphs.ts`,
+  // every test building a graph directly) is unaffected. The composition
+  // root (`app.ts`) is the only real caller that passes a constructed one,
+  // via `tracing/otel.ts`'s `createOtelNodeTracer()`, independent of
+  // `FEATURES=TRACING` — see `tracing/index.ts`'s doc comment on
+  // `wireTracing` for why the two channels are separate.
+  tracer: NodeTracer = noopNodeTracer
 ) {
   const deps: AssemblyDeps = {
     runtime,
     repos,
     medicalBasisRegistry,
     modalityRegistry,
-    traceNode: createTraceNode(bus),
+    traceNode: createTraceNode(bus, tracer),
   };
 
   const variants = new Map<string, CompiledCaseGraph>(

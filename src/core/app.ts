@@ -9,6 +9,7 @@ import { createCaseGenerationService } from "./caseGenerationService.js";
 import { startRestServer } from "../transports/rest/index.js";
 import { startNatsTransport } from "../transports/nats/index.js";
 import { wireTracing } from "../tracing/index.js";
+import { createOtelNodeTracer } from "../tracing/otel.js";
 
 const AppEnvSchema = z
   .object({
@@ -50,12 +51,19 @@ export async function createApp(): Promise<{ bus: EventBus }> {
 
   const graphConfig = GraphConfigSchema.parse(process.env);
   const bus = new EventBus();
+  // Issue 15 §1.1/§5 — the OTel channel is independent of `FEATURES`:
+  // always constructed here, gated only by the standard
+  // `OTEL_SDK_DISABLED`, never by `TRACING` (that flag stays scoped to the
+  // EventBus/SSE label+trace channel below). See `tracing/index.ts`'s
+  // `wireTracing` doc comment for why the two are deliberately separate.
+  const tracer = await createOtelNodeTracer();
   const graph = initGraph({
     bus,
     config: graphConfig,
     catalogDir: resolveCatalogDir(process.env),
     cacheDir: resolveCacheDir(process.env),
     symptomCacheTtlDays,
+    tracer,
   });
 
   const service = createCaseGenerationService(graph, bus);

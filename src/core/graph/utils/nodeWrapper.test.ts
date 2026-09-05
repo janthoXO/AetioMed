@@ -172,7 +172,6 @@ describe("traceNode — OTel span lifecycle (issue 15 §5)", () => {
     const llmConfig: LLMConfig = {
       provider: "google",
       model: "gemini-2.0-flash",
-      temperature: 0.7,
       outputFormat: "json",
     };
     await runWithContext(() => wrapped(), "job-otel-3", llmConfig);

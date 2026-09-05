@@ -32,8 +32,6 @@ export interface ProcedureCatalog {
   list(): ProcedureName[] | undefined;
   /** Real categories, first-seen order, excluding the synthetic bucket. */
   categories(): string[];
-  /** Bare names grouped by category, including the synthetic bucket. */
-  grouped(): Map<string, ProcedureName[]>;
   /** The full candidate set. */
   candidates(): ProcedureCandidates;
   /** Candidates narrowed to these categories, plus the uncategorized bucket. */

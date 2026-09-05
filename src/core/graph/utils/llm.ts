@@ -39,10 +39,11 @@ export function createLlmPort(defaultConfig: Config): LlmPort {
   return {
     for(opts, llmConfig) {
       const roleConfig = defaultConfig.llmRoles?.[opts.role];
-      return getLLM(roleConfig, {
-        ...llmConfig,
-        temperature: TEMPERATURE_BY_CLASS[opts.temperature],
-      });
+      return getLLM(
+        roleConfig,
+        llmConfig,
+        TEMPERATURE_BY_CLASS[opts.temperature]
+      );
     },
   };
 }
@@ -56,21 +57,22 @@ export function createLlmPort(defaultConfig: Config): LlmPort {
  */
 function getLLM(
   roleConfig: Partial<LLMConfig> | undefined,
-  llmConfig: Partial<LLMConfig> = {}
+  llmConfig: Partial<LLMConfig> | undefined,
+  temperature: number
 ): BaseChatModel {
   const fullConfig = LLMConfigSchema.parse({
     ...roleConfig,
     ...llmConfig,
   });
 
-  console.debug("LLM Configuration:", fullConfig);
+  console.debug("LLM Configuration:", fullConfig, { temperature });
 
   let chat: BaseChatModel;
   switch (fullConfig.provider) {
     case "ollama": {
       const ollamaConfig: ChatOllamaInput = {
         model: fullConfig.model,
-        temperature: fullConfig.temperature,
+        temperature,
       };
 
       if (!fullConfig || fullConfig?.outputFormat === "json") {
@@ -102,7 +104,7 @@ function getLLM(
       const googleConfig: ChatGoogleParams = {
         apiKey: fullConfig.apiKey,
         model: fullConfig.model,
-        temperature: fullConfig.temperature,
+        temperature,
       };
       chat = new ChatGoogle(googleConfig);
       break;
@@ -115,7 +117,7 @@ function getLLM(
       const openAIConfig: ChatOpenAIFields = {
         apiKey: fullConfig.apiKey,
         model: fullConfig.model,
-        temperature: fullConfig.temperature,
+        temperature,
       };
 
       if (fullConfig.url) {

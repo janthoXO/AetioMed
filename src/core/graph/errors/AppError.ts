@@ -29,15 +29,6 @@ export class ModelUnreachableError extends AppError {
   }
 }
 
-export class InvalidRequestError extends AppError {
-  constructor(
-    message: string = "Invalid request parameters",
-    details?: string
-  ) {
-    super(message, "INVALID_REQUEST", 400, details);
-  }
-}
-
 export class GenerationError extends AppError {
   constructor(message: string = "Generation failed", details?: string) {
     super(message, "GENERATION_FAILED", 500, details);

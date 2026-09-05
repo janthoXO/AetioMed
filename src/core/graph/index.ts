@@ -79,10 +79,10 @@ export function initGraph(opts: {
    * The OTel operator channel's port (issue 15 §5), constructed by
    * `app.ts` via `tracing/otel.ts`'s `createOtelNodeTracer()` — independent
    * of `FEATURES=TRACING`, gated only by the standard `OTEL_SDK_DISABLED`.
-   * Optional so every other caller of `initGraph` (tests) keeps working
-   * with `buildCaseGraph`'s own no-op default.
+   * Required: `app.ts` is the only caller, and it always has one — pass
+   * `noopNodeTracer` explicitly if you ever need a silent graph.
    */
-  tracer?: NodeTracer;
+  tracer: NodeTracer;
 }): GraphAppContext {
   const { bus, config, catalogDir, cacheDir, symptomCacheTtlDays, tracer } =
     opts;

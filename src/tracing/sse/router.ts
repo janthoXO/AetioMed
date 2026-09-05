@@ -4,11 +4,6 @@ import type { TraceEvent, LabelEvent } from "../index.js";
 
 const router = express.Router();
 
-router.use((_req, _res, next) => {
-  /* #swagger.tags = ['Traces'] */
-  next();
-});
-
 router.get("/traces/:jobId/stream", (req, res) => {
   const { jobId } = req.params;
 

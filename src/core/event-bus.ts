@@ -2,7 +2,10 @@ export type Handler<T> = (payload: T) => void | Promise<void>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyHandler = (event: string, payload: any) => void | Promise<void>;
 
-// Extensions augment this to register their event shapes
+// Declared empty and filled by module augmentation — see
+// `core/graph/index.ts`, which registers every generation and node event
+// shape. That is what keeps `emit`/`on` type-checked without the bus
+// importing the modules that publish on it, or they it.
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface EventMap {}
 

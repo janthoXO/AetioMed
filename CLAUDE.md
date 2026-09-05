@@ -16,7 +16,6 @@ pnpm format       # prettier --write src (markdown, package.json, workflows and 
 pnpm format:check # prettier --check src
 pnpm graph:export # export LangGraph diagrams as SVGs (src/core/graph/02graphs/exportGraphs.ts)
 pnpm db:generate  # drizzle-kit generate — regenerate SQL migrations in drizzle/
-pnpm translations:generated  # list LLM-generated translation rows for review
 ```
 
 `pnpm format`/`format:check` only cover `src` — markdown, `package.json`, the workflows and
@@ -30,9 +29,7 @@ docker compose up --build                    # server + ollama (NATS via profile
 docker compose --profile NATS up -d          # infrastructure only, then run pnpm dev locally
 ```
 
-`nats`/`nats-box` are behind the `NATS` compose profile. The `PERSISTENCY` profile's
-`redis` service is left over from the removed persistency module and is no longer used by
-the server.
+`nats`/`nats-box` are behind the `NATS` compose profile.
 
 ### Graph diagram generation (requires Chrome via Puppeteer)
 
@@ -96,12 +93,12 @@ augmentation.
 **Labels, traces and OTel (issue 15) are three channels, not one.** They differ in audience,
 content, language and gate:
 
-|          | Labels                                     | Traces (SSE)                     | OTel spans                        |
-| -------- | ------------------------------------------- | ---------------------------------- | ------------------------------------ |
-| Audience | end user                                    | developer/operator, live           | operator, cross-request analysis     |
-| Content  | one short phrase per node                   | node output, size-capped           | span attributes only, never payload  |
-| Language | localized at the transport, English fallback | English, always                   | n/a (attribute values only)          |
-| Gate     | `FEATURES=TRACING`                          | `FEATURES=TRACING`                 | `OTEL_SDK_DISABLED` — its own axis   |
+|          | Labels                                       | Traces (SSE)             | OTel spans                          |
+| -------- | -------------------------------------------- | ------------------------ | ----------------------------------- |
+| Audience | end user                                     | developer/operator, live | operator, cross-request analysis    |
+| Content  | one short phrase per node                    | node output, size-capped | span attributes only, never payload |
+| Language | localized at the transport, English fallback | English, always          | n/a (attribute values only)         |
+| Gate     | `FEATURES=TRACING`                           | `FEATURES=TRACING`       | `OTEL_SDK_DISABLED` — its own axis  |
 
 Labels and traces are separate SSE event types (`event: label` / `event: trace`) on the same
 per-job stream, not one `type`-discriminated payload — see `tracing/index.ts`'s `wireTracing`
@@ -588,7 +585,7 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
 | Variable                                                   | Default                 | Notes                                                                                                                                                                                            |
 | ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `PORT`                                                     | `3030`                  | Server port                                                                                                                                                                                      |
-| `FEATURES`                                                 | `""`                    | Comma-separated flags: `REST`, `NATS`, `TRACING`, `ALLOW_LLMS`                                                                                                                                   |
+| `FEATURES`                                                 | `""`                    | Comma-separated flags: `REST`, `NATS`, `TRACING`, `DEBUG`, `ALLOW_LLMS`                                                                                                                          |
 | `LLM_PROVIDER`                                             | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                                                  |
 | `LLM_MODEL`                                                | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                                        |
 | `LLM_API_KEY`                                              | —                       | API key for Google/OpenAI                                                                                                                                                                        |
@@ -609,7 +606,7 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
 | `SYMPTOM_CACHE_TTL_DAYS`                                   | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                                                                   |
 | `MAX_CONTENT_PART_BYTES`                                   | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
 | `OTEL_SDK_DISABLED`                                        | unset (enabled)         | Standard OTel var. `"true"` skips constructing the OTel SDK entirely (no dynamic import even happens — see `tracing/otel.ts`); independent of `FEATURES=TRACING`                                 |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                               | —                       | Standard OTel var, read by the OTLP exporter itself — no plumbing in this repo                                                                                                                   |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                              | —                       | Standard OTel var, read by the OTLP exporter itself — no plumbing in this repo                                                                                                                   |
 | `OTEL_SERVICE_NAME`                                        | —                       | Standard OTel var, read via `envDetector` (`tracing/otel.ts`)                                                                                                                                    |
 
 Note: the `REST` flag is required for the HTTP API to load — include it in `FEATURES` when running the server.

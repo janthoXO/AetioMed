@@ -24,16 +24,9 @@ const AppEnvSchema = z
   }));
 
 /**
- * The composition root. Constructs transports explicitly from resolved
- * config — no loader, no topological sort, no cascade-skip. `FEATURES`
- * (comma-separated flags) keeps working exactly as before for everything
- * that still uses it: `REST`, `NATS`, `TRACING`, `DEBUG`, `ALLOW_LLMS`.
- *
- * `PERSISTENCY` and `REDIS_URL` are now inert — the persistency and
- * tracingPersistency modules that consumed them are gone (they saved
- * completed cases to Redis and served `GET /api/cases`/`GET /api/traces`,
- * neither of which anything downstream ever read back). Warn once at
- * startup rather than silently ignoring a flag a deployer will have set.
+ * The composition root: everything is constructed here, explicitly and in
+ * order. `FEATURES` is a comma-separated set of flags — `REST`, `NATS`,
+ * `TRACING`, `DEBUG`, `ALLOW_LLMS` — each gating one construction below.
  */
 export async function createApp(): Promise<{ bus: EventBus }> {
   const { features: featureList, symptomCacheTtlDays } = AppEnvSchema.parse(
@@ -41,14 +34,6 @@ export async function createApp(): Promise<{ bus: EventBus }> {
   );
   const features = new Set(featureList);
   console.log(`[app] Feature flags: ${[...features].join(", ") || "none"}`);
-
-  if (features.has("PERSISTENCY")) {
-    console.warn(
-      "[app] PERSISTENCY flag is set but the persistency module has been removed — " +
-        "it is now a no-op. REDIS_URL is likewise inert. GET /api/cases no longer exists."
-    );
-  }
-
   const graphConfig = GraphConfigSchema.parse(process.env);
   const bus = new EventBus();
   // Issue 15 §1.1/§5 — the OTel channel is independent of `FEATURES`:

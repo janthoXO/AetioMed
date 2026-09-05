@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - "src/**"
-      - "scripts/generate-registry.ts"
   workflow_call:
     inputs:
       version:

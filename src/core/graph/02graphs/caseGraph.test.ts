@@ -227,12 +227,14 @@ describe("language routing reads ALS, never graph state (issue 09 §2)", () => {
 
   it("a German request bound on ALS enters the translate-to-English phase", async () => {
     const nodes = await startedNodes({ alsLanguage: "German" });
-    expect(nodes).toContain("translate_diagnosis");
+    expect(nodes).toContain("translation_to_english_phase:translate_diagnosis");
   });
 
   it("an English (default) request bound on ALS enters neither translation phase", async () => {
     const nodes = await startedNodes({ alsLanguage: undefined });
-    expect(nodes).not.toContain("translate_diagnosis");
+    expect(nodes).not.toContain(
+      "translation_to_english_phase:translate_diagnosis"
+    );
   });
 
   it("a `language` key on the invoke input has no effect — only ALS is read", async () => {
@@ -242,7 +244,9 @@ describe("language routing reads ALS, never graph state (issue 09 §2)", () => {
       alsLanguage: undefined,
       stateLanguage: "German",
     });
-    expect(nodes).not.toContain("translate_diagnosis");
+    expect(nodes).not.toContain(
+      "translation_to_english_phase:translate_diagnosis"
+    );
   });
 });
 
@@ -275,7 +279,9 @@ describe("translate-in trigger reads provenance, not just language (issue 12 §3
       "German"
     );
 
-    expect(started).toContain("translate_diagnosis");
+    expect(started).toContain(
+      "translation_to_english_phase:translate_diagnosis"
+    );
   });
 
   it("an ICD-only German request (no free text) skips translate-to-English entirely and writes no identity translations", async () => {
@@ -315,7 +321,9 @@ describe("translate-in trigger reads provenance, not just language (issue 12 §3
       "German"
     );
 
-    expect(started).not.toContain("translate_diagnosis");
+    expect(started).not.toContain(
+      "translation_to_english_phase:translate_diagnosis"
+    );
     // Assert on the translation store itself, not just call counts on a
     // mock — this is the store the old `language !== "English"` predicate
     // used to pollute with `German: { "Influenza": "Influenza" }`.

@@ -5,8 +5,6 @@ export const UserInstructionsKeySchema = GenerationFlagSchema.or(
   z.literal("general")
 );
 
-export type UserInstructionsKey = z.infer<typeof UserInstructionsKeySchema>;
-
 export const UserInstructionsSchema = z
   .partialRecord(UserInstructionsKeySchema, z.string())
   .describe("Additional context for case generation");

@@ -18,7 +18,7 @@ function fakeGraph(
 ): GraphAppContext {
   return {
     config: {
-      llm: { provider: "ollama", model: "test-model", temperature: 0.7 },
+      llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
       PROCEDURE_PRESELECTION: false,
       LANGUAGES: ["English", "German"],

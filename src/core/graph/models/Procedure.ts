@@ -50,15 +50,6 @@ export const ProcedureResultSchema = ProcedureSchema.extend({
 });
 export type ProcedureResult = z.infer<typeof ProcedureResultSchema>;
 
-export function buildProcedureResultSchema(procedureNames?: ProcedureName[]) {
-  if (procedureNames?.length) {
-    return ProcedureResultSchema.extend({
-      name: z.literal(procedureNames).describe("Name of the medical procedure"),
-    });
-  }
-  return ProcedureResultSchema;
-}
-
 /**
  * LLM-facing counterpart to `ProcedureResultSchema`: `result` stays a plain
  * `z.string()` — the LLM is never asked to emit bytes or base64 (issue 11
@@ -71,7 +62,6 @@ export const ProcedureResultTextSchema = ProcedureSchema.extend({
   ),
   result: z.string().describe("Result of the procedure, if applicable"),
 });
-export type ProcedureResultText = z.infer<typeof ProcedureResultTextSchema>;
 
 export function buildProcedureResultTextSchema(
   procedureNames?: ProcedureName[]

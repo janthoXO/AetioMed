@@ -15,7 +15,3 @@ export function abort(jobId: string): boolean {
   controllers.delete(jobId);
   return true;
 }
-
-export function isActive(jobId: string): boolean {
-  return controllers.has(jobId);
-}

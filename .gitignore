@@ -152,3 +152,6 @@ privatePackages/store
 
 # Embedded SQLite cache synced from data/*.yml on startup (see src/core/graph/03repo/db.ts)
 data/cache/
+
+# macOS
+.DS_Store

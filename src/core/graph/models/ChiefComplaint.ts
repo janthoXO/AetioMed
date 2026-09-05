@@ -24,5 +24,3 @@ const ChiefComplaintTextSchema = z
 export const ChiefComplaintJsonSchema = z.object({
   chiefComplaint: ChiefComplaintTextSchema,
 });
-
-export type ChiefComplaintJson = z.infer<typeof ChiefComplaintJsonSchema>;

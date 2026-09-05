@@ -4,7 +4,7 @@ import prettier from "eslint-config-prettier";
 import { defineConfig, globalIgnores } from "eslint/config";
 
 export default defineConfig([
-  globalIgnores(["dist/**", "client"]),
+  globalIgnores(["dist/**"]),
   {
     extends: [
       eslint.configs.recommended,

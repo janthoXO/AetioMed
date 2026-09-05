@@ -24,8 +24,3 @@ export type ForeignLanguage = string;
 export function makeLanguageSchema(languages: readonly string[]) {
   return z.enum(languages as [string, ...string[]]);
 }
-
-/** Same as {@link makeLanguageSchema}, minus "English". */
-export function makeForeignLanguageSchema(languages: readonly string[]) {
-  return makeLanguageSchema(languages).exclude(["English"]);
-}

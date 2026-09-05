@@ -1,7 +1,7 @@
 # Pre-mapped trace label translations. Labels not listed here are translated
 # on demand by the AI warm-up and cached in-memory only (not written back here).
 German:
-  Retrieving or generating symptoms: Symptome werden abgerufen oder generiert
+  Resolving medical basis: Medizinische Grundlage wird ermittelt
   Generating case outline: Fallübersicht wird generiert
   Evaluating case outline: Fallübersicht wird geprüft
   Regenerating case outline: Fallübersicht wird überarbeitet

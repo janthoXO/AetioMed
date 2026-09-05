@@ -10,16 +10,18 @@ This is a **backend-only** repository — no frontend lives here.
 - **Language**: TypeScript (ESM, `@/*` → `src/*` path alias)
 - **Framework**: Express 5
 - **AI/LLM**: LangChain + LangGraph, with Ollama / Google / OpenAI-compatible providers
-- **Database**: Embedded SQLite via Drizzle ORM (`data/cache/aetiomed.db`)
+- **Database**: Embedded SQLite via Drizzle ORM (default `data/cache/aetiomed.db`, see `CACHE_DIR`)
 - **Message Broker**: NATS (JetStream) — optional
-- **Cache/Store**: Redis — optional
+- **Observability**: OpenTelemetry (OTLP span export) — optional
+- **Language detection**: `tinyld` (offline n-gram)
+- **Testing**: Vitest
 - **Package Manager**: pnpm
 
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) v22.5 or higher
 - [pnpm](https://pnpm.io/) (`npm install -g pnpm`)
-- [Docker](https://www.docker.com/) & Docker Compose (only needed for NATS / Redis / local Ollama)
+- [Docker](https://www.docker.com/) & Docker Compose (only needed for NATS or a local Ollama)
 
 ## Getting Started
 
@@ -33,34 +35,36 @@ pnpm install
 
 ### 2. Environment Configuration
 
-Copy `.env.example` to `.env` and adjust. The most important variable is `FEATURES` — it decides which extensions load at all.
+Copy `.env.example` to `.env` and adjust. The most important variable is `FEATURES` — it decides which transports start.
 
-> **Include `REST` in `FEATURES` if you want the HTTP API.** Without it the `rest` extension is skipped, and every extension depending on it (`swagger`, `persistency`, `tracingRest`, `tracingPersistency`) is cascade-skipped. The server starts and generates nothing, silently.
+> **Include `REST` in `FEATURES` if you want the HTTP API.** Without it `startRestServer` is simply never called, and with it the SSE trace stream and `GET /api/graph` (both mounted onto the REST app) are unreachable too. The server starts and generates nothing, silently.
 
-| Variable | Default | Notes |
-| --- | --- | --- |
-| `PORT` | `3030` | Server port |
-| `FEATURES` | `""` | Comma-separated: `REST`, `DEBUG`, `NATS`, `PERSISTENCY`, `TRACING`, `ALLOW_LLMS` |
-| `LLM_PROVIDER` | — | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`) |
-| `LLM_MODEL` | — | Model name (required unless `ALLOW_LLMS`) |
-| `LLM_API_KEY` | — | API key for Google / OpenAI |
-| `LLM_URL` | — | Override base URL (local Ollama, or any OpenAI-compatible endpoint) |
-| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | — | Optional per-role override for the `generator` role; each field falls back individually to the general `LLM_*` value |
-| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | — | Optional per-role override for the `judge` role (same per-field fallback) |
-| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | — | Optional per-role override for the `translator` role (same per-field fallback) |
-| `TRANSLATION_SANDWICH` | `true` | `false`/`0` compiles the translation phases out of the graph entirely |
-| `PROCEDURE_PRESELECTION` | `false` | `true`/`1` selects the category-scoped procedure strategy (splits procedure picks into category-then-procedure) |
-| `LANGUAGES` | `English,German` | Comma-separated deployment language set; must include `English`. A request's `language` is validated against this set (400 if outside it) |
-| `LANGUAGE_AUTO_DETECT` | `false` | `true`/`1` enables offline n-gram detection (+ optional LLM fallback) for a request that omits `language`; not a graph flag |
-| `LANGUAGE_DETECT_LLM_FALLBACK` | `false` | `true`/`1` additionally allows one LLM call when the offline detector is below threshold; requires `LANGUAGE_AUTO_DETECT` |
-| `ALLOWED_LLMS` | — | `ollama:model1,google:model2` — requires the `ALLOW_LLMS` flag |
-| `NATS_URL` | `nats://localhost:4222` | `nats://nats:4222` inside docker compose |
-| `NATS_USER` / `NATS_PASSWORD` | `nats` / `nats` | |
-| `REDIS_URL` | — | Required by the `PERSISTENCY` extension |
-| `SYMPTOM_CACHE_TTL_DAYS` | `30` | TTL for cached LLM-generated symptoms |
-| `OTEL_SDK_DISABLED` | unset (enabled) | Standard OTel var; `"true"` skips constructing the OTel SDK entirely — independent of `FEATURES=TRACING` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` | — | Standard OTel var, read by the OTLP exporter itself |
-| `OTEL_SERVICE_NAME` | — | Standard OTel var, read via envDetector |
+| Variable                                                   | Default                 | Notes                                                                                                                                                                       |
+| ---------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                                     | `3030`                  | Server port                                                                                                                                                                 |
+| `FEATURES`                                                 | `""`                    | Comma-separated: `REST`, `NATS`, `TRACING`, `DEBUG`, `ALLOW_LLMS`                                                                                                           |
+| `LLM_PROVIDER`                                             | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                             |
+| `LLM_MODEL`                                                | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                   |
+| `LLM_API_KEY`                                              | —                       | API key for Google / OpenAI                                                                                                                                                 |
+| `LLM_URL`                                                  | —                       | Override base URL (local Ollama, or any OpenAI-compatible endpoint)                                                                                                         |
+| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`  | —                       | Optional per-role override for the `generator` role; each field falls back individually to the general `LLM_*` value. Setting `_PROVIDER` without `_MODEL` fails at startup |
+| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`      | —                       | Same, for the `judge` role                                                                                                                                                  |
+| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | —                       | Same, for the `translator` role                                                                                                                                             |
+| `ALLOWED_LLMS`                                             | —                       | `ollama:model1,google:model2` — requires the `ALLOW_LLMS` flag                                                                                                              |
+| `TRANSLATION_SANDWICH`                                     | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                       |
+| `PROCEDURE_PRESELECTION`                                   | `false`                 | `true`/`1` selects the category-scoped procedure strategy                                                                                                                   |
+| `LANGUAGES`                                                | `English,German`        | Comma-separated deployment language set; must include `English`. A request's `language` is validated against it (400 if outside)                                            |
+| `LANGUAGE_AUTO_DETECT`                                     | `false`                 | `true`/`1` enables offline n-gram detection for a request that omits `language`; not a graph flag                                                                           |
+| `LANGUAGE_DETECT_LLM_FALLBACK`                             | `false`                 | `true`/`1` additionally allows one LLM call when the detector is below threshold; requires `LANGUAGE_AUTO_DETECT`                                                           |
+| `CATALOG_DIR`                                              | `data`                  | Deployer-owned, read-only catalogue inputs; resolved against `process.cwd()` when relative                                                                                  |
+| `CACHE_DIR`                                                | `data/cache`            | Generated, writable output — the SQLite database lives here                                                                                                                 |
+| `SYMPTOM_CACHE_TTL_DAYS`                                   | `30`                    | TTL for cached LLM-generated symptoms                                                                                                                                       |
+| `MAX_CONTENT_PART_BYTES`                                   | `5000000`               | Ceiling on one content part's decoded size; encoding a larger part fails loudly                                                                                             |
+| `NATS_URL`                                                 | `nats://localhost:4222` | `nats://nats:4222` inside docker compose                                                                                                                                    |
+| `NATS_USER` / `NATS_PASSWORD`                              | `nats` / `nats`         |                                                                                                                                                                             |
+| `OTEL_SDK_DISABLED`                                        | unset (enabled)         | Standard OTel var; `"true"` skips constructing the OTel SDK entirely — independent of `FEATURES=TRACING`                                                                    |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`                              | —                       | Standard OTel var, read by the OTLP exporter itself                                                                                                                         |
+| `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES`           | —                       | Standard OTel vars, read via `envDetector`                                                                                                                                  |
 
 **Per-request LLM selection.** With the `ALLOW_LLMS` flag set, no global LLM is configured; every request must supply its own `llmConfig`, validated against the `ALLOWED_LLMS` allowlist and discoverable via `GET /api/allowedLlms`. Without the flag, `LLM_PROVIDER`/`LLM_MODEL` are required and per-request `llmConfig` is rejected.
 
@@ -69,11 +73,11 @@ Copy `.env.example` to `.env` and adjust. The most important variable is `FEATUR
 #### Option A: Infrastructure in Docker, server local (recommended for development)
 
 ```bash
-docker compose --profile NATS --profile PERSISTENCY up -d
+docker compose --profile NATS up -d
 pnpm dev
 ```
 
-`nats`/`nats-box` sit behind the `NATS` compose profile and `redis` behind `PERSISTENCY`, so omit whichever you don't need. `pnpm dev` regenerates the extension registry and runs `tsx watch` against `.env`, auto-restarting on file changes.
+`nats`/`nats-box` sit behind the `NATS` compose profile, so omit it if you don't need them. `pnpm dev` runs `tsx watch` against `.env`, auto-restarting on file changes.
 
 #### Option B: Full stack in Docker
 
@@ -81,24 +85,27 @@ pnpm dev
 docker compose up --build
 ```
 
-Starts the server plus an Ollama instance that pulls `LLM_MODEL` on boot (the first pull can take a while for larger models). Note that the compose file's default `FEATURES` does not include `REST` — set it explicitly in your environment if you want the HTTP API from the container.
+Starts the server plus an Ollama instance that pulls `LLM_MODEL` on boot (the first pull can take a while for larger models).
 
 The server is available at `http://localhost:3030`.
 
 ## Commands
 
 ```bash
-pnpm dev          # generate registry + run with tsx watch (loads .env)
-pnpm build        # generate registry + tsc + tsc-alias
+pnpm dev          # run with tsx watch (loads .env)
+pnpm build        # tsc + tsc-alias
 pnpm start        # run compiled dist/index.js
+pnpm test         # vitest run
+pnpm test:watch   # vitest
 pnpm lint         # eslint
 pnpm lint:fix     # eslint --fix
-pnpm format       # prettier --write
-pnpm generate     # regenerate src/extensions/_registry.ts (automatic in dev/build)
+pnpm format       # prettier --write src
+pnpm format:check # prettier --check src
 pnpm db:generate  # drizzle-kit generate — regenerate SQL migrations into drizzle/
-pnpm swagger      # regenerate swagger-output.json
-pnpm graph:export # export the LangGraph diagrams as SVGs into docs/
+pnpm graph:export # export the LangGraph diagrams into docs/graphs/
 ```
+
+`pnpm format`/`format:check` cover `src` only. Format markdown, `package.json`, the workflows and `scripts/` by hand with `npx prettier --write <path>`.
 
 `pnpm graph:export` renders via Mermaid and needs a Chrome binary bound to Puppeteer first:
 
@@ -113,81 +120,54 @@ pnpm exec puppeteer browsers install chrome
 ```
 src/
 ├── index.ts                  entry point
+├── api/                      shared request/response Zod schemas + wire codec
 ├── core/
-│   ├── app.ts                creates the EventBus, inits the graph, loads extensions
-│   ├── event-bus.ts          typed pub/sub; extensions augment EventMap
-│   ├── extension.ts          defineExtension() + types
-│   ├── loader.ts             topo-sort, flag gating, cascade-skip, env parsing
-│   └── graph/                the case-generation pipeline (NOT an extension)
-│       ├── 02graphs/         LangGraph graphs, numbered by phase
+│   ├── app.ts                the composition root — builds and starts everything
+│   ├── event-bus.ts          typed pub/sub; modules augment EventMap
+│   ├── caseGenerationService.ts  the seam both transports call
+│   ├── languageDetection/    the request-language resolution ladder
+│   └── graph/                the case-generation pipeline
+│       ├── runtime.ts        GraphRuntime — the port bundle (llm, catalogs, log, clock)
+│       ├── repos.ts          composes every repo into one bundle
+│       ├── config.ts         graph env schema
+│       ├── 02graphs/         LangGraph graphs, numbered by pipeline phase
 │       ├── 03aigateway/      prompt building, LLM calls, retries, output parsing
-│       ├── 03repo/           data access: YAML → SQLite sync, caches
+│       ├── catalog/          one vertical slice per catalogue domain (repo + port adapters)
+│       ├── persistence/      shared SQLite infrastructure
+│       ├── symptoms/         the symptom cache slice
+│       ├── medicalBasis/     plan-input provider registry
+│       ├── modality/         content-rendering provider registry
 │       ├── models/           Zod domain models
-│       ├── utils/            llm, context, retry, prompt, tracing wrapper
+│       ├── utils/            llm, context, retry, prompt, node wrapper
 │       └── errors/
-└── extensions/               auto-discovered plugins
+├── transports/
+│   ├── rest/                 Express server and routers
+│   └── nats/                 JetStream consumer and publisher
+└── tracing/
+    ├── sse/                  live label + trace streaming
+    ├── structure/            GET /api/graph
+    └── otel.ts               the OTel span channel
 ```
 
-The numbered prefixes under `core/graph/` encode layer order: graphs call tools, tools call the aigateway, the aigateway calls the repo.
+The numbered prefixes under `core/graph/` encode pipeline order: graphs call tools, tools call the aigateway. `persistence/`, `catalog/`, `symptoms/`, `medicalBasis/` and `modality/` are deliberately unnumbered — they are not pipeline steps.
 
-### Extension System
+### Composition Root
 
-Extensions are auto-discovered by `scripts/generate-registry.ts`, which writes `src/extensions/_registry.ts`. **Never edit that file manually** — it regenerates on every `pnpm dev` / `pnpm build`.
+`createApp()` (`src/core/app.ts`) constructs everything explicitly, in order: parse `FEATURES`, resolve `CATALOG_DIR`/`CACHE_DIR`, build the OTel tracer, `initGraph()` (repos → `GraphRuntime` → compiled graph → catalogue validation), then `createCaseGenerationService()`, then start each transport whose flag is set.
 
-| Extension | Required Flags | Depends On | Purpose |
-| --- | --- | --- | --- |
-| `api` | — | — | Shared request/response Zod schemas; no runtime behavior |
-| `debugLogger` | `DEBUG` | — | Logs every bus event to the console |
-| `nats` | `NATS` | `api` | Async case generation over JetStream (`cases.generate`, cancel via `cases.cancel.>`) |
-| `persistency` | `PERSISTENCY` | `rest` | Saves completed cases to Redis; mounts its router |
-| `rest` | `REST` | `api` | Express server; exports the shared `apiRouter` mounted at `/api` |
-| `swagger` | — | `rest` | Serves Swagger UI |
-| `tracing` | `TRACING` | — | Bridges bus lifecycle events onto per-job trace buses |
-| `tracingNats` | — | `tracing`, `nats` | Republishes trace events to `cases.traces.${jobId}` |
-| `tracingPersistency` | — | `rest`, `persistency`, `tracing` | Persists trace logs to Redis (`traces:${jobId}`, 24h TTL) |
-| `tracingRest` | — | `tracing`, `rest` | SSE live trace streaming |
+**`GraphRuntime`** is the single seam graph construction goes through. It is captured **by closure at graph-assembly time** — not threaded through node signatures, and not carried on LangGraph's per-invocation runtime context. Nothing under `src/core/graph/` imports a mutable module singleton or reads `process.env`.
 
-To add one, create `src/extensions/<name>/index.ts` exporting `extension`:
-
-```ts
-export const extension = defineExtension({
-  name: "myExtension",
-  requiredFlags: ["MY_FLAG"],
-  dependsOn: [restExtension] as const,
-  envSchema: z.object({ MY_VAR: z.string() }),
-  async setup({ config, bus, dep }) {
-    bus.on("Generation Completed", ({ case: c, jobId }) => { /* … */ });
-  },
-});
-```
+**`CaseGenerationService`** is what both transports call. It owns ICD→name resolution, language resolution, job ids, `runWithContext`, generation-flag normalisation, terminal event emission and error→status mapping, and returns a job shape (`{ jobId, status, case?, error?, language }`) rather than a bare `Case`. Routers are protocol translation only.
 
 To publish new events, augment `EventMap` via module augmentation on `core/event-bus.js` — that keeps `emit`/`on` type-checked without either side importing the other.
 
-### Graph ↔ Extension Boundary
+### Graph Assembly
 
-The graph is core, not a plugin, and is initialized directly by `createApp()`. Extensions interact with it in exactly two ways:
+`assembleCaseGraph(deps, flags)` is pure wiring, and follows one rule:
 
-**Invoking it** — transports (`rest`, `nats`) call:
+> **Compile on what the deployer chose; branch on what the caller asked for.**
 
-```ts
-runWithContext(
-  () => generateCase(diagnosis, generationFlags, userInstructions, language, difficulty),
-  jobId,
-  llmConfig
-);
-```
-
-`runWithContext` uses `AsyncLocalStorage` to thread `jobId`, `llmConfig`, and an `AbortSignal` through the entire async call chain, sets up tracing, and registers an `AbortController` with `cancelManager` so the job can be cancelled by id. Graph nodes read it from LangGraph's runtime context or via `getRequestContext()`.
-
-**Observing it** — the graph emits onto the bus and never awaits the result:
-
-| Event | Emitted by |
-| --- | --- |
-| `Node Started` / `Node Completed` | the `traceNode()` wrapper around every graph node |
-| `Generation Log` | graph nodes and AI gateways |
-| `Generation Completed` / `Generation Failure` / `Generation Cancelled` | the **transports**, not the graph itself |
-
-Note the last row: the graph returns a case or throws; it's `cases.router.ts` / `cases.handler.ts` that translate that into a terminal bus event. Extensions relying on completion events therefore only see jobs that went through a transport.
+`TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are compiled away — an absent flag means an **absent node**, not a skipped one. `generationFlags`, `difficulty` and `language` are per-request and stay runtime branches. All four flag combinations are compiled eagerly at boot; `generateCase` is bound to the one the config selects.
 
 ### Tool Pattern
 
@@ -197,87 +177,97 @@ When adding an LLM call, put it in `03aigateway/`, expose it as a `Tool`, and ca
 
 ### AI Gateway Conventions
 
-One file per generated field. Each builds prompts with `buildPrompt`/`section`, picks a temperature-appropriate model, and wraps the call in `retry()`:
+One file per generated field. Each builds prompts with `buildSystemPrompt`/`section` and wraps the call in `retry()`.
 
-- `getDeterministicLLM()` (0.1) — judges, evaluations, translations, factual enumeration
-- `getBalancedLLM()` (0.4) — clinical decision-making, output already pinned down by the outline
-- `getCreativeLLM()` (0.7) — open-ended narrative: outlines, patient voice, demographics
+Model selection goes through one method on the port, carrying two independent dimensions:
+
+```ts
+runtime.llm.for({ role, temperature }, context?.llmConfig);
+```
+
+- **role** — `generator` | `judge` | `translator`, each independently configurable per env, so a deployer can run a small local generator against a stronger judge. Generators and judges being the same model is the pipeline's structural blind spot; this is the seam that fixes it.
+- **temperature** — a fixed policy class, not configuration: `deterministic` (0.1) for judges and translations, `balanced` (0.4) for clinical decisions already pinned down by the outline, `creative` (0.7) for open-ended narrative.
+
+System prompts go through `buildSystemPrompt(runtime, audience, ...sections)`, where `audience` is `internal` or `user-facing`. Internal artifacts (the plan, the plan judge, the blinded solver, `matchDiagnosis`) are always English; only user-facing generators receive the target-language directive, and only when the translation sandwich is off.
 
 For structured output, keep the **grammar/prompt split**: pass the fully constrained schema (including large literal unions of approved names) to `withStructuredOutput`, but render a name-agnostic version into the prompt. `renderSchemaForPrompt` enforces this by collapsing literal unions longer than 8 members to `string`. This keeps prompts short and stable while the constraint stays exact.
 
 Retry prompts get `summarizeValidationError()` output — a few short actionable lines — rather than a raw Zod issue dump.
 
-### Repo Layer
+### Content Parts
 
-All lookups and caches are backed by an embedded SQLite database at `data/cache/aetiomed.db` (`node:sqlite`, WAL mode; Drizzle ORM, migrations in `drizzle/`).
+`chiefComplaint`, each `anamnesis[].answer` and each `procedures[].result` are ordered, non-empty arrays of `ContentPart` (`{ type, value: Uint8Array, alt }`). The array **composes** one field value; it is not a list of alternative renditions.
 
-`syncSource()` re-ingests a YAML file **only when its sha256 changed** since the last sync, with fingerprints kept in `_meta`. This matters: the largest source is a ~37k-entry translation file, and re-parsing it on every boot cost seconds. On an unchanged file, startup skips parsing entirely.
+For a text part `value` is derived from `alt` through the single `textPart()` constructor, so translation touches `alt` and re-derives `value` and the two cannot drift. `textOf(parts)` is the only path from content to a prompt — **bytes never reach a prompt or an LLM output schema**. Wire encoding (UTF-8 for `text/*`, base64 otherwise) lives in one place, `src/api/contentWire.ts`.
+
+### Data Layer
+
+All lookups and caches are backed by an embedded SQLite database under `CACHE_DIR` (`node:sqlite`, WAL mode; Drizzle ORM, migrations in `drizzle/`).
+
+The code is organised as vertical slices rather than one repo directory: shared infrastructure in `core/graph/persistence/`, each catalogue domain's repo beside its port adapters in `core/graph/catalog/<domain>/`, the symptom cache in `core/graph/symptoms/`, all composed by `core/graph/repos.ts`. **Every repo module exports a `createXxx(...)` factory and performs no I/O on import** — `repos.test.ts` enforces that.
+
+`syncSource()` re-ingests a YAML file **only when its sha256 changed** since the last sync, with fingerprints kept in `_meta`. This matters: the largest source is a ~37k-entry translation file, and re-parsing it on every boot cost seconds.
 
 Tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`.
 
-`translationStore.ts` is a generic cache-aside translation store factory shared by diagnoses, procedures, anamnesis categories, and trace labels. AI-generated translations are upserted into the DB and survive restarts, but are **never written back to the YAML sources** — a YAML edit overwrites only the keys the YAML declares.
+`translationStore.ts` is a cache-aside translation store shared by diagnoses, procedures, anamnesis categories and trace labels. In-flight work is deduped **per key**, and AI-generated translations are persisted with `source: "generated"` but **never written back to the YAML sources**.
 
 ### Data Files
 
-`data/` holds the sources synced into SQLite at startup:
+`CATALOG_DIR` (default `data/`) holds the sources synced into SQLite at startup:
 
 - `procedures.yml` / `proceduresTranslations.yml` — approved procedure names. Names may be prefixed `"Category: Name"`; uncategorized entries fall into a synthetic `"General"` bucket.
 - `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions
 - `labelTranslations.yml` — trace step label translations
 - `diagnosis_symptoms.json` — UMLS symptom floor per ICD code (loaded directly, not via the DB sync)
-- `cache/` — the generated SQLite database
 
-The root-level `procedures/` directory holds the categorized source YAML and the scripts that compile them into `data/procedures.yml`. `scripts/extract-icd11*.ts` build the diagnosis YAML from ICD-11 source data; both are run manually.
+The generated database lives under `CACHE_DIR` (default `data/cache/`), deliberately a separate directory so a deployer can mount their own catalogues without clobbering it. `scripts/extract-icd11*.ts` build the diagnosis YAML from ICD-11 source data and are run manually.
 
 ## REST API
 
 Requires the `REST` feature flag.
 
-| Method | Path | Purpose |
-| --- | --- | --- |
-| `GET` | `/api/health` | Health check |
-| `GET` | `/api/features` | Active feature flags |
-| `GET` | `/api/allowedLlms` | Allowlisted LLMs (when `ALLOW_LLMS` is set) |
-| `POST` | `/api/cases` | Generate a case (accepts `?jobId=`; aborts on client disconnect) |
-| `DELETE` | `/api/cases/:jobId` | Cancel an in-flight generation |
-| `GET` | `/api/diagnosis` | List predefined diagnoses |
-| `GET` | `/api/procedures` | List predefined procedures |
-| `GET` | `/api/cases` | List persisted cases (`persistency`) |
-| `GET` | `/api/traces` | List persisted trace job ids (`tracingPersistency`) |
-| `GET` | `/api/traces/:jobId` | Fetch a persisted trace log (`tracingPersistency`) |
-| `GET` | `/api/traces/:jobId/stream` | Live SSE stream: `event: label` (localized) and `event: trace` (English, node-bound) (`TRACING`) |
-| `GET` | `/api/graph` | Compiled graph topology (nodes + edges + English label keys) for this deployment's flags (`TRACING`) |
+| Method   | Path                        | Purpose                                                                                              |
+| -------- | --------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/health`               | Health check                                                                                         |
+| `GET`    | `/api/features`             | Active feature flags                                                                                 |
+| `GET`    | `/api/allowedLlms`          | Allowlisted LLMs (when `ALLOW_LLMS` is set)                                                          |
+| `POST`   | `/api/cases`                | Generate a case (accepts `?jobId=`; aborts on client disconnect)                                     |
+| `DELETE` | `/api/cases/:jobId`         | Cancel an in-flight generation                                                                       |
+| `GET`    | `/api/diagnosis`            | List predefined diagnoses                                                                            |
+| `GET`    | `/api/procedures`           | List predefined procedures                                                                           |
+| `GET`    | `/api/traces/:jobId/stream` | Live SSE stream: `event: label` (localized) and `event: trace` (English, node-bound) (`TRACING`)     |
+| `GET`    | `/api/graph`                | Compiled graph topology (nodes + edges + English label keys) for this deployment's flags (`TRACING`) |
 
-A request body needs either `icd` or `diagnosis`; `generationFlags` defaults to all four fields and `difficulty` to `medium`.
-
-Swagger UI is served at the API root once the `swagger` extension loads:
-
-```
-http://localhost:3030/api
-```
+A request body needs either `icd` or `diagnosis`; `generationFlags` defaults to all four fields and must name at least one; `difficulty` defaults to `medium`. The response echoes the resolved `language`, and content-bearing fields are wire-encoded (see Content Parts).
 
 ## NATS API
 
 Requires the `NATS` feature flag. The JetStream stream `cases` is created on startup with a workqueue retention policy.
 
-| Subject | Direction | Purpose |
-| --- | --- | --- |
-| `cases.generate` | in | Case generation request (same body as `POST /api/cases`, plus an optional `jobId`) |
-| `cases.generated` | out | Completed case or error payload, keyed by `jobId` |
-| `cases.cancel.>` | in | Cancel a job (id from the body or the last subject token) |
-| `cases.traces.${jobId}` | out | Live trace events (`tracingNats`) |
+| Subject           | Direction | Purpose                                                                            |
+| ----------------- | --------- | ---------------------------------------------------------------------------------- |
+| `cases.generate`  | in        | Case generation request (same body as `POST /api/cases`, plus an optional `jobId`) |
+| `cases.generated` | out       | Completed case or error payload, keyed by `jobId`                                  |
+| `cases.cancel.>`  | in        | Cancel a job (id from the body or the last subject token)                          |
 
-The consumer acks on success *and* on handled errors (it publishes an error payload instead), naking only when publishing itself fails.
+The consumer acks on success _and_ on handled errors (it publishes an error payload instead), naking only when publishing itself fails.
 
 ## Testing & Verification
 
 ```bash
+pnpm test
 pnpm lint
 pnpm format:check
+pnpm build
 ```
 
-There is no automated test suite yet. Pipeline changes are verified by running a generation and inspecting the trace — either via the SSE stream or with `DEBUG` in `FEATURES`, which logs every bus event including full prompts and raw LLM responses.
+There is a Vitest suite of ~40 files co-located next to their sources, covering graph assembly, config parsing, catalogues and startup validation, the content-part wire codec, the translation store and split, tracing and OTel, language detection, the medical-basis and modality registries, and the no-I/O-on-import invariant.
+
+**`tsconfig.json` excludes `**/_.test.ts`and includes only`src/\*\*/_`**, so `tsc`does not typecheck test files or`scripts/`. A type error in a test surfaces only if an assertion happens to catch it — verify tests by running them, not by trusting the build.
+
+For pipeline changes, run a generation and inspect the trace via the SSE stream. `DEBUG` in `FEATURES` adds `cors` and request logging to the REST app.
 
 ## Additional Tools
 

@@ -31,7 +31,6 @@ function fakeGraph(): GraphAppContext {
       llm: {
         provider: "ollama",
         model: "test-model",
-        temperature: 0.7,
       },
       allowedLlms: undefined,
       PROCEDURE_PRESELECTION: false,

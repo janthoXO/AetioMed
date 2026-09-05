@@ -72,11 +72,6 @@ export default function createStructureRouter(
 ): express.Router {
   const router = express.Router();
 
-  router.use((_req, _res, next) => {
-    /* #swagger.tags = ['Traces'] */
-    next();
-  });
-
   router.get("/graph", (_req, res) => {
     buildGraphStructure(caseGraph)
       .then((structure) => res.json(structure))

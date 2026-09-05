@@ -38,8 +38,6 @@ const AnamnesisFieldTextSchema = z.object({
   answer: z.string().describe("Patient's response or clinical finding"),
 });
 
-export type AnamnesisFieldText = z.infer<typeof AnamnesisFieldTextSchema>;
-
 export function buildAnamnesisFieldSchema(categories?: AnamnesisCategory[]) {
   if (categories?.length) {
     return AnamnesisFieldTextSchema.extend({

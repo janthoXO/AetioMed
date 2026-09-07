@@ -248,8 +248,8 @@ parallel code path that can drift. Compilation is pure wiring with no I/O, so fo
 `pnpm graph:export` writes **two** topologies to `docs/graphs/`, not four:
 `PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter and leaves the procedure graph at
 three nodes either way, so it is not a shape (`graphTopologyKey` is the authority, and
-`caseGraph.test.ts` asserts the premise still holds). Each topology gets the two views the
-script already produced — detailed, and an overview with the translation phases collapsed.
+`caseGraph.test.ts` asserts the premise still holds). Each topology gets the one detailed view
+the script produces.
 
 **Generation flags** (`src/core/graph/models/GenerationFlags.ts`): `patient`, `chiefComplaint`, `anamnesis`, `procedures`. Requests also carry a **difficulty** (`models/Difficulty.ts`: `easy | medium | hard`, default `medium`).
 

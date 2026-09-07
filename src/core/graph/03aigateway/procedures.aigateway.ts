@@ -18,7 +18,7 @@ import {
   type ProcedureRelevance,
   type ProcedureResult,
 } from "../models/Procedure.js";
-import { textOf, textPart } from "../models/ContentPart.js";
+import { encodeText, textOf } from "../models/ContentPart.js";
 import {
   UNCATEGORIZED_CATEGORY,
   type ProcedurePickMode,
@@ -801,7 +801,13 @@ ${outline}`
       return {
         ...step,
         relevance: match?.relevance ?? "optional",
-        result: [textPart(match?.result ?? "")],
+        result: [
+          {
+            type: "text/plain",
+            value: encodeText(match?.result ?? ""),
+            alt: match?.result ?? "",
+          },
+        ],
       };
     });
   } catch (error) {
@@ -911,7 +917,13 @@ function assembleBridgeResults(
       .map((leaf) => ({
         name: leaf.name,
         relevance: leaf.relevance,
-        result: [textPart(leaf.result)],
+        result: [
+          {
+            type: "text/plain",
+            value: encodeText(leaf.result),
+            alt: leaf.result,
+          },
+        ],
       }));
   }
 
@@ -928,7 +940,13 @@ function assembleBridgeResults(
         result.push({
           name: full,
           relevance: leaf.relevance,
-          result: [textPart(leaf.result)],
+          result: [
+            {
+              type: "text/plain",
+              value: encodeText(leaf.result),
+              alt: leaf.result,
+            },
+          ],
         });
       }
     }

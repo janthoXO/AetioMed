@@ -18,7 +18,17 @@ import {
 } from "./strategy/index.js";
 import type { GraphRuntime, LlmPort, LlmRole } from "@/core/graph/runtime.js";
 import type { ProcedureResult } from "@/core/graph/models/Procedure.js";
-import { textPart } from "@/core/graph/models/ContentPart.js";
+import {
+  encodeText,
+  type ContentPart,
+} from "@/core/graph/models/ContentPart.js";
+
+/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
+ * inlined at every real call site now; kept here only to keep this
+ * fixture readable. */
+function fixtureTextPart(alt: string): ContentPart {
+  return { type: "text/plain", value: encodeText(alt), alt };
+}
 import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
@@ -182,7 +192,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
         {
           name: "Biopsy",
           relevance: "obligatory",
-          result: [textPart("Positive")],
+          result: [fixtureTextPart("Positive")],
         },
       ],
     });

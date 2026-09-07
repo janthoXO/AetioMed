@@ -3,7 +3,7 @@ import {
   type Anamnesis,
   type AnamnesisCategory,
 } from "../models/Anamnesis.js";
-import { textPart } from "../models/ContentPart.js";
+import { encodeText } from "../models/ContentPart.js";
 import type { Language } from "../models/Language.js";
 import { handleLangchainError } from "../utils/llm.js";
 import {
@@ -85,7 +85,7 @@ ${renderSchemaForPrompt(z.object({ anamnesis: buildAnamnesisSchema() }))}`
 
     // Field generators produce ordinary text under a z.string() `answer`
     // schema — the LLM is never asked to emit bytes (issue 11 §3/§4). Each
-    // `answer` is wrapped with `textPart()` below to build the domain
+    // `answer` is wrapped into a `ContentPart` below to build the domain
     // `Anamnesis`.
     const anamnesisText: { category: AnamnesisCategory; answer: string }[] =
       await retry(
@@ -132,7 +132,13 @@ ${renderSchemaForPrompt(z.object({ anamnesis: buildAnamnesisSchema() }))}`
 
     const anamnesis: Anamnesis = anamnesisText.map((field) => ({
       category: field.category,
-      answer: [textPart(field.answer)],
+      answer: [
+        {
+          type: "text/plain",
+          value: encodeText(field.answer),
+          alt: field.answer,
+        },
+      ],
     }));
 
     return anamnesis;

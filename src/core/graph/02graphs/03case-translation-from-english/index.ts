@@ -9,8 +9,8 @@ import { type Runtime, Send } from "@langchain/langgraph";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import {
   createTranslationFromEnglishTools,
-  caseAltMap,
-  applyCaseAltTranslations,
+  caseTextMap,
+  applyCaseTextTranslations,
 } from "./tools.js";
 import type { DefinedTranslations } from "./state.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
@@ -88,8 +88,9 @@ function makeTranslateDefined(
 }
 
 /**
- * Issue 12 §1/§2's "Rest" pass: one LLM call over every `ContentPart.alt` in
- * the case, keyed by stable path (`tools.ts`'s `caseAltMap`). Writes ONLY
+ * Issue 12 §1/§2's "Rest" pass: one LLM call over every `ContentPart` text
+ * fragment in the case — both `alt` and, for text parts, the decoded
+ * prose — keyed by stable path (`tools.ts`'s `caseTextMap`). Writes ONLY
  * `restTranslations` — never `case`, and never sees `value` bytes, procedure
  * names, or anamnesis categories (those are the defined pass's job).
  */
@@ -102,7 +103,7 @@ function makeTranslateRest(
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Pick<CaseTranslationFromEnglishState, "restTranslations">> {
     const language = requiredTargetLanguage();
-    const values = caseAltMap(state.case);
+    const values = caseTextMap(state.case);
     console.debug(
       `[Translation] Translating ${Object.keys(values).length} free-text fragment(s) to`,
       language
@@ -132,7 +133,7 @@ export function translateMerge(
   state: CaseTranslationFromEnglishState
 ): Pick<CaseTranslationFromEnglishState, "case"> {
   const { anamnesisCategories, procedureNames } = state.definedTranslations;
-  const altFields = applyCaseAltTranslations(
+  const altFields = applyCaseTextTranslations(
     state.case,
     state.restTranslations
   );

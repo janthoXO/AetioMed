@@ -1,19 +1,18 @@
 import { AppError } from "@/core/graph/errors/AppError.js";
-import { createTextModalityProvider } from "./providers/text.js";
 import type { ModalityProvider } from "./ports.js";
 
 /**
- * The named startup error for §4's "registry size 0" row. Thrown by the
- * field-content pipeline (`pipeline.ts`'s `buildContentPartsSubgraph`) the
- * moment it is asked to compile against an empty registry — which, because
- * every graph variant is compiled eagerly at boot (`caseGraph.ts`'s
- * `buildCaseGraph`), means an empty registry fails the process at startup,
- * not on the first request that happens to need it.
+ * The named startup error for an empty per-field provider list. Thrown by
+ * each field's subgraph builder (`02presentation/generation/chiefComplaint/index.ts`,
+ * `anamnesis/index.ts`) the moment it is asked to compile against zero
+ * providers — which, because every graph variant is compiled eagerly at
+ * boot (`caseGraph.ts`'s `buildCaseGraph`), means an empty registry fails
+ * the process at startup, not on the first request that happens to need it.
  */
 export class EmptyModalityRegistryError extends AppError {
   constructor() {
     super(
-      "Modality registry is empty — at least one ModalityProvider (e.g. the text provider) must be registered.",
+      "Modality registry is empty — at least one ModalityProvider (e.g. a text provider) must be registered.",
       "EMPTY_MODALITY_REGISTRY",
       500
     );
@@ -21,33 +20,35 @@ export class EmptyModalityRegistryError extends AppError {
 }
 
 /**
- * Builds the deployment's modality registry: a plain list constructed in
- * the composition root, **not** a compile-time flag — exactly
- * `medicalBasis/registry.ts`'s `createMedicalBasisRegistry` (see that
- * module's doc comment for the reasoning this mirrors). The registry's
- * *size* decides whether `decide_modality` is compiled into each field
- * subgraph at all (`02presentation/generation/pipeline.ts`), the same
- * absent-capability-⇒-absent-node rule as the two graph flags and the
- * medical-basis registry, just driven by this list's length instead of a
- * boolean.
- *
- * There is no deployer-facing switch for this list today — it always
- * returns `[textProvider]`. An image (or audio, or any other non-text)
- * provider slots in here without touching any graph.
+ * Which content-bearing field a provider list serves (issue 21 §4).
+ * Providers are per field — chief complaint may have a PDF transfer-slip
+ * provider that anamnesis has no use for — so there is no longer a single
+ * flat registry, only one array per field.
  */
-export function createModalityRegistry(): ModalityProvider[] {
-  return [createTextModalityProvider()];
-}
+export type ModalityField = "chiefComplaint" | "anamnesis" | "procedureResult";
 
-/** First provider (in registry order) that declares it can produce `mime`. */
+/**
+ * The deployment's complete set of per-field registries, composed in the
+ * composition root (`graph/index.ts`) from each field's own
+ * `create*Providers(runtime)` factory (`chiefComplaint/providers.ts`,
+ * `anamnesis/providers.ts`; `procedureResult` is wired by a later step —
+ * see that key's TODO in `graph/index.ts`). Still `AssemblyDeps`, not
+ * `GraphFlags`, in `caseGraph.ts` — fixed per deployment, shared by all four
+ * flag variants, for the same reason `medicalBasisRegistry` lives there.
+ */
+export type ModalityRegistries = Record<
+  ModalityField,
+  ModalityProvider<unknown>[]
+>;
+
+/**
+ * Look up a provider by `id` — the plan addresses providers by id (never by
+ * MIME type, since two providers in the same field could share a MIME and
+ * the plan must pick a specific one).
+ */
 export function findModalityProvider(
-  providers: ModalityProvider[],
-  mime: string
-): ModalityProvider | undefined {
-  return providers.find((p) => p.produces.includes(mime));
-}
-
-/** Every MIME type any registered provider can produce, deduped, registry order. */
-export function producibleModalities(providers: ModalityProvider[]): string[] {
-  return [...new Set(providers.flatMap((p) => p.produces))];
+  providers: ModalityProvider<unknown>[],
+  id: string
+): ModalityProvider<unknown> | undefined {
+  return providers.find((p) => p.id === id);
 }

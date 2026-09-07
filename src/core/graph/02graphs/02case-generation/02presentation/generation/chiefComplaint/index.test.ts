@@ -1,16 +1,15 @@
 // Drives the compiled `chiefComplaintGraph` directly (no outer Send/fan-in,
 // no filesystem, no real LLM) — mirrors the house style in
 // `03procedure/index.test.ts`: a fake `LlmPort` that throws the moment
-// something calls it that a test did not script, which is what proves the
-// text provider makes no LLM call at all (issue 13 §3/§7).
+// something calls it that a test did not script.
 import { describe, expect, it } from "vitest";
+import z from "zod";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { EventBus } from "@/core/event-bus.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
-import { buildChiefComplaintGraph } from "./chiefComplaintGraph.js";
+import { buildChiefComplaintGraph } from "./index.js";
 import type { GraphRuntime, LlmPort, LlmRole } from "@/core/graph/runtime.js";
 import type { ModalityProvider } from "@/core/graph/modality/ports.js";
-import { createTextModalityProvider } from "@/core/graph/modality/providers/text.js";
 import { EmptyModalityRegistryError } from "@/core/graph/modality/registry.js";
 import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
@@ -58,19 +57,31 @@ function buildFakeRuntime(llm: LlmPort): GraphRuntime {
   };
 }
 
-/** A provider that resolves after `delayMs`, tagging its output so tests can tell order apart. */
-function makeStaggeredProvider(opts: {
-  id: string;
-  mime: string;
-  delayMs: number;
-}): ModalityProvider {
+/** The one production-shaped provider: batch-in, batch-out, `{instruction}` input. */
+function textProvider(id = "text"): ModalityProvider<unknown> {
   return {
-    id: opts.id,
-    produces: [opts.mime],
-    async render(alt) {
-      await new Promise((r) => setTimeout(r, opts.delayMs));
-      return new TextEncoder().encode(`${opts.id}:${alt}`);
-    },
+    id,
+    mime: "text/plain",
+    description: "test text provider",
+    inputSchema: z.object({ instruction: z.string().min(1) }),
+    render: async (batch) =>
+      (batch as { instruction: string }[]).map((b) =>
+        new TextEncoder().encode(b.instruction)
+      ),
+  };
+}
+
+/** A non-text provider, for the multi-provider registry tests. */
+function imageProvider(): ModalityProvider<unknown> {
+  return {
+    id: "image",
+    mime: "image/png",
+    description: "test image provider",
+    inputSchema: z.object({ prompt: z.string().min(1) }),
+    render: async (batch) =>
+      (batch as { prompt: string }[]).map((b) =>
+        new TextEncoder().encode(`img:${b.prompt}`)
+      ),
   };
 }
 
@@ -87,23 +98,21 @@ async function nodeIds(graph: {
 
 function buildGraph(
   llm: LlmPort,
-  registry: ModalityProvider[],
+  providers: ModalityProvider<unknown>[],
   bus: EventBus = new EventBus()
 ) {
   const runtime = buildFakeRuntime(llm);
-  return buildChiefComplaintGraph(runtime, registry, createTraceNode(bus));
+  return buildChiefComplaintGraph(runtime, providers, createTraceNode(bus));
 }
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
 describe("chiefComplaintGraph — output surface (issue 17 §1)", () => {
   it("writes back only `case`, not the whole state schema, at either registry size", () => {
-    const single = buildGraph(makeQueuedLlmPort({}), [
-      createTextModalityProvider(),
-    ]);
+    const single = buildGraph(makeQueuedLlmPort({}), [textProvider()]);
     const multi = buildGraph(makeQueuedLlmPort({}), [
-      createTextModalityProvider(),
-      makeStaggeredProvider({ id: "img", mime: "image/png", delayMs: 0 }),
+      textProvider(),
+      imageProvider(),
     ]);
 
     expect([...single.outputChannels].sort()).toEqual(["case"]);
@@ -111,42 +120,61 @@ describe("chiefComplaintGraph — output surface (issue 17 §1)", () => {
   });
 });
 
-describe("chiefComplaintGraph — node shape by registry size (issue 13 §4/§7)", () => {
+describe("chiefComplaintGraph — node shape (issue 21 §7: no registry-size branching)", () => {
   it("rejects an empty registry immediately, at build time", () => {
     expect(() => buildGraph(makeQueuedLlmPort({}), [])).toThrow(
       EmptyModalityRegistryError
     );
   });
 
-  it("compiles no decide_modality node with a single-entry registry", async () => {
-    const graph = buildGraph(makeQueuedLlmPort({}), [
-      createTextModalityProvider(),
-    ]);
+  it("compiles exactly plan_content and render_parts with a one-provider registry", async () => {
+    const graph = buildGraph(makeQueuedLlmPort({}), [textProvider()]);
     const ids = await nodeIds(graph);
-    expect(ids).not.toContain("decide_modality");
-    expect(ids).toContain("generate_content");
-    expect(ids).toContain("render_parts");
+    expect(ids).toEqual(
+      ["__start__", "__end__", "plan_content", "render_parts"].sort()
+    );
   });
 
-  it("compiles a decide_modality node with a two-entry registry", async () => {
+  it("compiles exactly plan_content and render_parts with a two-provider registry too", async () => {
     const graph = buildGraph(makeQueuedLlmPort({}), [
-      createTextModalityProvider(),
-      makeStaggeredProvider({ id: "img", mime: "image/png", delayMs: 0 }),
+      textProvider(),
+      imageProvider(),
     ]);
     const ids = await nodeIds(graph);
-    expect(ids).toContain("decide_modality");
+    expect(ids).toEqual(
+      ["__start__", "__end__", "plan_content", "render_parts"].sort()
+    );
   });
 });
 
-describe("chiefComplaintGraph — single-entry (text-only) registry", () => {
-  it("produces one text/plain part from the existing gateway call, with zero extra LLM calls", async () => {
+describe("chiefComplaintGraph — single-provider registry", () => {
+  it("plans then renders one text/plain part, with exactly one planning call and one render call", async () => {
     const llm = makeQueuedLlmPort({
-      generator: [JSON.stringify({ chiefComplaint: "Acute dyspnea." })],
+      generator: [
+        // plan_content
+        JSON.stringify({
+          plans: [
+            {
+              key: "chiefComplaint",
+              requests: [
+                {
+                  provider: "text",
+                  input: { instruction: "Acute dyspnea." },
+                  alt: "Acute dyspnea.",
+                },
+              ],
+            },
+          ],
+        }),
+        // render_parts (the text provider's own LLM call, scripted directly
+        // since this test's fake provider does not itself call the LLM —
+        // see the batching test below for that path exercised for real).
+      ],
     });
     const bus = new EventBus();
     const started: string[] = [];
     bus.on("Node Started", (e) => started.push(e.node));
-    const graph = buildGraph(llm, [createTextModalityProvider()], bus);
+    const graph = buildGraph(llm, [textProvider()], bus);
 
     const result = (await graph.invoke({
       diagnosis,
@@ -157,26 +185,40 @@ describe("chiefComplaintGraph — single-entry (text-only) registry", () => {
 
     const parts = result.case.chiefComplaint!;
     expect(parts).toHaveLength(1);
-    expect(parts[0].type).toBe("text/plain");
-    expect(parts[0].alt).toBe("Acute dyspnea.");
-    expect(new TextDecoder().decode(parts[0].value)).toBe("Acute dyspnea.");
+    expect(parts[0]!.type).toBe("text/plain");
+    expect(parts[0]!.alt).toBe("Acute dyspnea.");
+    expect(new TextDecoder().decode(parts[0]!.value)).toBe("Acute dyspnea.");
 
-    // Trace events fired per node (issue 13 §7) — and only two nodes exist
-    // at this registry size.
     expect(started).toEqual(
-      expect.arrayContaining(["generate_content", "render_parts"])
+      expect.arrayContaining(["plan_content", "render_parts"])
     );
-    expect(started).not.toContain("decide_modality");
   });
 
-  it("works end to end with a fake non-LLM provider (issue 13 §7)", async () => {
+  it("carries the planner's alt through even when the provider renders different prose (alt !== rendered text is legal)", async () => {
     const llm = makeQueuedLlmPort({
-      generator: [JSON.stringify({ chiefComplaint: "Some complaint." })],
+      generator: [
+        JSON.stringify({
+          plans: [
+            {
+              key: "chiefComplaint",
+              requests: [
+                {
+                  provider: "text",
+                  input: { instruction: "irrelevant to this fake provider" },
+                  alt: "Broken right leg.",
+                },
+              ],
+            },
+          ],
+        }),
+      ],
     });
-    const fakeProvider: ModalityProvider = {
-      id: "fake",
-      produces: ["application/x-fake"],
-      render: async (alt) => new TextEncoder().encode(`FAKE:${alt}`),
+    const fakeProvider: ModalityProvider<unknown> = {
+      id: "text",
+      mime: "application/x-fake",
+      description: "renders something unrelated to alt",
+      inputSchema: z.unknown(),
+      render: async () => [new TextEncoder().encode("FAKE RENDERED TEXT")],
     };
 
     const graph = buildGraph(llm, [fakeProvider]);
@@ -188,64 +230,46 @@ describe("chiefComplaintGraph — single-entry (text-only) registry", () => {
 
     const parts = result.case.chiefComplaint!;
     expect(parts).toHaveLength(1);
-    expect(parts[0].type).toBe("application/x-fake");
-    expect(parts[0].alt).toBe("Some complaint.");
-    expect(new TextDecoder().decode(parts[0].value)).toBe(
-      "FAKE:Some complaint."
+    expect(parts[0]!.type).toBe("application/x-fake");
+    expect(parts[0]!.alt).toBe("Broken right leg.");
+    expect(new TextDecoder().decode(parts[0]!.value)).toBe(
+      "FAKE RENDERED TEXT"
     );
-  });
-
-  it("an image-only (non-text) single-entry registry still yields a non-empty alt", async () => {
-    const llm = makeQueuedLlmPort({
-      generator: [JSON.stringify({ chiefComplaint: "Broken right leg." })],
-    });
-    const imageProvider = makeStaggeredProvider({
-      id: "img",
-      mime: "image/png",
-      delayMs: 0,
-    });
-
-    const graph = buildGraph(llm, [imageProvider]);
-    const result = (await graph.invoke({
-      diagnosis,
-      outline: "outline text",
-      case: {},
-    })) as { case: Case };
-
-    const parts = result.case.chiefComplaint!;
-    expect(parts).toHaveLength(1);
-    expect(parts[0].type).toBe("image/png");
-    expect(parts[0].alt.length).toBeGreaterThan(0);
-    expect(parts[0].alt).toBe("Broken right leg.");
   });
 });
 
-describe("chiefComplaintGraph — multi-entry registry: decide_modality plans, fan-in follows PLANNED order", () => {
+describe("chiefComplaintGraph — multi-provider registry: planned order, not completion order", () => {
   it("orders parts by the planned order, not completion order — the first-planned request resolves last", async () => {
-    const slow = makeStaggeredProvider({
+    const slow: ModalityProvider<unknown> = {
       id: "slow",
       mime: "application/x-slow",
-      delayMs: 30,
-    });
-    const fast = makeStaggeredProvider({
+      description: "slow",
+      inputSchema: z.unknown(),
+      render: async (batch) => {
+        await new Promise((r) => setTimeout(r, 30));
+        return (batch as string[]).map((v) =>
+          new TextEncoder().encode(`slow:${v}`)
+        );
+      },
+    };
+    const fast: ModalityProvider<unknown> = {
       id: "fast",
       mime: "application/x-fast",
-      delayMs: 0,
-    });
+      description: "fast",
+      inputSchema: z.unknown(),
+      render: async (batch) =>
+        (batch as string[]).map((v) => new TextEncoder().encode(`fast:${v}`)),
+    };
 
     const llm = makeQueuedLlmPort({
       generator: [
-        // generate_content
-        JSON.stringify({ chiefComplaint: "Chest pain." }),
-        // decide_modality: slow-mime planned FIRST, fast-mime SECOND —
-        // if fan-in followed completion order, fast would land first.
         JSON.stringify({
           plans: [
             {
               key: "chiefComplaint",
               requests: [
-                { modality: "application/x-slow", alt: "slow alt" },
-                { modality: "application/x-fast", alt: "fast alt" },
+                { provider: "slow", input: "slow input", alt: "slow alt" },
+                { provider: "fast", input: "fast input", alt: "fast alt" },
               ],
             },
           ],
@@ -265,9 +289,8 @@ describe("chiefComplaintGraph — multi-entry registry: decide_modality plans, f
       "application/x-slow",
       "application/x-fast",
     ]);
-    expect(new TextDecoder().decode(parts[0].value)).toBe("slow:slow alt");
-    expect(new TextDecoder().decode(parts[1].value)).toBe("fast:fast alt");
-    // Every part carries a non-empty `alt`, regardless of modality.
+    expect(new TextDecoder().decode(parts[0]!.value)).toBe("slow:slow input");
+    expect(new TextDecoder().decode(parts[1]!.value)).toBe("fast:fast input");
     for (const part of parts) {
       expect(part.alt.length).toBeGreaterThan(0);
     }

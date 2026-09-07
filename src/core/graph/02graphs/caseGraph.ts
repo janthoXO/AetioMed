@@ -23,7 +23,7 @@ import type { Config } from "../config.js";
 import type { EventBus } from "../../event-bus.js";
 import type { Repos } from "../repos.js";
 import type { MedicalBasisProvider } from "../medicalBasis/ports.js";
-import type { ModalityProvider } from "../modality/ports.js";
+import type { ModalityRegistries } from "../modality/registry.js";
 
 // No `language` field (issue 09 §2, §4 of the issue doc): the outer graph
 // resolves language before invoke and binds ports to it via
@@ -107,15 +107,16 @@ export type AssemblyDeps = {
   repos: CaseGraphRepos;
   medicalBasisRegistry: MedicalBasisProvider[];
   /**
-   * The modality registry (issue 13 §4) — in `AssemblyDeps`, not
-   * `GraphFlags`, for exactly `medicalBasisRegistry`'s reason above: fixed
-   * per deployment, shared by all four flag variants. Its *size* changes
-   * the compiled shape of `chiefComplaintGraph`/`anamnesisGraph`
-   * (`02presentation/generation/`) — whether `decide_modality` exists at
-   * all — the same absent-capability-⇒-absent-node rule, just driven by
-   * this list's length.
+   * The per-field modality registries (issue 21 §4) — in `AssemblyDeps`,
+   * not `GraphFlags`, for exactly `medicalBasisRegistry`'s reason above:
+   * fixed per deployment, shared by all four flag variants. Unlike
+   * `medicalBasisRegistry`, an empty per-field list is a build-time error
+   * rather than an absent node (`EmptyModalityRegistryError`,
+   * `modality/registry.ts`) — the planner always runs for every field
+   * (issue 21 §1), so there is no registry-size topology variance left to
+   * drive.
    */
-  modalityRegistry: ModalityProvider[];
+  modalityRegistries: ModalityRegistries;
   traceNode: ReturnType<typeof createTraceNode>;
 };
 
@@ -192,8 +193,13 @@ export function graphTopologyKey(
  * nothing here performs I/O.
  */
 export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
-  const { runtime, repos, medicalBasisRegistry, modalityRegistry, traceNode } =
-    deps;
+  const {
+    runtime,
+    repos,
+    medicalBasisRegistry,
+    modalityRegistries,
+    traceNode,
+  } = deps;
 
   // The two branches are written out in full rather than conditionally
   // chained: LangGraph accumulates node names into the builder's type
@@ -204,7 +210,7 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
       runtime,
       createProcedureStrategy(runtime, flags.procedurePreselection),
       medicalBasisRegistry,
-      modalityRegistry,
+      modalityRegistries,
       // Scoped to match the `"generation_phase"` mount name below — see
       // `nodeWrapper.ts`'s `TraceNodeFn.scope` doc comment (issue 15 §3/§4).
       traceNode.scope("generation_phase")
@@ -230,7 +236,7 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
     generationRuntime,
     createProcedureStrategy(generationRuntime, flags.procedurePreselection),
     medicalBasisRegistry,
-    modalityRegistry,
+    modalityRegistries,
     traceNode.scope("generation_phase")
   );
 
@@ -294,7 +300,7 @@ export function buildCaseGraph(
   config: Config,
   repos: CaseGraphRepos,
   medicalBasisRegistry: MedicalBasisProvider[],
-  modalityRegistry: ModalityProvider[],
+  modalityRegistries: ModalityRegistries,
   // The OTel operator channel's port (issue 15 §5) — optional and
   // defaulted to the no-op so every existing caller (`exportGraphs.ts`,
   // every test building a graph directly) is unaffected. The composition
@@ -308,7 +314,7 @@ export function buildCaseGraph(
     runtime,
     repos,
     medicalBasisRegistry,
-    modalityRegistry,
+    modalityRegistries,
     traceNode: createTraceNode(bus, tracer),
   };
 

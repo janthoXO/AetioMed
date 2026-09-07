@@ -13,16 +13,17 @@
 // by dropping a write (rather than keeping both subgraphs' `case` output)
 // cannot pass this test.
 import { describe, expect, it } from "vitest";
+import z from "zod";
 import { END, Send, START, StateGraph } from "@langchain/langgraph";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { EventBus } from "@/core/event-bus.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { RequestContextSchema } from "@/core/graph/utils/context.js";
-import { buildChiefComplaintGraph } from "./chiefComplaintGraph.js";
-import { buildAnamnesisGraph } from "./anamnesisGraph.js";
+import { buildChiefComplaintGraph } from "./chiefComplaint/index.js";
+import { buildAnamnesisGraph } from "./anamnesis/index.js";
 import { caseFanIn } from "./index.js";
 import { CaseGenerationStateSchema } from "../../state.js";
-import { createTextModalityProvider } from "@/core/graph/modality/providers/text.js";
+import type { ModalityProvider } from "@/core/graph/modality/ports.js";
 import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
@@ -58,7 +59,7 @@ function buildFakeRuntime(llm: LlmPort): GraphRuntime {
     llm,
     catalogs: {
       procedures: new InMemoryProcedureCatalog(),
-      anamnesis: new InMemoryAnamnesisCatalog(),
+      anamnesis: new InMemoryAnamnesisCatalog(["History"]),
       labels: new InMemoryLabelCatalog(),
       diagnosis: new InMemoryDiagnosisCatalog(),
     },
@@ -67,22 +68,60 @@ function buildFakeRuntime(llm: LlmPort): GraphRuntime {
   };
 }
 
+/** The one production-shaped provider: batch-in, batch-out, `{instruction}` input. */
+function textProvider(): ModalityProvider<unknown> {
+  return {
+    id: "text",
+    mime: "text/plain",
+    description: "test text provider",
+    inputSchema: z.object({ instruction: z.string().min(1) }),
+    render: async (batch) =>
+      (batch as { instruction: string }[]).map((b) =>
+        new TextEncoder().encode(b.instruction)
+      ),
+  };
+}
+
 describe("chief_complaint_generate + anamnesis_generate fanned out together (issue 17 §0)", () => {
   it("resolves and yields both chiefComplaint and anamnesis, instead of throwing INVALID_CONCURRENT_GRAPH_UPDATE", async () => {
     const llm = makeQueuedLlmPort({
       generator: [
-        // chief_complaint_generate's generate_content
-        JSON.stringify({ chiefComplaint: "Acute dyspnea." }),
-        // anamnesis_generate's generate_content
+        // chief_complaint_generate's plan_content
         JSON.stringify({
-          anamnesis: [{ category: "History", answer: "None." }],
+          plans: [
+            {
+              key: "chiefComplaint",
+              requests: [
+                {
+                  provider: "text",
+                  input: { instruction: "Acute dyspnea." },
+                  alt: "Acute dyspnea.",
+                },
+              ],
+            },
+          ],
+        }),
+        // anamnesis_generate's plan_content
+        JSON.stringify({
+          plans: [
+            {
+              key: "History",
+              requests: [
+                {
+                  provider: "text",
+                  input: { instruction: "None." },
+                  alt: "None.",
+                },
+              ],
+            },
+          ],
         }),
       ],
     });
     const runtime = buildFakeRuntime(llm);
     const bus = new EventBus();
     const traceNode = createTraceNode(bus);
-    const registry = [createTextModalityProvider()];
+    const registry = [textProvider()];
 
     // Mirrors `buildFieldGenerationSends`'s exact payload shape.
     const parent = new StateGraph(CaseGenerationStateSchema, {

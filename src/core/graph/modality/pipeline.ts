@@ -1,74 +1,108 @@
 import type { ContentPart } from "@/core/graph/models/ContentPart.js";
+import type { Logger } from "@/core/graph/runtime.js";
 import { findModalityProvider } from "./registry.js";
 import type {
+  ModalityPlan,
   ModalityProvider,
-  ModalityRenderRequest,
+  PlannedPart,
   RenderContext,
 } from "./ports.js";
 
-/**
- * One field's (or, for anamnesis, one category's) canonical text — what
- * `generate_content` produced, before any rendering decision. See
- * `02presentation/generation/pipeline.ts` for how this is derived from the
- * existing gateway calls without touching their prompts.
- */
-export type ContentUnit = { key: string; text: string };
+/** One planned request's position in the final, per-unit part arrays. */
+type Slot = { unitKey: string; index: number; request: PlannedPart };
 
 /**
- * The single-entry-registry default plan (§4: "That provider runs directly.
- * No decide node is compiled in."): one render request per unit, in the
- * registry's only producible MIME, with `alt` set to the unit's whole
- * canonical text. This is what keeps a text-only registry byte-identical to
- * the old `textPart()`-based generators — the sole provider is the text
- * provider, so this reproduces `textPart(text)` exactly, just reached
- * through the provider abstraction.
+ * Renders an entire field's plan: flattens every unit's planned requests,
+ * groups them by provider id ACROSS units (so, e.g., one anamnesis text call
+ * covers every category's instruction, and one image call covers every
+ * image in the field), calls each provider's `render` exactly once with its
+ * whole batch, then scatters the results back into `(unitKey, slot)` order
+ * — PLANNED order, never completion order (same rule and reason as
+ * `medicalBasis/registry.ts`'s `resolveAllFragments`: otherwise the same
+ * plan would produce different field content run to run, which makes
+ * evaluation meaningless).
+ *
+ * `renderPlan` is the ONLY place a `ContentPart` is constructed.
+ *
+ * Failure policy: a provider that throws (or an id the plan names but the
+ * registry does not carry) is logged and its parts are dropped — one bad
+ * provider must not fail the whole field. A unit left with zero parts after
+ * that throws: `ContentPartsSchema.min(1)` would reject it downstream
+ * anyway, and a silently empty field is worse than a loud error.
+ *
+ * `runtime.log` is not reachable here (this module sits below `GraphRuntime`),
+ * mirroring `medicalBasis/registry.ts`'s `resolveAllFragments` — the caller
+ * passes its own `Logger` instead.
  */
-export function defaultPlanFor(
-  units: ContentUnit[],
-  providers: ModalityProvider[]
-): Record<string, ModalityRenderRequest[]> {
-  const provider = providers[0];
-  if (!provider) {
-    // Unreachable in practice: callers only take this path after confirming
-    // `providers.length === 1` (see `buildContentPartsSubgraph`).
-    throw new Error("defaultPlanFor called with an empty provider list");
-  }
-  const modality = provider.produces[0];
-  if (!modality) {
-    throw new Error(
-      `Modality provider "${provider.id}" declares no producible MIME types.`
+export async function renderPlan(
+  providers: ModalityProvider<unknown>[],
+  plan: ModalityPlan,
+  ctx: RenderContext | undefined,
+  log: Logger
+): Promise<Record<string, ContentPart[]>> {
+  const slots: Slot[] = [];
+  for (const [unitKey, requests] of Object.entries(plan)) {
+    requests.forEach((request, index) =>
+      slots.push({ unitKey, index, request })
     );
   }
-  return Object.fromEntries(
-    units.map((unit) => [unit.key, [{ modality, alt: unit.text }]])
-  );
-}
 
-/**
- * Renders one unit's ordered render requests into `ContentPart[]`,
- * preserving the order the requests were PLANNED in, not completion order —
- * same shape and same reason as `medicalBasis/registry.ts`'s
- * `resolveAllFragments`: `Promise.all` preserves input order regardless of
- * resolution order, so running every request concurrently and returning the
- * results in that order is what gives deterministic, planned-order fan-in
- * (issue 13 §5). Test with staggered fake providers where the first-planned
- * request resolves last.
- */
-export async function renderRequests(
-  providers: ModalityProvider[],
-  requests: ModalityRenderRequest[],
-  context: RenderContext | undefined
-): Promise<ContentPart[]> {
-  return Promise.all(
-    requests.map(async (request): Promise<ContentPart> => {
-      const provider = findModalityProvider(providers, request.modality);
+  const byProvider = new Map<string, Slot[]>();
+  for (const slot of slots) {
+    const forProvider = byProvider.get(slot.request.provider);
+    if (forProvider) forProvider.push(slot);
+    else byProvider.set(slot.request.provider, [slot]);
+  }
+
+  // Pre-sized per unit so a provider failure leaves a sparse (not
+  // shrunk-and-reindexed) array — planned order survives a partial failure.
+  const rendered = new Map<string, (ContentPart | undefined)[]>(
+    Object.entries(plan).map(([unitKey, requests]) => [
+      unitKey,
+      new Array<ContentPart | undefined>(requests.length),
+    ])
+  );
+
+  await Promise.all(
+    [...byProvider.entries()].map(async ([providerId, providerSlots]) => {
+      const provider = findModalityProvider(providers, providerId);
       if (!provider) {
-        throw new Error(
-          `No modality provider registered for "${request.modality}".`
+        log.error(
+          `[modality] No provider registered for id "${providerId}" — dropping ${providerSlots.length} planned part(s).`
+        );
+        return;
+      }
+      try {
+        const buffers = await provider.render(
+          providerSlots.map((slot) => slot.request.input),
+          ctx ?? {}
+        );
+        providerSlots.forEach((slot, i) => {
+          rendered.get(slot.unitKey)![slot.index] = {
+            type: provider.mime,
+            value: buffers[i]!,
+            alt: slot.request.alt,
+          };
+        });
+      } catch (error) {
+        log.error(
+          `[modality] provider "${providerId}" failed and its ${providerSlots.length} planned part(s) were dropped: ${
+            error instanceof Error ? error.message : String(error)
+          }`
         );
       }
-      const value = await provider.render(request.alt, context ?? {});
-      return { type: request.modality, value, alt: request.alt };
     })
   );
+
+  const result: Record<string, ContentPart[]> = {};
+  for (const [unitKey, parts] of rendered) {
+    const defined = parts.filter((p): p is ContentPart => p !== undefined);
+    if (defined.length === 0) {
+      throw new Error(
+        `Modality rendering produced zero parts for content unit "${unitKey}" — every planned provider for it failed or was unregistered.`
+      );
+    }
+    result[unitKey] = defined;
+  }
+  return result;
 }

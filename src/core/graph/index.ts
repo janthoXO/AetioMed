@@ -6,7 +6,9 @@ import { buildCaseGraph } from "./02graphs/caseGraph.js";
 import { createYamlCatalogs } from "./catalog/index.js";
 import { createRepos } from "./repos.js";
 import { createMedicalBasisRegistry } from "./medicalBasis/registry.js";
-import { createModalityRegistry } from "./modality/registry.js";
+import type { ModalityRegistries } from "./modality/registry.js";
+import { createChiefComplaintProviders } from "./02graphs/02case-generation/02presentation/generation/chiefComplaint/providers.js";
+import { createAnamnesisProviders } from "./02graphs/02case-generation/02presentation/generation/anamnesis/providers.js";
 import { createLlmPort } from "./utils/llm.js";
 import { createLogger } from "./utils/logger.js";
 import { LLM_ROLES, type GraphRuntime } from "./runtime.js";
@@ -106,13 +108,24 @@ export function initGraph(opts: {
     symptomsRepo: repos.symptoms,
   });
 
-  // The modality registry is likewise a plain list built here, not a
-  // `FEATURES`/config flag — see `modality/registry.ts`'s
-  // `createModalityRegistry` doc comment. Today it always returns
-  // `[textProvider]`, which is why `chiefComplaintGraph`/`anamnesisGraph`
-  // (`02presentation/generation/`) never compile in a `decide_modality`
-  // node in this deployment.
-  const modalityRegistry = createModalityRegistry();
+  // The per-field modality registries (issue 21 §4): each field composes
+  // its own provider list from its `providers.ts` slice
+  // (`02presentation/generation/chiefComplaint/providers.ts`,
+  // `.../anamnesis/providers.ts`), mirroring the `catalog/<domain>/`
+  // vertical-slice convention. `procedureResult` stays an empty array with
+  // this TODO until a later step (step C) wires
+  // `createProcedureResultProviders(runtime)` — the procedure phase does
+  // not read this registry yet (it does not import the modality module at
+  // all today), so an empty array here is inert rather than a placeholder
+  // pretending to be usable.
+  const modalityRegistries: ModalityRegistries = {
+    chiefComplaint: createChiefComplaintProviders(runtime),
+    anamnesis: createAnamnesisProviders(runtime),
+    // TODO(step C, issue 21 §7): populate with
+    // `createProcedureResultProviders(runtime)` once the procedure phase's
+    // blinded-solver loop plans instead of generating results directly.
+    procedureResult: [],
+  };
 
   const { caseGraph, generateCase } = buildCaseGraph(
     runtime,
@@ -120,7 +133,7 @@ export function initGraph(opts: {
     config,
     repos,
     medicalBasisRegistry,
-    modalityRegistry,
+    modalityRegistries,
     tracer
   );
 

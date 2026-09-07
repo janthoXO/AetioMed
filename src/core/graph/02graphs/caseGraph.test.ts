@@ -25,8 +25,9 @@ import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.j
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
 import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
-import { createTextModalityProvider } from "@/core/graph/modality/providers/text.js";
+import z from "zod";
 import type { ModalityProvider } from "@/core/graph/modality/ports.js";
+import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
 import { buildFieldGenerationGraph } from "./02case-generation/02presentation/generation/index.js";
 import { buildCaseGenerationGraph } from "./02case-generation/index.js";
 import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
@@ -37,11 +38,29 @@ const TRANSLATION_NODES = [
   "translation_from_english_phase",
 ];
 
+/** The one production-shaped provider: batch-in, batch-out, `{instruction}` input. */
+function fakeTextProvider(): ModalityProvider<unknown> {
+  return {
+    id: "text",
+    mime: "text/plain",
+    description: "test text provider",
+    inputSchema: z.object({ instruction: z.string().min(1) }),
+    render: async (batch) =>
+      (batch as { instruction: string }[]).map((b) =>
+        new TextEncoder().encode(b.instruction)
+      ),
+  };
+}
+
 function buildDeps(
   medicalBasisRegistry: MedicalBasisProvider[] = [
     { id: "fake-basis", fetch: async () => [] },
   ],
-  modalityRegistry: ModalityProvider[] = [createTextModalityProvider()]
+  modalityRegistries: ModalityRegistries = {
+    chiefComplaint: [fakeTextProvider()],
+    anamnesis: [fakeTextProvider()],
+    procedureResult: [],
+  }
 ): AssemblyDeps {
   const bus = new EventBus();
   const runtime: GraphRuntime = {
@@ -77,7 +96,7 @@ function buildDeps(
     runtime,
     repos: { anamnesis, procedures },
     medicalBasisRegistry,
-    modalityRegistry,
+    modalityRegistries,
     traceNode: createTraceNode(bus),
   };
 }
@@ -105,7 +124,7 @@ describe("phase-level graphs — output surface (issue 17 §1)", () => {
     const deps = buildDeps();
     const graph = buildFieldGenerationGraph(
       deps.runtime,
-      deps.modalityRegistry,
+      deps.modalityRegistries,
       deps.traceNode
     );
     expect([...graph.outputChannels].sort()).toEqual(["case", "outline"]);
@@ -118,7 +137,7 @@ describe("phase-level graphs — output surface (issue 17 §1)", () => {
       deps.runtime,
       strategy,
       deps.medicalBasisRegistry,
-      deps.modalityRegistry,
+      deps.modalityRegistries,
       deps.traceNode
     );
     expect([...graph.outputChannels].sort()).toEqual(["case"]);
@@ -181,7 +200,11 @@ describe("phase-level graphs — output surface (issue 17 §1)", () => {
 
     const graph = buildFieldGenerationGraph(
       runtime,
-      [createTextModalityProvider()],
+      {
+        chiefComplaint: [fakeTextProvider()],
+        anamnesis: [fakeTextProvider()],
+        procedureResult: [],
+      },
       createTraceNode(bus)
     );
 
@@ -257,9 +280,29 @@ describe("assembleCaseGraph", () => {
     expect(ids.some((id) => id.includes("basis_resolve"))).toBe(true);
   });
 
-  it("rejects an empty modality registry at assembly time (issue 13 §4)", () => {
+  it("rejects an empty chief-complaint modality registry at assembly time (issue 21 §7)", () => {
     expect(() =>
-      assembleCaseGraph(buildDeps(undefined, []), flags(false, false))
+      assembleCaseGraph(
+        buildDeps(undefined, {
+          chiefComplaint: [],
+          anamnesis: [fakeTextProvider()],
+          procedureResult: [],
+        }),
+        flags(false, false)
+      )
+    ).toThrow(/modality registry is empty/i);
+  });
+
+  it("rejects an empty anamnesis modality registry at assembly time (issue 21 §7)", () => {
+    expect(() =>
+      assembleCaseGraph(
+        buildDeps(undefined, {
+          chiefComplaint: [fakeTextProvider()],
+          anamnesis: [],
+          procedureResult: [],
+        }),
+        flags(false, false)
+      )
     ).toThrow(/modality registry is empty/i);
   });
 
@@ -471,7 +514,7 @@ describe("buildCaseGraph", () => {
       config,
       deps.repos,
       deps.medicalBasisRegistry,
-      deps.modalityRegistry
+      deps.modalityRegistries
     );
 
     const graphs = ALL_GRAPH_FLAGS.map((f) => getCaseGraph(f));
@@ -486,7 +529,7 @@ describe("buildCaseGraph", () => {
       config,
       deps.repos,
       deps.medicalBasisRegistry,
-      deps.modalityRegistry
+      deps.modalityRegistries
     );
 
     expect(getCaseGraph(flags(true, false))).toBe(
@@ -507,7 +550,7 @@ describe("buildCaseGraph", () => {
       }),
       deps.repos,
       deps.medicalBasisRegistry,
-      deps.modalityRegistry
+      deps.modalityRegistries
     );
 
     expect(caseGraph).toBe(getCaseGraph(flags(false, true)));

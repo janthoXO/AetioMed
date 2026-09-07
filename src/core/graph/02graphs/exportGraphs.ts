@@ -3,7 +3,9 @@ import type { CompiledGraph } from "@langchain/langgraph";
 import { run } from "@mermaid-js/mermaid-cli";
 import { buildCaseGraph, graphTopologyKey } from "./caseGraph.js";
 import { createMedicalBasisRegistry } from "../medicalBasis/registry.js";
-import { createModalityRegistry } from "../modality/registry.js";
+import type { ModalityRegistries } from "../modality/registry.js";
+import { createChiefComplaintProviders } from "./02case-generation/02presentation/generation/chiefComplaint/providers.js";
+import { createAnamnesisProviders } from "./02case-generation/02presentation/generation/anamnesis/providers.js";
 import { EventBus } from "../../event-bus.js";
 import type { GraphRuntime } from "../runtime.js";
 import { InMemoryProcedureCatalog } from "../catalog/procedures/index.js";
@@ -111,9 +113,16 @@ const medicalBasisRegistry = createMedicalBasisRegistry({
   symptomsRepo: minimalSymptomsRepo,
 });
 
-// Mirrors the composition root too: always `[textProvider]` today, so no
-// exported topology shows a `decide_modality` node.
-const modalityRegistry = createModalityRegistry();
+// Mirrors the composition root too: one text provider per presentation
+// field, `procedureResult` empty until step C (see `graph/index.ts`'s
+// matching TODO) — the planner always runs regardless of registry size
+// (issue 21 §1), so there is no registry-size topology variance left for
+// this script to show.
+const modalityRegistries: ModalityRegistries = {
+  chiefComplaint: createChiefComplaintProviders(minimalRuntime),
+  anamnesis: createAnamnesisProviders(minimalRuntime),
+  procedureResult: [],
+};
 
 const { getCaseGraph } = buildCaseGraph(
   minimalRuntime,
@@ -124,7 +133,7 @@ const { getCaseGraph } = buildCaseGraph(
     procedures: minimalProceduresRepo,
   },
   medicalBasisRegistry,
-  modalityRegistry
+  modalityRegistries
 );
 
 await fs.mkdir("docs/graphs", { recursive: true });

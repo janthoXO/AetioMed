@@ -1,60 +1,25 @@
 import { describe, expect, it } from "vitest";
-import {
-  createModalityRegistry,
-  findModalityProvider,
-  producibleModalities,
-} from "./registry.js";
+import { findModalityProvider } from "./registry.js";
 import type { ModalityProvider } from "./ports.js";
+import z from "zod";
 
-describe("createModalityRegistry", () => {
-  it("returns exactly the text provider today", () => {
-    const registry = createModalityRegistry();
-    expect(registry).toHaveLength(1);
-    expect(registry[0].id).toBe("text");
-    expect(registry[0].produces).toEqual(["text/plain"]);
-  });
-});
+function makeProvider(id: string, mime: string): ModalityProvider<unknown> {
+  return {
+    id,
+    mime,
+    description: `test provider ${id}`,
+    inputSchema: z.unknown(),
+    render: async () => [],
+  };
+}
 
 describe("findModalityProvider", () => {
-  it("finds the first provider (registry order) that produces the requested MIME type", () => {
-    const a: ModalityProvider = {
-      id: "a",
-      produces: ["image/png"],
-      render: async () => new Uint8Array(),
-    };
-    const b: ModalityProvider = {
-      id: "b",
-      produces: ["text/plain", "image/png"],
-      render: async () => new Uint8Array(),
-    };
+  it("finds a provider by id — never by MIME, since two providers may share one", () => {
+    const a = makeProvider("a", "image/png");
+    const b = makeProvider("b", "image/png");
 
-    expect(findModalityProvider([a, b], "image/png")?.id).toBe("a");
-    expect(findModalityProvider([a, b], "text/plain")?.id).toBe("b");
-    expect(findModalityProvider([a, b], "audio/mpeg")).toBeUndefined();
-  });
-});
-
-describe("producibleModalities", () => {
-  it("dedupes across providers, preserving registry order of first appearance", () => {
-    const a: ModalityProvider = {
-      id: "a",
-      produces: ["text/plain", "image/png"],
-      render: async () => new Uint8Array(),
-    };
-    const b: ModalityProvider = {
-      id: "b",
-      produces: ["image/png", "audio/mpeg"],
-      render: async () => new Uint8Array(),
-    };
-
-    expect(producibleModalities([a, b])).toEqual([
-      "text/plain",
-      "image/png",
-      "audio/mpeg",
-    ]);
-  });
-
-  it("returns an empty array for an empty registry", () => {
-    expect(producibleModalities([])).toEqual([]);
+    expect(findModalityProvider([a, b], "a")).toBe(a);
+    expect(findModalityProvider([a, b], "b")).toBe(b);
+    expect(findModalityProvider([a, b], "c")).toBeUndefined();
   });
 });

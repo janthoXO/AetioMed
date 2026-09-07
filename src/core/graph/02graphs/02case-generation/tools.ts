@@ -1,14 +1,18 @@
 import z from "zod";
 import { generatePatient as generatePatientGateway } from "@/core/graph/03aigateway/patient.aigateway.js";
-import { generateChiefComplaint as generateChiefComplaintGateway } from "@/core/graph/03aigateway/chiefComplaint.aigateway.js";
-import { generateAnamnesis as generateAnamnesisGateway } from "@/core/graph/03aigateway/anamnesis.aigateway.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
 import type { Patient } from "@/core/graph/models/Patient.js";
-import type { ChiefComplaint } from "@/core/graph/models/ChiefComplaint.js";
-import type { Anamnesis } from "@/core/graph/models/Anamnesis.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
 
 // ─── Patient ─────────────────────────────────────────────────────────────────
+//
+// `patient` is the only field in this file (issue 21 §5): `chiefComplaint`
+// and `anamnesis` used to be generated here too, via
+// `generateChiefComplaintFromOutline`/`generateAnamnesisFromOutline`, but
+// both are now planned and rendered entirely inside their own field
+// subgraphs (`02presentation/generation/chiefComplaint/`,
+// `.../anamnesis/`), which call their aigateway planner/renderer functions
+// directly rather than through a `Tool` wrapper here.
 
 const GeneratePatientFromOutlineInputSchema = z.object({
   diagnosis: DiagnosisSchema,
@@ -33,58 +37,6 @@ export const generatePatientFromOutline: Tool<
     ),
 };
 
-// ─── Chief Complaint ──────────────────────────────────────────────────────────
-
-const GenerateChiefComplaintFromOutlineInputSchema = z.object({
-  diagnosis: DiagnosisSchema,
-  outline: z.string(),
-  userInstructions: z.string().optional(),
-});
-
-export const generateChiefComplaintFromOutline: Tool<
-  z.infer<typeof GenerateChiefComplaintFromOutlineInputSchema>,
-  ChiefComplaint
-> = {
-  name: "generate_chief_complaint_from_outline",
-  description: "Generate the chief complaint from a pre-built case outline.",
-  inputSchema: GenerateChiefComplaintFromOutlineInputSchema,
-  invoke: ({ diagnosis, outline, userInstructions }, runtime, context) =>
-    generateChiefComplaintGateway(
-      runtime,
-      diagnosis,
-      outline,
-      userInstructions,
-      context
-    ),
-};
-
-// ─── Anamnesis ────────────────────────────────────────────────────────────────
-
-const GenerateAnamnesisFromOutlineInputSchema = z.object({
-  diagnosis: DiagnosisSchema,
-  outline: z.string(),
-  userInstructions: z.string().optional(),
-});
-
-export const generateAnamnesisFromOutline: Tool<
-  z.infer<typeof GenerateAnamnesisFromOutlineInputSchema>,
-  Anamnesis
-> = {
-  name: "generate_anamnesis_from_outline",
-  description: "Generate patient anamnesis from a pre-built case outline.",
-  inputSchema: GenerateAnamnesisFromOutlineInputSchema,
-  invoke: ({ diagnosis, outline, userInstructions }, runtime, context) =>
-    generateAnamnesisGateway(
-      runtime,
-      diagnosis,
-      outline,
-      userInstructions,
-      context
-    ),
-};
-
 export const generationTools = {
   generatePatientFromOutline,
-  generateChiefComplaintFromOutline,
-  generateAnamnesisFromOutline,
 } as const;

@@ -23,15 +23,34 @@ import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.j
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
 import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
-import { createTextModalityProvider } from "@/core/graph/modality/providers/text.js";
+import z from "zod";
 import type { ModalityProvider } from "@/core/graph/modality/ports.js";
+import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
 import { buildGraphStructure } from "./router.js";
+
+/** The one production-shaped provider: batch-in, batch-out, `{instruction}` input. */
+function fakeTextProvider(): ModalityProvider<unknown> {
+  return {
+    id: "text",
+    mime: "text/plain",
+    description: "test text provider",
+    inputSchema: z.object({ instruction: z.string().min(1) }),
+    render: async (batch) =>
+      (batch as { instruction: string }[]).map((b) =>
+        new TextEncoder().encode(b.instruction)
+      ),
+  };
+}
 
 function buildDeps(
   medicalBasisRegistry: MedicalBasisProvider[] = [
     { id: "fake-basis", fetch: async () => [] },
   ],
-  modalityRegistry: ModalityProvider[] = [createTextModalityProvider()]
+  modalityRegistries: ModalityRegistries = {
+    chiefComplaint: [fakeTextProvider()],
+    anamnesis: [fakeTextProvider()],
+    procedureResult: [],
+  }
 ): AssemblyDeps {
   const bus = new EventBus();
   const runtime: GraphRuntime = {
@@ -67,7 +86,7 @@ function buildDeps(
     runtime,
     repos: { anamnesis, procedures },
     medicalBasisRegistry,
-    modalityRegistry,
+    modalityRegistries,
     traceNode: createTraceNode(bus),
   };
 }

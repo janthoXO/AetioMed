@@ -18,9 +18,9 @@ import { generationTools } from "../../tools.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import type { ModalityProvider } from "@/core/graph/modality/ports.js";
-import { buildChiefComplaintGraph } from "./chiefComplaintGraph.js";
-import { buildAnamnesisGraph } from "./anamnesisGraph.js";
+import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
+import { buildChiefComplaintGraph } from "./chiefComplaint/index.js";
+import { buildAnamnesisGraph } from "./anamnesis/index.js";
 
 const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
 
@@ -303,7 +303,7 @@ export function caseFanIn(): Record<string, never> {
 
 export function buildFieldGenerationGraph(
   runtime: GraphRuntime,
-  modalityRegistry: ModalityProvider[],
+  modalityRegistries: ModalityRegistries,
   traceNode: ReturnType<typeof createTraceNode>
 ) {
   return (
@@ -361,7 +361,7 @@ export function buildFieldGenerationGraph(
         // `TraceNodeFn.scope` doc comment (issue 15 §3/§4).
         buildChiefComplaintGraph(
           runtime,
-          modalityRegistry,
+          modalityRegistries.chiefComplaint,
           traceNode.scope("chief_complaint_generate")
         )
       )
@@ -369,7 +369,7 @@ export function buildFieldGenerationGraph(
         "anamnesis_generate",
         buildAnamnesisGraph(
           runtime,
-          modalityRegistry,
+          modalityRegistries.anamnesis,
           traceNode.scope("anamnesis_generate")
         )
       )

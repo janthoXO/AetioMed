@@ -1,19 +1,16 @@
 // Public surface of the modality slice.
 export type {
   ModalityProvider,
-  ModalityRenderRequest,
+  ModalityPlan,
+  PlannedPart,
   RenderContext,
 } from "./ports.js";
-export { ModalityRenderRequestSchema } from "./ports.js";
+export { PlannedPartSchema, defineModalityProvider } from "./ports.js";
 export {
-  createModalityRegistry,
   findModalityProvider,
-  producibleModalities,
   EmptyModalityRegistryError,
+  type ModalityField,
+  type ModalityRegistries,
 } from "./registry.js";
-export { createTextModalityProvider } from "./providers/text.js";
-export {
-  defaultPlanFor,
-  renderRequests,
-  type ContentUnit,
-} from "./pipeline.js";
+export { describeProviders, buildCompositionSchema } from "./composition.js";
+export { renderPlan } from "./pipeline.js";

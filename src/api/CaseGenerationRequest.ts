@@ -57,11 +57,10 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
         "hallmark symptoms and ambiguous procedure results. Defaults to 'medium'."
     ),
     llmConfig: LLMConfigSchema.optional().describe(
-      "Optional configuration for the LLM used in case generation. Applies to " +
-        "all internal roles (generator/judge/translator) uniformly — per-role " +
-        "overrides are not supported in the request body. `temperature` is " +
-        "accepted for schema compatibility but is overridden by the call " +
-        "site's fixed temperature class; it has no effect."
+      "Optional per-request model selection for the LLM used in case " +
+        "generation. Applies to all internal roles (generator/judge/" +
+        "translator) uniformly — per-role overrides are not supported in " +
+        "the request body."
     ),
   });
 }

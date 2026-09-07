@@ -1,5 +1,6 @@
 import type { Config } from "./config.js";
 import type { GraphRuntime } from "./runtime.js";
+import type { DbHandle } from "./persistence/db.js";
 import type { Case } from "./models/Case.js";
 import type { Diagnosis } from "./models/Diagnosis.js";
 import type { GenerationFlag } from "./models/GenerationFlags.js";
@@ -34,6 +35,13 @@ export interface GraphAppContext {
   config: Config;
   runtime: GraphRuntime;
   generateCase: GenerateCaseFn;
+  /**
+   * The embedded database handle, exposed here only so `app.ts` can register
+   * it as the last shutdown closer (issue 18) — everything that might still
+   * write must have stopped before it closes. Transports have no reason to
+   * touch it and shouldn't.
+   */
+  db: DbHandle;
   /**
    * The compiled top-level graph this deployment actually serves (bound to
    * the deployer's flags, not one of the other three eagerly-built

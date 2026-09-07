@@ -30,17 +30,31 @@ export function describeProviders(
  * accept a single-element option array without complaint, so there is no
  * "one provider" special case here — the same construction covers a
  * one-provider and a many-provider field alike.
+ *
+ * `unitKeys` is **optional**, and omitting it is not the same as passing an
+ * empty array. A field with a known unit set (chief complaint's single unit;
+ * anamnesis under a configured category catalogue) passes it, and the
+ * grammar then pins both the key names and the plan count. A field whose
+ * units are not known ahead of the call — anamnesis in *freeform* mode,
+ * where `catalogs.anamnesis.list()` returns `undefined` because the deployer
+ * configured no category list — omits it, and the planner names its own
+ * units under a plain `z.string()` key with only a `.min(1)` count. That is
+ * what the pre-planner generator did (`buildAnamnesisFieldSchema()` with no
+ * categories left `category` a bare `z.string()`), and it must keep working:
+ * hardcoding a default category list here would bake opinionated clinical
+ * content into code, which is exactly what the catalogue layer exists to
+ * keep out of it. An explicitly empty array stays an error — that is a
+ * caller bug, not a configuration.
  */
 export function buildCompositionSchema(
   providers: ModalityProvider<unknown>[],
-  unitKeys: string[]
+  unitKeys?: string[]
 ): z.ZodTypeAny {
-  if (unitKeys.length === 0) {
+  if (unitKeys && unitKeys.length === 0) {
     throw new Error(
-      "buildCompositionSchema requires at least one content-unit key — an empty field has nothing to plan."
+      "buildCompositionSchema requires at least one content-unit key — an empty field has nothing to plan. Pass `undefined` for a freeform field whose units the planner names itself."
     );
   }
-  const keys = unitKeys as [string, ...string[]];
 
   const requestOptions = providers.map((p) =>
     z.object({
@@ -63,19 +77,19 @@ export function buildCompositionSchema(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const requestSchema = z.discriminatedUnion("provider", requestOptions as any);
 
+  const planSchema = z.object({
+    key: unitKeys
+      ? z.enum(unitKeys as [string, ...string[]])
+      : z.string().min(1).describe("Name this content unit yourself"),
+    requests: z
+      .array(requestSchema)
+      .min(1)
+      .describe("Ordered render requests composing this unit's final value"),
+  });
+
   return z.object({
-    plans: z
-      .array(
-        z.object({
-          key: z.enum(keys).describe("The content unit this plan is for"),
-          requests: z
-            .array(requestSchema)
-            .min(1)
-            .describe(
-              "Ordered render requests composing this unit's final value"
-            ),
-        })
-      )
-      .length(keys.length),
+    plans: unitKeys
+      ? z.array(planSchema).length(unitKeys.length)
+      : z.array(planSchema).min(1),
   });
 }

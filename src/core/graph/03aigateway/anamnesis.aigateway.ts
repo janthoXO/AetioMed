@@ -22,25 +22,6 @@ import {
 import type { ModalityPlan, ModalityProvider } from "../modality/ports.js";
 
 /**
- * Anamnesis has no fixed catalogue-independent default any more — the
- * planner needs unit keys before generation, so a deployment with no
- * predefined category list (`runtime.catalogs.anamnesis.list()` returns
- * `undefined` — a legitimate "freeform" configuration, see
- * `catalog/anamnesis/repo.ts`) falls back to this fixed set instead of
- * letting the LLM invent categories, which is what the old direct generator
- * did. This narrows freeform mode to a fixed default; it is a real,
- * deliberate limitation of the plan-ahead architecture, not a silent
- * behaviour change — see step 21b's report.
- */
-const DEFAULT_ANAMNESIS_CATEGORIES = [
-  "Current Symptoms",
-  "Past Illnesses",
-  "Family History",
-  "Lifestyle/Habits",
-  "Current Medications",
-];
-
-/**
  * Plans the anamnesis's rendering (issue 21 §1/§5): ONE LLM call that still
  * decides the case content — the Role/Requirements below are the old direct
  * generator's prompt, kept verbatim in substance — but instead of returning
@@ -56,8 +37,12 @@ export async function planAnamnesis(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<ModalityPlan> {
-  const categories =
-    runtime.catalogs.anamnesis.list() ?? DEFAULT_ANAMNESIS_CATEGORIES;
+  // `undefined` in freeform mode (no configured category catalogue), which
+  // `buildCompositionSchema` turns into a planner-named unit key rather than
+  // a fixed enum — the same freedom `buildAnamnesisFieldSchema()` gave the
+  // old direct generator. Do not substitute a default list here; that would
+  // put opinionated clinical content in code instead of the catalogue.
+  const categories = runtime.catalogs.anamnesis.list();
   const schema = buildCompositionSchema(providers, categories);
 
   // User-facing (issue 09 §3): a planned `alt`/instruction both become
@@ -81,7 +66,14 @@ Your current task is to plan how the Anamnesis (medical history) facts from the 
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
 
-    section("Required intake form categories to plan", categories.join(", ")),
+    section(
+      categories
+        ? "Required intake form categories to plan"
+        : "Intake form categories",
+      categories
+        ? categories.join(", ")
+        : "No category list is configured for this deployment — choose the standard intake-form categories appropriate to this case and name each content unit after the category it covers."
+    ),
 
     section("Available providers", describeProviders(providers)),
 

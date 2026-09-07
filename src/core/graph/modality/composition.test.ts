@@ -128,3 +128,44 @@ describe("buildCompositionSchema", () => {
     expect(bad.success).toBe(false);
   });
 });
+
+const textRequest = (instruction: string) => ({
+  provider: "text",
+  input: { instruction },
+  alt: instruction,
+});
+
+describe("buildCompositionSchema — freeform units (issue 21)", () => {
+  // Anamnesis under a deployment with no configured category catalogue
+  // (`catalogs.anamnesis.list()` returns `undefined`) must keep letting the
+  // planner name its own units, exactly as `buildAnamnesisFieldSchema()`
+  // with no categories did before the planner existed. A hardcoded default
+  // category list would put opinionated clinical content in code.
+  const providers = [textProvider()];
+
+  it("accepts planner-named keys and any unit count when unitKeys is omitted", () => {
+    const schema = buildCompositionSchema(providers);
+    const parsed = schema.parse({
+      plans: [
+        { key: "Whatever The Model Chose", requests: [textRequest("a")] },
+        { key: "Another", requests: [textRequest("b")] },
+      ],
+    });
+    expect(parsed.plans).toHaveLength(2);
+  });
+
+  it("still pins key names and plan count when unitKeys is given", () => {
+    const schema = buildCompositionSchema(providers, ["History"]);
+    expect(() =>
+      schema.parse({
+        plans: [{ key: "Not A Category", requests: [textRequest("a")] }],
+      })
+    ).toThrow();
+  });
+
+  it("rejects an explicitly empty unitKeys array — a caller bug, not a configuration", () => {
+    expect(() => buildCompositionSchema(providers, [])).toThrow(
+      /at least one content-unit key/
+    );
+  });
+});

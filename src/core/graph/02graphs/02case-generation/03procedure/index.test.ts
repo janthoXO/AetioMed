@@ -116,6 +116,21 @@ function buildGraph(runtime: GraphRuntime, strategy: ProcedureStrategy) {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
+describe("procedure graph — output surface (issue 17 §1)", () => {
+  it("buildProcedureGraph writes back only `case`", () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
+    const { strategy } = makeScriptedStrategy({});
+    const graph = buildGraph(runtime, strategy);
+    expect([...graph.outputChannels].sort()).toEqual(["case"]);
+  });
+
+  it("buildBlindedSolverGraph writes back only `move`", () => {
+    const { strategy } = makeScriptedStrategy({});
+    const graph = buildBlindedSolverGraph(strategy);
+    expect([...graph.outputChannels].sort()).toEqual(["move"]);
+  });
+});
+
 describe("procedure graph — driven by a fake ProcedureStrategy", () => {
   it("drives order → results → order → diagnose(correct) → END, with zero LLM calls from the strategy", async () => {
     const llm = makeQueuedLlmPort({

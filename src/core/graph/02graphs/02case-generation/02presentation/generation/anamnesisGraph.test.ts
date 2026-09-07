@@ -70,6 +70,15 @@ function buildGraph(
   return buildAnamnesisGraph(runtime, registry, createTraceNode(bus));
 }
 
+describe("anamnesisGraph — output surface (issue 17 §1)", () => {
+  it("writes back only `case`, not the whole state schema", () => {
+    const graph = buildGraph(makeQueuedLlmPort({}), [
+      createTextModalityProvider(),
+    ]);
+    expect([...graph.outputChannels].sort()).toEqual(["case"]);
+  });
+});
+
 describe("anamnesisGraph", () => {
   it("rejects an empty registry immediately, at build time", () => {
     expect(() => buildGraph(makeQueuedLlmPort({}), [])).toThrow(

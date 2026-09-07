@@ -82,14 +82,26 @@ function makeTranslateUserInstructions(runtime: GraphRuntime) {
   };
 }
 
+// This graph is `addNode`'d into `assembleCaseGraph` (`caseGraph.ts`) as
+// `translation_to_english_phase` (issue 17 §1). Its entire job is
+// translating `diagnosis` and `userInstructions` — `.pick()` off this
+// graph's own state schema, not a hand-written duplicate, so the picked
+// channels keep their identical reducer registration. `generationFlags` is
+// input only, never written back.
+const TranslationToEnglishOutputSchema =
+  CaseTranslationToEnglishStateSchema.pick({
+    diagnosis: true,
+    userInstructions: true,
+  });
+
 export function buildCaseTranslationToEnglishGraph(
   runtime: GraphRuntime,
   traceNode: ReturnType<typeof createTraceNode>
 ) {
-  return new StateGraph(
-    CaseTranslationToEnglishStateSchema,
-    RequestContextSchema
-  )
+  return new StateGraph(CaseTranslationToEnglishStateSchema, {
+    context: RequestContextSchema,
+    output: TranslationToEnglishOutputSchema,
+  })
     .addNode(
       "translate_diagnosis",
       traceNode(

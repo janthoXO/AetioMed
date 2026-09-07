@@ -5,7 +5,7 @@ import {
   getRequestContext,
 } from "@/core/graph/utils/context.js";
 import { type CaseTranslationFromEnglishState } from "./state.js";
-import { type Runtime, Send } from "@langchain/langgraph";
+import { type Runtime } from "@langchain/langgraph";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import {
   createTranslationFromEnglishTools,
@@ -206,10 +206,20 @@ export function buildCaseTranslationFromEnglishGraph(
       // procedures/content-part map), rather than being skipped by an edge —
       // that keeps `translate_merge`'s two input channels always populated
       // (with their schema defaults) instead of conditionally absent.
-      .addConditionalEdges(START, (state): Send[] => [
-        new Send("translate_defined", state),
-        new Send("translate_rest", state),
-      ])
+      //
+      // Two plain edges, deliberately NOT `Send(node, state)` (issue 21).
+      // `Send` round-trips its payload through JSON, which turns a
+      // `ContentPart.value` `Uint8Array` into a plain index-keyed object —
+      // `instanceof Uint8Array` becomes false and the bytes are corrupt from
+      // there on. These two Sends carried the whole state, `case` bytes and
+      // all, and bought nothing a plain edge does not: an edge hands the node
+      // the same full channel state without serialising it. **A `Send`
+      // payload must never carry `ContentPart` bytes** — see
+      // `02presentation/generation/index.ts`'s `buildFieldGenerationSends`,
+      // which is a legitimate `Send` precisely because its per-target payload
+      // is text only.
+      .addEdge(START, "translate_defined")
+      .addEdge(START, "translate_rest")
       .addEdge("translate_defined", "translate_merge")
       .addEdge("translate_rest", "translate_merge")
       .addEdge("translate_merge", END)

@@ -46,26 +46,6 @@ export function encodeText(s: string): Uint8Array<ArrayBuffer> {
 }
 
 /**
- * Defensive normalisation for `part.value`: LangGraph's `Send` fan-out
- * round-trips a dispatched node's input through JSON internally, which
- * turns a `Uint8Array` into a plain object keyed by numeric-string index
- * (`{"0":104,"1":105,…}` — the same shape `contentWire.ts`'s doc comment
- * warns about at the wire boundary, just triggered here by a graph-internal
- * hop instead). Both `02presentation`'s fan-out and this subgraph's own
- * `translate_defined`/`translate_rest` dispatch via `Send`, so any
- * content-bearing field can arrive here already in that shape. `Uint8Array`
- * bytes reconstruct losslessly from `Object.values` (integer keys iterate
- * in ascending numeric order), so this is a safety net that recovers the
- * real bytes — not a trusted invariant that the value is *never* corrupted.
- */
-function asUint8Array(value: Uint8Array): Uint8Array {
-  if (value instanceof Uint8Array) return value;
-  return Uint8Array.from(
-    Object.values(value as unknown as Record<string, number>)
-  );
-}
-
-/**
  * MIME-dispatched extraction of one part's text content. This is the
  * extension point for a future non-text MIME whose meaning lives in
  * `value` rather than `alt` (e.g. `application/pdf`): add a row here, not a
@@ -77,6 +57,15 @@ function asUint8Array(value: Uint8Array): Uint8Array {
  * Falls back to `part.alt` for any MIME with no matching row, so a part of
  * an unrecognised type still contributes *something* legible rather than
  * throwing or silently vanishing.
+ *
+ * `part.value` is trusted to be a real `Uint8Array` here, and that trust is
+ * enforced upstream rather than defended against here: a `Send` payload
+ * round-trips through JSON and would hand this an index-keyed plain object
+ * instead, so **no `Send` payload may carry `ContentPart` bytes** (issue 21;
+ * the two translation phases use plain edges for exactly this reason). A
+ * silent repair at this one read site would have been worse than none — the
+ * wire codec, the size ceiling and every non-text reader would still have
+ * seen the corrupted object.
  */
 const TEXT_EXTRACTORS: {
   matches: (mime: string) => boolean;
@@ -84,7 +73,7 @@ const TEXT_EXTRACTORS: {
 }[] = [
   {
     matches: (mime) => mime.startsWith("text/"),
-    extract: (part) => new TextDecoder().decode(asUint8Array(part.value)),
+    extract: (part) => new TextDecoder().decode(part.value),
   },
 ];
 

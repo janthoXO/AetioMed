@@ -145,7 +145,7 @@ export function initGraph(opts: {
     }
   }
 
-  return { config, runtime, generateCase, caseGraph };
+  return { config, runtime, generateCase, caseGraph, db: repos.db };
 }
 
 export { runWithContext, registerJobHook } from "./utils/context.js";

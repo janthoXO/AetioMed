@@ -65,9 +65,17 @@ export interface DbHandle {
 
 /**
  * Opens (creating if necessary) the embedded SQLite database under
- * `cacheDir`, runs migrations, and registers process-exit handlers to close
- * it cleanly. Called once from the composition root — importing this module
- * performs no I/O by itself.
+ * `cacheDir` and runs migrations. Called once from the composition root —
+ * importing this module performs no I/O by itself.
+ *
+ * This module does **not** register any process-exit handling of its own
+ * (issue 18) — a persistence module owning process lifecycle is what made
+ * shutdown ordering accidental instead of declared: a signal handler
+ * registered here ran before the transports' and called `process.exit`
+ * synchronously, killing the process before a transport's own handler ever
+ * ran. Shutdown is now one sequence owned by the composition root
+ * (`app.ts`'s `createApp()` returns a `shutdown()` that closes this handle
+ * last, via `close()` below — see `src/shutdown.ts`).
  *
  * `cacheDir` must already be an absolute path (resolved by the composition
  * root, see `app.ts`).
@@ -97,15 +105,6 @@ export function createDb(cacheDir: string): DbHandle {
       // already closed
     }
   }
-  process.once("beforeExit", close);
-  process.once("SIGINT", () => {
-    close();
-    process.exit(0);
-  });
-  process.once("SIGTERM", () => {
-    close();
-    process.exit(0);
-  });
 
   function syncSource(
     source: string,

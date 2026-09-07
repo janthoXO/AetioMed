@@ -45,6 +45,9 @@ export async function closeNats() {
     return;
   }
 
+  // Deliberately `nc.close()`, not `nc.drain()` (issue 18): draining would
+  // wait for in-flight messages to finish, and a case generation runs for
+  // minutes — that would always blow the shutdown deadline. Out of scope.
   await nc.close();
   console.log("[NATS] Connection closed");
   nc = undefined;

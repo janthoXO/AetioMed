@@ -55,6 +55,12 @@ everything explicitly, in order:
 4. `createCaseGenerationService(graph, bus)`
 5. starts the transports whose flags are set
 
+It also owns shutdown (issue 18): `createApp()` returns `{ bus, shutdown }`, where `shutdown()`
+closes everything it started in the **reverse** of construction order — REST, then NATS, then
+the DB last — bounded by a 5-second deadline (`src/shutdown.ts`'s `installSignalHandlers`,
+wired up by `src/index.ts`). No module under `src/core/graph/` or `src/transports/` registers
+a process signal handler any more; each returns a closer instead.
+
 **`GraphRuntime`** (`src/core/graph/runtime.ts`) is the single seam graph construction goes
 through: the LLM port, the four catalogs, a logger and a clock. It is captured by **closure
 at graph-assembly time**, not threaded through node signatures and not carried on

@@ -44,6 +44,15 @@ const AnamnesisGraphStateSchema = CaseGenerationStateSchema.pick({
 
 type AnamnesisGraphState = z.infer<typeof AnamnesisGraphStateSchema>;
 
+// This graph is `addNode`'d into `buildFieldGenerationGraph` alongside
+// `chiefComplaintGraph`, fanned out in parallel by `Send` from
+// `outline_evaluate` (issue 17 §0/§1) — see `chiefComplaintGraph.ts`'s
+// matching comment for why an explicit `output` is required here too.
+// `.pick()` off this graph's own state schema, never a hand-written
+// duplicate, so the picked `case` channel keeps the identical reducer
+// registration.
+const AnamnesisOutputSchema = AnamnesisGraphStateSchema.pick({ case: true });
+
 /**
  * Reorders content units to match the catalogue's category order rather
  * than whatever order the LLM happened to emit them in — the categories the
@@ -188,7 +197,10 @@ export function buildAnamnesisGraph(
   }
 
   if (modalityRegistry.length === 1) {
-    return new StateGraph(AnamnesisGraphStateSchema, RequestContextSchema)
+    return new StateGraph(AnamnesisGraphStateSchema, {
+      context: RequestContextSchema,
+      output: AnamnesisOutputSchema,
+    })
       .addNode(
         "generate_content",
         traceNode(
@@ -211,7 +223,10 @@ export function buildAnamnesisGraph(
       .compile();
   }
 
-  return new StateGraph(AnamnesisGraphStateSchema, RequestContextSchema)
+  return new StateGraph(AnamnesisGraphStateSchema, {
+    context: RequestContextSchema,
+    output: AnamnesisOutputSchema,
+  })
     .addNode(
       "generate_content",
       traceNode(

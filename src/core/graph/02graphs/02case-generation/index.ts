@@ -54,6 +54,14 @@ function makeResolveMedicalBasis(
 
 // ─── graph ────────────────────────────────────────────────────────────────────
 
+// This graph is `addNode`'d into `assembleCaseGraph` (`caseGraph.ts`) as
+// `generation_phase` (issue 17 §1). `.pick()` off `CaseGenerationStateSchema`
+// directly, not a hand-written duplicate, so the picked `case` channel keeps
+// the identical reducer registration.
+const CaseGenerationOutputSchema = CaseGenerationStateSchema.pick({
+  case: true,
+});
+
 export function buildCaseGenerationGraph(
   runtime: GraphRuntime,
   procedureStrategy: ProcedureStrategy,
@@ -88,7 +96,10 @@ export function buildCaseGenerationGraph(
   // `basis_resolve` does not exist in the compiled graph at all, not a node
   // that runs and does nothing.
   if (medicalBasisRegistry.length === 0) {
-    return new StateGraph(CaseGenerationStateSchema, RequestContextSchema)
+    return new StateGraph(CaseGenerationStateSchema, {
+      context: RequestContextSchema,
+      output: CaseGenerationOutputSchema,
+    })
       .addNode("presentation_phase", presentationPhase)
       .addNode("procedure_phase", procedurePhase)
 
@@ -102,7 +113,10 @@ export function buildCaseGenerationGraph(
   }
 
   return (
-    new StateGraph(CaseGenerationStateSchema, RequestContextSchema)
+    new StateGraph(CaseGenerationStateSchema, {
+      context: RequestContextSchema,
+      output: CaseGenerationOutputSchema,
+    })
       .addNode(
         "basis_resolve",
         traceNode(

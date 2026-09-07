@@ -104,6 +104,18 @@ async function invoke(
   );
 }
 
+describe("buildCaseTranslationFromEnglishGraph — output surface (issue 17 §1)", () => {
+  it("writes back only `case`, not definedTranslations/restTranslations", () => {
+    const repos = fakeRepos({});
+    const graph = buildCaseTranslationFromEnglishGraph(
+      fakeRuntime({}),
+      repos,
+      createTraceNode(new EventBus())
+    );
+    expect([...graph.outputChannels].sort()).toEqual(["case"]);
+  });
+});
+
 describe("buildCaseTranslationFromEnglishGraph — the bug fix (issue 12)", () => {
   it("procedures[].name comes out as EXACTLY the catalogue's cached term, never a rest-pass paraphrase", async () => {
     const repos = fakeRepos({

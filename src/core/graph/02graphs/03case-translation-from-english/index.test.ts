@@ -118,6 +118,36 @@ async function invoke(
   );
 }
 
+describe("byte fidelity across the parallel fan-out (issue 21)", () => {
+  // LangGraph's `Send` round-trips its payload through JSON, which turns a
+  // `ContentPart.value` `Uint8Array` into a plain index-keyed object —
+  // `instanceof Uint8Array` becomes false and every downstream reader (the
+  // wire codec, the size ceiling, any non-text extractor) sees garbage. This
+  // phase used to dispatch its two passes with `Send(node, state)`, carrying
+  // the whole case — bytes and all — for no gain over a plain edge. This test
+  // fails if anyone reintroduces that.
+  it("passes a non-text part's bytes through byte-identically, still a real Uint8Array", async () => {
+    const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    // Only `.alt` is scripted: a non-text part contributes no `.text` key to
+    // `caseTextMap`, since its meaning lives in bytes we must not touch — so
+    // a response carrying just `.alt` satisfies the rest pass's key check.
+    const runtime = fakeRuntime({
+      "chiefComplaint.0.alt": "ein Röntgenbild",
+    });
+
+    const result = await invoke(runtime, fakeRepos({}), {
+      case: {
+        chiefComplaint: [{ type: "image/png", value: bytes, alt: "an x-ray" }],
+      },
+    });
+
+    const part = result.case.chiefComplaint![0]!;
+    expect(part.value).toBeInstanceOf(Uint8Array);
+    expect([...part.value]).toEqual([...bytes]);
+    expect(part.alt).toBe("ein Röntgenbild");
+  });
+});
+
 describe("buildCaseTranslationFromEnglishGraph — output surface (issue 17 §1)", () => {
   it("writes back only `case`, not definedTranslations/restTranslations", () => {
     const repos = fakeRepos({});

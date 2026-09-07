@@ -1,4 +1,4 @@
-import { START, StateGraph, END, Send } from "@langchain/langgraph";
+import { START, StateGraph, END } from "@langchain/langgraph";
 import { CaseTranslationToEnglishStateSchema } from "./state.js";
 import {
   RequestContextSchema,
@@ -98,32 +98,38 @@ export function buildCaseTranslationToEnglishGraph(
   runtime: GraphRuntime,
   traceNode: ReturnType<typeof createTraceNode>
 ) {
-  return new StateGraph(CaseTranslationToEnglishStateSchema, {
-    context: RequestContextSchema,
-    output: TranslationToEnglishOutputSchema,
-  })
-    .addNode(
-      "translate_diagnosis",
-      traceNode(
+  return (
+    new StateGraph(CaseTranslationToEnglishStateSchema, {
+      context: RequestContextSchema,
+      output: TranslationToEnglishOutputSchema,
+    })
+      .addNode(
         "translate_diagnosis",
-        makeTranslateDiagnosis(runtime),
-        "Translating diagnosis to English"
+        traceNode(
+          "translate_diagnosis",
+          makeTranslateDiagnosis(runtime),
+          "Translating diagnosis to English"
+        )
       )
-    )
-    .addNode(
-      "translate_user_instructions",
-      traceNode(
+      .addNode(
         "translate_user_instructions",
-        makeTranslateUserInstructions(runtime),
-        "Translating user instructions to English"
+        traceNode(
+          "translate_user_instructions",
+          makeTranslateUserInstructions(runtime),
+          "Translating user instructions to English"
+        )
       )
-    )
 
-    .addConditionalEdges(START, (state) => [
-      new Send("translate_diagnosis", state),
-      new Send("translate_user_instructions", state),
-    ])
-    .addEdge("translate_diagnosis", END)
-    .addEdge("translate_user_instructions", END)
-    .compile();
+      // Two plain edges, deliberately NOT `Send(node, state)` (issue 21): a
+      // `Send` payload is JSON round-tripped, and while this graph's state
+      // carries no `ContentPart` bytes today, the pattern is the one that
+      // corrupted them in the from-English phase. An edge hands each node the
+      // same full state without serialising it, so there was never anything to
+      // gain here.
+      .addEdge(START, "translate_diagnosis")
+      .addEdge(START, "translate_user_instructions")
+      .addEdge("translate_diagnosis", END)
+      .addEdge("translate_user_instructions", END)
+      .compile()
+  );
 }

@@ -1,5 +1,6 @@
 import z from "zod";
 import { ContentPartsSchema } from "./ContentPart.js";
+import { PlannedPartSchema } from "../modality/ports.js";
 
 export const ProcedureNameSchema = z
   .string()
@@ -73,3 +74,32 @@ export function buildProcedureResultTextSchema(
   }
   return ProcedureResultTextSchema;
 }
+
+/**
+ * A procedure the blinded-solver loop has decided on but not yet rendered
+ * (issue 21 §7): `relevance` is still decided non-blinded (same reasoning
+ * as `ProcedureResultSchema` above), but `result` doesn't exist yet — only
+ * an ORDERED list of render requests does. `render_results`
+ * (`02graphs/02case-generation/03procedure/index.ts`) is the only node that
+ * turns these into `ProcedureResult[]`, once for the whole list, after the
+ * case is solved.
+ *
+ * `parts` carries `PlannedPart`s, not `ContentPart`s — no bytes exist yet.
+ * Each part's `alt` here is NOT the short label it is everywhere else in
+ * this codebase: for a procedure result it is the self-contained statement
+ * of the clinical finding itself, because the blinded solver reasons over
+ * `alt` and nothing else (the bytes are rendered only after the case is
+ * solved). See `03aigateway/procedures.aigateway.ts`'s `planProcedureResults`
+ * doc comment for the prompt requirement this enforces.
+ */
+export const PlannedProcedureSchema = z.object({
+  name: ProcedureNameSchema,
+  relevance: ProcedureRelevanceSchema.describe(
+    "Relevance of the procedure to the TRUE diagnosis"
+  ),
+  parts: z
+    .array(PlannedPartSchema)
+    .min(1)
+    .describe("Ordered render requests that will compose this result"),
+});
+export type PlannedProcedure = z.infer<typeof PlannedProcedureSchema>;

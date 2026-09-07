@@ -12,18 +12,29 @@ import {
   type RequestContext,
 } from "@/core/graph/utils/context.js";
 import {
+  PlannedProcedureSchema,
+  ProcedureRelevanceSchema,
   ProcedureSchema,
-  ProcedureResultSchema,
-  type ProcedureResult,
+  type PlannedProcedure,
 } from "@/core/graph/models/Procedure.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import { textOf } from "@/core/graph/models/ContentPart.js";
 import { procedureTools, PresentationSchema } from "./tools.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
-import type { Presentation } from "@/core/graph/03aigateway/procedures.aigateway.js";
+import {
+  planProcedureResults,
+  type Presentation,
+  type PreviousProcedureFinding,
+} from "@/core/graph/03aigateway/procedures.aigateway.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
+import type {
+  ModalityPlan,
+  ModalityProvider,
+} from "@/core/graph/modality/ports.js";
+import { renderPlan } from "@/core/graph/modality/pipeline.js";
+import { EmptyModalityRegistryError } from "@/core/graph/modality/registry.js";
 import type { ProcedureStrategy, SolverMove } from "./strategy/ports.js";
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -40,9 +51,20 @@ const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
   solverIterationsRemaining: z.number().default(SOLVER_MAX_ITERATIONS),
   /**
    * The batch of mutually-independent procedures chosen by the blinded step,
-   * scheduled together and awaiting their results.
+   * scheduled together and awaiting their planned result.
    */
   pendingProcedures: z.array(ProcedureSchema).default([]),
+  /**
+   * Every procedure decided on so far, planned but not yet rendered (issue
+   * 21 §7): `result_step` and `bridge` are the only writers, `render_results`
+   * is the only reader-and-drain, and `case.procedures` stays EMPTY until
+   * `render_results` writes it — the same single-writer discipline
+   * `translate_merge` uses in the translation phase (issue 12). Every read
+   * that used to go through `state.case.procedures` inside this graph —
+   * the blinded view's `previousProcedures`, the already-ordered exclusion,
+   * the bridge's own view — now goes through this instead.
+   */
+  plannedProcedures: z.array(PlannedProcedureSchema).default([]),
   /** Diagnoses committed to and ruled out in earlier iterations. */
   ruledOutDiagnoses: z.array(z.string()).default([]),
 });
@@ -69,11 +91,23 @@ const ProcedureOutputSchema = ProcedureGraphStateSchema.pick({ case: true });
  *
  * It exists for its input schema, not for topology: it is `.invoke()`d
  * directly from inside `blinded_step`, never `addNode`'d, so the compiled
- * procedure graph below still has exactly three nodes.
+ * procedure graph below still has exactly four nodes.
  */
 const BlindedSolverStateSchema = z.object({
   presentation: PresentationSchema,
-  previousProcedures: z.array(ProcedureResultSchema).default([]),
+  // `{name, relevance, result: string}[]` (issue 21 §7), projected from
+  // `plannedProcedures` — never the domain `ProcedureResult[]` this used to
+  // be, since nothing has been rendered yet at this point in the loop. See
+  // `03aigateway/procedures.aigateway.ts`'s `PreviousProcedureFinding`.
+  previousProcedures: z
+    .array(
+      z.object({
+        name: z.string(),
+        relevance: ProcedureRelevanceSchema,
+        result: z.string(),
+      })
+    )
+    .default([]),
   ruledOutDiagnoses: z.array(z.string()).default([]),
   userInstructions: z.string().optional(),
   iterationsRemaining: z.number(),
@@ -136,6 +170,27 @@ function presentationOf(c: Case): Presentation {
   };
 }
 
+/**
+ * Projects `plannedProcedures` into the blinded/bridge view of a prior
+ * procedure (issue 21 §7): `result` is `parts.map(p => p.alt).join("\n\n")`
+ * — never rendered bytes, since nothing has been rendered yet at this point
+ * in the loop. This is the ONE place that projection happens; every reader
+ * that used to read `state.case.procedures` inside this graph reads this
+ * instead (`blinded_step`'s and `bridge`'s `previousProcedures`, and —
+ * transitively, via `.map(p => p.name)` inside the aigateway — the
+ * already-ordered exclusion that makes duplicate orders impossible by
+ * construction).
+ */
+function projectPreviousProcedures(
+  plannedProcedures: PlannedProcedure[]
+): PreviousProcedureFinding[] {
+  return plannedProcedures.map((p) => ({
+    name: p.name,
+    relevance: p.relevance,
+    result: p.parts.map((part) => part.alt).join("\n\n"),
+  }));
+}
+
 /** Serialise only the procedure/general keys from userInstructions. */
 function userInstructionsForProcedures(
   userInstructions: ProcedureGraphState["userInstructions"]
@@ -150,10 +205,10 @@ function userInstructionsForProcedures(
 }
 
 /**
- * Read-and-concat append: returns the full updated procedures array.
+ * Read-and-concat append: returns the full updated planned-procedures array.
  *
  * Safe only because `result_step` and `bridge` are sequential nodes in this
- * graph — each superstep has exactly one writer of `case.procedures`, so a
+ * graph — each superstep has exactly one writer of `plannedProcedures`, so a
  * read-modify-write on this `LastValue` channel never races another node's
  * write in the same step (issue 17 §2c). That is correct by accident of
  * topology, not by design: if this ever gets fanned out (`Send`, parallel
@@ -161,10 +216,10 @@ function userInstructionsForProcedures(
  * concurrent writers will silently clobber each other's appends exactly like
  * the bug this issue fixes elsewhere.
  */
-function appendProcedures(
-  current: ProcedureResult[] | undefined,
-  incoming: ProcedureResult[]
-): ProcedureResult[] {
+function appendPlannedProcedures(
+  current: PlannedProcedure[] | undefined,
+  incoming: PlannedProcedure[]
+): PlannedProcedure[] {
   return [...(current ?? []), ...incoming];
 }
 
@@ -213,7 +268,9 @@ function makeBlindedStep(
     }
 
     const presentation = presentationOf(state.case);
-    const previousProcedures = state.case.procedures ?? [];
+    const previousProcedures = projectPreviousProcedures(
+      state.plannedProcedures
+    );
     const userInstructions = userInstructionsForProcedures(
       state.userInstructions
     );
@@ -299,7 +356,9 @@ async function handleDiagnoseAction(
   );
 
   if (matches) {
-    return new Command({ goto: END });
+    // Nothing has been rendered yet (issue 21 §7) — `render_results` renders
+    // every planned procedure at once, THEN the graph ends.
+    return new Command({ goto: "render_results" });
   }
 
   // Wrong guess: feed it back as ruled-out and keep solving.
@@ -314,7 +373,10 @@ async function handleDiagnoseAction(
 
 // ─── Node 2: result_step ──────────────────────────────────────────────────────
 
-function makeResultStep(runtime: GraphRuntime) {
+function makeResultStep(
+  runtime: GraphRuntime,
+  providers: ModalityProvider<unknown>[]
+) {
   return async function resultStep(
     state: ProcedureGraphState,
     lgRuntime?: Runtime<RequestContext>
@@ -328,32 +390,38 @@ function makeResultStep(runtime: GraphRuntime) {
       return new Command({ goto: "blinded_step" });
     }
 
-    const completedProcedures: ProcedureResult[] = await invokeLogged(
+    // PLANS results — does not render them (issue 21 §7). `providers` is not
+    // zod-validatable data, so this is called directly rather than through a
+    // `Tool` wrapper, mirroring the presentation fields' planner gateways
+    // (`chiefComplaint/index.ts`'s `planChiefComplaint`).
+    const plannedBatch: PlannedProcedure[] = await planProcedureResults(
       runtime,
-      procedureTools.generateProcedureResults,
-      {
-        presentation: presentationOf(state.case),
-        diagnosis: state.diagnosis,
-        procedureSteps: pending,
-        outline: state.outline,
-        userInstructions: userInstructionsForProcedures(state.userInstructions),
-      },
-      lgRuntime?.context,
-      `Error generating results for batch [${pending.map((p) => p.name).join(", ")}]`
-    );
+      presentationOf(state.case),
+      state.diagnosis,
+      pending,
+      providers,
+      state.outline,
+      userInstructionsForProcedures(state.userInstructions),
+      lgRuntime?.context
+    ).catch((error) => {
+      runtime.log.error(
+        `[ProcedureGraph] Error planning results for batch [${pending.map((p) => p.name).join(", ")}]: ${error}`
+      );
+      throw error;
+    });
 
-    const updatedProcedures = appendProcedures(
-      state.case.procedures,
-      completedProcedures
+    const updatedProcedures = appendPlannedProcedures(
+      state.plannedProcedures,
+      plannedBatch
     );
 
     runtime.log.info(
-      `[ProcedureGraph] Results for batch of ${completedProcedures.length} procedure(s):\n\`\`\`json\n${JSON.stringify(completedProcedures, null, 2)}\n\`\`\``
+      `[ProcedureGraph] Planned results for batch of ${plannedBatch.length} procedure(s):\n\`\`\`json\n${JSON.stringify(plannedBatch, null, 2)}\n\`\`\``
     );
 
     return new Command({
       update: {
-        case: { procedures: updatedProcedures },
+        plannedProcedures: updatedProcedures,
         pendingProcedures: [],
       },
       goto: "blinded_step",
@@ -369,15 +437,19 @@ function makeBridge(runtime: GraphRuntime, strategy: ProcedureStrategy) {
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Command> {
     runtime.log.info(
-      `[ProcedureGraph] Generating bridge procedures to confirm diagnosis…`
+      `[ProcedureGraph] Planning bridge procedures to confirm diagnosis…`
     );
 
     const presentation = presentationOf(state.case);
-    const previousProcedures = state.case.procedures ?? [];
+    const previousProcedures = projectPreviousProcedures(
+      state.plannedProcedures
+    );
     const userInstructions = userInstructionsForProcedures(
       state.userInstructions
     );
 
+    // `strategy.bridge()` both picks the confirmatory procedures AND plans
+    // their results (issue 21 §7) — nothing is rendered here either.
     const bridgeProcedures = await strategy.bridge({
       presentation,
       diagnosis: state.diagnosis,
@@ -386,17 +458,62 @@ function makeBridge(runtime: GraphRuntime, strategy: ProcedureStrategy) {
       context: lgRuntime?.context,
     });
 
-    const updatedProcedures = appendProcedures(
-      state.case.procedures,
+    const updatedProcedures = appendPlannedProcedures(
+      state.plannedProcedures,
       bridgeProcedures
     );
 
     runtime.log.info(
-      `[ProcedureGraph] Bridge complete — ${bridgeProcedures.length} procedure(s) added:\n\`\`\`json\n${JSON.stringify(bridgeProcedures, null, 2)}\n\`\`\``
+      `[ProcedureGraph] Bridge complete — ${bridgeProcedures.length} procedure(s) planned:\n\`\`\`json\n${JSON.stringify(bridgeProcedures, null, 2)}\n\`\`\``
     );
 
     return new Command({
-      update: { case: { procedures: updatedProcedures } },
+      update: { plannedProcedures: updatedProcedures },
+      goto: "render_results",
+    });
+  };
+}
+
+// ─── Node 4: render_results ───────────────────────────────────────────────────
+
+function makeRenderResults(
+  runtime: GraphRuntime,
+  providers: ModalityProvider<unknown>[]
+) {
+  return async function renderResults(
+    state: ProcedureGraphState,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<Command> {
+    // Every planned part across EVERY procedure, flattened into one
+    // `ModalityPlan` keyed by INDEX, not name (issue 21 §7): two procedures
+    // can share a name after translation (issue 12's stable-path keying
+    // reasoning applies identically here), and the name is translated
+    // separately. One `renderPlan` call for the whole list is what makes
+    // this cheap — the text provider sees every procedure's instruction in
+    // a single batch and answers in one LLM call.
+    const plan: ModalityPlan = Object.fromEntries(
+      state.plannedProcedures.map((p, i) => [String(i), p.parts])
+    );
+
+    const rendered = await renderPlan(
+      providers,
+      plan,
+      lgRuntime?.context,
+      runtime.log
+    );
+
+    const procedures = state.plannedProcedures.map((p, i) => ({
+      name: p.name,
+      relevance: p.relevance,
+      result: rendered[String(i)]!,
+    }));
+
+    runtime.log.info(
+      `[ProcedureGraph] Rendered ${procedures.length} procedure result(s).`
+    );
+
+    return new Command({
+      update: { case: { procedures } },
       goto: END,
     });
   };
@@ -407,8 +524,13 @@ function makeBridge(runtime: GraphRuntime, strategy: ProcedureStrategy) {
 export function buildProcedureGraph(
   runtime: GraphRuntime,
   strategy: ProcedureStrategy,
+  providers: ModalityProvider<unknown>[],
   traceNode: ReturnType<typeof createTraceNode>
 ) {
+  if (providers.length === 0) {
+    throw new EmptyModalityRegistryError();
+  }
+
   const blindedSolverGraph = buildBlindedSolverGraph(strategy);
 
   return new StateGraph(ProcedureGraphStateSchema, {
@@ -422,14 +544,14 @@ export function buildProcedureGraph(
         makeBlindedStep(runtime, blindedSolverGraph),
         "Choosing next procedure"
       ),
-      { ends: ["result_step", "bridge", END] }
+      { ends: ["result_step", "bridge", "render_results"] }
     )
     .addNode(
       "result_step",
       traceNode(
         "result_step",
-        makeResultStep(runtime),
-        "Generating procedure result"
+        makeResultStep(runtime, providers),
+        "Planning procedure results"
       ),
       { ends: ["blinded_step"] }
     )
@@ -439,6 +561,15 @@ export function buildProcedureGraph(
         "bridge",
         makeBridge(runtime, strategy),
         "Bridging workup to diagnosis"
+      ),
+      { ends: ["render_results"] }
+    )
+    .addNode(
+      "render_results",
+      traceNode(
+        "render_results",
+        makeRenderResults(runtime, providers),
+        "Rendering procedure results"
       ),
       { ends: [END] }
     )

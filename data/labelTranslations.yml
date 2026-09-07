@@ -12,8 +12,9 @@ German:
   Rendering anamnesis content: Anamnese-Inhalt wird gerendert
   Assembling case fields: Fall wird zusammengestellt
   Choosing next procedure: Nächste Untersuchung wird ausgewählt
-  Generating procedure result: Untersuchungsergebnis wird generiert
+  Planning procedure results: Untersuchungsergebnisse werden geplant
   Bridging workup to diagnosis: Untersuchungen werden zur Diagnose überführt
+  Rendering procedure results: Untersuchungsergebnisse werden gerendert
   Translating procedure names and anamnesis categories: Untersuchungsnamen und Anamnesekategorien werden übersetzt
   Translating case text to target language: Falltext wird in die Zielsprache übersetzt
   Merging translated case: Übersetzter Fall wird zusammengeführt

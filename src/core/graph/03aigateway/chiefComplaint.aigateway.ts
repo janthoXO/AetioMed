@@ -13,7 +13,7 @@ import {
   ChiefComplaintJsonSchema,
   type ChiefComplaint,
 } from "../models/ChiefComplaint.js";
-import { textPart } from "../models/ContentPart.js";
+import { encodeText } from "../models/ContentPart.js";
 import type { RequestContext } from "../utils/context.js";
 import type { GraphRuntime } from "../runtime.js";
 
@@ -64,8 +64,8 @@ ${renderSchemaForPrompt(ChiefComplaintJsonSchema)}`
   // Initialize cases to empty in case of failure
   try {
     // Field generators produce ordinary text under a z.string() schema — the
-    // LLM is never asked to emit bytes (issue 11 §3/§4). Wrapped with
-    // `textPart()` below to build the domain `ChiefComplaint`.
+    // LLM is never asked to emit bytes (issue 11 §3/§4). Wrapped into a
+    // `ContentPart` below to build the domain `ChiefComplaint`.
     const chiefComplaintText: string = await retry(
       async (attempt: number, previousError?: Error) => {
         // Balanced: one clinical sentence whose facts come from the outline —
@@ -109,7 +109,13 @@ ${renderSchemaForPrompt(ChiefComplaintJsonSchema)}`
       }
     );
 
-    return [textPart(chiefComplaintText)];
+    return [
+      {
+        type: "text/plain",
+        value: encodeText(chiefComplaintText),
+        alt: chiefComplaintText,
+      },
+    ];
   } catch (error) {
     console.error(`[GenerateChiefComplaintFromOutline] Error:`, error);
     throw error;

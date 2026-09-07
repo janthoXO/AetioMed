@@ -8,10 +8,16 @@
 // Encoding, per MIME class:
 //   text/*          -> UTF-8 string, verbatim
 //   everything else -> base64
-// `alt` is omitted on the wire for text/* parts (derivable from `value`) and
-// restored on decode. The round trip is lossless and order-preserving.
+// `alt` is ALWAYS emitted and ALWAYS read back (issue 21 §8): it is now an
+// independent label authored by the planner, not derivable from `value` —
+// a text part's prose lives in `value`, its short label lives in `alt`, and
+// the two can legitimately differ. The round trip is lossless and
+// order-preserving.
 import { z } from "zod";
-import { textPart, type ContentPart } from "@/core/graph/models/ContentPart.js";
+import {
+  encodeText,
+  type ContentPart,
+} from "@/core/graph/models/ContentPart.js";
 import { PatientSchema } from "@/core/graph/models/Patient.js";
 import { ProcedureRelevanceSchema } from "@/core/graph/models/Procedure.js";
 import { CaseSchema, type Case } from "@/core/graph/models/Case.js";
@@ -31,19 +37,15 @@ export class ContentPartTooLargeError extends Error {
 }
 
 /**
- * One `ContentPart` on the wire. `alt` is only present for non-text parts —
- * a text part's `alt` is exactly its (UTF-8) `value`, so carrying it twice
- * would be pure duplication.
+ * One `ContentPart` on the wire. `alt` is required for every part — a text
+ * part's `alt` is no longer derivable from `value` (issue 21 §2), so
+ * omitting it would silently drop the label.
  */
-export const ContentPartWireSchema = z
-  .object({
-    type: z.string(),
-    value: z.string(),
-    alt: z.string().optional(),
-  })
-  .refine((w) => isTextMime(w.type) || w.alt !== undefined, {
-    message: "alt is required on the wire for non-text parts",
-  });
+export const ContentPartWireSchema = z.object({
+  type: z.string(),
+  value: z.string(),
+  alt: z.string(),
+});
 
 export type ContentPartWire = z.infer<typeof ContentPartWireSchema>;
 
@@ -77,6 +79,7 @@ export function encodeContentPart(
     return {
       type: part.type,
       value: Buffer.from(part.value).toString("utf8"),
+      alt: part.alt,
     };
   }
 
@@ -90,18 +93,17 @@ export function encodeContentPart(
 /** Decode one wire `ContentPart` back to the domain shape. Lossless. */
 export function decodeContentPart(wire: ContentPartWire): ContentPart {
   if (isTextMime(wire.type)) {
-    // `alt` is derivable from `value` for a text/* part — restore it here.
     return {
       type: wire.type,
-      alt: wire.value,
-      value: textPart(wire.value).value,
+      alt: wire.alt,
+      value: encodeText(wire.value),
     };
   }
 
   return {
     type: wire.type,
     value: new Uint8Array(Buffer.from(wire.value, "base64")),
-    alt: wire.alt ?? "",
+    alt: wire.alt,
   };
 }
 

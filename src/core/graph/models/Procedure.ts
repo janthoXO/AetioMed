@@ -53,7 +53,7 @@ export type ProcedureResult = z.infer<typeof ProcedureResultSchema>;
 /**
  * LLM-facing counterpart to `ProcedureResultSchema`: `result` stays a plain
  * `z.string()` — the LLM is never asked to emit bytes or base64 (issue 11
- * §3). Callers wrap `result` with `textPart()` to build a domain
+ * §3). Callers wrap `result` into a `ContentPart` to build a domain
  * `ProcedureResult` (`Procedure` type above).
  */
 export const ProcedureResultTextSchema = ProcedureSchema.extend({

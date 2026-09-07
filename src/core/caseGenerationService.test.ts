@@ -9,7 +9,10 @@ import { createCaseGenerationService } from "@/core/caseGenerationService.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import { AppError } from "@/core/graph/errors/AppError.js";
 import type { Case } from "@/core/graph/models/Case.js";
-import { textPart } from "@/core/graph/models/ContentPart.js";
+import {
+  encodeText,
+  type ContentPart,
+} from "@/core/graph/models/ContentPart.js";
 import type { LanguageDetector } from "@/core/languageDetection/port.js";
 
 function fakeGraph(
@@ -104,13 +107,26 @@ describe("CaseGenerationService — terminal events, no transport involved", () 
   });
 });
 
+/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
+ * inlined at every real call site now; kept here only to keep this
+ * fixture readable. */
+function fixtureTextPart(alt: string): ContentPart {
+  return { type: "text/plain", value: encodeText(alt), alt };
+}
+
 describe("CaseGenerationService — generationFlags expansion and projection", () => {
   const fullCase: Case = {
     patient: { name: "Jane", age: 40, sex: "female" },
-    chiefComplaint: [textPart("Cough for three days")],
-    anamnesis: [{ category: "History", answer: [textPart("Nothing of note")] }],
+    chiefComplaint: [fixtureTextPart("Cough for three days")],
+    anamnesis: [
+      { category: "History", answer: [fixtureTextPart("Nothing of note")] },
+    ],
     procedures: [
-      { name: "CBC", relevance: "obligatory", result: [textPart("Normal")] },
+      {
+        name: "CBC",
+        relevance: "obligatory",
+        result: [fixtureTextPart("Normal")],
+      },
     ],
   };
 

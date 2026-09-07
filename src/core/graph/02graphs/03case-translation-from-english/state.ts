@@ -72,10 +72,12 @@ export const CaseTranslationFromEnglishStateSchema = z.object({
 
   /**
    * Written only by `translate_rest` (issue 12 §1/§2): one free-text LLM
-   * pass over every `ContentPart.alt` in the case, keyed by stable path
-   * (`tools.ts`'s `caseAltMap`). `translate_merge` re-derives `value` from
-   * the translated `alt` for `text/plain` parts and leaves every other
-   * part's `value` byte-identical.
+   * pass over every `ContentPart` text fragment in the case — both `alt`
+   * and, for text parts, the decoded `value` — keyed by stable path
+   * (`tools.ts`'s `caseTextMap`). `translate_merge` applies the translated
+   * `.text` entry to `value` and the translated `.alt` entry to `alt`
+   * independently for `text/plain` parts, and leaves every other part's
+   * `value` byte-identical.
    */
   restTranslations: z.record(z.string(), z.string()).default({}),
 });

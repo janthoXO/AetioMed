@@ -136,7 +136,7 @@ src/
 │       ├── persistence/      shared SQLite infrastructure
 │       ├── symptoms/         the symptom cache slice
 │       ├── medicalBasis/     plan-input provider registry
-│       ├── modality/         content-rendering provider registry
+│       ├── modality/         per-field planner grammar + rendering pipeline
 │       ├── models/           Zod domain models
 │       ├── utils/            llm, context, retry, prompt, node wrapper
 │       └── errors/
@@ -198,7 +198,9 @@ Retry prompts get `summarizeValidationError()` output — a few short actionable
 
 `chiefComplaint`, each `anamnesis[].answer` and each `procedures[].result` are ordered, non-empty arrays of `ContentPart` (`{ type, value: Uint8Array, alt }`). The array **composes** one field value; it is not a list of alternative renditions.
 
-For a text part `value` is derived from `alt` through the single `textPart()` constructor, so translation touches `alt` and re-derives `value` and the two cannot drift. `textOf(parts)` is the only path from content to a prompt — **bytes never reach a prompt or an LLM output schema**. Wire encoding (UTF-8 for `text/*`, base64 otherwise) lives in one place, `src/api/contentWire.ts`.
+`value` is the rendered artifact and `alt` a short description of what it conveys; the two are independent, and `alt` is authored by the planner, never by a provider. `textOf(parts)` is still the only path from content to a prompt, but it is MIME-dispatched: for a `text/*` part the prose lives in `value` and is decoded from it, and anything else falls back to `alt`. Add a MIME row to the table in `models/ContentPart.ts` (say, `application/pdf`) rather than reaching for a runtime registration API. **Bytes never reach a prompt or an LLM output schema.** Wire encoding (UTF-8 for `text/*`, base64 otherwise) lives in one place, `src/api/contentWire.ts`, and always carries `alt`.
+
+A `Send` payload must never carry content-part bytes: LangGraph JSON round-trips them, so a `Uint8Array` arrives as a plain index-keyed object. Both translation phases fan out with plain edges for this reason.
 
 ### Data Layer
 

@@ -96,6 +96,21 @@ function buildGraph(
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
+describe("chiefComplaintGraph — output surface (issue 17 §1)", () => {
+  it("writes back only `case`, not the whole state schema, at either registry size", () => {
+    const single = buildGraph(makeQueuedLlmPort({}), [
+      createTextModalityProvider(),
+    ]);
+    const multi = buildGraph(makeQueuedLlmPort({}), [
+      createTextModalityProvider(),
+      makeStaggeredProvider({ id: "img", mime: "image/png", delayMs: 0 }),
+    ]);
+
+    expect([...single.outputChannels].sort()).toEqual(["case"]);
+    expect([...multi.outputChannels].sort()).toEqual(["case"]);
+  });
+});
+
 describe("chiefComplaintGraph — node shape by registry size (issue 13 §4/§7)", () => {
   it("rejects an empty registry immediately, at build time", () => {
     expect(() => buildGraph(makeQueuedLlmPort({}), [])).toThrow(

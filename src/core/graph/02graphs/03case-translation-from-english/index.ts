@@ -157,6 +157,15 @@ export function translateMerge(
   return { case: mergedCase };
 }
 
+// This graph is `addNode`'d into `assembleCaseGraph` (`caseGraph.ts`) as
+// `translation_from_english_phase` (issue 17 §1). `.pick()` off this graph's
+// own state schema, not a hand-written duplicate, so the picked `case`
+// channel keeps the identical reducer registration. `definedTranslations`/
+// `restTranslations` are this graph's own internal scratch channels, never
+// written back to the parent.
+const TranslationFromEnglishOutputSchema =
+  CaseTranslationFromEnglishStateSchema.pick({ case: true });
+
 export function buildCaseTranslationFromEnglishGraph(
   runtime: GraphRuntime,
   repos: { anamnesis: AnamnesisRepo; procedures: ProceduresRepo },
@@ -165,7 +174,10 @@ export function buildCaseTranslationFromEnglishGraph(
   const tools = createTranslationFromEnglishTools(repos);
 
   return (
-    new StateGraph(CaseTranslationFromEnglishStateSchema, RequestContextSchema)
+    new StateGraph(CaseTranslationFromEnglishStateSchema, {
+      context: RequestContextSchema,
+      output: TranslationFromEnglishOutputSchema,
+    })
       .addNode(
         "translate_defined",
         traceNode(

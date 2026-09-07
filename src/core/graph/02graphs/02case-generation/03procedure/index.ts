@@ -49,6 +49,12 @@ const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
 
 type ProcedureGraphState = z.infer<typeof ProcedureGraphStateSchema>;
 
+// This graph is `addNode`'d into `buildCaseGenerationGraph` as
+// `procedure_phase` (issue 17 §1). `.pick()` off this graph's own state
+// schema, not a hand-written duplicate, so the picked `case` channel keeps
+// the identical reducer registration.
+const ProcedureOutputSchema = ProcedureGraphStateSchema.pick({ case: true });
+
 /**
  * The blinded solver's own compiled graph, whose state schema **omits
  * `diagnosis` entirely**. `BlindedView` (`strategy/ports.ts`) already makes
@@ -81,7 +87,14 @@ const BlindedSolverStateSchema = z.object({
  * never calls this outside `buildProcedureGraph`.
  */
 export function buildBlindedSolverGraph(strategy: ProcedureStrategy) {
-  return new StateGraph(BlindedSolverStateSchema, RequestContextSchema)
+  return new StateGraph(BlindedSolverStateSchema, {
+    context: RequestContextSchema,
+    // `.invoke()`d directly from `blinded_step`, not `addNode`'d — but the
+    // same rule applies regardless of mount style (issue 17 §1): declare the
+    // write surface explicitly rather than letting it default to the whole
+    // state. `move` is the only field this graph's single node produces.
+    output: BlindedSolverStateSchema.pick({ move: true }),
+  })
     .addNode("solve", async (state, lgRuntime?: Runtime<RequestContext>) => {
       const move = await strategy.nextStep({
         presentation: state.presentation,
@@ -136,7 +149,18 @@ function userInstructionsForProcedures(
   return renderUserInstructions(filtered);
 }
 
-/** Read-and-concat append: returns the full updated procedures array. */
+/**
+ * Read-and-concat append: returns the full updated procedures array.
+ *
+ * Safe only because `result_step` and `bridge` are sequential nodes in this
+ * graph — each superstep has exactly one writer of `case.procedures`, so a
+ * read-modify-write on this `LastValue` channel never races another node's
+ * write in the same step (issue 17 §2c). That is correct by accident of
+ * topology, not by design: if this ever gets fanned out (`Send`, parallel
+ * branches), the channel needs a concat reducer instead of `LastValue`, or
+ * concurrent writers will silently clobber each other's appends exactly like
+ * the bug this issue fixes elsewhere.
+ */
 function appendProcedures(
   current: ProcedureResult[] | undefined,
   incoming: ProcedureResult[]
@@ -387,7 +411,10 @@ export function buildProcedureGraph(
 ) {
   const blindedSolverGraph = buildBlindedSolverGraph(strategy);
 
-  return new StateGraph(ProcedureGraphStateSchema, RequestContextSchema)
+  return new StateGraph(ProcedureGraphStateSchema, {
+    context: RequestContextSchema,
+    output: ProcedureOutputSchema,
+  })
     .addNode(
       "blinded_step",
       traceNode(

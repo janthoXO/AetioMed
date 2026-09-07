@@ -47,6 +47,19 @@ const ChiefComplaintGraphStateSchema = CaseGenerationStateSchema.pick({
 
 type ChiefComplaintGraphState = z.infer<typeof ChiefComplaintGraphStateSchema>;
 
+// This graph is `addNode`'d into `buildFieldGenerationGraph` alongside
+// `anamnesisGraph`, fanned out in parallel by `Send` from `outline_evaluate`
+// (issue 17 §0/§1). A compiled subgraph writes back its ENTIRE state schema
+// unless told otherwise, so without an explicit `output` here, the parallel
+// fan-out makes `diagnosis`, `userInstructions` and `outline` each receive
+// two values in one superstep — `LastValue` channels, which accept exactly
+// one, so LangGraph throws `INVALID_CONCURRENT_GRAPH_UPDATE`. `.pick()` off
+// this graph's own state schema (not a hand-written duplicate) so the
+// picked `case` channel keeps the identical reducer registration.
+const ChiefComplaintOutputSchema = ChiefComplaintGraphStateSchema.pick({
+  case: true,
+});
+
 function makeGenerateContent(runtime: GraphRuntime) {
   return async function generateContent(
     state: Pick<
@@ -166,7 +179,10 @@ export function buildChiefComplaintGraph(
   }
 
   if (modalityRegistry.length === 1) {
-    return new StateGraph(ChiefComplaintGraphStateSchema, RequestContextSchema)
+    return new StateGraph(ChiefComplaintGraphStateSchema, {
+      context: RequestContextSchema,
+      output: ChiefComplaintOutputSchema,
+    })
       .addNode(
         "generate_content",
         traceNode(
@@ -189,7 +205,10 @@ export function buildChiefComplaintGraph(
       .compile();
   }
 
-  return new StateGraph(ChiefComplaintGraphStateSchema, RequestContextSchema)
+  return new StateGraph(ChiefComplaintGraphStateSchema, {
+    context: RequestContextSchema,
+    output: ChiefComplaintOutputSchema,
+  })
     .addNode(
       "generate_content",
       traceNode(

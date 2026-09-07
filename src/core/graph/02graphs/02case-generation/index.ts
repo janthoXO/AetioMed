@@ -80,6 +80,7 @@ export function buildCaseGenerationGraph(
   const procedurePhase = buildProcedureGraph(
     runtime,
     procedureStrategy,
+    modalityRegistries.procedureResult,
     traceNode.scope("procedure_phase")
   );
 

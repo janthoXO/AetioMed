@@ -208,7 +208,11 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
   if (!flags.translationSandwich) {
     const generationPhase = buildCaseGenerationGraph(
       runtime,
-      createProcedureStrategy(runtime, flags.procedurePreselection),
+      createProcedureStrategy(
+        runtime,
+        flags.procedurePreselection,
+        modalityRegistries.procedureResult
+      ),
       medicalBasisRegistry,
       modalityRegistries,
       // Scoped to match the `"generation_phase"` mount name below — see
@@ -234,7 +238,11 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
   };
   const generationPhase = buildCaseGenerationGraph(
     generationRuntime,
-    createProcedureStrategy(generationRuntime, flags.procedurePreselection),
+    createProcedureStrategy(
+      generationRuntime,
+      flags.procedurePreselection,
+      modalityRegistries.procedureResult
+    ),
     medicalBasisRegistry,
     modalityRegistries,
     traceNode.scope("generation_phase")

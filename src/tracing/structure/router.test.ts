@@ -49,7 +49,7 @@ function buildDeps(
   modalityRegistries: ModalityRegistries = {
     chiefComplaint: [fakeTextProvider()],
     anamnesis: [fakeTextProvider()],
-    procedureResult: [],
+    procedureResult: [fakeTextProvider()],
   }
 ): AssemblyDeps {
   const bus = new EventBus();

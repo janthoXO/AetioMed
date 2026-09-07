@@ -6,6 +6,7 @@ import { createMedicalBasisRegistry } from "../medicalBasis/registry.js";
 import type { ModalityRegistries } from "../modality/registry.js";
 import { createChiefComplaintProviders } from "./02case-generation/02presentation/generation/chiefComplaint/providers.js";
 import { createAnamnesisProviders } from "./02case-generation/02presentation/generation/anamnesis/providers.js";
+import { createProcedureResultProviders } from "./02case-generation/03procedure/providers.js";
 import { EventBus } from "../../event-bus.js";
 import type { GraphRuntime } from "../runtime.js";
 import { InMemoryProcedureCatalog } from "../catalog/procedures/index.js";
@@ -113,15 +114,13 @@ const medicalBasisRegistry = createMedicalBasisRegistry({
   symptomsRepo: minimalSymptomsRepo,
 });
 
-// Mirrors the composition root too: one text provider per presentation
-// field, `procedureResult` empty until step C (see `graph/index.ts`'s
-// matching TODO) — the planner always runs regardless of registry size
-// (issue 21 §1), so there is no registry-size topology variance left for
-// this script to show.
+// Mirrors the composition root: one text provider per field — the planner
+// always runs regardless of registry size (issue 21 §1), so there is no
+// registry-size topology variance left for this script to show.
 const modalityRegistries: ModalityRegistries = {
   chiefComplaint: createChiefComplaintProviders(minimalRuntime),
   anamnesis: createAnamnesisProviders(minimalRuntime),
-  procedureResult: [],
+  procedureResult: createProcedureResultProviders(minimalRuntime),
 };
 
 const { getCaseGraph } = buildCaseGraph(

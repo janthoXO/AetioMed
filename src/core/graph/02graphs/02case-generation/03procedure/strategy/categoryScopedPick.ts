@@ -2,9 +2,11 @@ import {
   generateBlindedCategoryStep,
   generateBlindedProcedureStepFromCategories,
   generateBridgeCategoryStep,
-  generateBridgeProcedureStepFromCategories,
+  pickBridgeProceduresFromCategories,
+  planProcedureResults,
 } from "@/core/graph/03aigateway/procedures.aigateway.js";
-import type { ProcedureResult } from "@/core/graph/models/Procedure.js";
+import type { PlannedProcedure } from "@/core/graph/models/Procedure.js";
+import type { ModalityProvider } from "@/core/graph/modality/ports.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type {
   BlindedView,
@@ -35,7 +37,10 @@ const MAX_CATEGORY_EXPANSIONS = 2;
 export class CategoryScopedPick implements ProcedureStrategy {
   readonly id = "category-scoped-pick";
 
-  constructor(private readonly runtime: GraphRuntime) {}
+  constructor(
+    private readonly runtime: GraphRuntime,
+    private readonly providers: ModalityProvider<unknown>[]
+  ) {}
 
   /**
    * Step 1 (category pick) followed by step 2 (procedure pick scoped to
@@ -130,15 +135,18 @@ export class CategoryScopedPick implements ProcedureStrategy {
   }
 
   /**
-   * Step 1 (category pick) followed by step 2 (confirmatory results scoped
-   * to those categories). The bridge is terminal (no retry loop), so if the
-   * category pick comes back empty this falls back to every real category
-   * rather than stalling on an unusable candidate set. Unlike `nextStep`
-   * there is no model-driven expand loop here: the diagnosis is known, so
-   * when the scoped pick yields nothing the scope is deterministically
-   * widened to all categories in a single retry.
+   * Step 1 (category pick) followed by step 2 (confirmatory NAME pick scoped
+   * to those categories), then `planProcedureResults` plans results for
+   * whatever names step 2 picked (issue 21 §7) — the SAME planner
+   * `03procedure/index.ts`'s `result_step` calls, so this ends up three LLM
+   * calls where it used to be two. The bridge is terminal (no retry loop),
+   * so if the category pick comes back empty this falls back to every real
+   * category rather than stalling on an unusable candidate set. Unlike
+   * `nextStep` there is no model-driven expand loop here: the diagnosis is
+   * known, so when the scoped name pick yields nothing the scope is
+   * deterministically widened to all categories in a single retry.
    */
-  async bridge(view: OracleView): Promise<ProcedureResult[]> {
+  async bridge(view: OracleView): Promise<PlannedProcedure[]> {
     const { runtime } = this;
 
     const categories = await invokeLogged(
@@ -161,9 +169,9 @@ export class CategoryScopedPick implements ProcedureStrategy {
       `[ProcedureGraph] Bridge category step selected: [${selectedCategories.join(", ")}]${categories.length ? "" : " (fallback: all categories)"}`
     );
 
-    const scopedResults = await invokeLogged(
+    let procedures = await invokeLogged(
       runtime,
-      generateBridgeProcedureStepFromCategories(
+      pickBridgeProceduresFromCategories(
         runtime,
         view.presentation,
         view.diagnosis,
@@ -172,32 +180,47 @@ export class CategoryScopedPick implements ProcedureStrategy {
         view.userInstructions,
         view.context
       ),
-      "Error in bridge procedure step"
+      "Error in bridge procedure pick"
     );
 
     if (
-      scopedResults.length > 0 ||
-      selectedCategories.length >= allCategories.length
+      procedures.length === 0 &&
+      selectedCategories.length < allCategories.length
     ) {
-      return scopedResults;
+      runtime.log.warn(
+        `[ProcedureGraph] Bridge pick from [${selectedCategories.join(", ")}] returned no procedures — retrying with all categories.`
+      );
+
+      procedures = await invokeLogged(
+        runtime,
+        pickBridgeProceduresFromCategories(
+          runtime,
+          view.presentation,
+          view.diagnosis,
+          view.previousProcedures,
+          allCategories,
+          view.userInstructions,
+          view.context
+        ),
+        "Error in bridge procedure pick"
+      );
     }
 
-    runtime.log.warn(
-      `[ProcedureGraph] Bridge pick from [${selectedCategories.join(", ")}] returned no procedures — retrying with all categories.`
-    );
+    if (procedures.length === 0) return [];
 
     return invokeLogged(
       runtime,
-      generateBridgeProcedureStepFromCategories(
+      planProcedureResults(
         runtime,
         view.presentation,
         view.diagnosis,
-        view.previousProcedures,
-        allCategories,
+        procedures,
+        this.providers,
+        undefined,
         view.userInstructions,
         view.context
       ),
-      "Error in bridge procedure step"
+      "Error planning bridge procedure results"
     );
   }
 }

@@ -59,7 +59,7 @@ function buildDeps(
   modalityRegistries: ModalityRegistries = {
     chiefComplaint: [fakeTextProvider()],
     anamnesis: [fakeTextProvider()],
-    procedureResult: [],
+    procedureResult: [fakeTextProvider()],
   }
 ): AssemblyDeps {
   const bus = new EventBus();
@@ -299,6 +299,19 @@ describe("assembleCaseGraph", () => {
         buildDeps(undefined, {
           chiefComplaint: [fakeTextProvider()],
           anamnesis: [],
+          procedureResult: [],
+        }),
+        flags(false, false)
+      )
+    ).toThrow(/modality registry is empty/i);
+  });
+
+  it("rejects an empty procedure-result modality registry at assembly time (issue 21 §7)", () => {
+    expect(() =>
+      assembleCaseGraph(
+        buildDeps(undefined, {
+          chiefComplaint: [fakeTextProvider()],
+          anamnesis: [fakeTextProvider()],
           procedureResult: [],
         }),
         flags(false, false)

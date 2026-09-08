@@ -5,13 +5,20 @@
 // channels, `translate_merge` is the only writer of `case`, and reversing
 // which pass finishes first produces an identical result because there is
 // no order to be sensitive to.
+//
+// Issue 21 §8: the rest pass's map now carries `.alt`/`.text` keys per part
+// (see `tools.ts`'s `caseTextMap`) — the LLM responses scripted below are
+// keyed accordingly.
 import { describe, expect, it } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {
   buildCaseTranslationFromEnglishGraph,
   translateMerge,
 } from "./index.js";
-import { textPart } from "@/core/graph/models/ContentPart.js";
+import {
+  encodeText,
+  type ContentPart,
+} from "@/core/graph/models/ContentPart.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import type { GraphRuntime, LlmPort } from "@/core/graph/runtime.js";
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
@@ -19,6 +26,13 @@ import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import { runWithContext } from "@/core/graph/utils/context.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { EventBus } from "@/core/event-bus.js";
+
+/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
+ * inlined at every real call site now; kept here only to keep these
+ * fixtures readable. */
+function fixtureTextPart(alt: string): ContentPart {
+  return { type: "text/plain", value: encodeText(alt), alt };
+}
 
 function fakeRepos(opts: {
   procedureNames?: Record<string, string>;
@@ -62,15 +76,15 @@ function fakeRuntime(restResponse: Record<string, string>): GraphRuntime {
 
 function baseCase(): Case {
   return {
-    chiefComplaint: [textPart("Cough for three days.")],
+    chiefComplaint: [fixtureTextPart("Cough for three days.")],
     anamnesis: [
-      { category: "History", answer: [textPart("No prior illness.")] },
+      { category: "History", answer: [fixtureTextPart("No prior illness.")] },
     ],
     procedures: [
       {
         name: "Chest X-ray",
         relevance: "obligatory",
-        result: [textPart("Infiltrate in right lower lobe.")],
+        result: [fixtureTextPart("Infiltrate in right lower lobe.")],
       },
     ],
   };
@@ -104,6 +118,48 @@ async function invoke(
   );
 }
 
+describe("byte fidelity across the parallel fan-out (issue 21)", () => {
+  // LangGraph's `Send` round-trips its payload through JSON, which turns a
+  // `ContentPart.value` `Uint8Array` into a plain index-keyed object —
+  // `instanceof Uint8Array` becomes false and every downstream reader (the
+  // wire codec, the size ceiling, any non-text extractor) sees garbage. This
+  // phase used to dispatch its two passes with `Send(node, state)`, carrying
+  // the whole case — bytes and all — for no gain over a plain edge. This test
+  // fails if anyone reintroduces that.
+  it("passes a non-text part's bytes through byte-identically, still a real Uint8Array", async () => {
+    const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+    // Only `.alt` is scripted: a non-text part contributes no `.text` key to
+    // `caseTextMap`, since its meaning lives in bytes we must not touch — so
+    // a response carrying just `.alt` satisfies the rest pass's key check.
+    const runtime = fakeRuntime({
+      "chiefComplaint.0.alt": "ein Röntgenbild",
+    });
+
+    const result = await invoke(runtime, fakeRepos({}), {
+      case: {
+        chiefComplaint: [{ type: "image/png", value: bytes, alt: "an x-ray" }],
+      },
+    });
+
+    const part = result.case.chiefComplaint![0]!;
+    expect(part.value).toBeInstanceOf(Uint8Array);
+    expect([...part.value]).toEqual([...bytes]);
+    expect(part.alt).toBe("ein Röntgenbild");
+  });
+});
+
+describe("buildCaseTranslationFromEnglishGraph — output surface (issue 17 §1)", () => {
+  it("writes back only `case`, not definedTranslations/restTranslations", () => {
+    const repos = fakeRepos({});
+    const graph = buildCaseTranslationFromEnglishGraph(
+      fakeRuntime({}),
+      repos,
+      createTraceNode(new EventBus())
+    );
+    expect([...graph.outputChannels].sort()).toEqual(["case"]);
+  });
+});
+
 describe("buildCaseTranslationFromEnglishGraph — the bug fix (issue 12)", () => {
   it("procedures[].name comes out as EXACTLY the catalogue's cached term, never a rest-pass paraphrase", async () => {
     const repos = fakeRepos({
@@ -112,14 +168,17 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix (issue 12)", () =
     });
     // The rest pass's LLM is scripted to translate everything it's handed —
     // but it structurally cannot see procedure names or categories, since
-    // `caseAltMap` never includes them. Under the old single translate_case
+    // `caseTextMap` never includes them. Under the old single translate_case
     // node, this LLM output — a full `Case` — would have overwritten the
     // cache-correct name/category wholesale via the shallow-merge `case`
     // reducer (issue 12 §0).
     const runtime = fakeRuntime({
-      "chiefComplaint.0": "Toux depuis trois jours.",
-      "anamnesis.0.answer.0": "Aucune maladie antérieure.",
-      "procedures.0.result.0": "Infiltrat dans le lobe inférieur droit.",
+      "chiefComplaint.0.alt": "Toux depuis trois jours.",
+      "chiefComplaint.0.text": "Toux depuis trois jours.",
+      "anamnesis.0.answer.0.alt": "Aucune maladie antérieure.",
+      "anamnesis.0.answer.0.text": "Aucune maladie antérieure.",
+      "procedures.0.result.0.alt": "Infiltrat dans le lobe inférieur droit.",
+      "procedures.0.result.0.text": "Infiltrat dans le lobe inférieur droit.",
     });
 
     const result = await invoke(runtime, repos);
@@ -141,9 +200,12 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix (issue 12)", () =
           return new FakeListChatModel({
             responses: [
               JSON.stringify({
-                "chiefComplaint.0": "Toux.",
-                "anamnesis.0.answer.0": "Rien.",
-                "procedures.0.result.0": "Infiltrat.",
+                "chiefComplaint.0.alt": "Toux.",
+                "chiefComplaint.0.text": "Toux.",
+                "anamnesis.0.answer.0.alt": "Rien.",
+                "anamnesis.0.answer.0.text": "Rien.",
+                "procedures.0.result.0.alt": "Infiltrat.",
+                "procedures.0.result.0.text": "Infiltrat.",
               }),
             ],
           });
@@ -178,9 +240,12 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix (issue 12)", () =
       categories: { History: "Anamnese" },
     });
     const runtime = fakeRuntime({
-      "chiefComplaint.0": "Toux.",
-      "anamnesis.0.answer.0": "Rien.",
-      "procedures.0.result.0": "Infiltrat.",
+      "chiefComplaint.0.alt": "Toux.",
+      "chiefComplaint.0.text": "Toux.",
+      "anamnesis.0.answer.0.alt": "Rien.",
+      "anamnesis.0.answer.0.text": "Rien.",
+      "procedures.0.result.0.alt": "Infiltrat.",
+      "procedures.0.result.0.text": "Infiltrat.",
     });
     const graph = buildCaseTranslationFromEnglishGraph(
       runtime,
@@ -213,14 +278,16 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix (issue 12)", () =
     // its own — this test's fake LLM is scripted for the rest pass only.
     const repos = fakeRepos({ categories: { History: "Anamnese" } });
     const runtime = fakeRuntime({
-      "anamnesis.0.answer.0": "Premier.",
-      "anamnesis.0.answer.1": "Deuxième.",
+      "anamnesis.0.answer.0.alt": "Premier.",
+      "anamnesis.0.answer.0.text": "Premier.",
+      "anamnesis.0.answer.1.alt": "Deuxième.",
+      "anamnesis.0.answer.1.text": "Deuxième.",
     });
     const multiPartCase: Case = {
       anamnesis: [
         {
           category: "History",
-          answer: [textPart("First."), textPart("Second.")],
+          answer: [fixtureTextPart("First."), fixtureTextPart("Second.")],
         },
       ],
     };
@@ -243,9 +310,12 @@ describe("translateMerge — order-independence by construction (issue 12 §1)",
       anamnesisCategories: { History: "Anamnese" },
     };
     const restTranslations = {
-      "chiefComplaint.0": "Toux depuis trois jours.",
-      "anamnesis.0.answer.0": "Aucune maladie antérieure.",
-      "procedures.0.result.0": "Infiltrat dans le lobe inférieur droit.",
+      "chiefComplaint.0.alt": "Toux depuis trois jours.",
+      "chiefComplaint.0.text": "Toux depuis trois jours.",
+      "anamnesis.0.answer.0.alt": "Aucune maladie antérieure.",
+      "anamnesis.0.answer.0.text": "Aucune maladie antérieure.",
+      "procedures.0.result.0.alt": "Infiltrat dans le lobe inférieur droit.",
+      "procedures.0.result.0.text": "Infiltrat dans le lobe inférieur droit.",
     };
 
     // "Defined first" — build state as if translate_defined's write landed

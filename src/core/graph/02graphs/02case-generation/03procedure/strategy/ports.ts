@@ -1,7 +1,10 @@
-import type { Presentation } from "@/core/graph/03aigateway/procedures.aigateway.js";
 import type {
+  Presentation,
+  PreviousProcedureFinding,
+} from "@/core/graph/03aigateway/procedures.aigateway.js";
+import type {
+  PlannedProcedure,
   Procedure,
-  ProcedureResult,
 } from "@/core/graph/models/Procedure.js";
 import type { Diagnosis } from "@/core/graph/models/Diagnosis.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
@@ -18,7 +21,7 @@ import type { RequestContext } from "@/core/graph/utils/context.js";
  */
 export type BlindedView = {
   presentation: Presentation;
-  previousProcedures: ProcedureResult[];
+  previousProcedures: PreviousProcedureFinding[];
   ruledOutDiagnoses: string[];
   userInstructions?: string | undefined;
   iterationsRemaining: number;
@@ -29,7 +32,7 @@ export type BlindedView = {
 export type OracleView = {
   presentation: Presentation;
   diagnosis: Diagnosis;
-  previousProcedures: ProcedureResult[];
+  previousProcedures: PreviousProcedureFinding[];
   userInstructions?: string | undefined;
   context?: RequestContext | undefined;
 };
@@ -68,5 +71,12 @@ export interface ProcedureStrategy {
   /** "direct-pick" | "category-scoped-pick" — for logs and tests. */
   readonly id: string;
   nextStep(view: BlindedView): Promise<SolverMove>;
-  bridge(view: OracleView): Promise<ProcedureResult[]>;
+  /**
+   * Picks the confirmatory procedures needed to complete the diagnostic
+   * pathway to the true diagnosis, AND plans their results (issue 21 §7) —
+   * `PlannedProcedure[]`, not `ProcedureResult[]`: nothing is rendered here,
+   * `render_results` (`03procedure/index.ts`) renders every planned
+   * procedure at once, once the case is solved.
+   */
+  bridge(view: OracleView): Promise<PlannedProcedure[]>;
 }

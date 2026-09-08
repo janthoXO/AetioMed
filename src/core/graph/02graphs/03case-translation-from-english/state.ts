@@ -37,8 +37,20 @@ export const CaseTranslationFromEnglishStateSchema = z.object({
    * two translation passes below write to their own channels instead, so
    * this shallow-merge reducer never has to arbitrate between two competing
    * writers.
+   *
+   * `.default({})` before `.register(...)` (issue 17 §2b), matching
+   * `02case-generation/state.ts`: `.register()` attaches the reducer to the
+   * exact Zod instance it is called on, and `CaseSchema` bare is the same
+   * instance `api/contentWire.ts` and the API schemas use. Registering that
+   * shared instance directly would put a graph-framework reducer on a
+   * domain model, and a second graph doing the same would silently
+   * overwrite this one's registration. `.default({})` produces a fresh
+   * wrapper instance to register instead — harmless here, since this
+   * channel is always supplied by the parent (`assembleCaseGraph` never
+   * enters this phase without a `case` already generated) and the default
+   * is never actually used.
    */
-  case: CaseSchema.register(registry, {
+  case: CaseSchema.default({}).register(registry, {
     reducer: {
       fn: (prev, next) => ({
         ...prev,
@@ -60,10 +72,12 @@ export const CaseTranslationFromEnglishStateSchema = z.object({
 
   /**
    * Written only by `translate_rest` (issue 12 §1/§2): one free-text LLM
-   * pass over every `ContentPart.alt` in the case, keyed by stable path
-   * (`tools.ts`'s `caseAltMap`). `translate_merge` re-derives `value` from
-   * the translated `alt` for `text/plain` parts and leaves every other
-   * part's `value` byte-identical.
+   * pass over every `ContentPart` text fragment in the case — both `alt`
+   * and, for text parts, the decoded `value` — keyed by stable path
+   * (`tools.ts`'s `caseTextMap`). `translate_merge` applies the translated
+   * `.text` entry to `value` and the translated `.alt` entry to `alt`
+   * independently for `text/plain` parts, and leaves every other part's
+   * `value` byte-identical.
    */
   restTranslations: z.record(z.string(), z.string()).default({}),
 });

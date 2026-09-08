@@ -1,4 +1,4 @@
-// Issue 11 §8.
+// Issue 11 §8, issue 21 §8 (the alt data-loss fix).
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ContentPartTooLargeError,
@@ -7,10 +7,21 @@ import {
   encodeCase,
   encodeContentPart,
 } from "./contentWire.js";
-import { textPart, type ContentPart } from "@/core/graph/models/ContentPart.js";
+import {
+  encodeText,
+  type ContentPart,
+} from "@/core/graph/models/ContentPart.js";
 import type { Case } from "@/core/graph/models/Case.js";
 
 afterEach(() => {});
+
+/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
+ * inlined at every real call site now; kept here only to keep these
+ * fixtures readable. Produces a part whose `alt` equals its decoded
+ * `value` — the shape every real generator still produces today. */
+function fixtureTextPart(alt: string): ContentPart {
+  return { type: "text/plain", value: encodeText(alt), alt };
+}
 
 const imagePart: ContentPart = {
   type: "image/png",
@@ -26,7 +37,7 @@ const LIMIT = 5_000_000;
 describe("ContentPart wire encoding", () => {
   it("serializes text/* to a readable UTF-8 string, not base64", () => {
     const wire = encodeContentPart(
-      textPart("Cough for three days."),
+      fixtureTextPart("Cough for three days."),
       "chiefComplaint",
       LIMIT
     );
@@ -34,13 +45,13 @@ describe("ContentPart wire encoding", () => {
     expect(wire.value).toBe("Cough for three days.");
   });
 
-  it("omits alt on the wire for text/* parts", () => {
+  it("always emits alt on the wire, for text/* parts too (issue 21 §8)", () => {
     const wire = encodeContentPart(
-      textPart("Cough for three days."),
+      fixtureTextPart("Cough for three days."),
       "chiefComplaint",
       LIMIT
     );
-    expect(wire.alt).toBeUndefined();
+    expect(wire.alt).toBe("Cough for three days.");
   });
 
   it("serializes a non-text part to base64 and keeps alt", () => {
@@ -56,9 +67,9 @@ describe("ContentPart wire encoding", () => {
 
   it("round-trips a mixed text/image/text array, order preserved", () => {
     const parts: ContentPart[] = [
-      textPart("Chest X-ray ordered."),
+      fixtureTextPart("Chest X-ray ordered."),
       imagePart,
-      textPart("Impression: right lower lobe pneumonia."),
+      fixtureTextPart("Impression: right lower lobe pneumonia."),
     ];
 
     const wire = parts.map((p) => encodeContentPart(p, "result", LIMIT));
@@ -68,10 +79,40 @@ describe("ContentPart wire encoding", () => {
   });
 
   it("restores alt on decode for a text/* part", () => {
-    const wire = encodeContentPart(textPart("hello"), "chiefComplaint", LIMIT);
+    const wire = encodeContentPart(
+      fixtureTextPart("hello"),
+      "chiefComplaint",
+      LIMIT
+    );
     const decoded = decodeContentPart(wire);
     expect(decoded.alt).toBe("hello");
     expect(new TextDecoder().decode(decoded.value)).toBe("hello");
+  });
+
+  // The issue 21 §8 regression: `alt` is no longer derivable from `value`
+  // (a planner authors a short label distinct from the rendered prose), so
+  // a text part whose `alt` differs from its `value` must round-trip with
+  // BOTH fields intact — this is exactly the case the old "omit alt for
+  // text/*, restore it as `value`" codec silently corrupted.
+  it("round-trips a text part whose alt differs from its value, keeping both fields intact", () => {
+    const part: ContentPart = {
+      type: "text/plain",
+      value: encodeText("Chest X-ray, PA view: left lower lobe consolidation."),
+      alt: "Chest X-ray result",
+    };
+
+    const wire = encodeContentPart(part, "procedures[X-ray].result", LIMIT);
+    expect(wire.alt).toBe("Chest X-ray result");
+    expect(wire.value).toBe(
+      "Chest X-ray, PA view: left lower lobe consolidation."
+    );
+
+    const decoded = decodeContentPart(wire);
+    expect(decoded).toEqual(part);
+    expect(decoded.alt).toBe("Chest X-ray result");
+    expect(new TextDecoder().decode(decoded.value)).toBe(
+      "Chest X-ray, PA view: left lower lobe consolidation."
+    );
   });
 
   it("fails loudly, naming the field and size, when a part exceeds the ceiling", () => {
@@ -105,15 +146,15 @@ describe("Case wire encoding", () => {
         weight: 60,
         gender: "female",
       },
-      chiefComplaint: [textPart("Cough for three days.")],
+      chiefComplaint: [fixtureTextPart("Cough for three days.")],
       anamnesis: [
-        { category: "History", answer: [textPart("No prior illness.")] },
+        { category: "History", answer: [fixtureTextPart("No prior illness.")] },
         {
           category: "Imaging",
           answer: [
-            textPart("Ordered:"),
+            fixtureTextPart("Ordered:"),
             imagePart,
-            textPart("Findings above."),
+            fixtureTextPart("Findings above."),
           ],
         },
       ],
@@ -121,7 +162,7 @@ describe("Case wire encoding", () => {
         {
           name: "Chest X-ray",
           relevance: "obligatory",
-          result: [textPart("Infiltrate in right lower lobe.")],
+          result: [fixtureTextPart("Infiltrate in right lower lobe.")],
         },
       ],
     };

@@ -1,6 +1,7 @@
-import { getBalancedLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
   summarizeValidationError,
@@ -12,6 +13,7 @@ import {
   ChiefComplaintJsonSchema,
   type ChiefComplaint,
 } from "../models/ChiefComplaint.js";
+import { textPart } from "../models/ContentPart.js";
 import type { RequestContext } from "../utils/context.js";
 import type { GraphRuntime } from "../runtime.js";
 
@@ -22,7 +24,10 @@ export async function generateChiefComplaint(
   userInstructions?: string, // provided by the user | undefined
   context?: RequestContext
 ): Promise<ChiefComplaint> {
-  const systemPrompt = buildPrompt(
+  // User-facing (issue 09 §3): the chief complaint is read by the student.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
     section(
       "Role",
       `You are an expert attending physician documenting a patient's presentation for a medical training simulator.
@@ -58,11 +63,18 @@ ${renderSchemaForPrompt(ChiefComplaintJsonSchema)}`
 
   // Initialize cases to empty in case of failure
   try {
-    const chiefComplaint: ChiefComplaint = await retry(
+    // Field generators produce ordinary text under a z.string() schema — the
+    // LLM is never asked to emit bytes (issue 11 §3/§4). Wrapped with
+    // `textPart()` below to build the domain `ChiefComplaint`.
+    const chiefComplaintText: string = await retry(
       async (attempt: number, previousError?: Error) => {
         // Balanced: one clinical sentence whose facts come from the outline —
         // fidelity matters more than variety.
-        const result = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const result = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(ChiefComplaintJsonSchema)
           .invoke(
             [
@@ -97,7 +109,7 @@ ${renderSchemaForPrompt(ChiefComplaintJsonSchema)}`
       }
     );
 
-    return chiefComplaint;
+    return [textPart(chiefComplaintText)];
   } catch (error) {
     console.error(`[GenerateChiefComplaintFromOutline] Error:`, error);
     throw error;

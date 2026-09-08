@@ -1,11 +1,13 @@
-import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   section,
   summarizeValidationError,
 } from "../utils/prompt.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
-import type { Symptom } from "../models/Symptom.js";
+import type { BasisFragment } from "../medicalBasis/ports.js";
+import { renderMedicalBasisSection } from "../medicalBasis/render.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
@@ -29,7 +31,7 @@ export async function generateCaseOutline(
   runtime: GraphRuntime,
   diagnosis: Diagnosis,
   generationFlags: GenerationFlag[],
-  symptoms: Symptom[],
+  basisFragments: BasisFragment[],
   difficulty: Difficulty,
   userInstructions?: string,
   feedback?: string[],
@@ -40,7 +42,13 @@ export async function generateCaseOutline(
     ? runtime.catalogs.anamnesis.list()
     : undefined;
 
-  const systemPrompt = buildPrompt(
+  // Internal artifact (issue 09 §3): the outline is the blueprint downstream
+  // generators render, never shown to the student as-is, and it must stay
+  // English in both sandwich modes for the generation core to stay
+  // language-agnostic — so this never gets the language directive.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are an expert medical educator tasked with creating a concrete outline for a clinical practice case based on a specific diagnosis.
@@ -51,7 +59,7 @@ This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents g
       "Instructions",
       `1. Generate a structured markdown outline with one section per required field, containing hard, concrete data:
    - Patient: exact age, gender, height (in cm), weight (in kg), and any relevant demographic details.
-   - Symptoms/presentation: the selected symptom subset with concrete onset, duration, severity, and timeline.
+   - Symptoms/presentation: select a clinically coherent subset of the reference symptoms (see "Medical basis", when present) to feature, with concrete onset, duration, severity, and timeline.
    - Chief complaint: the specific presenting problem in one or two factual sentences.
    - Anamnesis: for each intake form category, the concrete facts to state (history items, medications with names and doses, lifestyle details, family history).
 2. Downstream generators must be able to write their field using ONLY facts from this outline. Any fact not specified here does not exist. Do not leave placeholders or vague descriptions.
@@ -71,12 +79,7 @@ This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents g
 ${generationFlags.join(", ")}`
     ),
 
-    section(
-      "Typical symptoms",
-      `Typical symptoms associated with this diagnosis are:
-${symptoms.map((s) => s.name).join(", ")}
-(You should select a clinically coherent subset of these symptoms to feature in the patient's presentation).`
-    ),
+    renderMedicalBasisSection(basisFragments),
 
     section(
       `Difficulty strategy (${difficulty})`,
@@ -114,10 +117,11 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
   try {
     const outline: string = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM(runtime.llm, {
-          ...context?.llmConfig,
-          outputFormat: "text",
-        })
+        const result = await runtime.llm
+          .for(
+            { role: "generator", temperature: "creative" },
+            { ...context?.llmConfig, outputFormat: "text" }
+          )
           .invoke(
             [
               new SystemMessage(systemPrompt),

@@ -1,7 +1,9 @@
 import * as fs from "node:fs/promises";
 import type { CompiledGraph } from "@langchain/langgraph";
 import { run } from "@mermaid-js/mermaid-cli";
-import { buildCaseGraph } from "./caseGraph.js";
+import { buildCaseGraph, graphTopologyKey } from "./caseGraph.js";
+import { createMedicalBasisRegistry } from "../medicalBasis/registry.js";
+import { createModalityRegistry } from "../modality/registry.js";
 import type { Node, Graph } from "@langchain/core/runnables/graph";
 import { EventBus } from "../../event-bus.js";
 import type { GraphRuntime } from "../runtime.js";
@@ -65,8 +67,8 @@ export async function exportGraphPng(
       .getGraphAsync({ xray: true })
       .then((g) => collapseSubgraphs(g, subgraphsToCollapse))
       .then((g) => g.drawMermaid());
-    const mmdPath = `docs/${exportName}.mmd` as `${string}.mmd`;
-    const pngPath = `docs/${exportName}.svg` as `${string}.svg`;
+    const mmdPath = `docs/graphs/${exportName}.mmd` as `${string}.mmd`;
+    const pngPath = `docs/graphs/${exportName}.svg` as `${string}.svg`;
     await fs.writeFile(mmdPath, mermaidDef, "utf-8");
     await run(mmdPath, pngPath);
   } catch (error) {
@@ -89,8 +91,8 @@ export async function exportGraphOverviewPng(
         ])
       )
       .then((g) => g.drawMermaid());
-    const mmdPath = `docs/${exportName}.mmd` as `${string}.mmd`;
-    const pngPath = `docs/${exportName}.svg` as `${string}.svg`;
+    const mmdPath = `docs/graphs/${exportName}.mmd` as `${string}.mmd`;
+    const pngPath = `docs/graphs/${exportName}.svg` as `${string}.svg`;
     await fs.writeFile(mmdPath, mermaidDef, "utf-8");
     await run(mmdPath, pngPath);
   } catch (error) {
@@ -101,21 +103,35 @@ export async function exportGraphOverviewPng(
 // Minimal runtime — this script only renders topology, it never calls the
 // LLM or touches the filesystem-backed catalogues, so every port is a bare
 // in-memory/no-op stand-in rather than the real app's composition root.
+const minimalLlmRole: {
+  provider: "ollama";
+  model: string;
+  apiKey?: string | undefined;
+  url?: string | undefined;
+} = {
+  provider: "ollama",
+  model: "unused",
+};
+
 const minimalConfig: Config = {
-  llm: {
-    provider: "ollama",
-    model: "unused",
-    temperature: 0.7,
-    apiKey: undefined,
-    url: undefined,
+  llm: minimalLlmRole,
+  llmRoles: {
+    generator: minimalLlmRole,
+    judge: minimalLlmRole,
+    translator: minimalLlmRole,
   },
   allowedLlms: undefined,
-  LLM_SMALL: false,
+  PROCEDURE_PRESELECTION: false,
+  TRANSLATION_SANDWICH: true,
+  LANGUAGES: ["English", "German"],
+  LANGUAGE_AUTO_DETECT: false,
+  LANGUAGE_DETECT_LLM_FALLBACK: false,
+  MAX_CONTENT_PART_BYTES: 5_000_000,
 };
 
 const minimalRuntime: GraphRuntime = {
   llm: {
-    chat() {
+    for() {
       throw new Error(
         "exportGraphs: the LLM is never called while exporting graph topology."
       );
@@ -153,18 +169,43 @@ const minimalProceduresRepo: ProceduresRepo = {
   getEffectiveProcedureList: () => undefined,
 };
 
-const { caseGraph } = buildCaseGraph(
+// Mirrors the composition root (`graph/index.ts`): the registry always has
+// the one UMLS-symptom provider today, so the exported topology shows
+// `basis_resolve` exactly as a real deployment's graph would.
+const medicalBasisRegistry = createMedicalBasisRegistry({
+  runtime: minimalRuntime,
+  symptomsRepo: minimalSymptomsRepo,
+});
+
+// Mirrors the composition root too: always `[textProvider]` today, so no
+// exported topology shows a `decide_modality` node.
+const modalityRegistry = createModalityRegistry();
+
+const { getCaseGraph } = buildCaseGraph(
   minimalRuntime,
   new EventBus(),
   minimalConfig,
   {
-    symptoms: minimalSymptomsRepo,
     anamnesis: minimalAnamnesisRepo,
     procedures: minimalProceduresRepo,
-  }
+  },
+  medicalBasisRegistry,
+  modalityRegistry
 );
 
-await Promise.all([
-  exportGraphPng(caseGraph, "case-graph"),
-  exportGraphOverviewPng(caseGraph, "case-graph-overview"),
-]);
+await fs.mkdir("docs/graphs", { recursive: true });
+
+// Two topologies, not four. `PROCEDURE_PRESELECTION` swaps a
+// `ProcedureStrategy` adapter and leaves the procedure graph at three nodes
+// either way (issue 07), so the two preselection variants of each topology
+// would render byte-identically. `graphTopologyKey` is the authority on this
+// and `caseGraph.test.ts` asserts the premise still holds — if that test ever
+// fails, this loop is what needs to grow back to four.
+for (const translationSandwich of [false, true]) {
+  const flags = { translationSandwich, procedurePreselection: false };
+  const graph = getCaseGraph(flags);
+  const name = graphTopologyKey(flags);
+
+  await exportGraphPng(graph, `case-graph.${name}`);
+  await exportGraphOverviewPng(graph, `case-graph-overview.${name}`);
+}

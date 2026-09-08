@@ -3,10 +3,12 @@ import {
   type Anamnesis,
   type AnamnesisCategory,
 } from "../models/Anamnesis.js";
+import { textPart } from "../models/ContentPart.js";
 import type { Language } from "../models/Language.js";
-import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
   summarizeValidationError,
@@ -27,7 +29,12 @@ export async function generateAnamnesis(
   context?: RequestContext
 ): Promise<Anamnesis> {
   const effectiveCategories = runtime.catalogs.anamnesis.list();
-  const systemPrompt = buildPrompt(
+  // User-facing (issue 09 §3): anamnesis answers are read by the student, so
+  // this gets the language directive when a foreign language is bound and
+  // the sandwich is off.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
     section(
       "Role",
       `You are an AI generating data for a medical training simulator.
@@ -76,43 +83,57 @@ ${renderSchemaForPrompt(z.object({ anamnesis: buildAnamnesisSchema() }))}`
       anamnesis: buildAnamnesisSchema(effectiveCategories),
     });
 
-    const anamnesis: Anamnesis = await retry(
-      async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM(runtime.llm, context?.llmConfig)
-          .withStructuredOutput(AnamnesisSchemaWrapper)
-          .invoke(
-            [
-              new SystemMessage(systemPrompt),
-              new HumanMessage(
-                userPrompt +
-                  (previousError
-                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
-                    : "")
-              ),
-            ],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch((error) => {
-            handleLangchainError(error);
-          });
+    // Field generators produce ordinary text under a z.string() `answer`
+    // schema — the LLM is never asked to emit bytes (issue 11 §3/§4). Each
+    // `answer` is wrapped with `textPart()` below to build the domain
+    // `Anamnesis`.
+    const anamnesisText: { category: AnamnesisCategory; answer: string }[] =
+      await retry(
+        async (attempt: number, previousError?: Error) => {
+          const result = await runtime.llm
+            .for(
+              { role: "generator", temperature: "creative" },
+              context?.llmConfig
+            )
+            .withStructuredOutput(AnamnesisSchemaWrapper)
+            .invoke(
+              [
+                new SystemMessage(systemPrompt),
+                new HumanMessage(
+                  userPrompt +
+                    (previousError
+                      ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+                      : "")
+                ),
+              ],
+              context?.signal !== undefined
+                ? { signal: context.signal }
+                : undefined
+            )
+            .catch((error) => {
+              handleLangchainError(error);
+            });
 
-        console.debug(
-          `[GenerateAnamnesisFromOutline] [Attempt ${attempt}] LLM raw Response:\n`,
-          JSON.stringify(result, null, 2)
-        );
+          console.debug(
+            `[GenerateAnamnesisFromOutline] [Attempt ${attempt}] LLM raw Response:\n`,
+            JSON.stringify(result, null, 2)
+          );
 
-        return result.anamnesis;
-      },
-      2,
-      0,
-      (error, attempt) => {
-        const msg = `[GenerateAnamnesisFromOutline] Attempt ${attempt} failed with error: ${error.message}`;
-        console.error(msg);
-        runtime.log.error(msg);
-      }
-    );
+          return result.anamnesis;
+        },
+        2,
+        0,
+        (error, attempt) => {
+          const msg = `[GenerateAnamnesisFromOutline] Attempt ${attempt} failed with error: ${error.message}`;
+          console.error(msg);
+          runtime.log.error(msg);
+        }
+      );
+
+    const anamnesis: Anamnesis = anamnesisText.map((field) => ({
+      category: field.category,
+      answer: [textPart(field.answer)],
+    }));
 
     return anamnesis;
   } catch (error) {

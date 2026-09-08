@@ -11,24 +11,22 @@ import {
 } from "../utils/prompt.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import {
-  buildProcedureResultTextSchema,
   ProcedureRelevanceSchema,
+  type PlannedProcedure,
   type Procedure,
-  type ProcedureName,
   type ProcedureRelevance,
-  type ProcedureResult,
 } from "../models/Procedure.js";
-import { textOf, textPart } from "../models/ContentPart.js";
-import {
-  UNCATEGORIZED_CATEGORY,
-  type ProcedurePickMode,
-} from "../catalog/ports.js";
 import type { Patient } from "../models/Patient.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
 import type { ForeignLanguage } from "../models/Language.js";
 import { translateTermsKeyed } from "./translate.helper.js";
 import type { GraphRuntime } from "../runtime.js";
+import {
+  buildCompositionSchema,
+  describeProviders,
+} from "../modality/composition.js";
+import type { ModalityProvider, PlannedPart } from "../modality/ports.js";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -79,6 +77,22 @@ export type ScopedProcedurePickResult =
 
 // ─── Shared prompt sections ───────────────────────────────────────────────────
 
+/**
+ * The blinded solver's (and the bridge's) view of a procedure already
+ * ordered, projected from `plannedProcedures` (issue 21 §7):
+ * `result` is `parts.map(p => p.alt).join("\n\n")`, never the rendered
+ * bytes — nothing has been rendered yet, so `alt` (the self-contained
+ * clinical-finding statement `planProcedureResults` requires — see its doc
+ * comment) is genuinely the only thing there is to reason over. This
+ * replaces reading `textOf(p.result)` off a domain `ProcedureResult`, which
+ * no longer exists at this point in the loop.
+ */
+export type PreviousProcedureFinding = {
+  name: string;
+  relevance: ProcedureRelevance;
+  result: string;
+};
+
 function presentationSection(presentation: Presentation) {
   return section("Patient presentation", renderForPrompt(presentation));
 }
@@ -89,12 +103,14 @@ function presentationSection(presentation: Presentation) {
  * omits `relevance`, which is a judgment relative to the TRUE diagnosis and
  * would leak it to the blinded solver if ever included here.
  */
-function previousProceduresSection(previousProcedures: ProcedureResult[]) {
+function previousProceduresSection(
+  previousProcedures: PreviousProcedureFinding[]
+) {
   return section(
     "Procedures ordered so far (with results)",
     previousProcedures.length > 0
       ? previousProcedures
-          .map((p, i) => `${i + 1}. ${p.name} -> ${textOf(p.result)}`)
+          .map((p, i) => `${i + 1}. ${p.name} -> ${p.result}`)
           .join("\n")
       : "No procedures have been ordered yet."
   );
@@ -150,7 +166,7 @@ function buildStepSchema(procedureFieldSchema: z.ZodTypeAny) {
 export async function generateBlindedProcedureStep(
   runtime: GraphRuntime,
   presentation: Presentation,
-  previousProcedures: ProcedureResult[],
+  previousProcedures: PreviousProcedureFinding[],
   ruledOutDiagnoses: string[],
   userInstructions?: string,
   iterationsRemaining?: number,
@@ -334,7 +350,7 @@ function buildCategoryStepSchema(categories?: string[]) {
 export async function generateBlindedCategoryStep(
   runtime: GraphRuntime,
   presentation: Presentation,
-  previousProcedures: ProcedureResult[],
+  previousProcedures: PreviousProcedureFinding[],
   ruledOutDiagnoses: string[],
   userInstructions?: string,
   iterationsRemaining?: number,
@@ -509,7 +525,7 @@ function scopedPickSchema(
 export async function generateBlindedProcedureStepFromCategories(
   runtime: GraphRuntime,
   presentation: Presentation,
-  previousProcedures: ProcedureResult[],
+  previousProcedures: PreviousProcedureFinding[],
   selectedCategories: string[],
   expandableCategories: string[],
   userInstructions?: string,
@@ -660,69 +676,109 @@ ${all.categoryMenu(expandable)}`
   }
 }
 
-// ─── 2. generateProcedureResults ──────────────────────────────────────────────
-
-const ResultsSchema = z.object({
-  procedures: z
-    .array(
-      z.object({
-        name: z
-          .string()
-          .describe("exact name of a procedure from the ordered batch"),
-        relevance: ProcedureRelevanceSchema.describe(
-          "Relevance of the procedure to the TRUE diagnosis"
-        ),
-        result: z.string().describe("clinically realistic result, concise"),
-      })
-    )
-    .describe("one result per procedure ordered in this batch, in any order"),
-});
+// ─── 2. planProcedureResults ──────────────────────────────────────────────────
 
 /**
- * Non-blinded result step: given the patient presentation, the TRUE diagnosis,
- * and a batch of concurrently-scheduled procedures, generates a clinically
- * realistic result AND a relevance judgment for each. The blinded solver
- * never knows the true diagnosis, so it cannot meaningfully judge relevance
- * (e.g. it would never knowingly order a "contraindicated" procedure) —
- * both `relevance` and `result` are decided here instead.
+ * Builds the per-procedure plan schema: `buildCompositionSchema`'s per-unit
+ * plan entry (`{ key, requests }`), extended with `relevance` — a procedure
+ * result needs both a rendering plan AND a relevance judgment from the same
+ * (non-blinded) LLM call, and `buildCompositionSchema` alone has no field for
+ * the latter. `unitKeys` is always passed here: a batch's procedure names are
+ * already known — chosen by the blinded step, or picked non-blindedly by the
+ * bridge (`pickBridgeProcedures`/`pickBridgeProceduresFromCategories` below)
+ * — before this is ever called, so this is always the "known unit set" mode
+ * `buildCompositionSchema`'s doc comment describes, never the freeform one.
  */
-export async function generateProcedureResults(
+function buildProcedureResultPlanSchema(
+  providers: ModalityProvider<unknown>[],
+  procedureNames: string[]
+) {
+  const composition = buildCompositionSchema(
+    providers,
+    procedureNames
+  ) as z.ZodObject<{
+    plans: z.ZodArray<
+      z.ZodObject<{ key: z.ZodTypeAny; requests: z.ZodTypeAny }>
+    >;
+  }>;
+  const planWithRelevance = composition.shape.plans.element.extend({
+    relevance: ProcedureRelevanceSchema.describe(
+      "Relevance of the procedure to the TRUE diagnosis"
+    ),
+  });
+  return z.object({
+    plans: z.array(planWithRelevance).length(procedureNames.length),
+  });
+}
+
+/**
+ * Non-blinded result step: given the patient presentation, the TRUE
+ * diagnosis, and a batch of concurrently-scheduled procedures, PLANS a
+ * result AND a relevance judgment for each (issue 21 §7) — it no longer
+ * generates result text directly. The blinded solver never knows the true
+ * diagnosis, so it cannot meaningfully judge relevance (e.g. it would never
+ * knowingly order a "contraindicated" procedure) — both `relevance` and the
+ * plan are decided here instead. Rendering happens later, once for the
+ * whole case, in `render_results` (`03procedure/index.ts`).
+ *
+ * **The `alt` rule is different here than everywhere else it appears in this
+ * codebase, and it is the crux of issue 21 §7's design.** Everywhere else
+ * `alt` is a short label, read only once bytes already exist. Here the
+ * blinded solver reasons over `alt` and NOTHING else — the bytes do not
+ * exist yet — so each `alt` must be a self-contained statement of the
+ * clinical finding, not a bare label:
+ *
+ *   good: "Chest X-ray: consolidation of the left lower lobe with air bronchograms"
+ *   bad:  "chest x-ray image"
+ *
+ * Getting this wrong does not fail any test; it quietly makes the solver
+ * unable to solve. See `models/Procedure.ts`'s `PlannedProcedureSchema` doc
+ * comment for the same rule at the projection site.
+ */
+export async function planProcedureResults(
   runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
   procedureSteps: Procedure[],
+  providers: ModalityProvider<unknown>[],
   outline?: string,
   userInstructions?: string,
   context?: RequestContext
-): Promise<ProcedureResult[]> {
-  // User-facing (issue 09 §3): the procedure result text is read by the
-  // student.
+): Promise<PlannedProcedure[]> {
+  const procedureNames = procedureSteps.map((p) => p.name);
+  const schema = buildProcedureResultPlanSchema(providers, procedureNames);
+
+  // User-facing (issue 09 §3): a planned `alt`/instruction both become
+  // user-visible content once rendered.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "user-facing",
     section(
       "Role",
-      `You are a medical simulator generating realistic results for a batch of diagnostic procedures ordered at the same time.
-The true diagnosis is known to you. Generate a result AND a relevance judgment for EACH procedure, clinically consistent with both the true diagnosis and the patient's presentation.
+      `You are a medical simulator PLANNING realistic results for a batch of diagnostic procedures ordered at the same time.
+The true diagnosis is known to you. Plan a result AND a relevance judgment for EACH procedure, clinically consistent with both the true diagnosis and the patient's presentation. You do not render any bytes yourself — you plan how each result should be rendered.
 These procedures were chosen by a separate, BLINDED solver who does not know the true diagnosis — it ordered them based on the presentation alone, so some may turn out to be unnecessary or even contraindicated in hindsight.`
     ),
 
     section(
       "Rules",
-      `- Provide exactly one result entry per procedure in the batch, using the same "name".
-- Each result must be clinically consistent with the true diagnosis.
-- Use specific, realistic medical findings (e.g., exact lab values, imaging descriptions).
-- Keep each result concise (1–3 sentences).
+      `- Provide exactly one plan entry per procedure in the batch, keyed by its exact "name".
+- Each plan's "alt" MUST be a self-contained statement of the clinical finding, not a bare label — a later step renders bytes from "alt" alone, without seeing anything else you produced. Write "Chest X-ray: consolidation of the left lower lobe with air bronchograms", not "chest x-ray image".
+- Each finding must be clinically consistent with the true diagnosis. Use specific, realistic medical findings (e.g., exact lab values, imaging descriptions). Keep each finding concise (1–3 sentences).
+- Prefer a single request against the "text" provider per procedure, unless another available provider would clearly add value.
 - Judge "relevance" relative to the TRUE diagnosis, not the blinded solver's reasoning:
   - "obligatory": essential to establishing or confirming this diagnosis.
   - "optional": clinically reasonable and supportive, but not required for this diagnosis.
-  - "contraindicated": not indicated, or potentially harmful/misleading, given this diagnosis — even if the blinded solver had a reasonable reason to order it without knowing the diagnosis.`
+  - "contraindicated": not indicated, or potentially harmful/misleading, given this diagnosis — even if the blinded solver had a reasonable reason to order it without knowing the diagnosis.
+- Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
+
+    section("Available providers", describeProviders(providers)),
 
     section(
       "Output format",
       `Return ONLY a valid JSON object:
-${renderSchemaForPrompt(ResultsSchema)}`
+${renderSchemaForPrompt(schema)}`
     )
   );
 
@@ -746,24 +802,24 @@ ${outline}`
       procedureSteps.map((p, i) => `${i + 1}. ${p.name}`).join("\n")
     ),
 
-    `Generate clinically realistic results for these procedures.`
+    `Plan clinically realistic results for these procedures.`
   );
 
   console.debug(
-    `[GenerateProcedureResults] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+    `[PlanProcedureResults] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
   try {
-    const results = await retry(
+    const plans = await retry(
       async (attempt, previousError) => {
         // Balanced: results must follow the blueprint's workup strategy and
         // stay clinically plausible — specific values, not invention.
-        const res = await runtime.llm
+        const res = (await runtime.llm
           .for(
             { role: "generator", temperature: "balanced" },
             context?.llmConfig
           )
-          .withStructuredOutput(ResultsSchema)
+          .withStructuredOutput(schema)
           .invoke(
             [
               new SystemMessage(systemPrompt),
@@ -775,219 +831,121 @@ ${outline}`
           )
           .catch((error) => {
             handleLangchainError(error);
-          });
+          })) as {
+          plans: {
+            key: string;
+            requests: PlannedPart[];
+            relevance: ProcedureRelevance;
+          }[];
+        };
 
         console.debug(
-          `[GenerateProcedureResults] [Attempt ${attempt}] Response:\n`,
+          `[PlanProcedureResults] [Attempt ${attempt}] Response:\n`,
           JSON.stringify(res, null, 2)
         );
 
-        return res.procedures;
+        return res.plans;
       },
       2,
       0,
       (error, attempt) => {
-        const msg = `[GenerateProcedureResults] Attempt ${attempt} failed: ${error.message}`;
+        const msg = `[PlanProcedureResults] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
         runtime.log.error(msg);
       }
     );
 
-    // Merge results back onto the input steps, matching by name (falling back
-    // to positional index). Both `relevance` and `result` come from this
-    // (non-blinded) LLM response — the blinded step never decides relevance.
+    // Merge plans back onto the input steps, matching by "key" (falling back
+    // to positional index — belt-and-braces, since `key` is grammar-pinned to
+    // an exact `z.enum` of `procedureNames` with a matching array length, so
+    // every step should always find its plan). Same merge strategy the old
+    // direct result generator used before this became a planner.
     return procedureSteps.map((step, index) => {
-      const match = results.find((r) => r.name === step.name) ?? results[index];
+      const match = plans.find((p) => p.key === step.name) ?? plans[index]!;
       return {
-        ...step,
-        relevance: match?.relevance ?? "optional",
-        result: [textPart(match?.result ?? "")],
+        name: step.name,
+        relevance: match.relevance,
+        parts: match.requests,
       };
     });
   } catch (error) {
-    console.error("[GenerateProcedureResults] Error:", error);
+    console.error("[PlanProcedureResults] Error:", error);
     throw error;
   }
 }
 
-// ─── 3. generateDiagnosisBridge ───────────────────────────────────────────────
+// ─── 3. Bridge procedure picking ──────────────────────────────────────────────
+//
+// The bridge no longer generates results itself (issue 21 §7): it PICKS
+// confirmatory procedure names — bare `Procedure[]`, exactly the shape
+// `pendingProcedures` already has after a blinded "order" move — and then
+// defers to `planProcedureResults` (the SAME planner `result_step` calls)
+// for relevance and a rendering plan
+// (`03procedure/strategy/directPick.ts`'s `DirectPick.bridge`,
+// `categoryScopedPick.ts`'s `CategoryScopedPick.bridge`). Because picking is
+// now name-only, `ProcedureCandidates.grammar()`/`.assemble()` — already
+// used by the blinded step's own "procedure" action — cover the
+// flat/grouped/freeform cases uniformly, so the bespoke
+// `bareProcedureResultSchema`/`bridgePickGrammarSchema`/`assembleBridgeResults`
+// trio this replaced is gone rather than duplicated.
 
-type ResultLeaf = {
-  name: string;
-  relevance: ProcedureRelevance;
-  result: string;
-};
-
-const GenericResultLeafSchema = z.object({
-  name: z.string().describe("exact procedure name"),
-  relevance: ProcedureRelevanceSchema,
-  result: z.string().describe("clinically realistic result, concise"),
-});
-
-/**
- * The bare-name-scoped counterpart to {@link buildProcedureResultTextSchema}
- * — used inside a grouped-by-category bridge pick, where "name" only needs to
- * be unique within its category group (the category key supplies the rest).
- */
-function bareProcedureResultSchema(bareNames?: ProcedureName[]) {
+function buildBridgePickSchema(procedureFieldSchema: z.ZodTypeAny) {
   return z.object({
-    name: (bareNames?.length ? z.literal(bareNames) : z.string()).describe(
-      "exact bare procedure name (without category prefix)"
-    ),
-    relevance: ProcedureRelevanceSchema,
-    result: z.string().describe("clinically realistic result, concise"),
+    procedures: procedureFieldSchema,
+    reasoning: z.string().optional().describe("brief clinical reasoning"),
   });
 }
 
 /**
- * The grammar-constrained schema for a bridge pick's "procedures" field, per
- * mode — this is what's passed to `withStructuredOutput`. Mirrors
- * {@link procedurePickGrammarSchema}, but each leaf is a full
- * `{name, relevance, result}` result instead of a bare name.
+ * Non-blinded bridge pick: called when the blinded solver has exhausted its
+ * iteration budget without reaching the diagnosis. Picks the remaining
+ * confirmatory procedure names that complete the diagnostic pathway to the
+ * true diagnosis — `planProcedureResults` plans their results and
+ * `render_results` renders them, alongside every other planned procedure,
+ * once the case is solved.
  */
-function bridgePickGrammarSchema(mode: ProcedurePickMode): z.ZodTypeAny {
-  switch (mode.kind) {
-    case "freeform":
-      return z
-        .array(buildProcedureResultTextSchema())
-        .describe("bridge procedures that confirm the diagnosis");
-    case "flat":
-      return z
-        .array(bareProcedureResultSchema(mode.names))
-        .describe("bridge procedures that confirm the diagnosis");
-    case "grouped": {
-      const shape: Record<string, z.ZodTypeAny> = {};
-      for (const [category, names] of mode.grouped) {
-        shape[category] = z
-          .array(bareProcedureResultSchema(names))
-          .optional()
-          .describe(
-            `bridge procedures (without category prefix) from "${category}" that confirm the diagnosis`
-          );
-      }
-      return z
-        .object(shape)
-        .describe(
-          "bridge procedures that confirm the diagnosis, grouped by category key"
-        );
-    }
-  }
-}
-
-/**
- * Generic, name-agnostic counterpart to {@link bridgePickGrammarSchema} used
- * ONLY for the system prompt's "Output format" example — mirrors
- * {@link procedurePickPromptSchema}'s stability rationale.
- */
-function bridgePickPromptSchema(mode: ProcedurePickMode): z.ZodTypeAny {
-  if (mode.kind === "grouped") {
-    return z
-      .record(z.string(), z.array(GenericResultLeafSchema))
-      .describe(
-        "bridge procedures that confirm the diagnosis, keyed by category"
-      );
-  }
-  return z
-    .array(GenericResultLeafSchema)
-    .describe("bridge procedures that confirm the diagnosis");
-}
-
-/**
- * Assemble a raw bridge "procedures" LLM response back into `ProcedureResult[]`,
- * per pick mode — mirrors {@link assembleProcedurePick}, but preserves each
- * leaf's `relevance`/`result` alongside the reunited full name.
- */
-function assembleBridgeResults(
-  mode: ProcedurePickMode,
-  raw: unknown,
-  effectiveList: ProcedureName[] | undefined
-): ProcedureResult[] {
-  const canonical = effectiveList ? new Set(effectiveList) : undefined;
-  const keep = (full: string) => !canonical || canonical.has(full);
-
-  if (mode.kind !== "grouped") {
-    return ((raw as ResultLeaf[] | undefined) ?? [])
-      .filter((leaf) => keep(leaf.name))
-      .map((leaf) => ({
-        name: leaf.name,
-        relevance: leaf.relevance,
-        result: [textPart(leaf.result)],
-      }));
-  }
-
-  const grouped = (raw as Record<string, ResultLeaf[] | undefined>) ?? {};
-  const result: ProcedureResult[] = [];
-  for (const [category, leaves] of Object.entries(grouped)) {
-    if (!leaves) continue;
-    for (const leaf of leaves) {
-      const full =
-        category === UNCATEGORIZED_CATEGORY
-          ? leaf.name
-          : `${category}: ${leaf.name}`;
-      if (keep(full)) {
-        result.push({
-          name: full,
-          relevance: leaf.relevance,
-          result: [textPart(leaf.result)],
-        });
-      }
-    }
-  }
-  return result;
-}
-
-/**
- * Non-blinded bridge step: called when the blinded solver has exhausted its
- * iteration budget without reaching the diagnosis. Generates the remaining
- * confirmatory procedures (each with a result) that complete the diagnostic
- * pathway to the true diagnosis. Uses the same category-grouped candidate
- * presentation as the blinded step.
- */
-export async function generateDiagnosisBridge(
+export async function pickBridgeProcedures(
   runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
-  previousProcedures: ProcedureResult[],
+  previousProcedures: PreviousProcedureFinding[],
   userInstructions?: string,
   context?: RequestContext
-): Promise<ProcedureResult[]> {
+): Promise<Procedure[]> {
   const candidates = runtime.catalogs.procedures
     .candidates()
     .exclude(previousProcedures.map((p) => p.name));
 
   if (candidates.isEmpty()) {
     console.warn(
-      "[GenerateDiagnosisBridge] All approved procedures already ordered — nothing left to bridge with."
+      "[PickBridgeProcedures] All approved procedures already ordered — nothing left to bridge with."
     );
     return [];
   }
 
-  // User-facing (issue 09 §3): bridge results are procedure result text,
-  // read by the student.
+  // Internal (issue 09 §3): a name-only pick, no free text ever reaches the
+  // student from this step — the planning/rendering steps that follow do.
   const systemPrompt = buildSystemPrompt(
     runtime,
-    "user-facing",
+    "internal",
     section(
       "Role",
       `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
 The true diagnosis is known to you. The diagnostic workup so far has not yet confirmed the diagnosis.
-Generate the remaining procedures — with clinically consistent results — that efficiently bridge from the current workup to a confirmed diagnosis.`
+Choose the remaining procedures that efficiently bridge from the current workup to a confirmed diagnosis — a later step plans their results.`
     ),
 
     section(
       "Rules",
-      `- Generate only the procedures needed to confirm the diagnosis, given what has already been done.
-- Each procedure must include a result consistent with the true diagnosis.
-- Use specific, professional medical terminology.
+      `- Choose only the procedures needed to confirm the diagnosis, given what has already been done.
 - When an approved procedure list is provided, every procedure name MUST be an exact name from that list.
-- Do NOT re-order any procedure that already appears in the workup so far.
-- These are bridge procedures YOU are choosing specifically to confirm the diagnosis, so their "relevance" should almost always be "obligatory" unless one is merely supportive ("optional").`
+- Do NOT re-order any procedure that already appears in the workup so far.`
     ),
 
     section(
       "Output format",
       `Return ONLY a valid JSON object:
-${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates.mode) }))}`
+${renderSchemaForPrompt(buildBridgePickSchema(candidates.promptSchema()))}`
     )
   );
 
@@ -1002,16 +960,14 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates
 
     previousProceduresSection(previousProcedures),
 
-    `Generate the remaining bridge procedures to confirm the diagnosis.`
+    `Which procedures should be ordered to confirm the diagnosis?`
   );
 
   console.debug(
-    `[GenerateDiagnosisBridge] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+    `[PickBridgeProcedures] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const BridgeSchema = z.object({
-    procedures: bridgePickGrammarSchema(candidates.mode),
-  });
+  const PickSchema = buildBridgePickSchema(candidates.grammar());
 
   try {
     const rawProcedures = await retry(
@@ -1023,7 +979,7 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates
             { role: "generator", temperature: "balanced" },
             context?.llmConfig
           )
-          .withStructuredOutput(BridgeSchema)
+          .withStructuredOutput(PickSchema)
           .invoke(
             [
               new SystemMessage(systemPrompt),
@@ -1038,7 +994,7 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates
           });
 
         console.debug(
-          `[GenerateDiagnosisBridge] [Attempt ${attempt}] Response:\n`,
+          `[PickBridgeProcedures] [Attempt ${attempt}] Response:\n`,
           JSON.stringify(res, null, 2)
         );
 
@@ -1047,19 +1003,15 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates
       2,
       0,
       (error, attempt) => {
-        const msg = `[GenerateDiagnosisBridge] Attempt ${attempt} failed: ${error.message}`;
+        const msg = `[PickBridgeProcedures] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
         runtime.log.error(msg);
       }
     );
 
-    return assembleBridgeResults(
-      candidates.mode,
-      rawProcedures,
-      runtime.catalogs.procedures.list()
-    );
+    return candidates.assemble(rawProcedures);
   } catch (error) {
-    console.error("[GenerateDiagnosisBridge] Error:", error);
+    console.error("[PickBridgeProcedures] Error:", error);
     throw error;
   }
 }
@@ -1094,7 +1046,7 @@ export async function generateBridgeCategoryStep(
   runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
-  previousProcedures: ProcedureResult[],
+  previousProcedures: PreviousProcedureFinding[],
   userInstructions?: string,
   context?: RequestContext
 ): Promise<string[]> {
@@ -1196,25 +1148,27 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
   }
 }
 
-// ─── generateBridgeProcedureStepFromCategories (preselection: bridge step 2) ─
+// ─── pickBridgeProceduresFromCategories (preselection: bridge step 2) ────────
 
 /**
- * Step 2 of the small-model-friendly split of the bridge: generate the
- * confirmatory procedures (with results) from within the categories
+ * Step 2 of the small-model-friendly split of the bridge pick: choose the
+ * confirmatory procedure NAMES from within the categories
  * {@link generateBridgeCategoryStep} selected, plus the always-included
- * uncategorized "General" bucket. Same grouped prompt/schema/assembly as
- * {@link generateDiagnosisBridge}'s grouped mode — just scoped to fewer
- * categories.
+ * uncategorized "General" bucket — mirrors
+ * {@link generateBlindedProcedureStepFromCategories}'s "procedures" action,
+ * minus the expand branch (the diagnosis is already known here, so
+ * `CategoryScopedPick.bridge` widens deterministically to all categories on
+ * an empty pick instead of looping on a model-driven expand).
  */
-export async function generateBridgeProcedureStepFromCategories(
+export async function pickBridgeProceduresFromCategories(
   runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
-  previousProcedures: ProcedureResult[],
+  previousProcedures: PreviousProcedureFinding[],
   selectedCategories: string[],
   userInstructions?: string,
   context?: RequestContext
-): Promise<ProcedureResult[]> {
+): Promise<Procedure[]> {
   const scoped = runtime.catalogs.procedures
     .scope(selectedCategories)
     .exclude(previousProcedures.map((p) => p.name));
@@ -1222,35 +1176,32 @@ export async function generateBridgeProcedureStepFromCategories(
   if (scoped.isEmpty()) {
     // Nothing left in scope — the caller widens to all categories and retries.
     console.warn(
-      "[GenerateBridgeProcedureStepFromCategories] No unordered candidates in the selected categories — returning empty result."
+      "[PickBridgeProceduresFromCategories] No unordered candidates in the selected categories — returning empty pick."
     );
     return [];
   }
 
-  // User-facing (issue 09 §3): bridge results are procedure result text.
+  // Internal (issue 09 §3): a name-only pick, scoped to a category shortlist.
   const systemPrompt = buildSystemPrompt(
     runtime,
-    "user-facing",
+    "internal",
     section(
       "Role",
       `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
-The true diagnosis is known to you. A first step already narrowed the workup down to a shortlist of categories; your goal now is to generate the remaining procedures — with clinically consistent results — that efficiently bridge from the current workup to a confirmed diagnosis, using only those categories.`
+The true diagnosis is known to you. A first step already narrowed the workup down to a shortlist of categories; your goal now is to choose the remaining procedures — from within them — that efficiently bridge from the current workup to a confirmed diagnosis. A later step plans their results.`
     ),
 
     section(
       "Rules",
-      `- Generate only the procedures needed to confirm the diagnosis, given what has already been done.
-- Each procedure must include a result consistent with the true diagnosis.
-- Use specific, professional medical terminology.
+      `- Choose only the procedures needed to confirm the diagnosis, given what has already been done.
 - Every procedure name MUST be an exact name from the provided list, placed under its correct category key.
-- Do NOT re-order any procedure that already appears in the workup so far.
-- These are bridge procedures YOU are choosing specifically to confirm the diagnosis, so their "relevance" should almost always be "obligatory" unless one is merely supportive ("optional").`
+- Do NOT re-order any procedure that already appears in the workup so far.`
     ),
 
     section(
       "Output format",
       `Return ONLY a valid JSON object:
-${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(scoped.mode) }))}`
+${renderSchemaForPrompt(buildBridgePickSchema(scoped.promptSchema()))}`
     )
   );
 
@@ -1265,16 +1216,14 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(scoped.mod
 
     previousProceduresSection(previousProcedures),
 
-    `Generate the remaining bridge procedures to confirm the diagnosis.`
+    `Which procedures should be ordered to confirm the diagnosis?`
   );
 
   console.debug(
-    `[GenerateBridgeProcedureStepFromCategories] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+    `[PickBridgeProceduresFromCategories] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const BridgeSchema = z.object({
-    procedures: bridgePickGrammarSchema(scoped.mode),
-  });
+  const PickSchema = buildBridgePickSchema(scoped.grammar());
 
   try {
     const rawProcedures = await retry(
@@ -1284,7 +1233,7 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(scoped.mod
             { role: "generator", temperature: "balanced" },
             context?.llmConfig
           )
-          .withStructuredOutput(BridgeSchema)
+          .withStructuredOutput(PickSchema)
           .invoke(
             [
               new SystemMessage(systemPrompt),
@@ -1299,7 +1248,7 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(scoped.mod
           });
 
         console.debug(
-          `[GenerateBridgeProcedureStepFromCategories] [Attempt ${attempt}] Response:\n`,
+          `[PickBridgeProceduresFromCategories] [Attempt ${attempt}] Response:\n`,
           JSON.stringify(res, null, 2)
         );
 
@@ -1308,21 +1257,115 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(scoped.mod
       2,
       0,
       (error, attempt) => {
-        const msg = `[GenerateBridgeProcedureStepFromCategories] Attempt ${attempt} failed: ${error.message}`;
+        const msg = `[PickBridgeProceduresFromCategories] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
         runtime.log.error(msg);
       }
     );
 
-    return assembleBridgeResults(
-      scoped.mode,
-      rawProcedures,
-      runtime.catalogs.procedures.list()
-    );
+    return scoped.assemble(rawProcedures);
   } catch (error) {
-    console.error("[GenerateBridgeProcedureStepFromCategories] Error:", error);
+    console.error("[PickBridgeProceduresFromCategories] Error:", error);
     throw error;
   }
+}
+
+// ─── procedure-result TEXT rendering (issue 21 §4/§7) ────────────────────────
+
+/**
+ * The procedure-result field's TEXT-rendering call: renders an entire batch
+ * of planner-authored instructions — potentially spanning every procedure
+ * `render_results` (`03procedure/index.ts`) flattened together — in ONE LLM
+ * call. The batching is the whole point of `ModalityProvider.render`'s
+ * batch-in/batch-out contract (`modality/ports.ts`): a loop of single calls
+ * here would defeat the design. Unlike `planProcedureResults`'s `alt`
+ * (the diagnostic payload the blinded solver reasons over), this renders
+ * whatever instruction the plan supplied — by the time this runs the case is
+ * already solved, so there is no blinded view left to protect.
+ */
+export async function renderProcedureResultTexts(
+  runtime: GraphRuntime,
+  instructions: string[],
+  context?: RequestContext
+): Promise<string[]> {
+  const schema = z.object({
+    texts: z
+      .array(z.string().min(1))
+      .length(instructions.length)
+      .describe(
+        "Rendered procedure-result text, one per instruction, in the same order"
+      ),
+  });
+
+  // User-facing (issue 09 §3): procedure result text is read by the student.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
+    section(
+      "Role",
+      `You are a medical simulator rendering procedure results for a clinical training simulator.
+You will be given one or more instructions, each fully describing one procedure result to render. Render EXACTLY what each instruction says — you do not decide clinical facts, only wording.`
+    ),
+
+    section(
+      "Rules",
+      `- Use specific, professional medical terminology.
+- Render each instruction into its own text; invent nothing beyond what the instruction states.
+- Return exactly ${instructions.length} text(s), in the same order as the instructions.
+- Return ONLY the JSON object, no additional text like prefix or suffix.`
+    ),
+
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object:
+${renderSchemaForPrompt(schema)}`
+    )
+  );
+
+  const userPrompt = buildPrompt(
+    section(
+      "Instructions to render",
+      instructions
+        .map((instruction, i) => `### ${i + 1}\n${instruction}`)
+        .join("\n\n")
+    )
+  );
+
+  console.debug(
+    `[RenderProcedureResultTexts] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+  );
+
+  return retry(
+    async (attempt: number, previousError?: Error) => {
+      const result = await runtime.llm
+        .for({ role: "generator", temperature: "balanced" }, context?.llmConfig)
+        .withStructuredOutput(schema)
+        .invoke(
+          [
+            new SystemMessage(systemPrompt),
+            new HumanMessage(userPrompt + errorFeedback(previousError)),
+          ],
+          context?.signal !== undefined ? { signal: context.signal } : undefined
+        )
+        .catch((error) => {
+          handleLangchainError(error);
+        });
+
+      console.debug(
+        `[RenderProcedureResultTexts] [Attempt ${attempt}] Response:\n`,
+        JSON.stringify(result, null, 2)
+      );
+
+      return result.texts;
+    },
+    2,
+    0,
+    (error, attempt) => {
+      const msg = `[RenderProcedureResultTexts] Attempt ${attempt} failed with error: ${error.message}`;
+      console.error(msg);
+      runtime.log.error(msg);
+    }
+  );
 }
 
 // ─── 4. matchDiagnosis ────────────────────────────────────────────────────────

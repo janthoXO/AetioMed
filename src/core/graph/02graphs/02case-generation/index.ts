@@ -12,7 +12,7 @@ import { buildProcedureGraph } from "./03procedure/index.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
 import { resolveAllFragments } from "@/core/graph/medicalBasis/registry.js";
-import type { ModalityProvider } from "@/core/graph/modality/ports.js";
+import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
 import type { ProcedureStrategy } from "./03procedure/strategy/index.js";
@@ -54,16 +54,24 @@ function makeResolveMedicalBasis(
 
 // ─── graph ────────────────────────────────────────────────────────────────────
 
+// This graph is `addNode`'d into `assembleCaseGraph` (`caseGraph.ts`) as
+// `generation_phase` (issue 17 §1). `.pick()` off `CaseGenerationStateSchema`
+// directly, not a hand-written duplicate, so the picked `case` channel keeps
+// the identical reducer registration.
+const CaseGenerationOutputSchema = CaseGenerationStateSchema.pick({
+  case: true,
+});
+
 export function buildCaseGenerationGraph(
   runtime: GraphRuntime,
   procedureStrategy: ProcedureStrategy,
   medicalBasisRegistry: MedicalBasisProvider[],
-  modalityRegistry: ModalityProvider[],
+  modalityRegistries: ModalityRegistries,
   traceNode: ReturnType<typeof createTraceNode>
 ) {
   const presentationPhase = buildFieldGenerationGraph(
     runtime,
-    modalityRegistry,
+    modalityRegistries,
     // Scoped to match the `"presentation_phase"`/`"procedure_phase"` mount
     // names below — see `nodeWrapper.ts`'s `TraceNodeFn.scope` doc comment
     // (issue 15 §3/§4).
@@ -72,6 +80,7 @@ export function buildCaseGenerationGraph(
   const procedurePhase = buildProcedureGraph(
     runtime,
     procedureStrategy,
+    modalityRegistries.procedureResult,
     traceNode.scope("procedure_phase")
   );
 
@@ -88,7 +97,10 @@ export function buildCaseGenerationGraph(
   // `basis_resolve` does not exist in the compiled graph at all, not a node
   // that runs and does nothing.
   if (medicalBasisRegistry.length === 0) {
-    return new StateGraph(CaseGenerationStateSchema, RequestContextSchema)
+    return new StateGraph(CaseGenerationStateSchema, {
+      context: RequestContextSchema,
+      output: CaseGenerationOutputSchema,
+    })
       .addNode("presentation_phase", presentationPhase)
       .addNode("procedure_phase", procedurePhase)
 
@@ -102,7 +114,10 @@ export function buildCaseGenerationGraph(
   }
 
   return (
-    new StateGraph(CaseGenerationStateSchema, RequestContextSchema)
+    new StateGraph(CaseGenerationStateSchema, {
+      context: RequestContextSchema,
+      output: CaseGenerationOutputSchema,
+    })
       .addNode(
         "basis_resolve",
         traceNode(

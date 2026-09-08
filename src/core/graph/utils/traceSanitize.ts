@@ -4,7 +4,11 @@
 // agree on what that means, so it lives here once rather than twice. Pure:
 // only depends on `ContentPart`'s `textOf`, no env, no I/O — safe under
 // `src/core/graph/`'s "no process.env" rule.
-import { textOf, type ContentPart } from "@/core/graph/models/ContentPart.js";
+import {
+  textOf,
+  textOfPart,
+  type ContentPart,
+} from "@/core/graph/models/ContentPart.js";
 
 function isContentPart(value: unknown): value is ContentPart {
   return (
@@ -26,7 +30,9 @@ function isContentPartArray(value: unknown): value is ContentPart[] {
 /**
  * Recursively replace anything byte-shaped with its text projection, never
  * bytes: `ContentPart[]` becomes `textOf(parts)`, exactly as prompts do
- * (issue 11 §4); a lone `ContentPart` becomes its `alt`; a bare
+ * (issue 11 §4); a lone `ContentPart` becomes `textOfPart(value)` — the same
+ * MIME-dispatched projection, so a trace shows exactly what a prompt would
+ * see rather than a planner-authored label (issue 21 §8); a bare
  * `Uint8Array` (there is no legitimate way for one to reach a node's return
  * value outside a `ContentPart`, but this is a safety net, not a trusted
  * invariant) becomes a size marker. Everything else is walked structurally
@@ -35,7 +41,7 @@ function isContentPartArray(value: unknown): value is ContentPart[] {
  */
 export function sanitizeForTrace(value: unknown): unknown {
   if (isContentPartArray(value)) return textOf(value);
-  if (isContentPart(value)) return value.alt;
+  if (isContentPart(value)) return textOfPart(value);
   if (value instanceof Uint8Array) return `<binary ${value.byteLength} bytes>`;
   if (Array.isArray(value)) return value.map(sanitizeForTrace);
   if (value && typeof value === "object") {

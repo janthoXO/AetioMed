@@ -10,6 +10,7 @@ import { startRestServer } from "../transports/rest/index.js";
 import { startNatsTransport } from "../transports/nats/index.js";
 import { wireTracing } from "../tracing/index.js";
 import { createOtelNodeTracer } from "../tracing/otel.js";
+import { runClosers, type Closer } from "../shutdown.js";
 
 const AppEnvSchema = z
   .object({
@@ -27,8 +28,21 @@ const AppEnvSchema = z
  * The composition root: everything is constructed here, explicitly and in
  * order. `FEATURES` is a comma-separated set of flags — `REST`, `NATS`,
  * `TRACING`, `DEBUG`, `ALLOW_LLMS` — each gating one construction below.
+ *
+ * It also owns shutdown (issue 18): `shutdown()` closes everything this
+ * function started, in the **reverse** of construction order — REST first
+ * (stop accepting new work), then NATS, then the DB last (everything that
+ * might still write has stopped by then). It does not register any signal
+ * handler itself — `src/index.ts` does that via `installSignalHandlers`
+ * (`src/shutdown.ts`), which keeps `createApp` free of process-global side
+ * effects and the sequence testable without spawning a process. A feature
+ * that never started contributes no closer, so nothing here branches on
+ * `features.has(...)` a second time.
  */
-export async function createApp(): Promise<{ bus: EventBus }> {
+export async function createApp(): Promise<{
+  bus: EventBus;
+  shutdown: () => Promise<void>;
+}> {
   const { features: featureList, symptomCacheTtlDays } = AppEnvSchema.parse(
     process.env
   );
@@ -61,13 +75,25 @@ export async function createApp(): Promise<{ bus: EventBus }> {
     );
   }
 
+  const closers: Closer[] = [];
+
   if (features.has("REST")) {
-    await startRestServer({ graph, service, features });
+    const rest = await startRestServer({ graph, service, features });
+    closers.push({ name: "REST", close: rest.close });
   }
 
   if (features.has("NATS")) {
-    await startNatsTransport({ graph, service });
+    const nats = await startNatsTransport({ graph, service });
+    closers.push({ name: "NATS", close: nats.close });
   }
 
-  return { bus };
+  // DB last, unconditionally: it always exists (unlike REST/NATS, which are
+  // feature-gated), and everything that might still write to it — REST
+  // handlers, the NATS consumer — has already stopped by the time this
+  // runs.
+  closers.push({ name: "DB", close: async () => graph.db.close() });
+
+  const shutdown = () => runClosers(closers);
+
+  return { bus, shutdown };
 }

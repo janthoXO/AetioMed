@@ -12,16 +12,15 @@ import {
   RequestContextSchema,
   type RequestContext,
 } from "@/core/graph/utils/context.js";
-import { passthrough } from "@/core/graph/02graphs/graph.utils.js";
 import type { PickNested } from "@/core/graph/utils/pickNested.js";
 import { fieldGenerationBlueprintTools } from "./tools.js";
 import { generationTools } from "../../tools.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import type { ModalityProvider } from "@/core/graph/modality/ports.js";
-import { buildChiefComplaintGraph } from "./chiefComplaintGraph.js";
-import { buildAnamnesisGraph } from "./anamnesisGraph.js";
+import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
+import { buildChiefComplaintGraph } from "./chiefComplaint/index.js";
+import { buildAnamnesisGraph } from "./anamnesis/index.js";
 
 const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
 
@@ -36,6 +35,18 @@ const GenerationGraphStateSchema = CaseGenerationStateSchema.extend({
 });
 
 type GenerationGraphState = z.infer<typeof GenerationGraphStateSchema>;
+
+// This graph is `addNode`'d into `buildCaseGenerationGraph` as
+// `presentation_phase` (issue 17 §1). `.pick()` off this graph's own state
+// schema, not a hand-written duplicate, so the picked channels keep their
+// identical reducer registration. `outline` is kept here deliberately, not
+// narrowed to `{ case }`: `ProcedureGraphStateSchema` picks `outline` too and
+// `result_step` passes it to `generateProcedureResults`, so dropping it here
+// would silently degrade every procedure result.
+const GenerationOutputSchema = GenerationGraphStateSchema.pick({
+  case: true,
+  outline: true,
+});
 
 // ─── blueprint node ───────────────────────────────────────────────────────────
 
@@ -274,13 +285,32 @@ function makeGeneratePatient(runtime: GraphRuntime) {
 
 // ─── graph ────────────────────────────────────────────────────────────────────
 
+/**
+ * A join point produces no update — `patient_generate`,
+ * `chief_complaint_generate` and `anamnesis_generate` have already written
+ * `case` themselves, so `case_fan_in` has nothing left to contribute (issue
+ * 17 §2a). It used to be `passthrough`, returning the whole incoming state as
+ * its update; that made every channel in `GenerationGraphStateSchema` a
+ * "write" on this node, which only avoided `INVALID_CONCURRENT_GRAPH_UPDATE`
+ * because it runs alone in its own superstep — and it made the `case`
+ * reducer merge the case into itself for no reason. Its trace payload is
+ * correctly `{}`: the assembled case is already visible at the phase
+ * boundary, so there is nothing to invent here.
+ */
+export function caseFanIn(): Record<string, never> {
+  return {};
+}
+
 export function buildFieldGenerationGraph(
   runtime: GraphRuntime,
-  modalityRegistry: ModalityProvider[],
+  modalityRegistries: ModalityRegistries,
   traceNode: ReturnType<typeof createTraceNode>
 ) {
   return (
-    new StateGraph(GenerationGraphStateSchema, RequestContextSchema)
+    new StateGraph(GenerationGraphStateSchema, {
+      context: RequestContextSchema,
+      output: GenerationOutputSchema,
+    })
       .addNode(
         "case_outline_generate",
         traceNode(
@@ -331,7 +361,7 @@ export function buildFieldGenerationGraph(
         // `TraceNodeFn.scope` doc comment (issue 15 §3/§4).
         buildChiefComplaintGraph(
           runtime,
-          modalityRegistry,
+          modalityRegistries.chiefComplaint,
           traceNode.scope("chief_complaint_generate")
         )
       )
@@ -339,17 +369,13 @@ export function buildFieldGenerationGraph(
         "anamnesis_generate",
         buildAnamnesisGraph(
           runtime,
-          modalityRegistry,
+          modalityRegistries.anamnesis,
           traceNode.scope("anamnesis_generate")
         )
       )
       .addNode(
         "case_fan_in",
-        traceNode(
-          "case_fan_in",
-          passthrough<GenerationGraphState>,
-          "Assembling case fields"
-        )
+        traceNode("case_fan_in", caseFanIn, "Assembling case fields")
       )
 
       .addEdge(START, "case_outline_generate")

@@ -1,14 +1,7 @@
 import z from "zod";
-import {
-  generateProcedureResults,
-  matchDiagnosis as matchDiagnosisGateway,
-} from "@/core/graph/03aigateway/procedures.aigateway.js";
+import { matchDiagnosis as matchDiagnosisGateway } from "@/core/graph/03aigateway/procedures.aigateway.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
 import { PatientSchema } from "@/core/graph/models/Patient.js";
-import {
-  ProcedureSchema,
-  type ProcedureResult,
-} from "@/core/graph/models/Procedure.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
 
 // ─── Shared input types ───────────────────────────────────────────────────────
@@ -28,40 +21,6 @@ export const PresentationSchema = z.object({
     .array(z.object({ category: z.string(), answer: z.string() }))
     .optional(),
 });
-
-// ─── generateProcedureResults ─────────────────────────────────────────────────
-
-const GenerateProcedureResultsInputSchema = z.object({
-  presentation: PresentationSchema,
-  diagnosis: DiagnosisSchema,
-  procedureSteps: z.array(ProcedureSchema),
-  outline: z.string().optional(),
-  userInstructions: z.string().optional(),
-});
-
-export const generateProcedureResultsTool: Tool<
-  z.infer<typeof GenerateProcedureResultsInputSchema>,
-  ProcedureResult[]
-> = {
-  name: "generate_procedure_results",
-  description:
-    "Non-blinded result step: generate clinically realistic results for a batch of concurrently-scheduled procedures, consistent with the true diagnosis and the case blueprint's difficulty strategy.",
-  inputSchema: GenerateProcedureResultsInputSchema,
-  invoke: (
-    { presentation, diagnosis, procedureSteps, outline, userInstructions },
-    runtime,
-    context
-  ) =>
-    generateProcedureResults(
-      runtime,
-      presentation,
-      diagnosis,
-      procedureSteps,
-      outline,
-      userInstructions,
-      context
-    ),
-};
 
 // ─── matchDiagnosis ───────────────────────────────────────────────────────────
 
@@ -84,14 +43,15 @@ export const matchDiagnosisTool: Tool<
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-export type { ProcedureResult };
-
-// Both tools are oracle-side (they see the true diagnosis) and
-// strategy-independent — every other procedure tool has been folded into the
-// `ProcedureStrategy` adapters (`strategy/directPick.ts`,
-// `strategy/categoryScopedPick.ts`), which call the aigateway functions
-// directly instead of going through a `Tool` wrapper. See issue 07's spec §4.
+// The last remaining `Tool` here (issue 21 §7): `planProcedureResults` needs
+// a field's `ModalityProvider[]`, which is a runtime port, not zod-validatable
+// data — the same reason the presentation fields' planner gateways
+// (`planChiefComplaint`, `planAnamnesis`) are called directly from their
+// graph nodes rather than wrapped as `Tool`s. `03procedure/index.ts` calls
+// `planProcedureResults` directly for the same reason; every other procedure
+// tool has already been folded into the `ProcedureStrategy` adapters
+// (`strategy/directPick.ts`, `strategy/categoryScopedPick.ts`), which call
+// the aigateway functions directly too. See issue 07's spec §4.
 export const procedureTools = {
-  generateProcedureResults: generateProcedureResultsTool,
   matchDiagnosis: matchDiagnosisTool,
 } as const;

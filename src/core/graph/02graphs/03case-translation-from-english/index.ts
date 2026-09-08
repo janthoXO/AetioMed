@@ -5,12 +5,12 @@ import {
   getRequestContext,
 } from "@/core/graph/utils/context.js";
 import { type CaseTranslationFromEnglishState } from "./state.js";
-import { type Runtime, Send } from "@langchain/langgraph";
+import { type Runtime } from "@langchain/langgraph";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import {
   createTranslationFromEnglishTools,
-  caseAltMap,
-  applyCaseAltTranslations,
+  caseTextMap,
+  applyCaseTextTranslations,
 } from "./tools.js";
 import type { DefinedTranslations } from "./state.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
@@ -88,8 +88,9 @@ function makeTranslateDefined(
 }
 
 /**
- * Issue 12 §1/§2's "Rest" pass: one LLM call over every `ContentPart.alt` in
- * the case, keyed by stable path (`tools.ts`'s `caseAltMap`). Writes ONLY
+ * Issue 12 §1/§2's "Rest" pass: one LLM call over every `ContentPart` text
+ * fragment in the case — both `alt` and, for text parts, the decoded
+ * prose — keyed by stable path (`tools.ts`'s `caseTextMap`). Writes ONLY
  * `restTranslations` — never `case`, and never sees `value` bytes, procedure
  * names, or anamnesis categories (those are the defined pass's job).
  */
@@ -102,7 +103,7 @@ function makeTranslateRest(
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Pick<CaseTranslationFromEnglishState, "restTranslations">> {
     const language = requiredTargetLanguage();
-    const values = caseAltMap(state.case);
+    const values = caseTextMap(state.case);
     console.debug(
       `[Translation] Translating ${Object.keys(values).length} free-text fragment(s) to`,
       language
@@ -132,7 +133,7 @@ export function translateMerge(
   state: CaseTranslationFromEnglishState
 ): Pick<CaseTranslationFromEnglishState, "case"> {
   const { anamnesisCategories, procedureNames } = state.definedTranslations;
-  const altFields = applyCaseAltTranslations(
+  const altFields = applyCaseTextTranslations(
     state.case,
     state.restTranslations
   );
@@ -157,6 +158,15 @@ export function translateMerge(
   return { case: mergedCase };
 }
 
+// This graph is `addNode`'d into `assembleCaseGraph` (`caseGraph.ts`) as
+// `translation_from_english_phase` (issue 17 §1). `.pick()` off this graph's
+// own state schema, not a hand-written duplicate, so the picked `case`
+// channel keeps the identical reducer registration. `definedTranslations`/
+// `restTranslations` are this graph's own internal scratch channels, never
+// written back to the parent.
+const TranslationFromEnglishOutputSchema =
+  CaseTranslationFromEnglishStateSchema.pick({ case: true });
+
 export function buildCaseTranslationFromEnglishGraph(
   runtime: GraphRuntime,
   repos: { anamnesis: AnamnesisRepo; procedures: ProceduresRepo },
@@ -165,7 +175,10 @@ export function buildCaseTranslationFromEnglishGraph(
   const tools = createTranslationFromEnglishTools(repos);
 
   return (
-    new StateGraph(CaseTranslationFromEnglishStateSchema, RequestContextSchema)
+    new StateGraph(CaseTranslationFromEnglishStateSchema, {
+      context: RequestContextSchema,
+      output: TranslationFromEnglishOutputSchema,
+    })
       .addNode(
         "translate_defined",
         traceNode(
@@ -193,10 +206,20 @@ export function buildCaseTranslationFromEnglishGraph(
       // procedures/content-part map), rather than being skipped by an edge —
       // that keeps `translate_merge`'s two input channels always populated
       // (with their schema defaults) instead of conditionally absent.
-      .addConditionalEdges(START, (state): Send[] => [
-        new Send("translate_defined", state),
-        new Send("translate_rest", state),
-      ])
+      //
+      // Two plain edges, deliberately NOT `Send(node, state)` (issue 21).
+      // `Send` round-trips its payload through JSON, which turns a
+      // `ContentPart.value` `Uint8Array` into a plain index-keyed object —
+      // `instanceof Uint8Array` becomes false and the bytes are corrupt from
+      // there on. These two Sends carried the whole state, `case` bytes and
+      // all, and bought nothing a plain edge does not: an edge hands the node
+      // the same full channel state without serialising it. **A `Send`
+      // payload must never carry `ContentPart` bytes** — see
+      // `02presentation/generation/index.ts`'s `buildFieldGenerationSends`,
+      // which is a legitimate `Send` precisely because its per-target payload
+      // is text only.
+      .addEdge(START, "translate_defined")
+      .addEdge(START, "translate_rest")
       .addEdge("translate_defined", "translate_merge")
       .addEdge("translate_rest", "translate_merge")
       .addEdge("translate_merge", END)

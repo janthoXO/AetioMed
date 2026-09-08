@@ -1,4 +1,5 @@
 import type { GraphRuntime } from "@/core/graph/runtime.js";
+import type { ModalityProvider } from "@/core/graph/modality/ports.js";
 import { CategoryScopedPick } from "./categoryScopedPick.js";
 import { DirectPick } from "./directPick.js";
 import type { ProcedureStrategy } from "./ports.js";
@@ -25,16 +26,22 @@ export type {
  * second condition (today's `useSmallModelSplit`) is not optional: a flat
  * (uncategorized) catalogue has nothing to scope on, and the scoped path
  * against zero categories degenerates.
+ *
+ * `providers` is the `procedureResult` modality registry (issue 21 §7):
+ * both strategies' `bridge()` plans results via `planProcedureResults`, so
+ * both need it — see `caseGraph.ts`'s call site, which passes
+ * `modalityRegistries.procedureResult`.
  */
 export function createProcedureStrategy(
   runtime: GraphRuntime,
-  procedurePreselection: boolean
+  procedurePreselection: boolean,
+  providers: ModalityProvider<unknown>[]
 ): ProcedureStrategy {
   const hasCategories = runtime.catalogs.procedures.categories().length > 0;
 
   if (procedurePreselection && hasCategories) {
-    return new CategoryScopedPick(runtime);
+    return new CategoryScopedPick(runtime, providers);
   }
 
-  return new DirectPick(runtime);
+  return new DirectPick(runtime, providers);
 }

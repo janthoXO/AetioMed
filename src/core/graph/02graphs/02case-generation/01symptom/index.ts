@@ -1,19 +1,15 @@
 import { END, START, StateGraph, type Runtime } from "@langchain/langgraph";
 import { CaseGenerationStateSchema } from "../state.js";
 import z from "zod";
-import { bus } from "@/core/graph/index.js";
-import {
-  SymptomsRelatedToDiagnosisIcd,
-  getCachedSymptoms,
-  saveCachedSymptoms,
-} from "@/core/graph/03repo/symptoms.repo.js";
+import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
 import {
   RequestContextSchema,
   type RequestContext,
 } from "@/core/graph/utils/context.js";
 import { symptomTools } from "./tools.js";
-import { traceNode } from "@/core/graph/utils/nodeWrapper.js";
+import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
+import type { GraphRuntime } from "@/core/graph/runtime.js";
 
 const SymptomsGraphStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
@@ -30,70 +26,73 @@ type SymptomsGraphState = z.infer<typeof SymptomsGraphStateSchema>;
 // skips the LLM call entirely; a miss or stale entry regenerates and writes
 // back to the cache. Diagnoses without an ICD code are never cached.
 
-async function retrieveOrGenerateSymptoms(
-  state: SymptomsGraphState,
-  runtime?: Runtime<RequestContext>
-): Promise<Pick<SymptomsGraphState, "symptoms">> {
-  const icd = state.diagnosis.icd;
-  const umls = icd ? SymptomsRelatedToDiagnosisIcd(icd) : [];
+function makeRetrieveOrGenerateSymptoms(
+  runtime: GraphRuntime,
+  symptomsRepo: SymptomsRepo
+) {
+  return async function retrieveOrGenerateSymptoms(
+    state: SymptomsGraphState,
+    lgRuntime?: Runtime<RequestContext>
+  ): Promise<Pick<SymptomsGraphState, "symptoms">> {
+    const icd = state.diagnosis.icd;
+    const umls = icd ? symptomsRepo.SymptomsRelatedToDiagnosisIcd(icd) : [];
 
-  bus.emit("Generation Log", {
-    msg: `[SymptomsGraph] UMLS symptoms: ${
-      umls.length > 0 ? umls.map((s) => s.name).join(", ") : "none"
-    }`,
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-  });
+    runtime.log.info(
+      `[SymptomsGraph] UMLS symptoms: ${
+        umls.length > 0 ? umls.map((s) => s.name).join(", ") : "none"
+      }`
+    );
 
-  const cached = icd ? getCachedSymptoms(icd) : undefined;
-  if (cached) {
-    bus.emit("Generation Log", {
-      msg: `[SymptomsGraph] cache hit for ICD ${icd}: ${cached.map((s) => s.name).join(", ")}`,
-      logLevel: "info",
-      timestamp: new Date().toISOString(),
-    });
-    return { symptoms: [...umls, ...cached] };
-  }
+    const cached = icd ? symptomsRepo.getCachedSymptoms(icd) : undefined;
+    if (cached) {
+      runtime.log.info(
+        `[SymptomsGraph] cache hit for ICD ${icd}: ${cached.map((s) => s.name).join(", ")}`
+      );
+      return { symptoms: [...umls, ...cached] };
+    }
 
-  // Pass the UMLS floor as symptomsToExclude so the LLM generates novel,
-  // non-duplicate symptoms.
-  const generated = await symptomTools.generateSymptoms.invoke(
-    {
-      diagnosis: state.diagnosis,
-      symptomsToExclude: umls,
-      userInstructions: renderUserInstructions(state.userInstructions),
-    },
-    runtime?.context
-  );
+    // Pass the UMLS floor as symptomsToExclude so the LLM generates novel,
+    // non-duplicate symptoms.
+    const generated = await symptomTools.generateSymptoms.invoke(
+      {
+        diagnosis: state.diagnosis,
+        symptomsToExclude: umls,
+        userInstructions: renderUserInstructions(state.userInstructions),
+      },
+      runtime,
+      lgRuntime?.context
+    );
 
-  bus.emit("Generation Log", {
-    msg: `[SymptomsGraph] cache miss${icd ? ` for ICD ${icd}` : ""}, LLM symptoms: ${generated.map((s) => s.name).join(", ")}`,
-    logLevel: "info",
-    timestamp: new Date().toISOString(),
-  });
+    runtime.log.info(
+      `[SymptomsGraph] cache miss${icd ? ` for ICD ${icd}` : ""}, LLM symptoms: ${generated.map((s) => s.name).join(", ")}`
+    );
 
-  if (icd) {
-    saveCachedSymptoms(icd, generated);
-  }
+    if (icd) {
+      symptomsRepo.saveCachedSymptoms(icd, generated);
+    }
 
-  return { symptoms: [...umls, ...generated] };
+    return { symptoms: [...umls, ...generated] };
+  };
 }
 
 // ─── graph ────────────────────────────────────────────────────────────────────
 
-export const symptomsGraph = new StateGraph(
-  SymptomsGraphStateSchema,
-  RequestContextSchema
-)
-  .addNode(
-    "symptoms_resolve",
-    traceNode(
+export function buildSymptomsGraph(
+  runtime: GraphRuntime,
+  symptomsRepo: SymptomsRepo,
+  traceNode: ReturnType<typeof createTraceNode>
+) {
+  return new StateGraph(SymptomsGraphStateSchema, RequestContextSchema)
+    .addNode(
       "symptoms_resolve",
-      retrieveOrGenerateSymptoms,
-      "Retrieving or generating symptoms"
+      traceNode(
+        "symptoms_resolve",
+        makeRetrieveOrGenerateSymptoms(runtime, symptomsRepo),
+        "Retrieving or generating symptoms"
+      )
     )
-  )
 
-  .addEdge(START, "symptoms_resolve")
-  .addEdge("symptoms_resolve", END)
-  .compile();
+    .addEdge(START, "symptoms_resolve")
+    .addEdge("symptoms_resolve", END)
+    .compile();
+}

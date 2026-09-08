@@ -5,7 +5,6 @@ import {
   section,
   summarizeValidationError,
 } from "../utils/prompt.js";
-import { bus } from "@/core/graph/index.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { Difficulty } from "../models/Difficulty.js";
 import {
@@ -15,6 +14,7 @@ import {
 import { retry } from "../utils/retry.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
+import type { GraphRuntime } from "../runtime.js";
 
 const DIFFICULTY_EXPECTATION: Record<Difficulty, string> = {
   easy: `At "easy" difficulty, the blueprint is EXPECTED to point fairly directly toward the diagnosis via a classic subset of hallmark symptoms. Only flag it as too obvious if the diagnosis name itself, or an unambiguous synonym/abbreviation of it, is leaked in the outline text.`,
@@ -32,6 +32,7 @@ const DIFFICULTY_EXPECTATION: Record<Difficulty, string> = {
  * written, so a flawed blueprint can be revised early.
  */
 export async function evaluateOutline(
+  runtime: GraphRuntime,
   diagnosis: Diagnosis,
   outline: string,
   difficulty: Difficulty,
@@ -91,7 +92,10 @@ ${renderSchemaForPrompt(OutlineEvaluationSchema)}`
   try {
     const evaluation: OutlineEvaluation = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getDeterministicLLM(context?.llmConfig)
+        const result = await getDeterministicLLM(
+          runtime.llm,
+          context?.llmConfig
+        )
           .withStructuredOutput(OutlineEvaluationSchema)
           .invoke(
             [
@@ -123,11 +127,7 @@ ${renderSchemaForPrompt(OutlineEvaluationSchema)}`
       (error, attempt) => {
         const msg = `[EvaluateOutline] Attempt ${attempt} failed with error: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 

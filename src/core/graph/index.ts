@@ -1,6 +1,14 @@
 import type { EventBus } from "../event-bus.js";
 import type { Case } from "./models/Case.js";
 import { ConfigSchema, type Config } from "./config.js";
+import { validateCatalogsOrExit } from "./catalog/startupValidation.js";
+import { buildCaseGraph } from "./02graphs/caseGraph.js";
+import { createYamlCatalogs } from "./catalog/index.js";
+import { createRepos } from "./repos.js";
+import { createLlmPort } from "./utils/llm.js";
+import { createLogger } from "./utils/logger.js";
+import type { GraphRuntime } from "./runtime.js";
+import type { GraphAppContext } from "./appContext.js";
 
 declare module "../event-bus.js" {
   interface EventMap {
@@ -39,28 +47,53 @@ declare module "../event-bus.js" {
   }
 }
 
-export let config: Config;
-export let bus: EventBus;
+export { ConfigSchema };
 
-/** Called once from app.ts before any extension loads. */
-export function initGraph(opts: { bus: EventBus; config: Config }): void {
-  bus = opts.bus;
-  config = opts.config;
+/**
+ * Build the `GraphRuntime` (ports), construct the graph as a function of it,
+ * and validate the catalogues. Called once from `createApp()`, before any
+ * transport starts — there is no module-scope mutable state left for
+ * transports to race against.
+ */
+export function initGraph(opts: {
+  bus: EventBus;
+  config: Config;
+  /** Already-resolved absolute path (see `persistence/paths.ts`). */
+  catalogDir: string;
+  /** Already-resolved absolute path (see `persistence/paths.ts`). */
+  cacheDir: string;
+  symptomCacheTtlDays: number;
+}): GraphAppContext {
+  const { bus, config, catalogDir, cacheDir, symptomCacheTtlDays } = opts;
+
+  const repos = createRepos({ catalogDir, cacheDir, symptomCacheTtlDays });
+
+  const runtime: GraphRuntime = {
+    llm: createLlmPort(config),
+    catalogs: createYamlCatalogs(repos),
+    log: createLogger(bus),
+    clock: () => new Date(),
+  };
+
+  const { generateCase } = buildCaseGraph(runtime, bus, config, repos);
+
+  // Validate catalogue translation files here, and not any earlier: the
+  // "labels" catalogue's base key set is `getKnownLabels()`
+  // (utils/nodeWrapper.ts), which `traceNode` populates as `buildCaseGraph`
+  // constructs the graph modules above. Running the validation any earlier
+  // would validate labels against an empty set and silently pass.
+  validateCatalogsOrExit(repos);
 
   console.log(
     `[graph] Initialized with ${
-      opts.config.allowedLlms
+      config.allowedLlms
         ? "dynamic LLMs"
-        : (opts.config.llm?.provider ?? "?") +
-          "/" +
-          (opts.config.llm?.model ?? "?")
+        : (config.llm?.provider ?? "?") + "/" + (config.llm?.model ?? "?")
     } configuration.`
   );
+
+  return { config, runtime, generateCase };
 }
 
-export { ConfigSchema };
-
-// Surface consumed by transport extensions (rest, nats)
-export { caseGraph, generateCase } from "./02graphs/caseGraph.js";
-export { runWithContext } from "./utils/context.js";
+export { runWithContext, registerJobHook } from "./utils/context.js";
 export * as cancelManager from "./utils/cancelManager.js";

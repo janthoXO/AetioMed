@@ -1,4 +1,3 @@
-import { bus } from "@/core/graph/index.js";
 import { retry } from "../utils/retry.js";
 import z from "zod";
 import {
@@ -16,27 +15,24 @@ import {
 import type { Diagnosis } from "../models/Diagnosis.js";
 import {
   buildProcedureResultSchema,
-  buildProcedureSchema,
   ProcedureRelevanceSchema,
-  ProcedureSchema,
   type Procedure,
   type ProcedureName,
   type ProcedureRelevance,
   type ProcedureResult,
 } from "../models/Procedure.js";
 import {
-  getEffectiveProcedureList,
-  getGroupedProcedures,
-  getProcedureCategories,
   UNCATEGORIZED_CATEGORY,
-} from "../03repo/procedures.repo.js";
+  type ProcedurePickMode,
+} from "../catalog/ports.js";
 import type { Patient } from "../models/Patient.js";
 import type { Anamnesis } from "../models/Anamnesis.js";
 import type { ChiefComplaint } from "../models/ChiefComplaint.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
-import type { ForeignLanguage, Language } from "../models/Language.js";
+import type { ForeignLanguage } from "../models/Language.js";
 import { translateTermsKeyed } from "./translate.helper.js";
+import type { GraphRuntime } from "../runtime.js";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -113,138 +109,6 @@ function errorFeedback(previousError: Error | undefined) {
 
 // ─── Procedure grouping (category-aware prompting) ───────────────────────────
 
-/**
- * How the approved procedure list is presented to (and expected back from) a
- * blinded pick step, resolved once per call from the effective list for the
- * request language:
- *   - "freeform": no approved list configured — the LLM invents freely.
- *   - "flat": an approved list exists but none of its entries carry a
- *     `"Category: Name"` prefix — shown/returned as a plain list of names.
- *   - "grouped": an approved list exists with real categories — shown/returned
- *     grouped by category so a small model only reasons over one category's
- *     worth of names at a time.
- */
-type ProcedurePickMode =
-  | { kind: "freeform" }
-  | { kind: "flat"; names: ProcedureName[] }
-  | { kind: "grouped"; grouped: Map<string, ProcedureName[]> };
-
-function resolveProcedurePickMode(language?: Language): ProcedurePickMode {
-  const effective = getEffectiveProcedureList(language);
-  if (effective === undefined) return { kind: "freeform" };
-
-  const categories = getProcedureCategories(language);
-  if (categories.length === 0) {
-    const grouped = getGroupedProcedures(language);
-    return { kind: "flat", names: grouped.get(UNCATEGORIZED_CATEGORY) ?? [] };
-  }
-  return { kind: "grouped", grouped: getGroupedProcedures(language) };
-}
-
-/**
- * Remove already-ordered procedures from a grouped candidate map, comparing
- * against the previously ordered FULL names (category prefix reunited).
- * Categories that end up empty are dropped entirely — they have nothing left
- * to offer a pick or an expansion.
- */
-function excludeOrderedFromGrouped(
-  grouped: Map<string, ProcedureName[]>,
-  previousProcedures: ProcedureResult[]
-): Map<string, ProcedureName[]> {
-  if (previousProcedures.length === 0) return grouped;
-  const ordered = new Set(previousProcedures.map((p) => p.name));
-  const filtered = new Map<string, ProcedureName[]>();
-  for (const [category, names] of grouped) {
-    const remaining = names.filter(
-      (name) =>
-        !ordered.has(
-          category === UNCATEGORIZED_CATEGORY ? name : `${category}: ${name}`
-        )
-    );
-    if (remaining.length) filtered.set(category, remaining);
-  }
-  return filtered;
-}
-
-/**
- * Remove already-ordered procedures from a pick mode's candidates, so a
- * duplicate order is impossible by construction (the grammar never offers
- * them) and the candidate context shrinks as the workup progresses.
- * Freeform mode passes through unchanged — a prompt rule covers it instead.
- */
-function excludeOrderedFromMode(
-  mode: ProcedurePickMode,
-  previousProcedures: ProcedureResult[]
-): ProcedurePickMode {
-  switch (mode.kind) {
-    case "freeform":
-      return mode;
-    case "flat": {
-      const ordered = new Set(previousProcedures.map((p) => p.name));
-      return {
-        kind: "flat",
-        names: mode.names.filter((name) => !ordered.has(name)),
-      };
-    }
-    case "grouped":
-      return {
-        kind: "grouped",
-        grouped: excludeOrderedFromGrouped(mode.grouped, previousProcedures),
-      };
-  }
-}
-
-/** Whether a pick mode still has any candidates left to offer. */
-function modeHasCandidates(mode: ProcedurePickMode): boolean {
-  switch (mode.kind) {
-    case "freeform":
-      return true;
-    case "flat":
-      return mode.names.length > 0;
-    case "grouped":
-      return mode.grouped.size > 0;
-  }
-}
-
-/**
- * Scope the grouped procedure map down to the selected categories, plus the
- * always-included uncategorized bucket (uncategorized procedures bypass the
- * category filter entirely).
- */
-function scopeGroupedProcedures(
-  selectedCategories: string[],
-  language?: Language
-): Map<string, ProcedureName[]> {
-  const allGrouped = getGroupedProcedures(language);
-  const scoped = new Map<string, ProcedureName[]>();
-  for (const category of selectedCategories) {
-    const names = allGrouped.get(category);
-    if (names?.length) scoped.set(category, names);
-  }
-  const general = allGrouped.get(UNCATEGORIZED_CATEGORY);
-  if (general?.length) scoped.set(UNCATEGORIZED_CATEGORY, general);
-  return scoped;
-}
-
-const CATEGORY_MENU_SAMPLE_SIZE = 3;
-
-/**
- * Renders one line per real category with a size hint and a few sample
- * procedure names, so a category-level pick is informed rather than
- * name-only. Expects an already duplicate-filtered grouped map, so fully
- * ordered categories disappear from the menu.
- */
-function renderCategoryMenu(grouped: Map<string, ProcedureName[]>): string {
-  return [...grouped.entries()]
-    .filter(([category]) => category !== UNCATEGORIZED_CATEGORY)
-    .map(([category, names]) => {
-      const sample = names.slice(0, CATEGORY_MENU_SAMPLE_SIZE).join(", ");
-      const more = names.length > CATEGORY_MENU_SAMPLE_SIZE ? ", …" : "";
-      return `- ${category} (${names.length} procedures) — e.g. ${sample}${more}`;
-    })
-    .join("\n");
-}
-
 /** Convergence-pressure nudge rendered when the solver's budget is known. */
 function workupBudgetSection(iterationsRemaining: number | undefined) {
   return iterationsRemaining === undefined
@@ -253,117 +117,6 @@ function workupBudgetSection(iterationsRemaining: number | undefined) {
         "Workup budget",
         `You have ${iterationsRemaining} diagnostic step(s) remaining. A thorough workup that uses every step is a FAILURE mode, not diligence — commit to a diagnosis as soon as one is well supported (roughly 90% confidence), and do not spend steps on marginal or merely confirmatory procedures.`
       );
-}
-
-/** Renders the "Approved procedure list" prompt section for a pick mode. */
-function procedureCandidatesSection(mode: ProcedurePickMode) {
-  switch (mode.kind) {
-    case "freeform":
-      return undefined;
-    case "flat":
-      return section(
-        "Approved procedure list (RESTRICTED WORKUP)",
-        `You MUST ONLY select procedures from the following list, using their exact names. Do not invent or recommend any procedures not explicitly listed below:
-${mode.names.map((n) => `- ${n}`).join("\n")}`
-      );
-    case "grouped":
-      return section(
-        "Approved procedure list, grouped by category (RESTRICTED WORKUP)",
-        `You MUST ONLY select procedures from the categories below, using their exact names WITHOUT the category prefix — place each name under its correct category key in your response. Do not invent or recommend any procedures not explicitly listed below:
-${renderForPrompt(Object.fromEntries(mode.grouped))}`
-      );
-  }
-}
-
-/**
- * The grammar-constrained schema for a pick step's "procedures" field, per
- * mode — this is what's passed to `withStructuredOutput`.
- */
-function procedurePickGrammarSchema(mode: ProcedurePickMode): z.ZodTypeAny {
-  switch (mode.kind) {
-    case "freeform":
-      return z
-        .array(buildProcedureSchema())
-        .describe("one or more mutually independent procedures to order now");
-    case "flat":
-      return z
-        .array(z.literal(mode.names))
-        .describe("exact names of the procedures to order now");
-    case "grouped": {
-      const shape: Record<string, z.ZodTypeAny> = {};
-      for (const [category, names] of mode.grouped) {
-        shape[category] = z
-          .array(z.literal(names))
-          .optional()
-          .describe(
-            `procedure names (without category prefix) to order from "${category}"`
-          );
-      }
-      return z
-        .object(shape)
-        .describe("procedures to order now, grouped by category key");
-    }
-  }
-}
-
-/**
- * Generic, name-agnostic counterpart to {@link procedurePickGrammarSchema}
- * used ONLY for the system prompt's "Output format" example — kept free of
- * the actual (potentially large) approved-name literals so the system prompt
- * stays short and stable; the real constraint is applied via the grammar
- * schema instead.
- */
-function procedurePickPromptSchema(mode: ProcedurePickMode): z.ZodTypeAny {
-  switch (mode.kind) {
-    case "freeform":
-      return z
-        .array(ProcedureSchema)
-        .describe("one or more mutually independent procedures to order now");
-    case "flat":
-      return z.array(z.string()).describe("exact procedure names to order now");
-    case "grouped":
-      return z
-        .record(z.string(), z.array(z.string()))
-        .describe("procedure names (without category prefix), keyed by category");
-  }
-}
-
-/**
- * Assemble a raw "procedures" LLM response back into `Procedure[]`, per pick
- * mode. Grouped/flat names are reunited with their category prefix (if any)
- * and validated against the canonical effective list — any assembled name not
- * found there is dropped (belt-and-braces; the grammar constraint should
- * already prevent this).
- */
-function assembleProcedurePick(
-  mode: ProcedurePickMode,
-  raw: unknown,
-  effectiveList: ProcedureName[] | undefined
-): Procedure[] {
-  const canonical = effectiveList ? new Set(effectiveList) : undefined;
-  const keep = (full: string) => !canonical || canonical.has(full);
-
-  if (mode.kind === "freeform") {
-    return (raw as Procedure[] | undefined) ?? [];
-  }
-
-  if (mode.kind === "flat") {
-    return ((raw as ProcedureName[] | undefined) ?? [])
-      .filter(keep)
-      .map((name) => ({ name }));
-  }
-
-  const grouped = (raw as Record<string, ProcedureName[] | undefined>) ?? {};
-  const result: Procedure[] = [];
-  for (const [category, names] of Object.entries(grouped)) {
-    if (!names) continue;
-    for (const name of names) {
-      const full =
-        category === UNCATEGORIZED_CATEGORY ? name : `${category}: ${name}`;
-      if (keep(full)) result.push({ name: full });
-    }
-  }
-  return result;
 }
 
 // ─── 1. generateBlindedProcedureStep ─────────────────────────────────────────
@@ -392,6 +145,7 @@ function buildStepSchema(procedureFieldSchema: z.ZodTypeAny) {
  *   • action "diagnose"  — a diagnosis it commits to based on available evidence.
  */
 export async function generateBlindedProcedureStep(
+  runtime: GraphRuntime,
   presentation: Presentation,
   previousProcedures: ProcedureResult[],
   ruledOutDiagnoses: string[],
@@ -399,13 +153,11 @@ export async function generateBlindedProcedureStep(
   iterationsRemaining?: number,
   context?: RequestContext
 ): Promise<BlindedProcedureStepResult> {
-  const effectiveProcedures = getEffectiveProcedureList(context?.language);
-  const mode = excludeOrderedFromMode(
-    resolveProcedurePickMode(context?.language),
-    previousProcedures
-  );
+  const candidates = runtime.catalogs.procedures
+    .candidates()
+    .exclude(previousProcedures.map((p) => p.name));
 
-  if (!modeHasCandidates(mode)) {
+  if (candidates.isEmpty()) {
     // Every approved procedure has already been ordered — nothing left to
     // pick; the caller treats an empty pick as "bridge to the diagnosis".
     console.warn(
@@ -436,14 +188,14 @@ Do NOT re-order any procedure that already appears in the workup so far.`
     section(
       "Output format",
       `Return ONLY a valid JSON object matching one of these shapes:
-${renderSchemaForPrompt(buildStepSchema(procedurePickPromptSchema(mode)))}`
+${renderSchemaForPrompt(buildStepSchema(candidates.promptSchema()))}`
     )
   );
 
   const userPrompt = buildPrompt(
     presentationSection(presentation),
 
-    procedureCandidatesSection(mode),
+    candidates.render(),
 
     section("Additional instructions", userInstructions),
 
@@ -467,13 +219,13 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
   );
 
   try {
-    const StepSchema = buildStepSchema(procedurePickGrammarSchema(mode));
+    const StepSchema = buildStepSchema(candidates.grammar());
 
     const rawResult = await retry(
       async (attempt, previousError) => {
         // Balanced: this is clinical decision-making, not creative writing —
         // lower temperature keeps procedure choices focused and output short.
-        const res = await getBalancedLLM(context?.llmConfig)
+        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(StepSchema)
           .invoke(
             [
@@ -500,11 +252,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       (error, attempt) => {
         const msg = `[GenerateBlindedProcedureStep] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -516,11 +264,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
     // the blinded step's public shape is always a plain `Procedure[]`.
     return {
       action: "procedure",
-      procedures: assembleProcedurePick(
-        mode,
-        rawResult.procedures,
-        effectiveProcedures
-      ),
+      procedures: candidates.assemble(rawResult.procedures),
       reasoning: rawResult.reasoning,
     };
   } catch (error) {
@@ -577,6 +321,7 @@ function buildCategoryStepSchema(categories?: string[]) {
  * the same `matchDiagnosis` / ruled-out-diagnoses flow for either path.
  */
 export async function generateBlindedCategoryStep(
+  runtime: GraphRuntime,
   presentation: Presentation,
   previousProcedures: ProcedureResult[],
   ruledOutDiagnoses: string[],
@@ -584,16 +329,13 @@ export async function generateBlindedCategoryStep(
   iterationsRemaining?: number,
   context?: RequestContext
 ): Promise<BlindedCategoryStepResult> {
-  // Categories are picked from the duplicate-filtered map: fully ordered
-  // categories vanish from the menu, and the size/sample hints reflect only
-  // the procedures still available to order.
-  const grouped = excludeOrderedFromGrouped(
-    getGroupedProcedures(context?.language),
-    previousProcedures
-  );
-  const categories = [...grouped.keys()].filter(
-    (category) => category !== UNCATEGORIZED_CATEGORY
-  );
+  // Categories are picked from the duplicate-filtered candidate set: fully
+  // ordered categories vanish from the menu, and the size/sample hints
+  // reflect only the procedures still available to order.
+  const candidates = runtime.catalogs.procedures
+    .candidates()
+    .exclude(previousProcedures.map((p) => p.name));
+  const categories = candidates.categories();
 
   const systemPrompt = buildPrompt(
     section(
@@ -623,7 +365,7 @@ ${renderSchemaForPrompt(buildCategoryStepSchema())}`
   const userPrompt = buildPrompt(
     presentationSection(presentation),
 
-    section("Available procedure categories", renderCategoryMenu(grouped)),
+    section("Available procedure categories", candidates.categoryMenu()),
 
     section("Additional instructions", userInstructions),
 
@@ -653,7 +395,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       async (attempt, previousError) => {
         // Thinking off: the category shortlist is a constrained pick and the
         // split into two small steps exists precisely to keep each call fast.
-        const res = await getBalancedLLM({
+        const res = await getBalancedLLM(runtime.llm, {
           ...context?.llmConfig,
           enableThinking: false,
         })
@@ -683,11 +425,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       (error, attempt) => {
         const msg = `[GenerateBlindedCategoryStep] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -753,6 +491,7 @@ function scopedPickSchema(
  * forces a pick.
  */
 export async function generateBlindedProcedureStepFromCategories(
+  runtime: GraphRuntime,
   presentation: Presentation,
   previousProcedures: ProcedureResult[],
   selectedCategories: string[],
@@ -760,21 +499,17 @@ export async function generateBlindedProcedureStepFromCategories(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<ScopedProcedurePickResult> {
-  const scoped = excludeOrderedFromGrouped(
-    scopeGroupedProcedures(selectedCategories, context?.language),
-    previousProcedures
-  );
+  const ordered = previousProcedures.map((p) => p.name);
+  const scoped = runtime.catalogs.procedures
+    .scope(selectedCategories)
+    .exclude(ordered);
   // Only offer expansion into categories that still have unordered candidates.
-  const allFiltered = excludeOrderedFromGrouped(
-    getGroupedProcedures(context?.language),
-    previousProcedures
-  );
+  const all = runtime.catalogs.procedures.candidates().exclude(ordered);
   const expandable = expandableCategories.filter((category) =>
-    allFiltered.has(category)
+    all.categories().includes(category)
   );
 
-  const mode: ProcedurePickMode = { kind: "grouped", grouped: scoped };
-  const canPick = scoped.size > 0;
+  const canPick = !scoped.isEmpty();
   const canExpand = expandable.length > 0;
 
   if (!canPick && !canExpand) {
@@ -810,7 +545,7 @@ A first step already narrowed the workup down to a shortlist of categories; your
       `Return ONLY a valid JSON object matching ${canPick && canExpand ? "one of these shapes" : "this shape"}:
 ${renderSchemaForPrompt(
   scopedPickSchema(
-    canPick ? procedurePickPromptSchema(mode) : undefined,
+    canPick ? scoped.promptSchema() : undefined,
     canExpand ? z.array(z.string()) : undefined
   )
 )}`
@@ -820,13 +555,13 @@ ${renderSchemaForPrompt(
   const userPrompt = buildPrompt(
     presentationSection(presentation),
 
-    canPick ? procedureCandidatesSection(mode) : undefined,
+    canPick ? scoped.render() : undefined,
 
     canExpand
       ? section(
           "Other available categories (names only)",
           `These categories are NOT currently in scope — request them via action "expand" only if the in-scope procedures don't suffice:
-${renderCategoryMenu(new Map(expandable.map((category) => [category, allFiltered.get(category) ?? []])))}`
+${all.categoryMenu(expandable)}`
         )
       : undefined,
 
@@ -842,7 +577,7 @@ ${renderCategoryMenu(new Map(expandable.map((category) => [category, allFiltered
   );
 
   const OutputSchema = scopedPickSchema(
-    canPick ? procedurePickGrammarSchema(mode) : undefined,
+    canPick ? scoped.grammar() : undefined,
     canExpand ? z.array(z.literal(expandable)) : undefined
   );
 
@@ -851,7 +586,7 @@ ${renderCategoryMenu(new Map(expandable.map((category) => [category, allFiltered
       async (attempt, previousError) => {
         // Thinking off: same rationale as the category step — the candidate
         // set is already scoped, so the pick doesn't need a reasoning phase.
-        const res = await getBalancedLLM({
+        const res = await getBalancedLLM(runtime.llm, {
           ...context?.llmConfig,
           enableThinking: false,
         })
@@ -881,11 +616,7 @@ ${renderCategoryMenu(new Map(expandable.map((category) => [category, allFiltered
       (error, attempt) => {
         const msg = `[GenerateBlindedProcedureStepFromCategories] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -899,11 +630,7 @@ ${renderCategoryMenu(new Map(expandable.map((category) => [category, allFiltered
 
     return {
       action: "procedures",
-      procedures: assembleProcedurePick(
-        mode,
-        raw.procedures,
-        getEffectiveProcedureList(context?.language)
-      ),
+      procedures: scoped.assemble(raw.procedures),
       reasoning: raw.reasoning,
     };
   } catch (error) {
@@ -939,6 +666,7 @@ const ResultsSchema = z.object({
  * both `relevance` and `result` are decided here instead.
  */
 export async function generateProcedureResults(
+  runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
   procedureSteps: Procedure[],
@@ -1005,7 +733,7 @@ ${outline}`
       async (attempt, previousError) => {
         // Balanced: results must follow the blueprint's workup strategy and
         // stay clinically plausible — specific values, not invention.
-        const res = await getBalancedLLM(context?.llmConfig)
+        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(ResultsSchema)
           .invoke(
             [
@@ -1032,11 +760,7 @@ ${outline}`
       (error, attempt) => {
         const msg = `[GenerateProcedureResults] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -1059,7 +783,11 @@ ${outline}`
 
 // ─── 3. generateDiagnosisBridge ───────────────────────────────────────────────
 
-type ResultLeaf = { name: string; relevance: ProcedureRelevance; result: string };
+type ResultLeaf = {
+  name: string;
+  relevance: ProcedureRelevance;
+  result: string;
+};
 
 const GenericResultLeafSchema = z.object({
   name: z.string().describe("exact procedure name"),
@@ -1168,7 +896,11 @@ function assembleBridgeResults(
           ? leaf.name
           : `${category}: ${leaf.name}`;
       if (keep(full)) {
-        result.push({ name: full, relevance: leaf.relevance, result: leaf.result });
+        result.push({
+          name: full,
+          relevance: leaf.relevance,
+          result: leaf.result,
+        });
       }
     }
   }
@@ -1180,22 +912,21 @@ function assembleBridgeResults(
  * iteration budget without reaching the diagnosis. Generates the remaining
  * confirmatory procedures (each with a result) that complete the diagnostic
  * pathway to the true diagnosis. Uses the same category-grouped candidate
- * presentation as the blinded step (see {@link resolveProcedurePickMode}).
+ * presentation as the blinded step.
  */
 export async function generateDiagnosisBridge(
+  runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
   previousProcedures: ProcedureResult[],
   userInstructions?: string,
   context?: RequestContext
 ): Promise<ProcedureResult[]> {
-  const effectiveProcedures = getEffectiveProcedureList(context?.language);
-  const mode = excludeOrderedFromMode(
-    resolveProcedurePickMode(context?.language),
-    previousProcedures
-  );
+  const candidates = runtime.catalogs.procedures
+    .candidates()
+    .exclude(previousProcedures.map((p) => p.name));
 
-  if (!modeHasCandidates(mode)) {
+  if (candidates.isEmpty()) {
     console.warn(
       "[GenerateDiagnosisBridge] All approved procedures already ordered — nothing left to bridge with."
     );
@@ -1223,7 +954,7 @@ Generate the remaining procedures — with clinically consistent results — tha
     section(
       "Output format",
       `Return ONLY a valid JSON object:
-${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(mode) }))}`
+${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates.mode) }))}`
     )
   );
 
@@ -1232,7 +963,7 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(mode) }))}
 
     section("True diagnosis", diagnosisLabel(diagnosis)),
 
-    procedureCandidatesSection(mode),
+    candidates.render(),
 
     section("Additional instructions", userInstructions),
 
@@ -1245,14 +976,16 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(mode) }))}
     `[GenerateDiagnosisBridge] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const BridgeSchema = z.object({ procedures: bridgePickGrammarSchema(mode) });
+  const BridgeSchema = z.object({
+    procedures: bridgePickGrammarSchema(candidates.mode),
+  });
 
   try {
     const rawProcedures = await retry(
       async (attempt, previousError) => {
         // Balanced: confirmatory procedures for a known diagnosis — the most
         // clinically standard choices are exactly what we want.
-        const res = await getBalancedLLM(context?.llmConfig)
+        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(BridgeSchema)
           .invoke(
             [
@@ -1279,15 +1012,15 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(mode) }))}
       (error, attempt) => {
         const msg = `[GenerateDiagnosisBridge] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
-    return assembleBridgeResults(mode, rawProcedures, effectiveProcedures);
+    return assembleBridgeResults(
+      candidates.mode,
+      rawProcedures,
+      runtime.catalogs.procedures.list()
+    );
   } catch (error) {
     console.error("[GenerateDiagnosisBridge] Error:", error);
     throw error;
@@ -1320,21 +1053,20 @@ function buildBridgeCategoryStepSchema(categories?: string[]) {
  * plausibly contain the confirmatory procedures, over-inclusive by design.
  */
 export async function generateBridgeCategoryStep(
+  runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
   previousProcedures: ProcedureResult[],
   userInstructions?: string,
   context?: RequestContext
 ): Promise<string[]> {
-  // Same duplicate-filtered menu as the blinded category step: fully ordered
-  // categories vanish, and size/sample hints reflect remaining candidates.
-  const grouped = excludeOrderedFromGrouped(
-    getGroupedProcedures(context?.language),
-    previousProcedures
-  );
-  const categories = [...grouped.keys()].filter(
-    (category) => category !== UNCATEGORIZED_CATEGORY
-  );
+  // Same duplicate-filtered candidate set as the blinded category step: fully
+  // ordered categories vanish, and size/sample hints reflect remaining
+  // candidates.
+  const candidates = runtime.catalogs.procedures
+    .candidates()
+    .exclude(previousProcedures.map((p) => p.name));
+  const categories = candidates.categories();
 
   const systemPrompt = buildPrompt(
     section(
@@ -1362,7 +1094,7 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
 
     section("True diagnosis", diagnosisLabel(diagnosis)),
 
-    section("Available procedure categories", renderCategoryMenu(grouped)),
+    section("Available procedure categories", candidates.categoryMenu()),
 
     section("Additional instructions", userInstructions),
 
@@ -1380,7 +1112,7 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
 
     const categoriesResult = await retry(
       async (attempt, previousError) => {
-        const res = await getBalancedLLM(context?.llmConfig)
+        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(CategoryStepSchema)
           .invoke(
             [
@@ -1407,11 +1139,7 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
       (error, attempt) => {
         const msg = `[GenerateBridgeCategoryStep] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -1433,6 +1161,7 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
  * categories.
  */
 export async function generateBridgeProcedureStepFromCategories(
+  runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
   previousProcedures: ProcedureResult[],
@@ -1440,21 +1169,17 @@ export async function generateBridgeProcedureStepFromCategories(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<ProcedureResult[]> {
-  const scoped = excludeOrderedFromGrouped(
-    scopeGroupedProcedures(selectedCategories, context?.language),
-    previousProcedures
-  );
+  const scoped = runtime.catalogs.procedures
+    .scope(selectedCategories)
+    .exclude(previousProcedures.map((p) => p.name));
 
-  if (scoped.size === 0) {
+  if (scoped.isEmpty()) {
     // Nothing left in scope — the caller widens to all categories and retries.
     console.warn(
       "[GenerateBridgeProcedureStepFromCategories] No unordered candidates in the selected categories — returning empty result."
     );
     return [];
   }
-
-  const mode: ProcedurePickMode = { kind: "grouped", grouped: scoped };
-  const effectiveProcedures = getEffectiveProcedureList(context?.language);
 
   const systemPrompt = buildPrompt(
     section(
@@ -1476,7 +1201,7 @@ The true diagnosis is known to you. A first step already narrowed the workup dow
     section(
       "Output format",
       `Return ONLY a valid JSON object:
-${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(mode) }))}`
+${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(scoped.mode) }))}`
     )
   );
 
@@ -1485,7 +1210,7 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(mode) }))}
 
     section("True diagnosis", diagnosisLabel(diagnosis)),
 
-    procedureCandidatesSection(mode),
+    scoped.render(),
 
     section("Additional instructions", userInstructions),
 
@@ -1498,12 +1223,14 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(mode) }))}
     `[GenerateBridgeProcedureStepFromCategories] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const BridgeSchema = z.object({ procedures: bridgePickGrammarSchema(mode) });
+  const BridgeSchema = z.object({
+    procedures: bridgePickGrammarSchema(scoped.mode),
+  });
 
   try {
     const rawProcedures = await retry(
       async (attempt, previousError) => {
-        const res = await getBalancedLLM(context?.llmConfig)
+        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(BridgeSchema)
           .invoke(
             [
@@ -1530,20 +1257,17 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(mode) }))}
       (error, attempt) => {
         const msg = `[GenerateBridgeProcedureStepFromCategories] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
-    return assembleBridgeResults(mode, rawProcedures, effectiveProcedures);
-  } catch (error) {
-    console.error(
-      "[GenerateBridgeProcedureStepFromCategories] Error:",
-      error
+    return assembleBridgeResults(
+      scoped.mode,
+      rawProcedures,
+      runtime.catalogs.procedures.list()
     );
+  } catch (error) {
+    console.error("[GenerateBridgeProcedureStepFromCategories] Error:", error);
     throw error;
   }
 }
@@ -1565,6 +1289,7 @@ const MatchSchema = z.object({
  * and specificity differences (e.g. "Type 2 Diabetes" ≡ "Diabetes Mellitus Type 2").
  */
 export async function matchDiagnosis(
+  runtime: GraphRuntime,
   proposedName: string,
   diagnosis: Diagnosis,
   context?: RequestContext
@@ -1603,7 +1328,7 @@ ${renderSchemaForPrompt(MatchSchema)}`
   try {
     const matches = await retry(
       async (attempt, previousError) => {
-        const res = await getDeterministicLLM(context?.llmConfig)
+        const res = await getDeterministicLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(MatchSchema)
           .invoke(
             [
@@ -1630,11 +1355,7 @@ ${renderSchemaForPrompt(MatchSchema)}`
       (error, attempt) => {
         const msg = `[MatchDiagnosis] Attempt ${attempt} failed: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 
@@ -1646,11 +1367,12 @@ ${renderSchemaForPrompt(MatchSchema)}`
 }
 
 export async function generateProceduresFromEnglish(
+  runtime: GraphRuntime,
   procedureNames: string[],
   language: ForeignLanguage,
   context?: RequestContext
 ): Promise<Record<string, string>> {
-  return translateTermsKeyed({
+  return translateTermsKeyed(runtime, {
     logTag: "GenerateProceduresFromEnglish",
     taskDescription: `Translate the provided procedures from English to a target language.`,
     contextLines: [`Target language: ${language}`],

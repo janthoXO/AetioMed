@@ -5,7 +5,6 @@ import {
   section,
   summarizeValidationError,
 } from "../utils/prompt.js";
-import { bus } from "@/core/graph/index.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "../utils/retry.js";
@@ -14,8 +13,10 @@ import {
   type ChiefComplaint,
 } from "../models/ChiefComplaint.js";
 import type { RequestContext } from "../utils/context.js";
+import type { GraphRuntime } from "../runtime.js";
 
 export async function generateChiefComplaint(
+  runtime: GraphRuntime,
   diagnosis: Diagnosis, // provided by the user
   outline: string,
   userInstructions?: string, // provided by the user | undefined
@@ -61,7 +62,7 @@ ${renderSchemaForPrompt(ChiefComplaintJsonSchema)}`
       async (attempt: number, previousError?: Error) => {
         // Balanced: one clinical sentence whose facts come from the outline —
         // fidelity matters more than variety.
-        const result = await getBalancedLLM(context?.llmConfig)
+        const result = await getBalancedLLM(runtime.llm, context?.llmConfig)
           .withStructuredOutput(ChiefComplaintJsonSchema)
           .invoke(
             [
@@ -92,11 +93,7 @@ ${renderSchemaForPrompt(ChiefComplaintJsonSchema)}`
       (error, attempt) => {
         const msg = `[GenerateChiefComplaintFromOutline] Attempt ${attempt} failed with error: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 

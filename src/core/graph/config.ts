@@ -10,6 +10,11 @@ const allowedLlmsRegex = new RegExp(
 
 export const ConfigSchema = z
   .object({
+    // Declared here (rather than read from the process environment directly
+    // inside the transform below) so this module performs no I/O of its
+    // own — the caller already passes the full environment to `.parse()`,
+    // so this is a pure re-slice of that same input, not a new read.
+    FEATURES: z.string().optional(),
     LLM_PROVIDER: PossibleProvidersSchema.optional(),
     LLM_MODEL: z.string().optional(),
     LLM_API_KEY: z.string().optional(),
@@ -52,6 +57,7 @@ export const ConfigSchema = z
   })
   .transform((env) => {
     const {
+      FEATURES,
       ALLOWED_LLMS,
       LLM_PROVIDER,
       LLM_MODEL,
@@ -60,7 +66,7 @@ export const ConfigSchema = z
       LLM_TEMPERATURE,
       ...rest
     } = env;
-    if (process.env.FEATURES?.includes("ALLOW_LLMS")) {
+    if (FEATURES?.includes("ALLOW_LLMS")) {
       return { ...rest, allowedLlms: ALLOWED_LLMS, llm: undefined };
     }
 

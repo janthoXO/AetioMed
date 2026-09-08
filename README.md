@@ -116,6 +116,8 @@ Translations are cache-aside. Known terms come from YAML translation files; anyt
 
 Trace step labels are translated too, warmed once up front so live progress events can be localized without slowing the pipeline.
 
+Every LLM-generated translation is persisted with `source: "generated"`, distinguishing it from a clinician-reviewed YAML row (`source: "curated"`); `pnpm translations:generated` lists the generated rows (optionally filtered with `--domain <name>`) so they can be reviewed and promoted into the curated YAML files. Determinism holds **per deployment**, not across deployments — a fresh install can generate a different German term for the same English source than an existing one did, since nothing forces two independent LLM calls to agree. If cross-deployment stability is ever needed, the answer is curated YAML, not better locking.
+
 ## Difficulty
 
 Difficulty (`easy` | `medium` | `hard`, default `medium`) is not a post-hoc filter — it is threaded through outline generation, outline evaluation, and workup results:

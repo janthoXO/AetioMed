@@ -1,8 +1,19 @@
 import * as fs from "node:fs/promises";
 import type { CompiledGraph } from "@langchain/langgraph";
 import { run } from "@mermaid-js/mermaid-cli";
-import { caseGraph } from "./caseGraph.js";
+import { buildCaseGraph } from "./caseGraph.js";
 import type { Node, Graph } from "@langchain/core/runnables/graph";
+import { EventBus } from "../../event-bus.js";
+import type { GraphRuntime } from "../runtime.js";
+import { InMemoryProcedureCatalog } from "../catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "../catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "../catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "../catalog/diagnosis/index.js";
+import { createLogger } from "../utils/logger.js";
+import type { Config } from "../config.js";
+import type { SymptomsRepo } from "../symptoms/repo.js";
+import type { AnamnesisRepo } from "../catalog/anamnesis/index.js";
+import type { ProceduresRepo } from "../catalog/procedures/index.js";
 
 function collapseSubgraphs(g: Graph, subgraphPrefixes: string[]) {
   const newNodes: Record<string, Node> = {};
@@ -86,6 +97,72 @@ export async function exportGraphOverviewPng(
     console.error(error);
   }
 }
+
+// Minimal runtime — this script only renders topology, it never calls the
+// LLM or touches the filesystem-backed catalogues, so every port is a bare
+// in-memory/no-op stand-in rather than the real app's composition root.
+const minimalConfig: Config = {
+  llm: {
+    provider: "ollama",
+    model: "unused",
+    temperature: 0.7,
+    apiKey: undefined,
+    url: undefined,
+  },
+  allowedLlms: undefined,
+  LLM_SMALL: false,
+};
+
+const minimalRuntime: GraphRuntime = {
+  llm: {
+    chat() {
+      throw new Error(
+        "exportGraphs: the LLM is never called while exporting graph topology."
+      );
+    },
+  },
+  catalogs: {
+    procedures: new InMemoryProcedureCatalog(),
+    anamnesis: new InMemoryAnamnesisCatalog(),
+    labels: new InMemoryLabelCatalog(),
+    diagnosis: new InMemoryDiagnosisCatalog(),
+  },
+  log: createLogger(new EventBus()),
+  clock: () => new Date(),
+};
+
+// No-op stand-ins: never called while exporting topology, so none of these
+// touch the filesystem or the embedded database.
+const minimalSymptomsRepo: SymptomsRepo = {
+  SymptomsRelatedToDiagnosisIcd: () => [],
+  getCachedSymptoms: () => undefined,
+  saveCachedSymptoms: () => {},
+};
+
+const minimalAnamnesisRepo: AnamnesisRepo = {
+  translationsFile: "",
+  getAnamnesisCategoryTranslationFromEnglish: () => undefined,
+  saveAnamnesisCategoryTranslations: () => {},
+  getEffectiveCategoryList: () => undefined,
+};
+
+const minimalProceduresRepo: ProceduresRepo = {
+  translationsFile: "",
+  getProcedureNameTranslationFromEnglish: () => undefined,
+  saveProcedureNameTranslation: () => {},
+  getEffectiveProcedureList: () => undefined,
+};
+
+const { caseGraph } = buildCaseGraph(
+  minimalRuntime,
+  new EventBus(),
+  minimalConfig,
+  {
+    symptoms: minimalSymptomsRepo,
+    anamnesis: minimalAnamnesisRepo,
+    procedures: minimalProceduresRepo,
+  }
+);
 
 await Promise.all([
   exportGraphPng(caseGraph, "case-graph"),

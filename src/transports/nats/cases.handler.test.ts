@@ -31,10 +31,10 @@ function fakeGraph(): GraphAppContext {
       llm: {
         provider: "ollama",
         model: "test-model",
-        temperature: 0.7,
       },
       allowedLlms: undefined,
-      LLM_SMALL: false,
+      PROCEDURE_PRESELECTION: false,
+      LANGUAGES: ["English", "German"],
     },
     runtime: {} as GraphAppContext["runtime"],
     generateCase: vi.fn(),

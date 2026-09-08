@@ -1,18 +1,21 @@
 # Pre-mapped trace label translations. Labels not listed here are translated
 # on demand by the AI warm-up and cached in-memory only (not written back here).
 German:
-  Retrieving or generating symptoms: Symptome werden abgerufen oder generiert
+  Resolving medical basis: Medizinische Grundlage wird ermittelt
   Generating case outline: Fallübersicht wird generiert
   Evaluating case outline: Fallübersicht wird geprüft
   Regenerating case outline: Fallübersicht wird überarbeitet
   Generating patient: Patient wird generiert
   Generating chief complaint: Hauptbeschwerde wird generiert
+  Rendering chief complaint content: Inhalt der Hauptbeschwerde wird gerendert
   Generating anamnesis: Anamnese wird generiert
+  Rendering anamnesis content: Anamnese-Inhalt wird gerendert
   Assembling case fields: Fall wird zusammengestellt
   Choosing next procedure: Nächste Untersuchung wird ausgewählt
   Generating procedure result: Untersuchungsergebnis wird generiert
   Bridging workup to diagnosis: Untersuchungen werden zur Diagnose überführt
-  Translating case to target language: Fall wird in die Zielsprache übersetzt
-  Translating procedure names: Untersuchungsnamen werden übersetzt
-  Translating anamnesis categories: Anamnesekategorien werden übersetzt
+  Translating procedure names and anamnesis categories: Untersuchungsnamen und Anamnesekategorien werden übersetzt
+  Translating case text to target language: Falltext wird in die Zielsprache übersetzt
+  Merging translated case: Übersetzter Fall wird zusammengeführt
   Translating diagnosis to English: Diagnose wird ins Englische übersetzt
+  Translating user instructions to English: Benutzeranweisungen werden ins Englische übersetzt

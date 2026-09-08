@@ -3,7 +3,7 @@ import { generateCaseOutline as generateCaseOutlineGateway } from "@/core/graph/
 import { evaluateOutline as evaluateOutlineGateway } from "@/core/graph/03aigateway/outlineEvaluation.aigateway.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
 import { GenerationFlagSchema } from "@/core/graph/models/GenerationFlags.js";
-import { SymptomSchema } from "@/core/graph/models/Symptom.js";
+import { BasisFragmentSchema } from "@/core/graph/medicalBasis/ports.js";
 import { DifficultySchema } from "@/core/graph/models/Difficulty.js";
 import type { OutlineEvaluation } from "@/core/graph/models/OutlineEvaluation.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
@@ -11,7 +11,7 @@ import type { Tool } from "@/core/graph/utils/tool.js";
 const GenerateCaseOutlineInputSchema = z.object({
   diagnosis: DiagnosisSchema,
   generationFlags: z.array(GenerationFlagSchema),
-  symptoms: z.array(SymptomSchema),
+  basisFragments: z.array(BasisFragmentSchema),
   difficulty: DifficultySchema,
   userInstructions: z.string().optional(),
   feedback: z.array(z.string()).optional(),
@@ -30,7 +30,7 @@ export const generateCaseOutline: Tool<
     {
       diagnosis,
       generationFlags,
-      symptoms,
+      basisFragments,
       difficulty,
       userInstructions,
       feedback,
@@ -43,7 +43,7 @@ export const generateCaseOutline: Tool<
       runtime,
       diagnosis,
       generationFlags.filter((f) => f !== "procedures"),
-      symptoms,
+      basisFragments,
       difficulty,
       userInstructions,
       feedback,

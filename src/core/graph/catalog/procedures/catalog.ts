@@ -78,10 +78,6 @@ class StaticProcedureCatalog implements ProcedureCatalog {
     );
   }
 
-  grouped(): Map<string, ProcedureName[]> {
-    return this.groupedMap;
-  }
-
   candidates(): ProcedureCandidates {
     return new ProcedureCandidatesImpl(this.resolveMode(), this.effectiveList);
   }

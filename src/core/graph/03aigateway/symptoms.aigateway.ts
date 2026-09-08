@@ -1,5 +1,4 @@
 import { SymptomSchema, type Symptom } from "../models/Symptom.js";
-import { bus } from "@/core/graph/index.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import { getDeterministicLLM, handleLangchainError } from "../utils/llm.js";
 import {
@@ -12,8 +11,10 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import z from "zod";
 import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
+import type { GraphRuntime } from "../runtime.js";
 
 export async function generateSymptomsOneShot(
+  runtime: GraphRuntime,
   diagnosis: Diagnosis,
   userInstructions?: string,
   symptomsToExclude: Symptom[] = [],
@@ -64,7 +65,10 @@ ${renderSchemaForPrompt(SymptomArrayWrapperSchema)}`
   try {
     const symptoms: Symptom[] = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getDeterministicLLM(context?.llmConfig)
+        const result = await getDeterministicLLM(
+          runtime.llm,
+          context?.llmConfig
+        )
           .withStructuredOutput(SymptomArrayWrapperSchema)
           .invoke(
             [
@@ -96,11 +100,7 @@ ${renderSchemaForPrompt(SymptomArrayWrapperSchema)}`
       (error, attempt) => {
         const msg = `[GenerateSymptomsOneShot] Attempt ${attempt} failed with error: ${error.message}`;
         console.error(msg);
-        bus.emit("Generation Log", {
-          msg,
-          logLevel: "error",
-          timestamp: new Date().toISOString(),
-        });
+        runtime.log.error(msg);
       }
     );
 

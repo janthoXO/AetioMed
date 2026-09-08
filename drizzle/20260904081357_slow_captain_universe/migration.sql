@@ -1,0 +1,1 @@
+ALTER TABLE `translation` ADD `source` text DEFAULT 'curated' NOT NULL;

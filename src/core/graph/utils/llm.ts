@@ -2,28 +2,41 @@ import { ChatOllama, type ChatOllamaInput } from "@langchain/ollama";
 import { ChatGoogle, type ChatGoogleParams } from "@langchain/google";
 import { ChatOpenAI, type ChatOpenAIFields } from "@langchain/openai";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import {
-  JsonOutputParser,
-  StructuredOutputParser,
-} from "@langchain/core/output_parsers";
 import { ModelUnreachableError } from "@/core/graph/errors/AppError.js";
-import { tool } from "@langchain/core/tools";
-import z from "zod";
-import { Ollama } from "ollama";
-import type { Message } from "@langchain/core/messages";
-import { jsonrepair } from "jsonrepair";
 import {
   LLMConfigSchema,
   type LLMConfig,
 } from "@/core/graph/models/LLMConfig.js";
-import { config } from "@/core/graph/index.js";
+import type { Config } from "@/core/graph/config.js";
+import type { LlmPort } from "@/core/graph/runtime.js";
 
 /**
- * Get an LLM instance based on current configuration.
- * Easily extendable to support cloud providers.
+ * The concrete `LlmPort` used outside tests: constructs a real LangChain
+ * chat model via `getLLM`, closing over the process's global default config
+ * (from env) so callers never read a module-scope singleton.
  */
-export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
-  const fullConfig = LLMConfigSchema.parse({ ...config.llm, ...llmConfig });
+export function createLlmPort(defaultConfig: Config): LlmPort {
+  return {
+    chat(llmConfig) {
+      return getLLM(defaultConfig, llmConfig);
+    },
+  };
+}
+
+/**
+ * Get an LLM instance for the given global default config, overridden by
+ * `llmConfig`. Callers no longer read a module-scope config singleton — the
+ * default comes from whatever `LlmPort` (see `runtime.ts`) they were built
+ * against, which is what makes this injectable/fakeable in tests.
+ */
+export function getLLM(
+  defaultConfig: Config,
+  llmConfig: Partial<LLMConfig> = {}
+): BaseChatModel {
+  const fullConfig = LLMConfigSchema.parse({
+    ...defaultConfig.llm,
+    ...llmConfig,
+  });
 
   console.debug("LLM Configuration:", fullConfig);
 
@@ -107,45 +120,16 @@ export function getLLM(llmConfig: Partial<LLMConfig> = {}): BaseChatModel {
   return chat;
 }
 
-export function getSearchTool(llmConfig: LLMConfig) {
-  switch (llmConfig.provider) {
-    case "ollama": {
-      return tool(
-        async ({ query }: { query: string }) => {
-          return await new Ollama({
-            headers: {
-              Authorization: "Bearer " + llmConfig.apiKey,
-            },
-          }).webSearch({ query: query });
-        },
-        {
-          name: "web_search",
-          description: "Searches the web for information related to a query.",
-          schema: z.object({
-            query: z.string().describe("The query to search for on the web"),
-          }),
-        }
-      );
-    }
-    case "google": {
-      return {
-        googleSearch: {},
-      };
-    }
-    default:
-      throw new Error(`Unsupported LLM Provider: ${llmConfig.provider}`);
-  }
-}
-
 /**
  * Get a low-temperature LLM for deterministic tasks: judges/evaluations,
  * yes-no decisions, translations, and factual enumeration where accuracy
  * matters and variety is unwanted.
  */
 export function getDeterministicLLM(
-  config: Partial<Omit<LLMConfig, "temperature">> = {}
+  llm: LlmPort,
+  llmConfig: Partial<Omit<LLMConfig, "temperature">> = {}
 ): BaseChatModel {
-  return getLLM({ ...config, temperature: 0.1 });
+  return llm.chat({ ...llmConfig, temperature: 0.1 });
 }
 
 /**
@@ -155,9 +139,10 @@ export function getDeterministicLLM(
  * in wording is still useful.
  */
 export function getBalancedLLM(
-  config: Partial<Omit<LLMConfig, "temperature">> = {}
+  llm: LlmPort,
+  llmConfig: Partial<Omit<LLMConfig, "temperature">> = {}
 ): BaseChatModel {
-  return getLLM({ ...config, temperature: 0.4 });
+  return llm.chat({ ...llmConfig, temperature: 0.4 });
 }
 
 /**
@@ -165,53 +150,10 @@ export function getBalancedLLM(
  * patient voice, demographics) where run-to-run variety is a feature.
  */
 export function getCreativeLLM(
-  config: Partial<Omit<LLMConfig, "temperature">> = {}
+  llm: LlmPort,
+  llmConfig: Partial<Omit<LLMConfig, "temperature">> = {}
 ): BaseChatModel {
-  return getLLM({ ...config, temperature: 0.7 });
-}
-
-/**
- * Decodes a string into an object based on the configured LLM format.
- * @param input
- * @returns
- */
-export async function decodeObject(
-  input: string,
-  schema?: z.ZodObject
-): Promise<object> {
-  const parser = schema
-    ? new StructuredOutputParser(schema)
-    : new JsonOutputParser();
-  return parser.parse(input);
-}
-
-export function parseStructuredResponse<T>(
-  response: string,
-  schema: z.ZodSchema<T>
-): T {
-  try {
-    return schema.parse(JSON.parse(response));
-  } catch {
-    const repaired = jsonrepair(response);
-    console.debug("Repaired JSON:", repaired);
-    return schema.parse(JSON.parse(repaired));
-  }
-}
-
-export function parseStructuredResponseAgent<T>(
-  result: { messages: Message[]; structuredResponse?: T },
-  schema: z.ZodSchema<T>
-): T {
-  if (result.structuredResponse) {
-    return result.structuredResponse;
-  }
-
-  const content = result.messages[result.messages.length - 1]?.content;
-  if (typeof content !== "string") {
-    throw new Error("LLM response content is not a string");
-  }
-
-  return parseStructuredResponse(content, schema);
+  return llm.chat({ ...llmConfig, temperature: 0.7 });
 }
 
 export function handleLangchainError(error: Error): never {

@@ -4,14 +4,8 @@ import { generateProceduresFromEnglish } from "@/core/graph/03aigateway/procedur
 import { getDeterministicLLM } from "@/core/graph/utils/llm.js";
 import { retry } from "@/core/graph/utils/retry.js";
 import { GenerationError } from "@/core/graph/errors/AppError.js";
-import {
-  getAnamnesisCategoryTranslationFromEnglish,
-  saveAnamnesisCategoryTranslations,
-} from "@/core/graph/03repo/anamnesis.repo.js";
-import {
-  getProcedureNameTranslationFromEnglish,
-  saveProcedureNameTranslation,
-} from "@/core/graph/03repo/procedures.repo.js";
+import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
+import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import { CaseSchema, type Case } from "@/core/graph/models/Case.js";
 import { AnamnesisCategorySchema } from "@/core/graph/models/Anamnesis.js";
 import type { AnamnesisCategory } from "@/core/graph/models/Anamnesis.js";
@@ -38,7 +32,11 @@ export const translateCase: Tool<
   description:
     "Translate all value fields in a generated medical case to the target language.",
   inputSchema: TranslateCaseInputSchema,
-  invoke: async ({ case: caseData, language, generationFlags }, context) => {
+  invoke: async (
+    { case: caseData, language, generationFlags },
+    runtime,
+    context
+  ) => {
     const systemPrompt = `You are a medical translator.
 Your task is to translate the provided medical case JSON content into ${language}.
 ${generationFlags.includes("procedures") ? "Do NOT translate the procedures relevance field, keep it as is." : ""}
@@ -50,7 +48,7 @@ RULES:
     const userPrompt = `Case to translate:\n${JSON.stringify(caseData)}`;
 
     // Deterministic: translation must be faithful, not creative.
-    const llm = getDeterministicLLM(context?.llmConfig);
+    const llm = getDeterministicLLM(runtime.llm, context?.llmConfig);
 
     return retry(
       async () => {
@@ -80,43 +78,54 @@ const TranslateAnamnesisCategoriesFromEnglishInputSchema = z.object({
   language: ForeignLanguageSchema,
 });
 
-export const translateAnamnesisCategoriesFromEnglish: Tool<
+/**
+ * Category/procedure translation lookups live on the repos, not on the
+ * (deliberately minimal) `ProcedureCatalog`/`AnamnesisCatalog` ports from
+ * issue 01 — so these two tools are built from the repos directly, closed
+ * over at graph-assembly time, rather than reading `runtime.catalogs`.
+ */
+export function createTranslateAnamnesisCategoriesFromEnglish(
+  anamnesisRepo: AnamnesisRepo
+): Tool<
   z.infer<typeof TranslateAnamnesisCategoriesFromEnglishInputSchema>,
   Record<AnamnesisCategory, AnamnesisCategory>
-> = {
-  name: "translate_anamnesis_categories_from_english",
-  description:
-    "Translate anamnesis category names from English to the target language, using a cache.",
-  inputSchema: TranslateAnamnesisCategoriesFromEnglishInputSchema,
-  invoke: async ({ categories, language }, context) => {
-    const translations: Record<AnamnesisCategory, AnamnesisCategory> = {};
-    const missing: AnamnesisCategory[] = [];
+> {
+  return {
+    name: "translate_anamnesis_categories_from_english",
+    description:
+      "Translate anamnesis category names from English to the target language, using a cache.",
+    inputSchema: TranslateAnamnesisCategoriesFromEnglishInputSchema,
+    invoke: async ({ categories, language }, runtime, context) => {
+      const translations: Record<AnamnesisCategory, AnamnesisCategory> = {};
+      const missing: AnamnesisCategory[] = [];
 
-    for (const category of categories) {
-      const cached = getAnamnesisCategoryTranslationFromEnglish(
-        category,
-        language
-      );
-      if (cached) {
-        translations[category] = cached;
-      } else {
-        missing.push(category);
+      for (const category of categories) {
+        const cached = anamnesisRepo.getAnamnesisCategoryTranslationFromEnglish(
+          category,
+          language
+        );
+        if (cached) {
+          translations[category] = cached;
+        } else {
+          missing.push(category);
+        }
       }
-    }
 
-    if (missing.length > 0) {
-      const generated = await generateAnamnesisCategoriesFromEnglish(
-        missing,
-        language,
-        context
-      );
-      Object.assign(translations, generated);
-      saveAnamnesisCategoryTranslations(generated, language);
-    }
+      if (missing.length > 0) {
+        const generated = await generateAnamnesisCategoriesFromEnglish(
+          runtime,
+          missing,
+          language,
+          context
+        );
+        Object.assign(translations, generated);
+        anamnesisRepo.saveAnamnesisCategoryTranslations(generated, language);
+      }
 
-    return translations;
-  },
-};
+      return translations;
+    },
+  };
+}
 
 // ─── translate_procedure_names_from_english ───────────────────────────────────
 
@@ -125,43 +134,58 @@ const TranslateProcedureNamesFromEnglishInputSchema = z.object({
   language: ForeignLanguageSchema,
 });
 
-export const translateProcedureNamesFromEnglish: Tool<
+export function createTranslateProcedureNamesFromEnglish(
+  proceduresRepo: ProceduresRepo
+): Tool<
   z.infer<typeof TranslateProcedureNamesFromEnglishInputSchema>,
   Record<ProcedureName, ProcedureName>
-> = {
-  name: "translate_procedure_names_from_english",
-  description:
-    "Translate procedure names from English to the target language, using a cache.",
-  inputSchema: TranslateProcedureNamesFromEnglishInputSchema,
-  invoke: async ({ procedureNames, language }, context) => {
-    const translations: Record<ProcedureName, ProcedureName> = {};
-    const missing: ProcedureName[] = [];
+> {
+  return {
+    name: "translate_procedure_names_from_english",
+    description:
+      "Translate procedure names from English to the target language, using a cache.",
+    inputSchema: TranslateProcedureNamesFromEnglishInputSchema,
+    invoke: async ({ procedureNames, language }, runtime, context) => {
+      const translations: Record<ProcedureName, ProcedureName> = {};
+      const missing: ProcedureName[] = [];
 
-    for (const name of procedureNames) {
-      const cached = getProcedureNameTranslationFromEnglish(name, language);
-      if (cached) {
-        translations[name] = cached;
-      } else {
-        missing.push(name);
+      for (const name of procedureNames) {
+        const cached = proceduresRepo.getProcedureNameTranslationFromEnglish(
+          name,
+          language
+        );
+        if (cached) {
+          translations[name] = cached;
+        } else {
+          missing.push(name);
+        }
       }
-    }
 
-    if (missing.length > 0) {
-      const generated = await generateProceduresFromEnglish(
-        missing,
-        language,
-        context
-      );
-      Object.assign(translations, generated);
-      saveProcedureNameTranslation(generated, language);
-    }
+      if (missing.length > 0) {
+        const generated = await generateProceduresFromEnglish(
+          runtime,
+          missing,
+          language,
+          context
+        );
+        Object.assign(translations, generated);
+        proceduresRepo.saveProcedureNameTranslation(generated, language);
+      }
 
-    return translations;
-  },
-};
+      return translations;
+    },
+  };
+}
 
-export const translationFromEnglishTools = {
-  translateCase,
-  translateAnamnesisCategoriesFromEnglish,
-  translateProcedureNamesFromEnglish,
-} as const;
+export function createTranslationFromEnglishTools(repos: {
+  anamnesis: AnamnesisRepo;
+  procedures: ProceduresRepo;
+}) {
+  return {
+    translateCase,
+    translateAnamnesisCategoriesFromEnglish:
+      createTranslateAnamnesisCategoriesFromEnglish(repos.anamnesis),
+    translateProcedureNamesFromEnglish:
+      createTranslateProcedureNamesFromEnglish(repos.procedures),
+  } as const;
+}

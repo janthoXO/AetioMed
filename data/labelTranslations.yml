@@ -1,22 +1,18 @@
 # Pre-mapped trace label translations. Labels not listed here are translated
 # on demand by the AI warm-up and cached in-memory only (not written back here).
 German:
-  Generating relevant symptoms: Relevante Symptome werden generiert
-  Retrieving symptoms from UMLS: Symptome werden aus UMLS abgerufen
-  Thinking about case structure: Fallstruktur wird überlegt
+  Retrieving or generating symptoms: Symptome werden abgerufen oder generiert
   Generating case outline: Fallübersicht wird generiert
   Evaluating case outline: Fallübersicht wird geprüft
   Regenerating case outline: Fallübersicht wird überarbeitet
-  Thinking about patient profile: Patientenprofil wird überlegt
   Generating patient: Patient wird generiert
-  Thinking about chief complaint: Hauptbeschwerde wird überlegt
   Generating chief complaint: Hauptbeschwerde wird generiert
-  Thinking about anamnesis: Anamnese wird überlegt
   Generating anamnesis: Anamnese wird generiert
-  Thinking about procedures: Untersuchungen werden überlegt
-  Generating procedures: Untersuchungen werden generiert
+  Assembling case fields: Fall wird zusammengestellt
+  Choosing next procedure: Nächste Untersuchung wird ausgewählt
+  Generating procedure result: Untersuchungsergebnis wird generiert
+  Bridging workup to diagnosis: Untersuchungen werden zur Diagnose überführt
   Translating case to target language: Fall wird in die Zielsprache übersetzt
   Translating procedure names: Untersuchungsnamen werden übersetzt
   Translating anamnesis categories: Anamnesekategorien werden übersetzt
-  Translating anamnesis categories to English: Anamnesekategorien werden ins Englische übersetzt
   Translating diagnosis to English: Diagnose wird ins Englische übersetzt

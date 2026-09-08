@@ -23,8 +23,14 @@ export const generatePatientFromOutline: Tool<
   name: "generate_patient_from_outline",
   description: "Generate patient demographics from a pre-built case outline.",
   inputSchema: GeneratePatientFromOutlineInputSchema,
-  invoke: ({ diagnosis, outline, userInstructions }, context) =>
-    generatePatientGateway(diagnosis, outline, userInstructions, context),
+  invoke: ({ diagnosis, outline, userInstructions }, runtime, context) =>
+    generatePatientGateway(
+      runtime,
+      diagnosis,
+      outline,
+      userInstructions,
+      context
+    ),
 };
 
 // ─── Chief Complaint ──────────────────────────────────────────────────────────
@@ -42,8 +48,9 @@ export const generateChiefComplaintFromOutline: Tool<
   name: "generate_chief_complaint_from_outline",
   description: "Generate the chief complaint from a pre-built case outline.",
   inputSchema: GenerateChiefComplaintFromOutlineInputSchema,
-  invoke: ({ diagnosis, outline, userInstructions }, context) =>
+  invoke: ({ diagnosis, outline, userInstructions }, runtime, context) =>
     generateChiefComplaintGateway(
+      runtime,
       diagnosis,
       outline,
       userInstructions,
@@ -66,8 +73,14 @@ export const generateAnamnesisFromOutline: Tool<
   name: "generate_anamnesis_from_outline",
   description: "Generate patient anamnesis from a pre-built case outline.",
   inputSchema: GenerateAnamnesisFromOutlineInputSchema,
-  invoke: ({ diagnosis, outline, userInstructions }, context) =>
-    generateAnamnesisGateway(diagnosis, outline, userInstructions, context),
+  invoke: ({ diagnosis, outline, userInstructions }, runtime, context) =>
+    generateAnamnesisGateway(
+      runtime,
+      diagnosis,
+      outline,
+      userInstructions,
+      context
+    ),
 };
 
 export const generationTools = {

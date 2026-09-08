@@ -1,115 +1,173 @@
 import { describe, expect, it } from "vitest";
-import {
-  defaultPlanFor,
-  renderRequests,
-  type ContentUnit,
-} from "./pipeline.js";
-import { createTextModalityProvider } from "./providers/text.js";
-import type { ModalityProvider } from "./ports.js";
+import { renderPlan } from "./pipeline.js";
+import type { ModalityPlan, ModalityProvider } from "./ports.js";
+import z from "zod";
+import { createLogger } from "@/core/graph/utils/logger.js";
+import { EventBus } from "@/core/event-bus.js";
 
-describe("defaultPlanFor (registry size 1 — no decide_modality node compiled)", () => {
-  it("plans one request per unit, in the sole provider's MIME, carrying the unit's whole text", () => {
-    const units: ContentUnit[] = [
-      { key: "a", text: "Text A" },
-      { key: "b", text: "Text B" },
-    ];
-    const plan = defaultPlanFor(units, [createTextModalityProvider()]);
+function noopLogger() {
+  return createLogger(new EventBus());
+}
 
-    expect(plan).toEqual({
-      a: [{ modality: "text/plain", alt: "Text A" }],
-      b: [{ modality: "text/plain", alt: "Text B" }],
-    });
-  });
+function makeCountingTextProvider(): {
+  provider: ModalityProvider<unknown>;
+  calls: unknown[][];
+} {
+  const calls: unknown[][] = [];
+  const provider: ModalityProvider<unknown> = {
+    id: "text",
+    mime: "text/plain",
+    description: "test text provider",
+    inputSchema: z.unknown(),
+    render: async (batch) => {
+      calls.push(batch);
+      return (batch as { instruction: string }[]).map((b) =>
+        new TextEncoder().encode(b.instruction)
+      );
+    },
+  };
+  return { provider, calls };
+}
 
-  it("throws when given an empty provider list", () => {
-    expect(() => defaultPlanFor([{ key: "a", text: "x" }], [])).toThrow();
+describe("renderPlan — batching (issue 21 §6)", () => {
+  it("makes exactly ONE render call per provider, carrying every unit's requests for that provider", async () => {
+    const { provider, calls } = makeCountingTextProvider();
+    const plan: ModalityPlan = {
+      "Current Symptoms": [
+        { provider: "text", input: { instruction: "fever" }, alt: "Fever." },
+      ],
+      "Past Illnesses": [
+        { provider: "text", input: { instruction: "none" }, alt: "None." },
+      ],
+    };
+
+    const result = await renderPlan([provider], plan, undefined, noopLogger());
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual([
+      { instruction: "fever" },
+      { instruction: "none" },
+    ]);
+    expect(
+      new TextDecoder().decode(result["Current Symptoms"]![0]!.value)
+    ).toBe("fever");
+    expect(new TextDecoder().decode(result["Past Illnesses"]![0]!.value)).toBe(
+      "none"
+    );
+    expect(result["Current Symptoms"]![0]!.alt).toBe("Fever.");
   });
 });
 
-describe("renderRequests", () => {
-  it("resolves every request via its matching provider and carries the request's own alt", async () => {
-    const image: ModalityProvider = {
-      id: "image",
-      produces: ["image/png"],
-      render: async () => new TextEncoder().encode("bytes"),
-    };
-
-    const parts = await renderRequests(
-      [createTextModalityProvider(), image],
-      [
-        { modality: "text/plain", alt: "hello" },
-        { modality: "image/png", alt: "a picture of hello" },
-      ],
-      undefined
-    );
-
-    expect(parts).toEqual([
-      {
-        type: "text/plain",
-        alt: "hello",
-        value: new TextEncoder().encode("hello"),
-      },
-      {
-        type: "image/png",
-        alt: "a picture of hello",
-        value: new TextEncoder().encode("bytes"),
-      },
-    ]);
-  });
-
-  it("orders results by PLANNED order, not completion order — the first-planned request resolves last (issue 13 §5)", async () => {
-    const slow: ModalityProvider = {
+describe("renderPlan — planned order, not completion order (issue 21 §6)", () => {
+  it("scatters results back in PLANNED order — the first-planned request resolves last", async () => {
+    const slow: ModalityProvider<unknown> = {
       id: "slow",
-      produces: ["application/x-slow"],
-      async render(alt) {
+      mime: "application/x-slow",
+      description: "slow",
+      inputSchema: z.unknown(),
+      render: async (batch) => {
         await new Promise((r) => setTimeout(r, 30));
-        return new TextEncoder().encode(`slow:${alt}`);
+        return (batch as string[]).map((v) =>
+          new TextEncoder().encode(`slow:${v}`)
+        );
       },
     };
-    const fast: ModalityProvider = {
+    const fast: ModalityProvider<unknown> = {
       id: "fast",
-      produces: ["application/x-fast"],
-      render: async (alt) => new TextEncoder().encode(`fast:${alt}`),
+      mime: "application/x-fast",
+      description: "fast",
+      inputSchema: z.unknown(),
+      render: async (batch) =>
+        (batch as string[]).map((v) => new TextEncoder().encode(`fast:${v}`)),
     };
 
-    const parts = await renderRequests(
-      [slow, fast],
-      [
-        { modality: "application/x-slow", alt: "first planned" },
-        { modality: "application/x-fast", alt: "second planned" },
+    const plan: ModalityPlan = {
+      unit: [
+        { provider: "slow", input: "a", alt: "slow alt" },
+        { provider: "fast", input: "b", alt: "fast alt" },
       ],
-      undefined
+    };
+
+    const result = await renderPlan(
+      [slow, fast],
+      plan,
+      undefined,
+      noopLogger()
     );
 
-    expect(parts.map((p) => p.type)).toEqual([
+    expect(result.unit!.map((p) => p.type)).toEqual([
       "application/x-slow",
       "application/x-fast",
     ]);
+    expect(new TextDecoder().decode(result.unit![0]!.value)).toBe("slow:a");
+    expect(new TextDecoder().decode(result.unit![1]!.value)).toBe("fast:b");
   });
+});
 
-  it("throws a descriptive error when no registered provider produces the requested modality", async () => {
-    await expect(
-      renderRequests(
-        [createTextModalityProvider()],
-        [{ modality: "image/png", alt: "x" }],
-        undefined
-      )
-    ).rejects.toThrow(/image\/png/);
-  });
-
-  it("resolves with a fake non-LLM provider (render: async alt => encode(alt))", async () => {
-    const fake: ModalityProvider = {
-      id: "fake",
-      produces: ["application/x-fake"],
-      render: async (alt) => new TextEncoder().encode(alt),
+describe("renderPlan — failure policy", () => {
+  it("logs and drops a throwing provider's parts, without failing units another provider still served", async () => {
+    const throwing: ModalityProvider<unknown> = {
+      id: "broken",
+      mime: "application/x-broken",
+      description: "always throws",
+      inputSchema: z.unknown(),
+      render: async () => {
+        throw new Error("boom");
+      },
+    };
+    const ok: ModalityProvider<unknown> = {
+      id: "ok",
+      mime: "text/plain",
+      description: "ok",
+      inputSchema: z.unknown(),
+      render: async (batch) =>
+        (batch as string[]).map((v) => new TextEncoder().encode(v)),
     };
 
-    const parts = await renderRequests(
-      [fake],
-      [{ modality: "application/x-fake", alt: "payload" }],
-      undefined
+    const plan: ModalityPlan = {
+      mixed: [
+        { provider: "broken", input: "x", alt: "broken alt" },
+        { provider: "ok", input: "kept", alt: "kept alt" },
+      ],
+    };
+
+    const result = await renderPlan(
+      [throwing, ok],
+      plan,
+      undefined,
+      noopLogger()
     );
 
-    expect(new TextDecoder().decode(parts[0].value)).toBe("payload");
+    expect(result.mixed).toHaveLength(1);
+    expect(result.mixed![0]!.alt).toBe("kept alt");
+  });
+
+  it("drops parts for a provider id the plan names but the registry does not carry", async () => {
+    const plan: ModalityPlan = {
+      unit: [{ provider: "missing", input: "x", alt: "x" }],
+    };
+
+    await expect(renderPlan([], plan, undefined, noopLogger())).rejects.toThrow(
+      /zero parts/i
+    );
+  });
+
+  it("throws when a unit is left with zero parts after every provider for it failed", async () => {
+    const throwing: ModalityProvider<unknown> = {
+      id: "broken",
+      mime: "application/x-broken",
+      description: "always throws",
+      inputSchema: z.unknown(),
+      render: async () => {
+        throw new Error("boom");
+      },
+    };
+    const plan: ModalityPlan = {
+      unit: [{ provider: "broken", input: "x", alt: "x" }],
+    };
+
+    await expect(
+      renderPlan([throwing], plan, undefined, noopLogger())
+    ).rejects.toThrow(/zero parts/i);
   });
 });

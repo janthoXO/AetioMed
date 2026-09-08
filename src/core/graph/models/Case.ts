@@ -12,7 +12,7 @@ import { PatientSchema } from "./Patient.js";
  * (issue 11), which an LLM must never be asked to emit; field generators
  * produce plain strings under their own `z.string()`-based schemas instead
  * (see e.g. `ChiefComplaintJsonSchema`, `buildAnamnesisSchema`,
- * `ProcedureResultTextSchema`) and the gateway wraps them with `textPart()`.
+ * `ProcedureResultTextSchema`) and the gateway wraps them into `ContentPart`s.
  */
 export const CaseSchema = z.object({
   patient: PatientSchema.optional(),

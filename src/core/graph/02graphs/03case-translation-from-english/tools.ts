@@ -9,7 +9,11 @@ import { AnamnesisCategorySchema } from "@/core/graph/models/Anamnesis.js";
 import type { AnamnesisCategory } from "@/core/graph/models/Anamnesis.js";
 import { ProcedureNameSchema } from "@/core/graph/models/Procedure.js";
 import type { ProcedureName } from "@/core/graph/models/Procedure.js";
-import { textPart, type ContentPart } from "@/core/graph/models/ContentPart.js";
+import {
+  encodeText,
+  textOfPart,
+  type ContentPart,
+} from "@/core/graph/models/ContentPart.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
 
 // ─── translate_anamnesis_categories_from_english ──────────────────────────────
@@ -122,7 +126,7 @@ export function createTranslateProcedureNamesFromEnglish(
 
 /**
  * Every `ContentPart[]` field on `Case`, paired with the path prefix its
- * parts are keyed under (see {@link caseAltMap}/{@link applyCaseAltTranslations}
+ * parts are keyed under (see {@link caseTextMap}/{@link applyCaseTextTranslations}
  * below). Index by position, not by name (issue 12 §2) — a procedure name is
  * itself translated by the disjoint defined pass, so keying the rest pass on
  * it would couple the two passes right where the point is that they are
@@ -147,31 +151,48 @@ function contentPartFields(
 }
 
 /**
- * Build the flat, keyed map of every `ContentPart.alt` in the case — the
- * rest pass's entire input. Keys look like `chiefComplaint.0`,
- * `anamnesis.2.answer.0`, `procedures.1.result.3`. Only `alt` (plain text)
- * ever appears in the map's values — `value` (bytes) never reaches this map,
- * and therefore never reaches the translation prompt built from it.
+ * Build the flat, keyed map of every `ContentPart` text fragment in the
+ * case — the rest pass's entire input. Keys look like `chiefComplaint.0.alt`,
+ * `anamnesis.2.answer.0.text`, `procedures.1.result.3.alt`.
+ *
+ * Two keys per part now that `alt` and `value` carry independent text
+ * (issue 21 §2): every part contributes an `.alt` entry (its short label),
+ * and a `text/*` part additionally contributes a `.text` entry (its
+ * decoded prose, via `textOfPart`) — a non-text part's `value` is bytes and
+ * never reaches this map, so it has no `.text` entry. Only these strings
+ * ever appear in the map's values; bytes never reach the translation prompt
+ * built from it.
+ *
+ * Today `alt` and the decoded text are equal for every text part (both
+ * generators still set `alt` to the same string they render into `value`),
+ * so the `.alt` and `.text` entries for a given text part carry the same
+ * value and get translated to the same output. That duplication is expected
+ * at this step, not a bug to optimise away — a planner-authored `alt` that
+ * genuinely differs from the rendered prose (issue 21 §5) is what makes the
+ * two keys diverge.
  */
-export function caseAltMap(c: Case): Record<string, string> {
+export function caseTextMap(c: Case): Record<string, string> {
   const map: Record<string, string> = {};
   for (const { prefix, parts } of contentPartFields(c)) {
     parts.forEach((part, i) => {
-      map[`${prefix}.${i}`] = part.alt;
+      map[`${prefix}.${i}.alt`] = part.alt;
+      if (part.type === "text/plain") {
+        map[`${prefix}.${i}.text`] = textOfPart(part);
+      }
     });
   }
   return map;
 }
 
 /**
- * Apply a translated `caseAltMap` back onto a case's content-part fields.
- * Per part: a `text/plain` part has `value` **re-derived** as
- * `utf8(translatedAlt)` via `textPart()` — never translated independently,
- * so `alt` and `value` cannot drift. Any other MIME type passes `value`
- * through byte-identical, translating only `alt` — excluded from
- * re-derivation by construction, not by a prompt instruction. A missing key
- * (translation didn't cover it) falls back to the original `alt`/`value`
- * untouched. Part count and order are always preserved (issue 13).
+ * Apply a translated `caseTextMap` back onto a case's content-part fields.
+ * Per part: a `text/plain` part takes its translated `.text` entry into
+ * `value` (via `encodeText`) and its translated `.alt` entry into `alt` —
+ * the two are translated, and applied, independently, since they are no
+ * longer derived from one another. Any other MIME type passes `value`
+ * through byte-identical, translating only `alt`. A missing key (translation
+ * didn't cover it) falls back to the original `alt`/`value` untouched. Part
+ * count and order are always preserved (issue 13).
  *
  * Returns only the `ContentPart[]` fields — `patient`, `procedures[].name`,
  * `procedures[].relevance` and `anamnesis[].category` are untouched by this
@@ -179,16 +200,23 @@ export function caseAltMap(c: Case): Record<string, string> {
  * `definedTranslations` to the latter two and passes everything else through
  * from the original case.
  */
-export function applyCaseAltTranslations(
+export function applyCaseTextTranslations(
   c: Case,
   translations: Record<string, string>
 ): Pick<Case, "chiefComplaint" | "anamnesis" | "procedures"> {
   function translateParts(prefix: string, parts: ContentPart[]): ContentPart[] {
     return parts.map((part, i) => {
-      const translatedAlt = translations[`${prefix}.${i}`] ?? part.alt;
-      return part.type === "text/plain"
-        ? textPart(translatedAlt)
-        : { ...part, alt: translatedAlt };
+      const translatedAlt = translations[`${prefix}.${i}.alt`] ?? part.alt;
+      if (part.type !== "text/plain") {
+        return { ...part, alt: translatedAlt };
+      }
+      const translatedText =
+        translations[`${prefix}.${i}.text`] ?? textOfPart(part);
+      return {
+        type: "text/plain",
+        value: encodeText(translatedText),
+        alt: translatedAlt,
+      };
     });
   }
 
@@ -217,8 +245,9 @@ const TranslateRestValuesInputSchema = z.object({
 });
 
 /**
- * One LLM call translating every `ContentPart.alt` in the case, keyed by
- * stable path — see {@link caseAltMap}. Never sent: `value` bytes, procedure
+ * One LLM call translating every `ContentPart` text fragment in the case
+ * (both its `alt` label and, for text parts, its decoded prose), keyed by
+ * stable path — see {@link caseTextMap}. Never sent: `value` bytes, procedure
  * names, anamnesis categories, or any enum/identifier/number field (those
  * are either the defined pass's job or pass through untouched — issue 12
  * §1's table).

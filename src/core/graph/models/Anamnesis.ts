@@ -30,7 +30,7 @@ export type Anamnesis = z.infer<typeof AnamnesisSchema>;
 /**
  * LLM-facing shape: the generator produces ordinary text under a plain
  * `z.string()` `answer` field — the LLM is never asked to emit bytes or
- * base64 (issue 11 §3). The gateway wraps `answer` with `textPart()` to
+ * base64 (issue 11 §3). The gateway wraps `answer` into a `ContentPart` to
  * build a domain `AnamnesisField` above.
  */
 const AnamnesisFieldTextSchema = z.object({

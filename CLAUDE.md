@@ -55,6 +55,12 @@ everything explicitly, in order:
 4. `createCaseGenerationService(graph, bus)`
 5. starts the transports whose flags are set
 
+It also owns shutdown (issue 18): `createApp()` returns `{ bus, shutdown }`, where `shutdown()`
+closes everything it started in the **reverse** of construction order — REST, then NATS, then
+the DB last — bounded by a 5-second deadline (`src/shutdown.ts`'s `installSignalHandlers`,
+wired up by `src/index.ts`). No module under `src/core/graph/` or `src/transports/` registers
+a process signal handler any more; each returns a closer instead.
+
 **`GraphRuntime`** (`src/core/graph/runtime.ts`) is the single seam graph construction goes
 through: the LLM port, the four catalogs, a logger and a clock. It is captured by **closure
 at graph-assembly time**, not threaded through node signatures and not carried on
@@ -116,8 +122,9 @@ and `ContentPart[]` fields are always projected through `textOf` first
 structure is language-independent and cacheable; a client wanting localization already has it
 on the SSE `label` channel, per job. `traceNode`'s emitted `nodeId` is the qualified path
 LangGraph itself uses for a nested node (e.g.
-`generation_phase:presentation_phase:chief_complaint_generate:generate_content`), not the bare
-name passed to `traceNode` — two different subgraphs reuse bare names like `generate_content`,
+`generation_phase:presentation_phase:chief_complaint_generate:plan_content`), not the bare
+name passed to `traceNode` — two different subgraphs reuse bare names like `plan_content` and
+`render_parts`,
 so `TraceNodeFn.scope()` (`nodeWrapper.ts`) threads the same qualification LangGraph computes
 at every point a compiled subgraph is mounted.
 
@@ -203,8 +210,9 @@ see the Language section below for why the two differ.
 The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs up to three phases — the first is compiled in only when the medical-basis registry is non-empty:
 
 - **`basis_resolve`** — runs first, and only when the medical-basis registry (`src/core/graph/medicalBasis/`) is non-empty: an absent registry means an absent node, not a node that runs and does nothing. The registry is a plain list built once in the composition root (`graph/index.ts`'s `createMedicalBasisRegistry`), **not** a third compile-time flag — its _size_ decides whether `basis_resolve` is compiled in, the same rule `caseGraph.ts` applies to `TRANSLATION_SANDWICH`/`PROCEDURE_PRESELECTION`. Every registered `MedicalBasisProvider` (`medicalBasis/ports.ts`) is run concurrently and their `BasisFragment`s are concatenated in **registry order** (not completion order) — there is no LLM call spent deciding which source to use; a throwing provider is logged and skipped, a hanging one is bounded by the request's abort signal. `medicalBasis/render.ts` renders the concatenated fragments into one "Medical basis" section of the plan's **user** message only (never the system message), each fragment fenced and tagged with its `sourceId`/`label`/`retrievedAt`(/`licence`) — the fence delimiters are escaped if they appear inside a fragment's own content, so a fragment can never close its own fence early. `medicalBasis/providers/umlsSymptoms.ts` is the only provider today: it reproduces the former `01symptom/` node verbatim — a static UMLS symptom floor (per ICD code) unioned with cache-aside LLM-generated additions (skips the LLM on a fresh cache hit) — as a single "Typical symptoms" fragment.
-- **`02presentation/`** — `generation/` generates a detailed case outline (the complete factual record of the case), then a combined outline evaluate ⇄ revise `Command` loop (max 2 iterations) judging obviousness AND clinical consistency in one LLM call; once accepted, fans out via `Send` to `patient_generate` / `chief_complaint_generate` / `anamnesis_generate` (gated per `generationFlags`), joining at `case_fan_in`. There is no post-fan-out consistency check. `chief_complaint_generate` and `anamnesis_generate` are **compiled subgraphs** (`chiefComplaintGraph.ts`, `anamnesisGraph.ts`), not function nodes — see "Modality Registry" below for their internal shape. `patient_generate` stays a plain function node: `patient` is not a `ContentPart[]` field (it stayed a structured `Patient` object through issue 11), so there is nothing for a modality provider to render — the `Send` payload (`{ diagnosis, outline, userInstructions }`) is identical across all three targets either way, whether the target is a function or a compiled subgraph.
-- **`03procedure/`** — only when the `procedures` flag is set. A **blinded solver** loop (max 6 iterations) with exactly 3 nodes: `blinded_step` orders procedures without knowing the true diagnosis, `result_step` generates their results non-blinded; when the solver commits to a diagnosis, an LLM judge checks the match (loop continues with `ruledOutDiagnoses` on mismatch). On exhaustion, a `bridge` node generates confirmatory procedures for the true diagnosis. The approved procedure list is presented (and picked) grouped by category (`{ "Category": ["Name", …] }`, with uncategorized procedures under a synthetic `"General"` bucket) rather than as one flat list — this applies to both the blinded pick and the (non-blinded) bridge pick, the latter grouping full `{name, relevance, result}` objects per category. Procedure selection is a `ProcedureStrategy` port (`03procedure/strategy/`: `ports.ts`, `directPick.ts`, `categoryScopedPick.ts`, `index.ts`'s `createProcedureStrategy`) rather than a branch of a global config read inside the node — `blinded_step` and `bridge` call `strategy.nextStep()` / `strategy.bridge()` and never read `PROCEDURE_PRESELECTION` themselves; the strategy is selected once at graph-assembly time and threaded down as a constructed object. `DirectPick` is one LLM call against the full candidate list per step (the default). `CategoryScopedPick` — selected only when `PROCEDURE_PRESELECTION` is set **and** the approved list has real categories (a flat catalogue has nothing to scope on) — splits that single call into two sequential calls (a category-only pick, over-inclusive, followed by a procedure/results-only pick scoped to those categories plus `"General"`); the graph shape stays fixed at 3 nodes regardless of which strategy runs. The blinded scoped pick may answer with an `expand` action requesting additional categories: a bounded loop in `CategoryScopedPick.nextStep` unions them into a local scope set and retries (max 2 expansions per `blinded_step`; the expand grammar only admits categories not yet in scope, and past the cap the branch is removed from the schema entirely — the visited set lives in code, never the model). The bridge's scoped pick instead retries deterministically once with all categories if it returns empty. The blinded step's own compiled child graph (built once per strategy, invoked — not added as a node — from inside `blinded_step`) has a state schema that structurally omits `diagnosis`: the `BlindedView` type already makes passing it a compile error, and the child graph is a runtime backstop on top of that (LangGraph filters input against a graph's state schema before it reaches a channel). `matchDiagnosis` stays in the parent node, outside the blinded path, since it's an oracle call. Additional guards: already-ordered procedures are excluded from every candidate list/grammar (duplicate orders are impossible by construction), category-pick prompts show per-category counts plus sample names, and blinded prompts include the remaining iteration budget as convergence pressure.
+- **`02presentation/`** — `generation/` generates a detailed case outline (the complete factual record of the case), then a combined outline evaluate ⇄ revise `Command` loop (max 2 iterations) judging obviousness AND clinical consistency in one LLM call; once accepted, fans out via `Send` to `patient_generate` / `chief_complaint_generate` / `anamnesis_generate` (gated per `generationFlags`), joining at `case_fan_in`. There is no post-fan-out consistency check. `chief_complaint_generate` and `anamnesis_generate` are **compiled subgraphs** (`chiefComplaint/index.ts`, `anamnesis/index.ts`), not function nodes — see "Modality Planning and Rendering" below for their internal `plan_content → render_parts` shape. `patient_generate` stays a plain function node: `patient` is not a `ContentPart[]` field (it stayed a structured `Patient` object through issue 11), so there is nothing for a modality provider to render — the `Send` payload (`{ diagnosis, outline, userInstructions }`) is identical across all three targets either way, whether the target is a function or a compiled subgraph.
+- **Subgraph output schemas (issue 17).** A compiled subgraph mounted with `addNode` writes back its **entire state schema** by default, not just the channels its nodes actually touched. `chief_complaint_generate` and `anamnesis_generate` are `Send`-fanned out in parallel from `outline_evaluate` above, so both writing back the whole state made their shared `diagnosis`/`userInstructions`/`outline` `LastValue` channels each receive two values in one superstep — `INVALID_CONCURRENT_GRAPH_UPDATE` on every default request. The rule: **a compiled subgraph's state schema is its input surface; its `output` schema is its write surface, and the write surface must be declared explicitly** — every `addNode`'d or `.invoke()`d subgraph in `02graphs/` gets an `output` built with `.pick()` off that graph's own state schema (never a hand-written duplicate, so the picked channel keeps the identical reducer registration). `chiefComplaintGraph`/`anamnesisGraph` output `{ case }`; `presentation_phase` (`buildFieldGenerationGraph`) deliberately outputs `{ case, outline }` — `outline` is not obvious to drop, but `03procedure/`'s `result_step` needs it for `generateProcedureResults`; `procedure_phase`/`generation_phase`/`translation_from_english_phase` output `{ case }`; `translation_to_english_phase` outputs `{ diagnosis, userInstructions }`, since translating those two is its entire job; the blinded solver's child graph (`.invoke()`d, not mounted) outputs `{ move }`. `case_fan_in` used to be `passthrough` (echoing the whole incoming state as its "update"); a join point produces no update, so it is now a node returning `{}`.
+- **`03procedure/`** — only when the `procedures` flag is set. A **blinded solver** loop (max 6 iterations) with 4 nodes: `blinded_step` orders procedures without knowing the true diagnosis, `result_step` _plans_ their results non-blinded (issue 21 — nothing renders inside the loop; see "Modality Planning and Rendering" below), and the terminal `render_results` renders every procedure's parts in one grouped pass and is the only node that writes `case.procedures`; when the solver commits to a diagnosis, an LLM judge checks the match (loop continues with `ruledOutDiagnoses` on mismatch). On exhaustion, a `bridge` node generates confirmatory procedures for the true diagnosis. The approved procedure list is presented (and picked) grouped by category (`{ "Category": ["Name", …] }`, with uncategorized procedures under a synthetic `"General"` bucket) rather than as one flat list — this applies to both the blinded pick and the (non-blinded) bridge pick, the latter grouping full `{name, relevance, result}` objects per category. Procedure selection is a `ProcedureStrategy` port (`03procedure/strategy/`: `ports.ts`, `directPick.ts`, `categoryScopedPick.ts`, `index.ts`'s `createProcedureStrategy`) rather than a branch of a global config read inside the node — `blinded_step` and `bridge` call `strategy.nextStep()` / `strategy.bridge()` and never read `PROCEDURE_PRESELECTION` themselves; the strategy is selected once at graph-assembly time and threaded down as a constructed object. `DirectPick` is one LLM call against the full candidate list per step (the default). `CategoryScopedPick` — selected only when `PROCEDURE_PRESELECTION` is set **and** the approved list has real categories (a flat catalogue has nothing to scope on) — splits that single call into two sequential calls (a category-only pick, over-inclusive, followed by a procedure/results-only pick scoped to those categories plus `"General"`); the graph shape stays fixed at 4 nodes regardless of which strategy runs. The blinded scoped pick may answer with an `expand` action requesting additional categories: a bounded loop in `CategoryScopedPick.nextStep` unions them into a local scope set and retries (max 2 expansions per `blinded_step`; the expand grammar only admits categories not yet in scope, and past the cap the branch is removed from the schema entirely — the visited set lives in code, never the model). The bridge's scoped pick instead retries deterministically once with all categories if it returns empty. The blinded step's own compiled child graph (built once per strategy, invoked — not added as a node — from inside `blinded_step`) has a state schema that structurally omits `diagnosis`: the `BlindedView` type already makes passing it a compile error, and the child graph is a runtime backstop on top of that (LangGraph filters input against a graph's state schema before it reaches a channel). `matchDiagnosis` stays in the parent node, outside the blinded path, since it's an oracle call. Additional guards: already-ordered procedures are excluded from every candidate list/grammar (duplicate orders are impossible by construction), category-pick prompts show per-category counts plus sample names, and blinded prompts include the remaining iteration budget as convergence pressure.
 
 **Tool pattern:** each subgraph directory has a `tools.ts` exporting `Tool<TInput, TOutput>` objects (`src/core/graph/utils/tool.ts`). Graph nodes are thin — prompt building, LLM calls, retries, and structured-output parsing live in the aigateway behind the tools. Nodes are wrapped with `traceNode()` (`utils/nodeWrapper.ts`) to emit "Node Started/Completed" bus events with translated labels.
 
@@ -241,8 +249,8 @@ parallel code path that can drift. Compilation is pure wiring with no I/O, so fo
 `pnpm graph:export` writes **two** topologies to `docs/graphs/`, not four:
 `PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter and leaves the procedure graph at
 three nodes either way, so it is not a shape (`graphTopologyKey` is the authority, and
-`caseGraph.test.ts` asserts the premise still holds). Each topology gets the two views the
-script already produced — detailed, and an overview with the translation phases collapsed.
+`caseGraph.test.ts` asserts the premise still holds). Each topology gets the one detailed view
+the script produces.
 
 **Generation flags** (`src/core/graph/models/GenerationFlags.ts`): `patient`, `chiefComplaint`, `anamnesis`, `procedures`. Requests also carry a **difficulty** (`models/Difficulty.ts`: `easy | medium | hard`, default `medium`).
 
@@ -264,7 +272,7 @@ non-LLM provider (e.g. an image model reached over MCP) contribute to a field:
 type ContentPart = {
   type: string; // MIME type
   value: Uint8Array; // the rendered artifact
-  alt: string; // plain text: what this part conveys — the render request, retained
+  alt: string; // plain text: a short description of what this part conveys
 };
 ```
 
@@ -273,24 +281,49 @@ _compose_ one field value — **not** a list of alternative renditions to choose
 is meaningful, and an empty array is never a valid field value (`.min(1)` on the schema): a
 field that exists has at least one part, a field that does not exist is absent.
 
-**`value` is derived for text parts.** `textPart(alt)` is the only constructor for a
-`text/plain` part — `value` is always `utf8(alt)`, never authored independently, so the two
-cannot drift. **`textOf(parts)` is the only path from content parts to a prompt** —
-`parts.map(p => p.alt).join("\n\n")`, with no MIME branching. Prompt builders take `string`,
-never `ContentPart[]`; the `Presentation` type in `03aigateway/procedures.aigateway.ts` is a
-text projection built by `presentationOf` (`03procedure/index.ts`), not the domain `Case`
-shape — bytes must never reach a prompt. `utils/prompt.ts`'s `renderForPrompt(value: unknown)`
-still accepts anything; that `unknown` is a known hole, not a guarantee.
+**`alt` and `value` are independent, with different authors (issue 21).** `value` is the
+rendered artifact and `alt` is a short description of what it conveys; neither is derived from
+the other, and `textPart()` — the old constructor that asserted `value === utf8(alt)` — is
+gone, replaced by `encodeText()` for the `value` half alone. **`alt` is authored by the
+planner, never by a provider**, and that is a safety property rather than a stylistic one:
+`textOf()` feeds the blinded solver, `matchDiagnosis` and the plan judge, so a provider that
+could author `alt` could inject facts into the solver's view.
 
-**The LLM never emits bytes.** Field generators produce ordinary strings under their own
-`z.string()`-based schemas (`ChiefComplaintJsonSchema`, `buildAnamnesisSchema`,
-`ProcedureResultTextSchema`/`buildProcedureResultTextSchema`) — the domain `CaseSchema` (with
-its `ContentPart[]` fields) is never used as an LLM output schema. The gateway wraps the raw
-string with `textPart()` before returning the domain shape.
+**`textOf(parts)` is still the only path from content parts to a prompt, but it is now
+MIME-dispatched.** `textOfPart` looks a part's `type` up in a `const` table in
+`ContentPart.ts` — one row today, `text/*` → UTF-8 decode `value` — and falls back to `alt`
+for anything with no row. For a text part the prose lives in `value`, so reading `alt` would
+return the label instead of the content; for an image part the bytes mean nothing to a prompt,
+so `alt` is the projection. Add a row (e.g. `application/pdf`) rather than a runtime
+registration API: this repo deleted its extension system in #115 and a mutable global registry
+of extractors would rebuild exactly that shape.
+
+Prompt builders take `string`, never `ContentPart[]`; the `Presentation` type in
+`03aigateway/procedures.aigateway.ts` is a text projection built by `presentationOf`
+(`03procedure/index.ts`), not the domain `Case` shape — bytes must never reach a prompt.
+`utils/prompt.ts`'s `renderForPrompt(value: unknown)` still accepts anything; that `unknown`
+is a known hole, not a guarantee.
+
+**A `Send` payload must never carry `ContentPart` bytes (issue 21).** LangGraph round-trips a
+`Send` payload through JSON, so a `Uint8Array` arrives at the target node as a plain
+index-keyed object — `instanceof Uint8Array` is false and the wire codec, the
+`MAX_CONTENT_PART_BYTES` ceiling and every non-text extractor then see garbage. Verified
+directly against `@langchain/langgraph` 1.3.0: the same state reaches a `Send`-dispatched node
+as `Object` and a plain-edge-dispatched node as `Uint8Array`. Both translation phases
+therefore fan out with **plain edges**, which hand each node the same full channel state
+without serialising it; `buildFieldGenerationSends` stays a legitimate `Send` precisely
+because its per-target payload (`{ diagnosis, outline, userInstructions }`) is text only. Fix
+this at the seam, never with a repair on read — a normaliser inside `textOfPart` leaves the
+part corrupt everywhere else while looking fixed.
+
+**The LLM never emits bytes.** A planner emits render requests and a text provider emits
+ordinary strings, both under `z.string()`-based schemas — the domain `CaseSchema` (with its
+`ContentPart[]` fields) is never used as an LLM output schema. `modality/pipeline.ts`'s
+`renderPlan` is the **only** place a `ContentPart` is constructed.
 
 **Wire encoding** lives in exactly one place, `src/api/contentWire.ts` (`encodeCase`/
 `decodeCase`, `CaseWireSchema`) — a boundary concern, not a domain one. `value` serializes to a
-JSON string: UTF-8 verbatim for `text/*`, base64 for everything else; `alt` is omitted on the
+JSON string: UTF-8 verbatim for `text/*`, base64 for everything else; `alt` is required on the
 wire for `text/*` parts (derivable from `value`) and restored on decode. Both the REST
 (`transports/rest/routes/cases.router.ts`) and NATS (`transports/nats/cases.handler.ts`)
 transports encode through it before a case leaves the process — without this, `Uint8Array`
@@ -305,83 +338,114 @@ separate node had just produced, since "translate only the VALUES" doesn't disti
 category/name from any other value. Fixed by disjointness, not by reordering: `translate_defined`
 (catalog dictionary lookup, per-key locked LLM fill on a miss) and `translate_rest` (one LLM call
 over a flat, keyed map of every `ContentPart.alt` in the case — built by
-`03case-translation-from-english/tools.ts`'s `caseAltMap`, keyed by stable **path**
-(`chiefComplaint.0`, `anamnesis.2.answer.0`, `procedures.1.result.3`) rather than by name, so
-translating a procedure's name can never collide with translating its result) run in parallel and
-write to their own state channels, never to `case`. `translate_merge` is the only node that
-applies both maps to `case`: for each part, a `text/plain` part has `value` **re-derived** as
-`utf8(translatedAlt)` via `textPart()` (never translated independently, so the two cannot drift);
-any other part's `value` passes through byte-identical, translating only `alt` — excluded from
-re-derivation by construction, not by a prompt instruction. Because `alt` is the only thing that
-ever reaches this prompt, and it is joined into a small keyed JSON object rather than the whole
-case (patient object, procedure names, enums and all), the rest pass's payload shrinks
-meaningfully too — see issue 12's PR for a representative measurement. This is also
+`03case-translation-from-english/tools.ts`'s `caseTextMap`, keyed by stable **path** rather than
+by name, so translating a procedure's name can never collide with translating its result) run in
+parallel and write to their own state channels, never to `case`. Since issue 21 made `alt` and
+`value` independent, the map carries **two keys per part**: `chiefComplaint.0.alt` for every
+part, and `chiefComplaint.0.text` for `text/*` parts only — the decoded prose, which is now the
+content rather than a duplicate of the label. `translate_merge` is the only node that applies
+both maps to `case`: a text part takes the translated prose into `value` and the translated
+label into `alt`; any other part's `value` passes through byte-identical, translating only
+`alt`. Because only text reaches this prompt, and it is joined into a small keyed JSON object
+rather than the whole case (patient object, procedure names, enums and all), the rest pass's
+payload stays small — see issue 12's PR for a representative measurement. This is also
 what unblocks issue 13: per-part translation survives a multi-part field, where the old
 whole-case text projection would have collapsed it.
 
-### Modality Registry
+### Modality Planning and Rendering
 
-`src/core/graph/modality/` (`ports.ts`, `registry.ts`, `pipeline.ts`, `providers/text.ts`)
-mirrors `medicalBasis/`'s structure closely: a `ModalityProvider` port —
+**Central planning, decoupled rendering (issue 21).** Each content-bearing field is planned by
+one LLM call that reads the outline and decides _what each part should contain and which
+provider renders it_; providers then render, in parallel, knowing only their own typed input.
+The planner never imports a provider, a provider never sees the outline, and the per-field
+registry is the only place they meet — at assembly time.
 
 ```ts
-interface ModalityProvider {
-  readonly id: string;
-  readonly produces: string[]; // MIME types it can emit
-  render(alt: string, ctx: RenderContext): Promise<Uint8Array>;
+interface ModalityProvider<I = unknown> {
+  readonly id: string; // discriminant in the planner's grammar
+  readonly mime: string; // fixed per provider; the registry owns it, never the plan
+  readonly description: string; // shown to the planner
+  readonly inputSchema: z.ZodType<I>; // { instruction } | { bodyPart, finding, … }
+  render(batch: I[], ctx: RenderContext): Promise<Uint8Array<ArrayBuffer>[]>;
 }
 ```
 
-— with **no LLM assumption anywhere in it**. `RenderContext` is exactly `RequestContext`, not a
+**Batch in, batch out**, one buffer per input in input order — that is what lets a provider
+choose its own splitting: the anamnesis text provider makes **one** LLM call for every category
+it was handed, not one per category. `defineModalityProvider` erases the generic so
+heterogeneous providers share one array and re-validates each batch against `inputSchema`, which
+is what keeps the `unknown` sound. `RenderContext` is exactly `RequestContext`, not a
 signal-only shape (the issue 14 lesson: a provider may need `llmConfig` under `ALLOW_LLMS`).
-`createModalityRegistry()` (`registry.ts`) builds the deployment's list in the composition root
-(`graph/index.ts`), **not** a `FEATURES` flag — it always returns `[textProvider]` today.
-`textProvider` (`providers/text.ts`) is the degenerate case: `utf8(alt)`, no model call at all,
-because the text was already produced by `generate_content`; a future image provider (e.g. a
-diffusion model reached over MCP) satisfies the same interface. **Text is a normal registry
-entry, not an implicit floor.**
+Still **no LLM assumption in the port** — an image provider reaching a diffusion model over MCP
+satisfies the same interface as the text one.
 
-`AssemblyDeps.modalityRegistry` (`02graphs/caseGraph.ts`), not `GraphFlags`, for the same reason
-`medicalBasisRegistry` lives there: fixed per deployment, shared by all four flag variants. Its
-_size_ decides whether `decide_modality` is compiled into `chiefComplaintGraph`/`anamnesisGraph`
-(`02presentation/generation/`):
+**Registries are per field** (`ModalityRegistries`, `modality/registry.ts`): chief complaint may
+have a PDF transfer-slip provider anamnesis has no use for. Providers live next to the field
+they serve — `02presentation/generation/{chiefComplaint,anamnesis}/providers.ts` and
+`03procedure/providers.ts` — mirroring the `catalog/<domain>/` vertical-slice convention, and
+each is a thin adapter: prompts and LLM calls stay in `03aigateway/`, per the numbered-layer
+rule. They live in `AssemblyDeps`, not `GraphFlags`, for `medicalBasisRegistry`'s reason: fixed
+per deployment, shared by all four flag variants.
 
-| Registry size | Compiled shape                                                                                                                                                                                                                                                               |
-| ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 0             | Rejected immediately, at graph-assembly time (`EmptyModalityRegistryError`) — every graph variant is compiled eagerly at boot, so this fails the process at startup, never on the first request.                                                                             |
-| 1             | `generate_content → render_parts` — no `decide_modality` node. `render_parts` synthesizes the plan directly (`pipeline.ts`'s `defaultPlanFor`): one request, in the sole provider's MIME, `alt` = the unit's whole canonical text.                                           |
-| >1            | `generate_content → decide_modality → render_parts` — `decide_modality` (`03aigateway/modalityDecision.aigateway.ts`) is an LLM call planning an ordered list of `{ modality, alt }` render requests per content unit, drawn only from the registry's producible MIME types. |
+**The planner always runs**, so unlike the medical-basis registry there is no
+absent-capability-⇒-absent-node rule here and **no registry-size topology variance at all**: a
+field is `plan_content → render_parts` whether one provider is registered or five. An empty
+per-field registry is a build-time `EmptyModalityRegistryError`, which — since every variant
+compiles eagerly at boot — fails the process at startup, never on the first request. This costs
+one LLM call per field per request more than the old single-generator shape; that is a
+deliberate trade for one uniform shape, taken with the alternative (a single-provider shortcut)
+on the table.
 
-Each field subgraph's `generate_content` node **reuses the existing gateway call and its
-`z.string()`-based schema unchanged** — `textOf()` (`ContentPart.ts`) reads the canonical text
-back out of the single text part the gateway already wraps it in, so no prompt changed to
-support this. For anamnesis, `generate_content` produces one content unit per category and
-reorders them to **catalogue order** before planning/rendering — the LLM's array order is not a
-contract, and downstream prompts depend on category order staying stable.
+`buildCompositionSchema` (`modality/composition.ts`) builds the planner's grammar from the
+field's registry — a `discriminatedUnion` on `provider` so a request naming `"text"` cannot
+carry an image provider's input shape. Building an LLM grammar from runtime configuration is
+the house style here, not a novelty: see `ProcedureCandidates.grammar()` and
+`makeLanguageSchema`. Its `unitKeys` is **optional, and omitting it differs from passing an
+empty array**: a known unit set (chief complaint's single unit, anamnesis under a configured
+category catalogue) pins both key names and plan count, while a _freeform_ field — anamnesis
+where `catalogs.anamnesis.list()` returns `undefined` because the deployer configured no
+categories — gets a plain `z.string()` key and a `.min(1)` count, so the planner names its own
+units. That is the freedom the pre-planner generator had, and it must stay: a default category
+list here would bake opinionated clinical content into code, which is what the catalogue layer
+exists to prevent.
 
-`render_parts` (`pipeline.ts`'s `renderRequests`) calls every planned request's provider
-concurrently and reassembles the result in **planned order, not completion order** — the same
-shape as `medicalBasis/registry.ts`'s `resolveAllFragments`, for the same reason: otherwise the
-same configuration produces different field content run to run. Tested with staggered fake
-providers where the first-planned request resolves last.
+`renderPlan` (`modality/pipeline.ts`) is the **only** place a `ContentPart` is constructed. It
+flattens every unit's requests, groups them **by provider across units** (so one call covers
+every category, and later every image), runs the providers concurrently, and scatters results
+back into **planned order, not completion order** — the same rule and reason as
+`medicalBasis`'s registry-order concatenation, tested with staggered fake providers where the
+first-planned request resolves last. A provider that throws is logged and its parts dropped; a
+unit left with zero parts fails loudly rather than silently producing an empty field.
 
-**An image-only registry is safe by construction:** `generate_content` still runs unconditionally
-and is never itself a registry entry, every part still carries its render request's `alt`, and
-`textOf()` still returns prose regardless of which MIME types are registered — so the plan judge,
-`matchDiagnosis` and the blinded solver all keep working even when no provider produces text.
+**The procedure phase plans in the loop and renders once at the end.** `procedures[].result` is
+produced inside the blinded-solver loop, so it does not get the two-node shape — instead
+`result_step` and `bridge` **plan** results into a `plannedProcedures` channel, the solver runs
+entirely on those plans, and a terminal `render_results` node (reached from both the
+diagnosis-match and the bridge exit) renders every procedure's parts in one grouped pass and is
+the only node that writes `case.procedures`. Two properties this buys: the solver's context is
+short findings rather than full result text, and **nothing is ever rendered for a case still
+being solved** — which matters the moment a provider is an image model. It also keeps the
+loop's per-batch LLM cost identical, since one planner call replaces one result-generation
+call; the bridge costs one extra call, once per generation, because it reuses
+`ProcedureCandidates`' pick-then-plan machinery rather than duplicating a bespoke schema.
 
-**Known limitation, recorded rather than fixed (issue 13 §6):** rendering runs _inside_ each
-field subgraph, i.e. before translate-out. With the translation sandwich on, a modality is
-rendered from an **English** `alt`, and its bytes are never translated — only `alt` is (issue
-12). Fine for the only kind of part that exists today (plain text, whose `value` is re-derived
-from the translated `alt` anyway); not fine for a future image with burnt-in annotations, speech,
-or any rendering where meaning lives in the bytes. The migration path stays open only because
-`generate_content`, `decide_modality` and `render_parts` are distinct nodes in both field
-subgraphs — moving rendering to a post-translation phase later is then a _move_, not a rewrite.
-Do not collapse them into one node.
+**A procedure result's `alt` is the one place `alt` carries the diagnostic payload.** The
+blinded solver reasons over it and nothing else — the bytes do not exist yet — so it must be a
+self-contained statement of the finding ("Chest X-ray: consolidation of the left lower lobe with
+air bronchograms"), never a bare label ("chest x-ray image"). No test catches a bad one; the
+solver just stops being able to solve.
 
-`procedures[].result` is also `ContentPart[]` (issue 11) but is produced in the procedure phase,
-not the presentation fan-out — out of scope for issue 13, a natural follow-up.
+**An image-only registry is still safe by construction:** every part carries the planner's
+`alt`, and `textOfPart` falls back to `alt` for any non-text MIME, so the plan judge,
+`matchDiagnosis` and the blinded solver keep working even when no provider produces text.
+
+**Known limitation, recorded rather than fixed (issue 13 §6):** rendering runs before
+translate-out, so with the sandwich on a modality is rendered from an **English** instruction
+and its bytes are never translated — only `alt` and, for text parts, the decoded prose are
+(issue 12, extended in issue 21 §8). Fine for plain text; not fine for a future image with
+burnt-in annotations, speech, or any rendering where meaning lives in the bytes. The migration
+path stays open only because planning and rendering are distinct nodes in every field — moving
+rendering to a post-translation phase is then a _move_, not a rewrite. Do not collapse them.
 
 ### Repo Layer (embedded SQLite via Drizzle)
 

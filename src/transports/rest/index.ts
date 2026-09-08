@@ -1,3 +1,4 @@
+import type { Server } from "node:http";
 import express from "express";
 import cors from "cors";
 import morgan from "morgan";
@@ -15,17 +16,24 @@ const RestEnvSchema = z
   })
   .transform((env) => ({ port: env.PORT }));
 
+export interface RestTransportHandle {
+  close(): Promise<void>;
+}
+
 /**
  * Start the REST transport: an Express server exposing `/api/*`. Constructed
  * explicitly from resolved config by the composition root (`app.ts`) — no
  * loader, no topological sort, no cascade-skip. Called when the `REST` flag
  * is set.
+ *
+ * Returns a closer rather than registering its own signal handlers — see
+ * `src/shutdown.ts` for why shutdown is owned by the composition root.
  */
 export async function startRestServer(opts: {
   graph: GraphAppContext;
   service: CaseGenerationService;
   features: Set<string>;
-}): Promise<void> {
+}): Promise<RestTransportHandle> {
   const { graph, service, features } = opts;
   const { port } = RestEnvSchema.parse(process.env);
 
@@ -55,10 +63,24 @@ export async function startRestServer(opts: {
     mountTracingRest(apiRouter, graph.caseGraph);
   }
 
-  await new Promise<void>((resolve) =>
-    app.listen(port, () => {
+  const server = await new Promise<Server>((resolve) => {
+    const s = app.listen(port, () => {
       console.log(`\n🚀 AetioMed Server running on http://localhost:${port}\n`);
-      resolve();
-    })
-  );
+      resolve(s);
+    });
+  });
+
+  return {
+    async close() {
+      // `server.close()` alone stops accepting new connections and then
+      // waits for existing ones to end — but under `FEATURES=TRACING` the
+      // SSE stream (`GET /api/traces/:jobId/stream`) holds connections open
+      // indefinitely by design, so that wait would never finish. Destroy
+      // every open socket first so close() can actually resolve.
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+    },
+  };
 }

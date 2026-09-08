@@ -14,7 +14,7 @@ export type ChiefComplaint = ContentPart[];
 /**
  * LLM-facing shape: the generator produces ordinary text under a plain
  * `z.string()` schema — the LLM is never asked to emit bytes or base64
- * (issue 11 §3). The gateway wraps the result with `textPart()` to build
+ * (issue 11 §3). The gateway wraps the result into a `ContentPart` to build
  * the domain `ChiefComplaint` above.
  */
 const ChiefComplaintTextSchema = z

@@ -2,12 +2,22 @@
 // output, and bytes must never reach a trace event: `ContentPart[]` fields
 // are projected through `textOf`, exactly as prompts do (issue 11 §4).
 import { describe, expect, it } from "vitest";
-import { textPart } from "@/core/graph/models/ContentPart.js";
+import {
+  encodeText,
+  type ContentPart,
+} from "@/core/graph/models/ContentPart.js";
 import { buildTracePayload, sanitizeForTrace } from "./tracePayload.js";
+
+/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
+ * inlined at every real call site now; kept here only to keep these
+ * fixtures readable. */
+function fixtureTextPart(alt: string): ContentPart {
+  return { type: "text/plain", value: encodeText(alt), alt };
+}
 
 describe("sanitizeForTrace — no ContentPart bytes ever reach a trace", () => {
   it("projects a ContentPart[] field to its textOf() text", () => {
-    const parts = [textPart("First."), textPart("Second.")];
+    const parts = [fixtureTextPart("First."), fixtureTextPart("Second.")];
     const sanitized = sanitizeForTrace({ chiefComplaint: parts }) as {
       chiefComplaint: string;
     };
@@ -18,7 +28,7 @@ describe("sanitizeForTrace — no ContentPart bytes ever reach a trace", () => {
 
   it("walks nested structures (anamnesis-shaped array of {category, answer})", () => {
     const sanitized = sanitizeForTrace({
-      anamnesis: [{ category: "History", answer: [textPart("Cough.")] }],
+      anamnesis: [{ category: "History", answer: [fixtureTextPart("Cough.")] }],
     }) as { anamnesis: { category: string; answer: string }[] };
 
     expect(sanitized.anamnesis[0]).toEqual({

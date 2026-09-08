@@ -1,8 +1,9 @@
 import type { Diagnosis } from "../models/Diagnosis.js";
 import { PatientSchema, type Patient } from "../models/Patient.js";
-import { getCreativeLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
   summarizeValidationError,
@@ -19,7 +20,11 @@ export async function generatePatient(
   userInstructions?: string, // provided by the user | undefined
   context?: RequestContext
 ): Promise<Patient> {
-  const systemPrompt = buildPrompt(
+  // User-facing (issue 09 §3): the patient file is read by the student
+  // (e.g. the patient's own name).
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
     section(
       "Role",
       `You are an expert medical educator authoring a realistic clinical patient file for a medical training simulator.
@@ -55,7 +60,11 @@ ${renderSchemaForPrompt(PatientSchema)}`
   try {
     const patient: Patient = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getCreativeLLM(runtime.llm, context?.llmConfig)
+        const result = await runtime.llm
+          .for(
+            { role: "generator", temperature: "creative" },
+            context?.llmConfig
+          )
           .withStructuredOutput(PatientSchema)
           .invoke(
             [

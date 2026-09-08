@@ -2,7 +2,7 @@ import { GenerationFlagSchema } from "@/core/graph/models/GenerationFlags.js";
 import z from "zod";
 import { CaseSchema } from "@/core/graph/models/Case.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
-import { SymptomSchema } from "@/core/graph/models/Symptom.js";
+import { BasisFragmentSchema } from "@/core/graph/medicalBasis/ports.js";
 import { registry } from "@langchain/langgraph/zod";
 import { UserInstructionsSchema } from "@/core/graph/models/UserInstructions.js";
 import { DifficultySchema } from "@/core/graph/models/Difficulty.js";
@@ -28,9 +28,13 @@ export const CaseGenerationStateSchema = z.object({
   }),
 
   /**
-   * Retrieved symptoms for the diagnosis.
+   * Fragments resolved from the medical-basis registry (see
+   * `medicalBasis/`), concatenated in registry order. Empty when the
+   * registry is empty — the `basis_resolve` node is then not compiled into
+   * the graph at all (see `02case-generation/index.ts`) and this default
+   * stands.
    */
-  symptoms: SymptomSchema.array().default([]),
+  basisFragments: BasisFragmentSchema.array().default([]),
 
   /**
    * The case blueprint generated at the start of the presentation phase.

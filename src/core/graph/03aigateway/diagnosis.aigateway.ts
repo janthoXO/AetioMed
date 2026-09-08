@@ -1,7 +1,6 @@
 import z from "zod";
 import type { ForeignLanguage } from "../models/Language.js";
 import type { RequestContext } from "../utils/context.js";
-import { getDeterministicLLM } from "../utils/llm.js";
 import {
   buildPrompt,
   renderSchemaForPrompt,
@@ -20,6 +19,10 @@ export async function generateDiagnosisToEnglish(
   language: ForeignLanguage,
   context?: RequestContext
 ): Promise<string> {
+  // Deliberately `buildPrompt`, not `buildSystemPrompt` (issue 09 §3): this
+  // is a translator call whose target is always English — the language
+  // directive (which only ever names the *foreign* target) never applies
+  // here, and the source language is already explicit in the prompt below.
   const systemPrompt = buildPrompt(
     section(
       "Role",
@@ -42,7 +45,11 @@ ${renderSchemaForPrompt(responseSchema)}`
     `[GenerateDiagnosisToEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const response = await getDeterministicLLM(runtime.llm, context?.llmConfig)
+  const response = await runtime.llm
+    .for(
+      { role: "translator", temperature: "deterministic" },
+      context?.llmConfig
+    )
     .withStructuredOutput(responseSchema)
     .invoke(
       [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],

@@ -1,8 +1,9 @@
 import { SymptomSchema, type Symptom } from "../models/Symptom.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
-import { getDeterministicLLM, handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
   summarizeValidationError,
@@ -24,7 +25,11 @@ export async function generateSymptomsOneShot(
     symptoms: SymptomSchema.array(),
   });
 
-  const systemPrompt = buildPrompt(
+  // Internal artifact (issue 09 §3): the symptom/basis provider feeds the
+  // plan, not the student directly — English always.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are a medical expert tasked with generating symptoms for a given diagnosis.`
@@ -65,10 +70,11 @@ ${renderSchemaForPrompt(SymptomArrayWrapperSchema)}`
   try {
     const symptoms: Symptom[] = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await getDeterministicLLM(
-          runtime.llm,
-          context?.llmConfig
-        )
+        const result = await runtime.llm
+          .for(
+            { role: "generator", temperature: "deterministic" },
+            context?.llmConfig
+          )
           .withStructuredOutput(SymptomArrayWrapperSchema)
           .invoke(
             [

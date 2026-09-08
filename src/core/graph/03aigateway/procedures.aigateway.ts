@@ -1,12 +1,9 @@
 import { retry } from "../utils/retry.js";
 import z from "zod";
-import {
-  getBalancedLLM,
-  getDeterministicLLM,
-  handleLangchainError,
-} from "../utils/llm.js";
+import { handleLangchainError } from "../utils/llm.js";
 import {
   buildPrompt,
+  buildSystemPrompt,
   renderForPrompt,
   renderSchemaForPrompt,
   section,
@@ -14,20 +11,19 @@ import {
 } from "../utils/prompt.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import {
-  buildProcedureResultSchema,
+  buildProcedureResultTextSchema,
   ProcedureRelevanceSchema,
   type Procedure,
   type ProcedureName,
   type ProcedureRelevance,
   type ProcedureResult,
 } from "../models/Procedure.js";
+import { textOf, textPart } from "../models/ContentPart.js";
 import {
   UNCATEGORIZED_CATEGORY,
   type ProcedurePickMode,
 } from "../catalog/ports.js";
 import type { Patient } from "../models/Patient.js";
-import type { Anamnesis } from "../models/Anamnesis.js";
-import type { ChiefComplaint } from "../models/ChiefComplaint.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
 import type { ForeignLanguage } from "../models/Language.js";
@@ -36,11 +32,17 @@ import type { GraphRuntime } from "../runtime.js";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
-/** The patient's presentation as seen by the blinded solver — no diagnosis. */
+/**
+ * The patient's presentation as seen by the blinded solver — no diagnosis.
+ * A **text projection** (issue 11 §4), not the domain `Case` shape: bytes
+ * must never reach a prompt, so every prompt builder's parameters are
+ * strings. `presentationOf` (`03procedure/index.ts`) is the one place that
+ * builds this from a domain `Case`, via `textOf`.
+ */
 export type Presentation = {
   patient?: Patient | undefined;
-  chiefComplaint?: ChiefComplaint | undefined;
-  anamnesis?: Anamnesis | undefined;
+  chiefComplaint?: string | undefined;
+  anamnesis?: { category: string; answer: string }[] | undefined;
 };
 
 export type BlindedProcedureStepResult =
@@ -56,8 +58,9 @@ export type BlindedProcedureStepResult =
     };
 
 /**
- * Result of a category-scoped procedure pick (LLM_SMALL step 2): either the
- * actual pick, or a request to pull additional categories into scope. The
+ * Result of a category-scoped procedure pick (PROCEDURE_PRESELECTION step 2):
+ * either the actual pick, or a request to pull additional categories into
+ * scope. The
  * expand action is only offered while the caller still allows it — the
  * grammar constraint restricts it to categories NOT already in scope, so the
  * model can never re-request one it has already seen.
@@ -91,7 +94,7 @@ function previousProceduresSection(previousProcedures: ProcedureResult[]) {
     "Procedures ordered so far (with results)",
     previousProcedures.length > 0
       ? previousProcedures
-          .map((p, i) => `${i + 1}. ${p.name} -> ${p.result}`)
+          .map((p, i) => `${i + 1}. ${p.name} -> ${textOf(p.result)}`)
           .join("\n")
       : "No procedures have been ordered yet."
   );
@@ -166,7 +169,10 @@ export async function generateBlindedProcedureStep(
     return { action: "procedure", procedures: [] };
   }
 
-  const systemPrompt = buildPrompt(
+  // Internal artifact (issue 09 §3): the blinded solver, English always.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are an attending physician working up a patient in a clinical training simulator.
@@ -225,7 +231,11 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       async (attempt, previousError) => {
         // Balanced: this is clinical decision-making, not creative writing —
         // lower temperature keeps procedure choices focused and output short.
-        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(StepSchema)
           .invoke(
             [
@@ -273,7 +283,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
   }
 }
 
-// ─── generateBlindedCategoryStep (LLM_SMALL: step 1 of 2) ────────────────────
+// ─── generateBlindedCategoryStep (PROCEDURE_PRESELECTION: step 1 of 2) ───────
 
 export type BlindedCategoryStepResult =
   | {
@@ -313,8 +323,9 @@ function buildCategoryStepSchema(categories?: string[]) {
 
 /**
  * Step 1 of the small-model-friendly split of the blinded procedure pick
- * (enabled via `LLM_SMALL`, dispatched from the `blinded_step` node): choose
- * the plausibly-relevant procedure categories — over-inclusive, since
+ * (enabled via `PROCEDURE_PRESELECTION`, dispatched from the
+ * `CategoryScopedPick` strategy adapter): choose the plausibly-relevant
+ * procedure categories — over-inclusive, since
  * {@link generateBlindedProcedureStepFromCategories} narrows down to actual
  * procedures next — or commit to a diagnosis. The diagnose handling mirrors
  * {@link generateBlindedProcedureStep} exactly, so the graph node can reuse
@@ -337,7 +348,11 @@ export async function generateBlindedCategoryStep(
     .exclude(previousProcedures.map((p) => p.name));
   const categories = candidates.categories();
 
-  const systemPrompt = buildPrompt(
+  // Internal artifact (issue 09 §3): the blinded solver's category pick,
+  // English always.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are an attending physician working up a patient in a clinical training simulator.
@@ -395,10 +410,11 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       async (attempt, previousError) => {
         // Thinking off: the category shortlist is a constrained pick and the
         // split into two small steps exists precisely to keep each call fast.
-        const res = await getBalancedLLM(runtime.llm, {
-          ...context?.llmConfig,
-          enableThinking: false,
-        })
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            { ...context?.llmConfig, enableThinking: false }
+          )
           .withStructuredOutput(CategoryStepSchema)
           .invoke(
             [
@@ -436,7 +452,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
   }
 }
 
-// ─── generateBlindedProcedureStepFromCategories (LLM_SMALL: step 2 of 2) ─────
+// ─── generateBlindedProcedureStepFromCategories (preselection: step 2 of 2) ──
 
 /**
  * Assemble the scoped-pick response schema from its optional branches — used
@@ -525,7 +541,11 @@ Every procedure name MUST be an exact name from the provided list, placed under 
 
   const expandRules = `If — and ONLY if — none of the in-scope procedures is clinically appropriate as the next step, respond with action "expand" and name the additional categories you need (exact names from the "Other available categories" section); they will be shown in full next. Otherwise always prefer action "procedures".`;
 
-  const systemPrompt = buildPrompt(
+  // Internal artifact (issue 09 §3): the blinded solver's scoped pick,
+  // English always.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are an attending physician working up a patient in a clinical training simulator.
@@ -586,10 +606,11 @@ ${all.categoryMenu(expandable)}`
       async (attempt, previousError) => {
         // Thinking off: same rationale as the category step — the candidate
         // set is already scoped, so the pick doesn't need a reasoning phase.
-        const res = await getBalancedLLM(runtime.llm, {
-          ...context?.llmConfig,
-          enableThinking: false,
-        })
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            { ...context?.llmConfig, enableThinking: false }
+          )
           .withStructuredOutput(OutputSchema)
           .invoke(
             [
@@ -674,7 +695,11 @@ export async function generateProcedureResults(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<ProcedureResult[]> {
-  const systemPrompt = buildPrompt(
+  // User-facing (issue 09 §3): the procedure result text is read by the
+  // student.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
     section(
       "Role",
       `You are a medical simulator generating realistic results for a batch of diagnostic procedures ordered at the same time.
@@ -733,7 +758,11 @@ ${outline}`
       async (attempt, previousError) => {
         // Balanced: results must follow the blueprint's workup strategy and
         // stay clinically plausible — specific values, not invention.
-        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(ResultsSchema)
           .invoke(
             [
@@ -772,7 +801,7 @@ ${outline}`
       return {
         ...step,
         relevance: match?.relevance ?? "optional",
-        result: match?.result ?? "",
+        result: [textPart(match?.result ?? "")],
       };
     });
   } catch (error) {
@@ -796,8 +825,8 @@ const GenericResultLeafSchema = z.object({
 });
 
 /**
- * The bare-name-scoped counterpart to {@link buildProcedureResultSchema} —
- * used inside a grouped-by-category bridge pick, where "name" only needs to
+ * The bare-name-scoped counterpart to {@link buildProcedureResultTextSchema}
+ * — used inside a grouped-by-category bridge pick, where "name" only needs to
  * be unique within its category group (the category key supplies the rest).
  */
 function bareProcedureResultSchema(bareNames?: ProcedureName[]) {
@@ -820,7 +849,7 @@ function bridgePickGrammarSchema(mode: ProcedurePickMode): z.ZodTypeAny {
   switch (mode.kind) {
     case "freeform":
       return z
-        .array(buildProcedureResultSchema())
+        .array(buildProcedureResultTextSchema())
         .describe("bridge procedures that confirm the diagnosis");
     case "flat":
       return z
@@ -882,7 +911,7 @@ function assembleBridgeResults(
       .map((leaf) => ({
         name: leaf.name,
         relevance: leaf.relevance,
-        result: leaf.result,
+        result: [textPart(leaf.result)],
       }));
   }
 
@@ -899,7 +928,7 @@ function assembleBridgeResults(
         result.push({
           name: full,
           relevance: leaf.relevance,
-          result: leaf.result,
+          result: [textPart(leaf.result)],
         });
       }
     }
@@ -933,7 +962,11 @@ export async function generateDiagnosisBridge(
     return [];
   }
 
-  const systemPrompt = buildPrompt(
+  // User-facing (issue 09 §3): bridge results are procedure result text,
+  // read by the student.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
     section(
       "Role",
       `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
@@ -985,7 +1018,11 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates
       async (attempt, previousError) => {
         // Balanced: confirmatory procedures for a known diagnosis — the most
         // clinically standard choices are exactly what we want.
-        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(BridgeSchema)
           .invoke(
             [
@@ -1027,7 +1064,7 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(candidates
   }
 }
 
-// ─── generateBridgeCategoryStep (LLM_SMALL: bridge step 1 of 2) ──────────────
+// ─── generateBridgeCategoryStep (PROCEDURE_PRESELECTION: bridge step 1 of 2) ──
 
 /**
  * Same grammar-vs-prompt split as {@link buildCategoryStepSchema}: the
@@ -1047,8 +1084,9 @@ function buildBridgeCategoryStepSchema(categories?: string[]) {
 
 /**
  * Step 1 of the small-model-friendly split of the bridge (enabled via
- * `LLM_SMALL`): unlike the blinded step's category pick, this is non-blinded
- * (the true diagnosis is already known) and has no "diagnose" branch — its
+ * `PROCEDURE_PRESELECTION`): unlike the blinded step's category pick, this
+ * is non-blinded (the true diagnosis is already known) and has no "diagnose"
+ * branch — its
  * only job is narrowing the workup down to a shortlist of categories that
  * plausibly contain the confirmatory procedures, over-inclusive by design.
  */
@@ -1068,7 +1106,11 @@ export async function generateBridgeCategoryStep(
     .exclude(previousProcedures.map((p) => p.name));
   const categories = candidates.categories();
 
-  const systemPrompt = buildPrompt(
+  // Internal (issue 09 §3): a category shortlist, no free text ever reaches
+  // the student from this step — the second step's results do.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
@@ -1112,7 +1154,11 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
 
     const categoriesResult = await retry(
       async (attempt, previousError) => {
-        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(CategoryStepSchema)
           .invoke(
             [
@@ -1150,7 +1196,7 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
   }
 }
 
-// ─── generateBridgeProcedureStepFromCategories (LLM_SMALL: bridge step 2) ────
+// ─── generateBridgeProcedureStepFromCategories (preselection: bridge step 2) ─
 
 /**
  * Step 2 of the small-model-friendly split of the bridge: generate the
@@ -1181,7 +1227,10 @@ export async function generateBridgeProcedureStepFromCategories(
     return [];
   }
 
-  const systemPrompt = buildPrompt(
+  // User-facing (issue 09 §3): bridge results are procedure result text.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "user-facing",
     section(
       "Role",
       `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
@@ -1230,7 +1279,11 @@ ${renderSchemaForPrompt(z.object({ procedures: bridgePickPromptSchema(scoped.mod
   try {
     const rawProcedures = await retry(
       async (attempt, previousError) => {
-        const res = await getBalancedLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "generator", temperature: "balanced" },
+            context?.llmConfig
+          )
           .withStructuredOutput(BridgeSchema)
           .invoke(
             [
@@ -1294,7 +1347,11 @@ export async function matchDiagnosis(
   diagnosis: Diagnosis,
   context?: RequestContext
 ): Promise<boolean> {
-  const systemPrompt = buildPrompt(
+  // Internal (issue 09 §3): matchDiagnosis is explicitly named in the
+  // audience split — English always.
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
     section(
       "Role",
       `You are a medical knowledge expert. Determine whether a proposed diagnosis is equivalent to the true diagnosis.
@@ -1328,7 +1385,11 @@ ${renderSchemaForPrompt(MatchSchema)}`
   try {
     const matches = await retry(
       async (attempt, previousError) => {
-        const res = await getDeterministicLLM(runtime.llm, context?.llmConfig)
+        const res = await runtime.llm
+          .for(
+            { role: "judge", temperature: "deterministic" },
+            context?.llmConfig
+          )
           .withStructuredOutput(MatchSchema)
           .invoke(
             [

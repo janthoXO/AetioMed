@@ -1,4 +1,5 @@
 import z from "zod";
+import { LLM_ROLES, type LlmRole } from "./runtime.js";
 
 const PossibleProvidersSchema = z.enum(["ollama", "google", "openai"]);
 type PossibleProviders = z.infer<typeof PossibleProvidersSchema>;
@@ -7,6 +8,61 @@ const providersPattern = PossibleProvidersSchema.options.join("|");
 const allowedLlmsRegex = new RegExp(
   `^(${providersPattern}):([^,\\s]+)(,(${providersPattern}):([^,\\s]+))*$`
 );
+
+/** Resolved provider/model/apiKey/url for one role or the general fallback. */
+interface LlmRoleConfig {
+  provider: PossibleProviders;
+  model: string;
+  apiKey?: string | undefined;
+  url?: string | undefined;
+}
+
+/**
+ * Per-field fallback (not per-role): a role that sets only `MODEL` still
+ * inherits the general provider/apiKey/url. A role that sets `PROVIDER`
+ * without `MODEL` is rejected — otherwise per-field fallback would resolve
+ * to a model name from the wrong provider's namespace.
+ */
+function resolveRole(
+  role: LlmRole,
+  fields: {
+    provider?: PossibleProviders | undefined;
+    model?: string | undefined;
+    apiKey?: string | undefined;
+    url?: string | undefined;
+  },
+  general: LlmRoleConfig
+): LlmRoleConfig {
+  const prefix = `LLM_${role.toUpperCase()}`;
+
+  if (fields.provider && !fields.model) {
+    throw new Error(
+      `${prefix}_PROVIDER is set without ${prefix}_MODEL. A role that overrides the provider ` +
+        `must also set the model — otherwise it would resolve to a model name from the wrong ` +
+        `provider's namespace.`
+    );
+  }
+
+  if (
+    fields.provider &&
+    fields.provider !== general.provider &&
+    !fields.apiKey
+  ) {
+    console.warn(
+      `[config] ${prefix}_PROVIDER (${fields.provider}) differs from the general provider ` +
+        `(${general.provider}) but ${prefix}_API_KEY is not set — inheriting the general API ` +
+        `key, which is almost certainly for the wrong service unless both are keyless local ` +
+        `endpoints.`
+    );
+  }
+
+  return {
+    provider: fields.provider ?? general.provider,
+    model: fields.model ?? general.model,
+    apiKey: fields.apiKey ?? general.apiKey,
+    url: fields.url ?? general.url,
+  };
+}
 
 export const ConfigSchema = z
   .object({
@@ -19,14 +75,110 @@ export const ConfigSchema = z
     LLM_MODEL: z.string().optional(),
     LLM_API_KEY: z.string().optional(),
     LLM_URL: z.url().optional(),
-    LLM_TEMPERATURE: z.coerce.number().min(0).max(1).default(0.7),
+
+    LLM_GENERATOR_PROVIDER: PossibleProvidersSchema.optional(),
+    LLM_GENERATOR_MODEL: z.string().optional(),
+    LLM_GENERATOR_API_KEY: z.string().optional(),
+    LLM_GENERATOR_URL: z.url().optional(),
+
+    LLM_JUDGE_PROVIDER: PossibleProvidersSchema.optional(),
+    LLM_JUDGE_MODEL: z.string().optional(),
+    LLM_JUDGE_API_KEY: z.string().optional(),
+    LLM_JUDGE_URL: z.url().optional(),
+
+    LLM_TRANSLATOR_PROVIDER: PossibleProvidersSchema.optional(),
+    LLM_TRANSLATOR_MODEL: z.string().optional(),
+    LLM_TRANSLATOR_API_KEY: z.string().optional(),
+    LLM_TRANSLATOR_URL: z.url().optional(),
     /**
-     * When set, small-model-friendly prompting adjustments are enabled
+     * When set, enables the category-then-procedure preselection strategy
+     * for the blinded procedure solver — small-model-friendly prompting
+     * that splits a single pick against the full candidate list into a
+     * category pick followed by a scoped procedure pick. See
+     * `02case-generation/03procedure/strategy/`.
      */
-    LLM_SMALL: z
+    PROCEDURE_PRESELECTION: z
       .string()
       .optional()
       .transform((v) => v === "true" || v === "1"),
+    /**
+     * Whether the translation sandwich is compiled into the graph at all.
+     * Deployment config, so it is compiled away rather than branched on
+     * (see `assembleCaseGraph`) — with this off the translation nodes do not
+     * exist, which is different from existing and never being entered.
+     *
+     * Defaults to **true**: the translation phases exist today and are
+     * entered whenever the requested language is not English, so anything
+     * else would silently change behaviour for every current deployment.
+     */
+    TRANSLATION_SANDWICH: z
+      .string()
+      .optional()
+      .transform((v) => v !== "false" && v !== "0"),
+    /**
+     * The deployment's supported language set, comma-separated
+     * (`LANGUAGES=English,German,French`). Trimmed, de-duplicated, order
+     * preserved. Defaults to `["English", "German"]` — today's behaviour.
+     *
+     * "English" is mandatory: it is the pivot language the translation
+     * sandwich turns on and the base catalogue's identity space (issue 09
+     * §1). Parsing fails loudly rather than silently dropping it.
+     */
+    LANGUAGES: z
+      .string()
+      .optional()
+      .transform((v) => {
+        const raw =
+          v && v.trim() !== ""
+            ? v
+                .split(",")
+                .map((s) => s.trim())
+                .filter(Boolean)
+            : ["English", "German"];
+        const languages = [...new Set(raw)];
+        if (!languages.includes("English")) {
+          throw new Error(
+            `LANGUAGES must include "English" — it is the pivot language the ` +
+              `translation sandwich turns on and the base catalogue's identity ` +
+              `space. Got: ${languages.length > 0 ? languages.join(", ") : "(empty)"}`
+          );
+        }
+        return languages;
+      }),
+    /**
+     * Enables steps 2–3 of the language-detection ladder (issue 10 §1): an
+     * offline n-gram detector (step 2, always tried once this is on) and,
+     * separately opted into via `LANGUAGE_DETECT_LLM_FALLBACK`, an LLM
+     * fallback (step 3). With this unset, an omitted request `language`
+     * resolves straight to the configured default ("English") — no
+     * detection work happens at all. This is communication-layer request
+     * normalisation (`caseGenerationService.ts`), not a graph flag: it
+     * never compiles a graph variant.
+     */
+    LANGUAGE_AUTO_DETECT: z
+      .string()
+      .optional()
+      .transform((v) => v === "true" || v === "1"),
+    /**
+     * Step 3's own opt-in, on top of `LANGUAGE_AUTO_DETECT` — a deployer
+     * enabling auto-detect should never *also* start paying for LLM calls
+     * unknowingly. Ignored when `LANGUAGE_AUTO_DETECT` is unset.
+     */
+    LANGUAGE_DETECT_LLM_FALLBACK: z
+      .string()
+      .optional()
+      .transform((v) => v === "true" || v === "1"),
+    /**
+     * Ceiling on one content part's decoded byte size (issue 11). Inline
+     * base64 inflates by ~33% and the whole case is held in memory,
+     * persisted and returned in one response, so a part beyond this fails
+     * loudly rather than silently shipping an oversized document.
+     */
+    MAX_CONTENT_PART_BYTES: z.coerce
+      .number()
+      .int()
+      .positive()
+      .default(5_000_000),
     ALLOWED_LLMS: z
       .string()
       .regex(allowedLlmsRegex)
@@ -63,11 +215,27 @@ export const ConfigSchema = z
       LLM_MODEL,
       LLM_API_KEY,
       LLM_URL,
-      LLM_TEMPERATURE,
+      LLM_GENERATOR_PROVIDER,
+      LLM_GENERATOR_MODEL,
+      LLM_GENERATOR_API_KEY,
+      LLM_GENERATOR_URL,
+      LLM_JUDGE_PROVIDER,
+      LLM_JUDGE_MODEL,
+      LLM_JUDGE_API_KEY,
+      LLM_JUDGE_URL,
+      LLM_TRANSLATOR_PROVIDER,
+      LLM_TRANSLATOR_MODEL,
+      LLM_TRANSLATOR_API_KEY,
+      LLM_TRANSLATOR_URL,
       ...rest
     } = env;
     if (FEATURES?.includes("ALLOW_LLMS")) {
-      return { ...rest, allowedLlms: ALLOWED_LLMS, llm: undefined };
+      return {
+        ...rest,
+        allowedLlms: ALLOWED_LLMS,
+        llm: undefined,
+        llmRoles: undefined,
+      };
     }
 
     if (!(LLM_PROVIDER && LLM_MODEL)) {
@@ -76,15 +244,50 @@ export const ConfigSchema = z
       );
     }
 
+    const llm: LlmRoleConfig = {
+      provider: LLM_PROVIDER,
+      model: LLM_MODEL,
+      apiKey: LLM_API_KEY,
+      url: LLM_URL,
+    };
+
+    const roleFields: Record<
+      LlmRole,
+      {
+        provider?: PossibleProviders | undefined;
+        model?: string | undefined;
+        apiKey?: string | undefined;
+        url?: string | undefined;
+      }
+    > = {
+      generator: {
+        provider: LLM_GENERATOR_PROVIDER,
+        model: LLM_GENERATOR_MODEL,
+        apiKey: LLM_GENERATOR_API_KEY,
+        url: LLM_GENERATOR_URL,
+      },
+      judge: {
+        provider: LLM_JUDGE_PROVIDER,
+        model: LLM_JUDGE_MODEL,
+        apiKey: LLM_JUDGE_API_KEY,
+        url: LLM_JUDGE_URL,
+      },
+      translator: {
+        provider: LLM_TRANSLATOR_PROVIDER,
+        model: LLM_TRANSLATOR_MODEL,
+        apiKey: LLM_TRANSLATOR_API_KEY,
+        url: LLM_TRANSLATOR_URL,
+      },
+    };
+
+    const llmRoles = Object.fromEntries(
+      LLM_ROLES.map((role) => [role, resolveRole(role, roleFields[role], llm)])
+    ) as Record<LlmRole, LlmRoleConfig>;
+
     return {
       ...rest,
-      llm: {
-        provider: LLM_PROVIDER,
-        model: LLM_MODEL,
-        apiKey: LLM_API_KEY,
-        url: LLM_URL,
-        temperature: LLM_TEMPERATURE,
-      },
+      llm,
+      llmRoles,
       allowedLlms: undefined,
     };
   });

@@ -6,7 +6,10 @@ import { buildCaseGraph } from "./02graphs/caseGraph.js";
 import { createYamlCatalogs } from "./catalog/index.js";
 import { createRepos } from "./repos.js";
 import { createMedicalBasisRegistry } from "./medicalBasis/registry.js";
-import { createModalityRegistry } from "./modality/registry.js";
+import type { ModalityRegistries } from "./modality/registry.js";
+import { createChiefComplaintProviders } from "./02graphs/02case-generation/02presentation/generation/chiefComplaint/providers.js";
+import { createAnamnesisProviders } from "./02graphs/02case-generation/02presentation/generation/anamnesis/providers.js";
+import { createProcedureResultProviders } from "./02graphs/02case-generation/03procedure/providers.js";
 import { createLlmPort } from "./utils/llm.js";
 import { createLogger } from "./utils/logger.js";
 import { LLM_ROLES, type GraphRuntime } from "./runtime.js";
@@ -106,13 +109,16 @@ export function initGraph(opts: {
     symptomsRepo: repos.symptoms,
   });
 
-  // The modality registry is likewise a plain list built here, not a
-  // `FEATURES`/config flag — see `modality/registry.ts`'s
-  // `createModalityRegistry` doc comment. Today it always returns
-  // `[textProvider]`, which is why `chiefComplaintGraph`/`anamnesisGraph`
-  // (`02presentation/generation/`) never compile in a `decide_modality`
-  // node in this deployment.
-  const modalityRegistry = createModalityRegistry();
+  // The per-field modality registries (issue 21 §4): each field composes
+  // its own provider list from its `providers.ts` slice
+  // (`02presentation/generation/chiefComplaint/providers.ts`,
+  // `.../anamnesis/providers.ts`, `03procedure/providers.ts`), mirroring the
+  // `catalog/<domain>/` vertical-slice convention.
+  const modalityRegistries: ModalityRegistries = {
+    chiefComplaint: createChiefComplaintProviders(runtime),
+    anamnesis: createAnamnesisProviders(runtime),
+    procedureResult: createProcedureResultProviders(runtime),
+  };
 
   const { caseGraph, generateCase } = buildCaseGraph(
     runtime,
@@ -120,7 +126,7 @@ export function initGraph(opts: {
     config,
     repos,
     medicalBasisRegistry,
-    modalityRegistry,
+    modalityRegistries,
     tracer
   );
 
@@ -145,7 +151,7 @@ export function initGraph(opts: {
     }
   }
 
-  return { config, runtime, generateCase, caseGraph };
+  return { config, runtime, generateCase, caseGraph, db: repos.db };
 }
 
 export { runWithContext, registerJobHook } from "./utils/context.js";

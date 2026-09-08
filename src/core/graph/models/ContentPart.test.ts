@@ -1,29 +1,81 @@
-// Issue 11 §8.
+// Issue 11 §8, issue 21 §2.
 import { describe, expect, it } from "vitest";
 import {
   ContentPartSchema,
   ContentPartsSchema,
+  encodeText,
   textOf,
-  textPart,
+  textOfPart,
   type ContentPart,
 } from "./ContentPart.js";
 
-describe("textPart", () => {
-  it("derives value as the UTF-8 encoding of alt", () => {
-    const part = textPart("Chest X-ray, PA. Consolidation noted.");
+/** The pre-issue-21 constructor, inlined at every call site now — kept as a
+ * local test helper so fixtures stay readable. Builds exactly what
+ * `textPart(alt)` used to: a `text/plain` part whose `value` is the UTF-8
+ * encoding of `alt`. */
+function fixtureTextPart(alt: string): ContentPart {
+  return { type: "text/plain", value: encodeText(alt), alt };
+}
 
-    expect(part.type).toBe("text/plain");
-    expect(part.alt).toBe("Chest X-ray, PA. Consolidation noted.");
-    expect(new TextDecoder().decode(part.value)).toBe(part.alt);
+describe("textOfPart", () => {
+  it("decodes value for a text/plain part", () => {
+    const part: ContentPart = {
+      type: "text/plain",
+      value: encodeText("Chest X-ray, PA. Consolidation noted."),
+      alt: "Chest X-ray",
+    };
+    expect(textOfPart(part)).toBe("Chest X-ray, PA. Consolidation noted.");
+  });
+
+  it("decodes value for another text/* subtype", () => {
+    const part: ContentPart = {
+      type: "text/markdown",
+      value: encodeText("**Impression:** pneumonia."),
+      alt: "Impression",
+    };
+    expect(textOfPart(part)).toBe("**Impression:** pneumonia.");
+  });
+
+  it("falls back to alt for image/png", () => {
+    const part: ContentPart = {
+      type: "image/png",
+      alt: "PA chest radiograph, right lower lobe consolidation.",
+      value: new Uint8Array([137, 80, 78, 71]),
+    };
+    expect(textOfPart(part)).toBe(
+      "PA chest radiograph, right lower lobe consolidation."
+    );
+  });
+
+  it("falls back to alt for an unknown MIME type", () => {
+    const part: ContentPart = {
+      type: "application/x-unknown",
+      alt: "An unrenderable placeholder.",
+      value: new Uint8Array([1, 2, 3]),
+    };
+    expect(textOfPart(part)).toBe("An unrenderable placeholder.");
+  });
+
+  // The equivalence that makes issue 21 step A safe to ship on its own:
+  // today every text part is built so that `value === utf8(alt)` (the old
+  // `textPart()` constructor's invariant). This test pins that today's
+  // behaviour is unchanged by MIME-dispatching `textOfPart` — it is NOT a
+  // guarantee about tomorrow's planner-authored parts, where `alt` and the
+  // rendered prose are expected to diverge (issue 21 §5).
+  it("pins today's behaviour: for a part built the old textPart way (value === utf8(alt)), textOfPart returns exactly alt", () => {
+    const part = fixtureTextPart("Chest X-ray, PA. Consolidation noted.");
+    expect(textOfPart(part)).toBe(part.alt);
   });
 
   it("validates against ContentPartSchema", () => {
-    expect(ContentPartSchema.safeParse(textPart("hello")).success).toBe(true);
+    expect(ContentPartSchema.safeParse(fixtureTextPart("hello")).success).toBe(
+      true
+    );
   });
 });
 
 describe("textOf — the only path from content parts to a prompt", () => {
-  it("joins every part's alt with no MIME branching", () => {
+  it("joins every part's text content with no explicit isText() branch at the call site", () => {
     const imagePart: ContentPart = {
       type: "image/png",
       alt: "PA chest radiograph, right lower lobe consolidation.",
@@ -31,13 +83,13 @@ describe("textOf — the only path from content parts to a prompt", () => {
     };
 
     const parts: ContentPart[] = [
-      textPart("Chest X-ray, PA. Consolidation noted."),
+      fixtureTextPart("Chest X-ray, PA. Consolidation noted."),
       imagePart,
-      textPart("Impression: right lower lobe pneumonia."),
+      fixtureTextPart("Impression: right lower lobe pneumonia."),
     ];
 
-    // A non-text part contributes its `alt` exactly like a text part does —
-    // no `isText()` branch anywhere in `textOf`.
+    // A non-text part contributes its `alt` (via `textOfPart`'s fallback)
+    // exactly like a text part contributes its decoded `value`.
     expect(textOf(parts)).toBe(
       [
         "Chest X-ray, PA. Consolidation noted.",
@@ -65,7 +117,7 @@ describe("ContentPartsSchema — additive-parts semantics", () => {
   });
 
   it("accepts a non-empty, order-preserving array", () => {
-    const parts = [textPart("a"), textPart("b")];
+    const parts = [fixtureTextPart("a"), fixtureTextPart("b")];
     const result = ContentPartsSchema.safeParse(parts);
     expect(result.success).toBe(true);
     expect(result.data).toEqual(parts);

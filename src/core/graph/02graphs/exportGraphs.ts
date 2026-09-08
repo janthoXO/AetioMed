@@ -3,8 +3,10 @@ import type { CompiledGraph } from "@langchain/langgraph";
 import { run } from "@mermaid-js/mermaid-cli";
 import { buildCaseGraph, graphTopologyKey } from "./caseGraph.js";
 import { createMedicalBasisRegistry } from "../medicalBasis/registry.js";
-import { createModalityRegistry } from "../modality/registry.js";
-import type { Node, Graph } from "@langchain/core/runnables/graph";
+import type { ModalityRegistries } from "../modality/registry.js";
+import { createChiefComplaintProviders } from "./02case-generation/02presentation/generation/chiefComplaint/providers.js";
+import { createAnamnesisProviders } from "./02case-generation/02presentation/generation/anamnesis/providers.js";
+import { createProcedureResultProviders } from "./02case-generation/03procedure/providers.js";
 import { EventBus } from "../../event-bus.js";
 import type { GraphRuntime } from "../runtime.js";
 import { InMemoryProcedureCatalog } from "../catalog/procedures/index.js";
@@ -17,79 +19,14 @@ import type { SymptomsRepo } from "../symptoms/repo.js";
 import type { AnamnesisRepo } from "../catalog/anamnesis/index.js";
 import type { ProceduresRepo } from "../catalog/procedures/index.js";
 
-function collapseSubgraphs(g: Graph, subgraphPrefixes: string[]) {
-  const newNodes: Record<string, Node> = {};
-
-  for (const [key, node] of Object.entries(g.nodes)) {
-    const isInsideCollapsed = subgraphPrefixes.some((prefix) =>
-      key.startsWith(`${prefix}:`)
-    );
-    if (!isInsideCollapsed) {
-      newNodes[key] = node;
-    }
-  }
-
-  for (const prefix of subgraphPrefixes) {
-    newNodes[prefix] = {
-      id: prefix,
-      name: prefix,
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      data: {} as any,
-    };
-  }
-
-  g.nodes = newNodes;
-
-  g.edges = g.edges
-    .map((e) => {
-      let source = e.source;
-      let target = e.target;
-
-      for (const prefix of subgraphPrefixes) {
-        if (source.startsWith(`${prefix}:`)) source = prefix;
-        if (target.startsWith(`${prefix}:`)) target = prefix;
-      }
-      return { ...e, source, target };
-    })
-    .filter((e) => e.source !== e.target);
-
-  return g;
-}
-
 export async function exportGraphPng(
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  graph: CompiledGraph<any>,
-  exportName: string,
-  ...subgraphsToCollapse: string[]
-) {
-  try {
-    const mermaidDef = await graph
-      .getGraphAsync({ xray: true })
-      .then((g) => collapseSubgraphs(g, subgraphsToCollapse))
-      .then((g) => g.drawMermaid());
-    const mmdPath = `docs/graphs/${exportName}.mmd` as `${string}.mmd`;
-    const pngPath = `docs/graphs/${exportName}.svg` as `${string}.svg`;
-    await fs.writeFile(mmdPath, mermaidDef, "utf-8");
-    await run(mmdPath, pngPath);
-  } catch (error) {
-    console.error(error);
-  }
-}
-
-export async function exportGraphOverviewPng(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   graph: CompiledGraph<any>,
   exportName: string
 ) {
   try {
     const mermaidDef = await graph
-      .getGraphAsync({ xray: 1 })
-      .then((g) =>
-        collapseSubgraphs(g, [
-          "translation_to_english_phase",
-          "translation_from_english_phase",
-        ])
-      )
+      .getGraphAsync({ xray: true })
       .then((g) => g.drawMermaid());
     const mmdPath = `docs/graphs/${exportName}.mmd` as `${string}.mmd`;
     const pngPath = `docs/graphs/${exportName}.svg` as `${string}.svg`;
@@ -177,9 +114,14 @@ const medicalBasisRegistry = createMedicalBasisRegistry({
   symptomsRepo: minimalSymptomsRepo,
 });
 
-// Mirrors the composition root too: always `[textProvider]` today, so no
-// exported topology shows a `decide_modality` node.
-const modalityRegistry = createModalityRegistry();
+// Mirrors the composition root: one text provider per field — the planner
+// always runs regardless of registry size (issue 21 §1), so there is no
+// registry-size topology variance left for this script to show.
+const modalityRegistries: ModalityRegistries = {
+  chiefComplaint: createChiefComplaintProviders(minimalRuntime),
+  anamnesis: createAnamnesisProviders(minimalRuntime),
+  procedureResult: createProcedureResultProviders(minimalRuntime),
+};
 
 const { getCaseGraph } = buildCaseGraph(
   minimalRuntime,
@@ -190,7 +132,7 @@ const { getCaseGraph } = buildCaseGraph(
     procedures: minimalProceduresRepo,
   },
   medicalBasisRegistry,
-  modalityRegistry
+  modalityRegistries
 );
 
 await fs.mkdir("docs/graphs", { recursive: true });
@@ -207,5 +149,4 @@ for (const translationSandwich of [false, true]) {
   const name = graphTopologyKey(flags);
 
   await exportGraphPng(graph, `case-graph.${name}`);
-  await exportGraphOverviewPng(graph, `case-graph-overview.${name}`);
 }

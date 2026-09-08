@@ -12,11 +12,18 @@
 // decorative. `looksLikeByteDump` is checked against a real leak first.
 import { describe, expect, it } from "vitest";
 import {
+  encodeText,
   textOf,
-  textPart,
   type ContentPart,
 } from "@/core/graph/models/ContentPart.js";
 import { buildPrompt, renderForPrompt, section } from "./prompt.js";
+
+/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
+ * inlined at every real call site now; kept here only to keep these
+ * fixtures readable. */
+function fixtureTextPart(alt: string): ContentPart {
+  return { type: "text/plain", value: encodeText(alt), alt };
+}
 
 /**
  * What a leaked byte payload actually looks like once rendered: either a run
@@ -39,13 +46,13 @@ export function looksLikeByteDump(rendered: string): boolean {
 }
 
 const mixedParts: ContentPart[] = [
-  textPart("Chest X-ray ordered."),
+  fixtureTextPart("Chest X-ray ordered."),
   {
     type: "image/png",
     alt: "PA chest radiograph, right lower lobe consolidation.",
     value: new Uint8Array(200).fill(137),
   },
-  textPart("Impression: right lower lobe pneumonia."),
+  fixtureTextPart("Impression: right lower lobe pneumonia."),
 ];
 
 describe("bytes never reach a prompt (issue 11 §4)", () => {
@@ -81,7 +88,7 @@ describe("bytes never reach a prompt (issue 11 §4)", () => {
         weight: 60,
         gender: "female" as const,
       },
-      chiefComplaint: textOf([textPart("Cough for three days.")]),
+      chiefComplaint: textOf([fixtureTextPart("Cough for three days.")]),
       anamnesis: [{ category: "History", answer: textOf(mixedParts) }],
     };
 

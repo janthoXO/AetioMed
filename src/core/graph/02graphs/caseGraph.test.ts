@@ -2,6 +2,7 @@
 // SQLite — just a minimal runtime and no-op repos, mirroring the stand-ins
 // `exportGraphs.ts` already uses for the same reason.
 import { describe, expect, it, vi } from "vitest";
+import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {
   ALL_GRAPH_FLAGS,
   assembleCaseGraph,
@@ -24,19 +25,42 @@ import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.j
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
 import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
-import { createTextModalityProvider } from "@/core/graph/modality/providers/text.js";
+import z from "zod";
 import type { ModalityProvider } from "@/core/graph/modality/ports.js";
+import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
+import { buildFieldGenerationGraph } from "./02case-generation/02presentation/generation/index.js";
+import { buildCaseGenerationGraph } from "./02case-generation/index.js";
+import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
+import { createProcedureStrategy } from "./02case-generation/03procedure/strategy/index.js";
 
 const TRANSLATION_NODES = [
   "translation_to_english_phase",
   "translation_from_english_phase",
 ];
 
+/** The one production-shaped provider: batch-in, batch-out, `{instruction}` input. */
+function fakeTextProvider(): ModalityProvider<unknown> {
+  return {
+    id: "text",
+    mime: "text/plain",
+    description: "test text provider",
+    inputSchema: z.object({ instruction: z.string().min(1) }),
+    render: async (batch) =>
+      (batch as { instruction: string }[]).map((b) =>
+        new TextEncoder().encode(b.instruction)
+      ),
+  };
+}
+
 function buildDeps(
   medicalBasisRegistry: MedicalBasisProvider[] = [
     { id: "fake-basis", fetch: async () => [] },
   ],
-  modalityRegistry: ModalityProvider[] = [createTextModalityProvider()]
+  modalityRegistries: ModalityRegistries = {
+    chiefComplaint: [fakeTextProvider()],
+    anamnesis: [fakeTextProvider()],
+    procedureResult: [fakeTextProvider()],
+  }
 ): AssemblyDeps {
   const bus = new EventBus();
   const runtime: GraphRuntime = {
@@ -72,7 +96,7 @@ function buildDeps(
     runtime,
     repos: { anamnesis, procedures },
     medicalBasisRegistry,
-    modalityRegistry,
+    modalityRegistries,
     traceNode: createTraceNode(bus),
   };
 }
@@ -90,6 +114,112 @@ const flags = (
   translationSandwich: boolean,
   procedurePreselection: boolean
 ): GraphFlags => ({ translationSandwich, procedurePreselection });
+
+// Issue 17 §1/§3.2: the three phase-level graphs that have no dedicated
+// test file of their own — `chiefComplaintGraph`/`anamnesisGraph`/
+// `buildProcedureGraph`/`buildCaseTranslationFromEnglishGraph` each assert
+// their own `outputChannels` in their own test files.
+describe("phase-level graphs — output surface (issue 17 §1)", () => {
+  it("presentation_phase (buildFieldGenerationGraph) writes back `case` AND `outline`", async () => {
+    const deps = buildDeps();
+    const graph = buildFieldGenerationGraph(
+      deps.runtime,
+      deps.modalityRegistries,
+      deps.traceNode
+    );
+    expect([...graph.outputChannels].sort()).toEqual(["case", "outline"]);
+  });
+
+  it("generation_phase (buildCaseGenerationGraph) writes back only `case`", async () => {
+    const deps = buildDeps();
+    const strategy = createProcedureStrategy(deps.runtime, false);
+    const graph = buildCaseGenerationGraph(
+      deps.runtime,
+      strategy,
+      deps.medicalBasisRegistry,
+      deps.modalityRegistries,
+      deps.traceNode
+    );
+    expect([...graph.outputChannels].sort()).toEqual(["case"]);
+  });
+
+  it("translation_to_english_phase (buildCaseTranslationToEnglishGraph) writes back `diagnosis` and `userInstructions`, not `case`", async () => {
+    const deps = buildDeps();
+    const graph = buildCaseTranslationToEnglishGraph(
+      deps.runtime,
+      deps.traceNode
+    );
+    expect([...graph.outputChannels].sort()).toEqual([
+      "diagnosis",
+      "userInstructions",
+    ]);
+  });
+
+  it("presentation_phase still yields a non-empty `outline` on a real run — the one narrowing that would silently degrade procedure results", async () => {
+    // `outline` is the one field a naive `{ case }`-only output would drop
+    // (issue 17 §1) — `03procedure/index.ts`'s `result_step` needs it for
+    // `generateProcedureResults`. Only `patient` is requested so this run
+    // never touches `chiefComplaintGraph`/`anamnesisGraph`'s modality path.
+    // Call order: `case_outline_generate` (generator, raw text) →
+    // `outline_evaluate` (judge, structured JSON) → accepted → fan out to
+    // `patient_generate` (generator, structured JSON).
+    const generatorQueue = [
+      "## Outline\nSome outline.",
+      JSON.stringify({
+        name: "Jane Doe",
+        age: 40,
+        height: 170,
+        weight: 65,
+        gender: "female",
+      }),
+    ];
+    const judgeQueue = [JSON.stringify({ accepted: true, reasons: [] })];
+    const bus = new EventBus();
+    const runtime: GraphRuntime = {
+      llm: {
+        for(opts) {
+          const queue = opts.role === "judge" ? judgeQueue : generatorQueue;
+          const response = queue.shift();
+          if (response === undefined) {
+            throw new Error(
+              `Unexpected LLM call for role "${opts.role}" — not scripted.`
+            );
+          }
+          return new FakeListChatModel({ responses: [response] });
+        },
+      },
+      catalogs: {
+        procedures: new InMemoryProcedureCatalog(),
+        anamnesis: new InMemoryAnamnesisCatalog(),
+        labels: new InMemoryLabelCatalog(),
+        diagnosis: new InMemoryDiagnosisCatalog(),
+      },
+      log: createLogger(bus),
+      clock: () => new Date("2024-01-01T00:00:00.000Z"),
+    };
+
+    const graph = buildFieldGenerationGraph(
+      runtime,
+      {
+        chiefComplaint: [fakeTextProvider()],
+        anamnesis: [fakeTextProvider()],
+        procedureResult: [],
+      },
+      createTraceNode(bus)
+    );
+
+    const result = await graph.invoke({
+      diagnosis: { name: "Influenza" },
+      generationFlags: ["patient"],
+      difficulty: "medium",
+      case: {},
+    });
+
+    expect(result.outline).toBeTruthy();
+    expect(result.outline!.length).toBeGreaterThan(0);
+    expect(result.case.patient).toBeDefined();
+  });
+});
 
 describe("assembleCaseGraph", () => {
   it("is pure: the same (deps, flags) produce the same node set", async () => {
@@ -150,9 +280,42 @@ describe("assembleCaseGraph", () => {
     expect(ids.some((id) => id.includes("basis_resolve"))).toBe(true);
   });
 
-  it("rejects an empty modality registry at assembly time (issue 13 §4)", () => {
+  it("rejects an empty chief-complaint modality registry at assembly time (issue 21 §7)", () => {
     expect(() =>
-      assembleCaseGraph(buildDeps(undefined, []), flags(false, false))
+      assembleCaseGraph(
+        buildDeps(undefined, {
+          chiefComplaint: [],
+          anamnesis: [fakeTextProvider()],
+          procedureResult: [],
+        }),
+        flags(false, false)
+      )
+    ).toThrow(/modality registry is empty/i);
+  });
+
+  it("rejects an empty anamnesis modality registry at assembly time (issue 21 §7)", () => {
+    expect(() =>
+      assembleCaseGraph(
+        buildDeps(undefined, {
+          chiefComplaint: [fakeTextProvider()],
+          anamnesis: [],
+          procedureResult: [],
+        }),
+        flags(false, false)
+      )
+    ).toThrow(/modality registry is empty/i);
+  });
+
+  it("rejects an empty procedure-result modality registry at assembly time (issue 21 §7)", () => {
+    expect(() =>
+      assembleCaseGraph(
+        buildDeps(undefined, {
+          chiefComplaint: [fakeTextProvider()],
+          anamnesis: [fakeTextProvider()],
+          procedureResult: [],
+        }),
+        flags(false, false)
+      )
     ).toThrow(/modality registry is empty/i);
   });
 
@@ -364,7 +527,7 @@ describe("buildCaseGraph", () => {
       config,
       deps.repos,
       deps.medicalBasisRegistry,
-      deps.modalityRegistry
+      deps.modalityRegistries
     );
 
     const graphs = ALL_GRAPH_FLAGS.map((f) => getCaseGraph(f));
@@ -379,7 +542,7 @@ describe("buildCaseGraph", () => {
       config,
       deps.repos,
       deps.medicalBasisRegistry,
-      deps.modalityRegistry
+      deps.modalityRegistries
     );
 
     expect(getCaseGraph(flags(true, false))).toBe(
@@ -400,7 +563,7 @@ describe("buildCaseGraph", () => {
       }),
       deps.repos,
       deps.medicalBasisRegistry,
-      deps.modalityRegistry
+      deps.modalityRegistries
     );
 
     expect(caseGraph).toBe(getCaseGraph(flags(false, true)));

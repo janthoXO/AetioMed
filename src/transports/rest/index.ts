@@ -27,6 +27,8 @@ export interface RestAppOptions {
   service: CaseGenerationService;
   jobEvents: JobEventChannel;
   features: Set<string>;
+  /** Override the POST stream's heartbeat interval — tests only. */
+  heartbeatMs?: number;
 }
 
 /**
@@ -51,7 +53,12 @@ export function createRestApp(opts: RestAppOptions): express.Express {
   apiRouter.get("/features", (_req, res) => res.json([...features]));
   app.use("/api", apiRouter);
 
-  apiRouter.use("/cases", createCasesRouter(graph, service));
+  apiRouter.use(
+    "/cases",
+    createCasesRouter(graph, service, jobEvents, {
+      ...(opts.heartbeatMs !== undefined && { heartbeatMs: opts.heartbeatMs }),
+    })
+  );
   // Labels and the topology they are keyed against are always on (#140):
   // they are a product feature of the streaming API, not telemetry.
   apiRouter.use("/cases", createLabelsRouter(jobEvents));

@@ -55,15 +55,31 @@ export type CaseGenerationResult = {
  * future non-`"done"`/`"failed"` status (e.g. human-in-the-loop's
  * `"awaiting_review"`) without a breaking change.
  */
+/**
+ * A job as {@link CaseGenerationService.start} hands it back: either
+ * accepted — its channel is already open, and `result` settles when it
+ * ends — or rejected up front as a duplicate jobId (409).
+ */
+export type StartedJob =
+  | { accepted: true; jobId: string; result: Promise<CaseGenerationResult> }
+  | { accepted: false; jobId: string; result: CaseGenerationResult };
+
 export interface CaseGenerationService {
   /**
-   * Run one generation. Waits for a slot under `MAX_CONCURRENT_GENERATIONS`
+   * Reserve the jobId, open its channel and start the job — all
+   * synchronously, before this returns. A caller can therefore subscribe to
+   * the job's events before any node runs, and learns about a duplicate
+   * before it has committed to a response format (#143).
+   */
+  start(req: CaseGenerationRequest, opts?: { slot?: Release }): StartedJob;
+  /**
+   * {@link start}, awaited. Waits for a slot under `MAX_CONCURRENT_GENERATIONS` Waits for a slot under `MAX_CONCURRENT_GENERATIONS`
    * unless `opts.slot` hands in one the caller already holds — the NATS
    * consumer does, so it only pulls a message off the stream once it can
    * run it. Either way the service releases the slot when the job ends.
    */
   generate(
-    req: CaseGenerationRequest & { jobId?: string },
+    req: CaseGenerationRequest,
     opts?: { slot?: Release }
   ): Promise<CaseGenerationResult>;
   /** Wait for a free generation slot, to pass to {@link generate}. */
@@ -245,19 +261,51 @@ export function createCaseGenerationService(
     }
   }
 
-  return {
-    async generate(req, generateOpts = {}): Promise<CaseGenerationResult> {
-      const jobId = req.jobId ?? crypto.randomUUID();
-      let release = generateOpts.slot;
+  async function execute(
+    req: CaseGenerationRequest,
+    jobId: string,
+    controller: AbortController,
+    slot: Release | undefined
+  ): Promise<CaseGenerationResult> {
+    let release = slot;
+    const acquireSlot = async () => {
+      release ??= await limiter.acquire(controller.signal);
+    };
 
-      // Reserved before the first `await`: by the time a caller holds the
-      // returned promise, the job's channel is open, so it can subscribe
-      // before any node runs. A jobId is an idempotency key — a duplicate
-      // must never start a second generation.
-      if (!jobEvents.open(jobId)) {
-        release?.();
-        const active = jobEvents.state(jobId) === "active";
-        return {
+    try {
+      const result = await run(req, jobId, controller.signal, acquireSlot);
+      jobEvents.close(jobId, outcomeOf(result));
+      return result;
+    } catch (error) {
+      jobEvents.close(jobId, {
+        status: "failed",
+        error: {
+          code: "GENERATION_FAILED",
+          message: error instanceof Error ? error.message : String(error),
+        },
+      });
+      throw error;
+    } finally {
+      release?.();
+      controllers.delete(jobId);
+    }
+  }
+
+  function start(
+    req: CaseGenerationRequest,
+    opts: { slot?: Release } = {}
+  ): StartedJob {
+    const jobId = req.jobId ?? crypto.randomUUID();
+
+    // A jobId is an idempotency key — a duplicate must never start a
+    // second generation.
+    if (!jobEvents.open(jobId)) {
+      opts.slot?.();
+      const active = jobEvents.state(jobId) === "active";
+      return {
+        accepted: false,
+        jobId,
+        result: {
           jobId,
           status: "failed",
           error: {
@@ -267,32 +315,24 @@ export function createCaseGenerationService(
               : "A generation with this jobId has already finished",
             statusCode: 409,
           },
-        };
-      }
-
-      const controller = new AbortController();
-      controllers.set(jobId, controller);
-      const acquireSlot = async () => {
-        release ??= await limiter.acquire(controller.signal);
+        },
       };
+    }
 
-      try {
-        const result = await run(req, jobId, controller.signal, acquireSlot);
-        jobEvents.close(jobId, outcomeOf(result));
-        return result;
-      } catch (error) {
-        jobEvents.close(jobId, {
-          status: "failed",
-          error: {
-            code: "GENERATION_FAILED",
-            message: error instanceof Error ? error.message : String(error),
-          },
-        });
-        throw error;
-      } finally {
-        release?.();
-        controllers.delete(jobId);
-      }
+    const controller = new AbortController();
+    controllers.set(jobId, controller);
+    return {
+      accepted: true,
+      jobId,
+      result: execute(req, jobId, controller, opts.slot),
+    };
+  }
+
+  return {
+    start,
+
+    async generate(req, opts = {}): Promise<CaseGenerationResult> {
+      return start(req, opts).result;
     },
 
     reserveSlot() {

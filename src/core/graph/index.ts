@@ -159,4 +159,3 @@ export function initGraph(opts: {
 }
 
 export { runWithContext } from "./utils/context.js";
-export * as cancelManager from "./utils/cancelManager.js";

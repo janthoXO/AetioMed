@@ -18,8 +18,8 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
  * Called *before* `runWithContext` binds the request's `AsyncLocalStorage`
  * context — language resolution is what decides what to bind — so there is
  * no jobId/abort-signal to thread through yet. Acceptable for a single
- * rare, opt-in classification call; it is not registered with
- * `cancelManager`.
+ * rare, opt-in classification call; it does not see the job's abort
+ * signal.
  */
 export async function detectLanguageViaLlm(
   runtime: GraphRuntime,

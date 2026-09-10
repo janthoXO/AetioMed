@@ -1,11 +1,11 @@
 import type { EventBus } from "./event-bus.js";
 import type { JobEventChannel, JobOutcome } from "./jobEvents/index.js";
+import { createLimiter, type Release } from "./concurrency.js";
 import type { GraphAppContext } from "./graph/appContext.js";
 import type { Case } from "./graph/models/Case.js";
 import type { Language } from "./graph/models/Language.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
 import { runWithContext } from "./graph/utils/context.js";
-import * as cancelManager from "./graph/utils/cancelManager.js";
 import { AppError } from "./graph/errors/AppError.js";
 import {
   expandFlagsForSolver,
@@ -56,11 +56,23 @@ export type CaseGenerationResult = {
  * `"awaiting_review"`) without a breaking change.
  */
 export interface CaseGenerationService {
+  /**
+   * Run one generation. Waits for a slot under `MAX_CONCURRENT_GENERATIONS`
+   * unless `opts.slot` hands in one the caller already holds — the NATS
+   * consumer does, so it only pulls a message off the stream once it can
+   * run it. Either way the service releases the slot when the job ends.
+   */
   generate(
-    req: CaseGenerationRequest & { jobId?: string }
+    req: CaseGenerationRequest & { jobId?: string },
+    opts?: { slot?: Release }
   ): Promise<CaseGenerationResult>;
+  /** Wait for a free generation slot, to pass to {@link generate}. */
+  reserveSlot(): Promise<Release>;
+  /** Abort a running or queued job. `false` if this process has no such job. */
   cancel(jobId: string): boolean;
 }
+
+export const DEFAULT_MAX_CONCURRENT_GENERATIONS = 4;
 
 /** Map a finished job's result onto the channel's terminal marker. */
 function outcomeOf(result: CaseGenerationResult): JobOutcome {
@@ -81,15 +93,29 @@ export function createCaseGenerationService(
   graph: GraphAppContext,
   bus: EventBus,
   jobEvents: JobEventChannel,
-  // Injectable for tests (a spy asserting the diagnosis name is never
-  // passed to it — issue 10 §2); the real `tinyld`-backed detector by
-  // default, constructed here rather than at module scope so nothing runs
-  // at import time.
-  detector: LanguageDetector = createTinyldDetector()
+  opts: {
+    /** Bounds generations across every transport (#142). */
+    maxConcurrent?: number;
+    // Injectable for tests (a spy asserting the diagnosis name is never
+    // passed to it — issue 10 §2); the real `tinyld`-backed detector by
+    // default, constructed here rather than at module scope so nothing
+    // runs at import time.
+    detector?: LanguageDetector;
+  } = {}
 ): CaseGenerationService {
+  const detector = opts.detector ?? createTinyldDetector();
+  const limiter = createLimiter(
+    opts.maxConcurrent ?? DEFAULT_MAX_CONCURRENT_GENERATIONS
+  );
+  // One per job, registered at submission rather than when generation
+  // starts, so a job still queued for a slot can be cancelled too.
+  const controllers = new Map<string, AbortController>();
+
   async function run(
     req: CaseGenerationRequest,
-    jobId: string
+    jobId: string,
+    signal: AbortSignal,
+    acquireSlot: () => Promise<void>
   ): Promise<CaseGenerationResult> {
     // Provenance for the translate-in trigger (issue 12 §3): true only
     // when the caller actually supplied free text — a diagnosis name
@@ -140,6 +166,10 @@ export function createCaseGenerationService(
     });
 
     try {
+      // Queued only once the request is known to be runnable: a bad ICD
+      // above answers at once instead of waiting behind other jobs. Inside
+      // the `try` so a cancel while queued maps to `GENERATION_CANCELLED`.
+      await acquireSlot();
       const fullCase = await runWithContext(
         () =>
           graph.generateCase({
@@ -152,7 +182,8 @@ export function createCaseGenerationService(
           }),
         jobId,
         req.llmConfig,
-        resolvedLanguage
+        resolvedLanguage,
+        signal
       );
 
       const generatedCase =
@@ -215,14 +246,16 @@ export function createCaseGenerationService(
   }
 
   return {
-    async generate(req): Promise<CaseGenerationResult> {
+    async generate(req, generateOpts = {}): Promise<CaseGenerationResult> {
       const jobId = req.jobId ?? crypto.randomUUID();
+      let release = generateOpts.slot;
 
       // Reserved before the first `await`: by the time a caller holds the
       // returned promise, the job's channel is open, so it can subscribe
       // before any node runs. A jobId is an idempotency key — a duplicate
       // must never start a second generation.
       if (!jobEvents.open(jobId)) {
+        release?.();
         const active = jobEvents.state(jobId) === "active";
         return {
           jobId,
@@ -237,8 +270,14 @@ export function createCaseGenerationService(
         };
       }
 
+      const controller = new AbortController();
+      controllers.set(jobId, controller);
+      const acquireSlot = async () => {
+        release ??= await limiter.acquire(controller.signal);
+      };
+
       try {
-        const result = await run(req, jobId);
+        const result = await run(req, jobId, controller.signal, acquireSlot);
         jobEvents.close(jobId, outcomeOf(result));
         return result;
       } catch (error) {
@@ -250,11 +289,21 @@ export function createCaseGenerationService(
           },
         });
         throw error;
+      } finally {
+        release?.();
+        controllers.delete(jobId);
       }
     },
 
+    reserveSlot() {
+      return limiter.acquire();
+    },
+
     cancel(jobId: string): boolean {
-      return cancelManager.abort(jobId);
+      const controller = controllers.get(jobId);
+      if (!controller || controller.signal.aborted) return false;
+      controller.abort();
+      return true;
     },
   };
 }

@@ -4,7 +4,6 @@ import {
   type LLMConfig,
 } from "@/core/graph/models/LLMConfig.js";
 import type { Language } from "@/core/graph/models/Language.js";
-import * as cancelManager from "./cancelManager.js";
 import z from "zod";
 
 /**
@@ -49,8 +48,10 @@ export type RequestContext = z.infer<typeof RequestContextSchema> & {
 export const requestContext = new AsyncLocalStorage<RequestContext>();
 
 /**
- * Bind a request's context for the duration of `fn` and register its abort
- * controller with `cancelManager`, so the job can be cancelled by jobId.
+ * Bind a request's context for the duration of `fn`. `signal` is the job's
+ * abort signal; cancellation is owned by `CaseGenerationService`, which
+ * registers a controller per job at submission (#142) — so a job still
+ * queued for a slot can be cancelled, not just a running one.
  *
  * It used to also call a single-slot `registerJobHook` that the tracing
  * module filled in, so exactly one adapter could attach per job. The per-job
@@ -61,30 +62,10 @@ export function runWithContext<T>(
   fn: () => T,
   jobId?: string,
   llmConfig?: LLMConfig,
-  language?: Language
+  language?: Language,
+  signal: AbortSignal = new AbortController().signal
 ): T {
-  const controller = new AbortController();
-
-  if (jobId) cancelManager.register(jobId, controller);
-
-  const finish = () => {
-    if (jobId) cancelManager.unregister(jobId);
-  };
-
-  try {
-    const result = requestContext.run(
-      { jobId, llmConfig, language, signal: controller.signal },
-      fn
-    );
-    if (result instanceof Promise) {
-      return result.finally(finish) as unknown as T;
-    }
-    finish();
-    return result;
-  } catch (error) {
-    finish();
-    throw error;
-  }
+  return requestContext.run({ jobId, llmConfig, language, signal }, fn);
 }
 
 export function getRequestContext(): RequestContext | undefined {

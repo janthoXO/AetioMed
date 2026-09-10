@@ -266,7 +266,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
       graph,
       new EventBus(),
       createJobEventChannel(),
-      detector
+      { detector }
     );
 
     const result = await service.generate({
@@ -288,7 +288,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
       graph,
       new EventBus(),
       createJobEventChannel(),
-      detector
+      { detector }
     );
 
     const result = await service.generate({
@@ -311,7 +311,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
       graph,
       new EventBus(),
       createJobEventChannel(),
-      detector
+      { detector }
     );
 
     const result = await service.generate({
@@ -334,7 +334,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
       graph,
       new EventBus(),
       createJobEventChannel(),
-      detector
+      { detector }
     );
 
     const result = await service.generate({
@@ -356,7 +356,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
       graph,
       new EventBus(),
       createJobEventChannel(),
-      detector
+      { detector }
     );
 
     await service.generate({
@@ -389,7 +389,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
       graph,
       new EventBus(),
       createJobEventChannel(),
-      detector
+      { detector }
     );
 
     await service.generate({
@@ -543,5 +543,197 @@ describe("CaseGenerationService — job channel lifecycle", () => {
       code: "JOB_ALREADY_COMPLETED",
       statusCode: 409,
     });
+  });
+});
+
+// #142 — one limiter bounds generations across both transports. NATS holds
+// its slot before calling `generate` (via `reserveSlot()`); REST lets
+// `generate` acquire its own.
+describe("CaseGenerationService — concurrency limit (#142)", () => {
+  const minimalCase: Case = {
+    patient: { name: "Jane", age: 40, sex: "female" },
+  };
+
+  /**
+   * A `generateCase` that gates on an externally-controlled release and
+   * records the maximum number of concurrently in-flight calls. Release is
+   * FIFO by actual invocation order (not by name), so a caller does not need
+   * to know which of several concurrent jobs happens to be running first.
+   */
+  function gatedGenerateCase() {
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const pending: (() => void)[] = [];
+    const generateCase = vi.fn(async () => {
+      inFlight += 1;
+      maxInFlight = Math.max(maxInFlight, inFlight);
+      await new Promise<void>((resolve) => pending.push(resolve));
+      inFlight -= 1;
+      return minimalCase;
+    }) as unknown as GraphAppContext["generateCase"];
+    return {
+      generateCase,
+      maxInFlight: () => maxInFlight,
+      inFlightNow: () => inFlight,
+      pendingCount: () => pending.length,
+      releaseNext: () => pending.shift()?.(),
+    };
+  }
+
+  async function waitUntil(predicate: () => boolean): Promise<void> {
+    while (!predicate()) {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+
+  it("bounds concurrency identically over REST and NATS, all five finish 'done'", async () => {
+    const { generateCase, maxInFlight, pendingCount, releaseNext } =
+      gatedGenerateCase();
+    const service = createCaseGenerationService(
+      fakeGraph(generateCase),
+      new EventBus(),
+      createJobEventChannel(),
+      { maxConcurrent: 2 }
+    );
+
+    // REST-style: generate() acquires its own slot. Not awaited here — the
+    // point is that these run concurrently with the NATS-style jobs below,
+    // all gated behind the same limiter.
+    const restJobs = ["r1", "r2", "r3"].map((jobId) =>
+      service.generate({
+        diagnosis: jobId,
+        generationFlags: ["patient"],
+        jobId,
+      })
+    );
+    // NATS-style: the caller reserves the slot up front, then hands it to
+    // generate() — reserveSlot() itself waits for a free slot, so it is
+    // chained rather than awaited at the top level (awaiting here would
+    // block this test on a slot nothing has released yet).
+    const natsJobs = ["n1", "n2"].map((jobId) =>
+      service
+        .reserveSlot()
+        .then((slot) =>
+          service.generate(
+            { diagnosis: jobId, generationFlags: ["patient"], jobId },
+            { slot }
+          )
+        )
+    );
+
+    // Release progressively: wait for at least one call to actually be
+    // in-flight, then free it, five times over — this drains all five jobs
+    // through the 2-wide limiter regardless of arrival order.
+    for (let i = 0; i < 5; i++) {
+      await waitUntil(() => pendingCount() > 0);
+      releaseNext();
+    }
+
+    const results = await Promise.all([...restJobs, ...natsJobs]);
+    expect(results.every((r) => r.status === "done")).toBe(true);
+    expect(maxInFlight()).toBeLessThanOrEqual(2);
+  });
+
+  it("cancels a queued job without ever calling generateCase; its channel closes 'cancelled'", async () => {
+    const { generateCase, releaseNext } = gatedGenerateCase();
+    const channel = createJobEventChannel();
+    const completes: Record<string, unknown> = {};
+    channel.subscribeAll((jobId, e) => {
+      if (e.type === "complete") completes[jobId] = e.data;
+    });
+    const service = createCaseGenerationService(
+      fakeGraph(generateCase),
+      new EventBus(),
+      channel,
+      { maxConcurrent: 1 }
+    );
+
+    const first = service.generate({
+      diagnosis: "first",
+      generationFlags: ["patient"],
+      jobId: "first",
+    });
+    // Give `first` a tick to acquire its slot before queuing the second.
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const queued = service.generate({
+      diagnosis: "queued",
+      generationFlags: ["patient"],
+      jobId: "queued",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    const cancelled = service.cancel("queued");
+    expect(cancelled).toBe(true);
+
+    const queuedResult = await queued;
+    expect(queuedResult.error?.code).toBe("GENERATION_CANCELLED");
+
+    releaseNext();
+    await first;
+
+    expect(generateCase).toHaveBeenCalledTimes(1);
+    expect(completes["queued"]).toMatchObject({ status: "cancelled" });
+  });
+
+  it("releases a slot handed in when the job is rejected as a duplicate, so a following generate can still run", async () => {
+    const { generateCase, inFlightNow, releaseNext } = gatedGenerateCase();
+    // maxConcurrent: 2 so the duplicate's own reserved slot does not have to
+    // wait behind the still-running "dup" job — the point under test is
+    // whether that slot is released, not whether it was ever grantable.
+    const service = createCaseGenerationService(
+      fakeGraph(generateCase),
+      new EventBus(),
+      createJobEventChannel(),
+      { maxConcurrent: 2 }
+    );
+
+    const dup = {
+      diagnosis: "dup",
+      generationFlags: ["patient" as const],
+      jobId: "dup",
+    };
+    const first = service.generate(dup);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(inFlightNow()).toBe(1);
+
+    // Second caller reserves a slot itself (NATS-style) and hands it to a
+    // duplicate request; the service must release it since it never runs.
+    const slot = await service.reserveSlot();
+    const duplicateResult = await service.generate(dup, { slot });
+    expect(duplicateResult.error?.code).toBe("JOB_ALREADY_ACTIVE");
+
+    // Two slots exist; "dup" holds one. If the duplicate's slot leaked, both
+    // are gone and "following" would queue forever instead of running.
+    const following = service.generate({
+      diagnosis: "following",
+      generationFlags: ["patient"],
+      jobId: "following",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(inFlightNow()).toBe(2);
+
+    releaseNext(); // "dup"
+    await first;
+    releaseNext(); // "following"
+    await following;
+  });
+
+  it("cancel('unknown') is false; cancel after finish is false", async () => {
+    const service = createCaseGenerationService(
+      fakeGraph(async () => minimalCase),
+      new EventBus(),
+      createJobEventChannel(),
+      { maxConcurrent: 1 }
+    );
+
+    expect(service.cancel("unknown")).toBe(false);
+
+    await service.generate({
+      diagnosis: "done-job",
+      generationFlags: ["patient"],
+      jobId: "done-job",
+    });
+    expect(service.cancel("done-job")).toBe(false);
   });
 });

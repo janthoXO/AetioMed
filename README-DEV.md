@@ -165,7 +165,7 @@ The numbered prefixes under `core/graph/` encode pipeline order: graphs call too
 
 **`GraphRuntime`** is the single seam graph construction goes through. It is captured **by closure at graph-assembly time** — not threaded through node signatures, and not carried on LangGraph's per-invocation runtime context. Nothing under `src/core/graph/` imports a mutable module singleton or reads `process.env`.
 
-**`CaseGenerationService`** is what both transports call. It owns ICD→name resolution, language resolution, job ids, `runWithContext`, generation-flag normalisation, terminal event emission and error→status mapping, and returns a job shape (`{ jobId, status, case?, error?, language }`) rather than a bare `Case`. Routers are protocol translation only.
+**`CaseGenerationService`** is what both transports call. It owns ICD→name resolution, language resolution, job ids, `runWithContext`, generation-flag normalisation, terminal event emission and error→status mapping, and returns a job shape (`{ jobId, status, case?, error?, language }`) rather than a bare `Case`. Routers are protocol translation only. `start(req, opts?)` reserves the jobId and opens its event channel synchronously, before returning — `generate(req, opts?)` is just `start(req, opts).result` awaited — so a caller (REST's POST stream, #143) can subscribe to a job's events before any node runs and learns about a duplicate jobId before committing to a response format.
 
 To publish new events, augment `EventMap` via module augmentation on `core/event-bus.js` — that keeps `emit`/`on` type-checked without either side importing the other.
 
@@ -243,14 +243,42 @@ Requires the `REST` feature flag.
 | `GET`    | `/api/health`              | Health check                                                                                    |
 | `GET`    | `/api/features`            | Active feature flags                                                                            |
 | `GET`    | `/api/allowedLlms`         | Allowlisted LLMs (when `ALLOW_LLMS` is set)                                                     |
-| `POST`   | `/api/cases`               | Generate a case (accepts `?jobId=`; aborts on client disconnect)                                |
+| `POST`   | `/api/cases`               | Generate a case — content negotiation, streamed as SSE or blocking JSON (see below)             |
 | `DELETE` | `/api/cases/:jobId`        | Cancel an in-flight generation                                                                  |
 | `GET`    | `/api/diagnosis`           | List predefined diagnoses                                                                       |
 | `GET`    | `/api/procedures`          | List predefined procedures                                                                      |
 | `GET`    | `/api/cases/:jobId/labels` | Live SSE stream: `event: label` (localized, node started/terminal), ends with `event: complete` |
 | `GET`    | `/api/graph`               | Compiled graph topology (nodes + edges + English label keys) for this deployment's flags        |
 
-A request body needs either `icd` or `diagnosis`; `generationFlags` defaults to all four fields and must name at least one; `difficulty` defaults to `medium`. The response echoes the resolved `language`, and content-bearing fields are wire-encoded (see Content Parts). A jobId — from `?jobId=` or the body — is validated as a NATS subject token even on REST (`.`, `*`, `>`, whitespace are rejected with 400), since it addresses `cases.result.<jobId>` on NATS too.
+A request body needs either `icd` or `diagnosis`; `generationFlags` defaults to all four fields and must name at least one; `difficulty` defaults to `medium`. The response echoes the resolved `language`, and content-bearing fields are wire-encoded (see Content Parts). `jobId` is an optional body field (the server mints a UUID when omitted), validated as a NATS subject token even on REST (`.`, `*`, `>`, whitespace are rejected with 400) since it addresses `cases.result.<jobId>` on NATS too; there is no `?jobId=` query param.
+
+**`POST /api/cases` is REST's synchronous transport, opened as a stream (#143).** `Accept: application/json` (or no preference) blocks and returns the case in one response, exactly like a plain REST call. `Accept: text/event-stream` opens SSE on the POST's own response instead, so the jobId is never learned too late to subscribe:
+
+```
+POST /api/cases
+Content-Type: application/json
+Accept: text/event-stream
+
+{"diagnosis": "Influenza", "generationFlags": ["patient"]}
+```
+
+```
+event: accepted
+data: {"jobId":"3fa2...  "}
+
+event: label
+data: {"jobId":"3fa2...","nodeId":"...","status":"started", ...}
+
+: ping
+
+event: label
+data: {"jobId":"3fa2...","nodeId":"...","status":"completed", ...}
+
+event: result
+data: {"patient": {...}, "jobId":"3fa2...","language":"English"}
+```
+
+`event: accepted` is always written first — before any node runs. `: ping` comment frames are emitted every 15s (`HEARTBEAT_MS`) independently of label activity, so a proxy never times out an idle-looking connection during a long, silent node. On failure the stream ends with `event: error` instead of `event: result`. A duplicate `jobId` (still running, or recently finished) is a 409 (`JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED`) on either Accept path, returned before any stream opens and without starting a second generation. On both paths, a client disconnect cancels the job — REST has no result store, so a dropped connection loses the generation in progress (the accepted trade of a connection-scoped transport; a client that needs to survive drops uses NATS).
 
 ## NATS API
 

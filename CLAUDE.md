@@ -73,6 +73,14 @@ call. It owns ICD→name resolution, jobId minting, `runWithContext`, terminal e
 job shape (`{ jobId, status, case?, error? }`) rather than a bare `Case`. Transports are
 protocol translation only.
 
+`start(req, opts?)` is the synchronous primitive: it reserves the jobId and opens its event
+channel **before returning**, handing back a `StartedJob` (`{ accepted: true, jobId, result:
+Promise<CaseGenerationResult> }` or `{ accepted: false, jobId, result: CaseGenerationResult }`
+for a duplicate). `generate(req, opts?)` is just `start(req, opts).result` awaited. The split
+exists for REST's POST stream (#143): a caller can subscribe to the job's events before any
+node runs, and learns about a duplicate jobId before it has committed to a response format
+(SSE headers already flushed vs. a plain JSON 409).
+
 It also owns **generation-flag normalisation**
 (`models/GenerationFlags.ts`: `expandFlagsForSolver` / `projectCaseToFlags`). A
 `generationFlags: ["procedures"]` request cannot be served literally — the blinded solver
@@ -546,7 +554,8 @@ listen) so tests can drive the real route table directly. Routes translate proto
 generation goes through `CaseGenerationService`:
 
 - `GET /api/health`, `GET /api/features`, `GET /api/allowedLlms`
-- `routes/cases.router.ts` — `POST /api/cases` (aborts on client disconnect), `DELETE /api/cases/:jobId` (cancel)
+- `routes/cases.router.ts` — `POST /api/cases` (content negotiation, see below),
+  `DELETE /api/cases/:jobId` (cancel)
 - `routes/diagnosis.router.ts` — `GET /api/diagnosis`
 - `routes/procedures.router.ts` — `GET /api/procedures`
 - `routes/labels.router.ts` — `GET /api/cases/:jobId/labels` (SSE, `event: label`, adapting
@@ -554,11 +563,27 @@ generation goes through `CaseGenerationService`:
   `core/graph/structure.ts`), both always mounted (#140) — labels are a product feature of the
   streaming API, not telemetry
 
-`POST /api/cases` accepts a jobId two ways — `?jobId=` (query) or `jobId` in the body — validated
-against `src/api/JobId.ts`'s `JobIdSchema` either way, since it is also a NATS subject token
-(`cases.result.<jobId>`) even when the request arrives over REST: `.`, `*`, `>` and whitespace
-would silently address a different subject, so a jobId containing any of those is a 400, not a
-500 raised deep in a NATS-only code path.
+**`POST /api/cases` is REST's synchronous transport, opened as a stream (#143, design doc
+§D1/§D3).** Content negotiation on the one route, not a second endpoint: `Accept:
+application/json` (or no preference) blocks and returns the case exactly as before; `Accept:
+text/event-stream` opens SSE on the POST's own response — `event: accepted {jobId}` written
+**before any node runs**, then `event: label`… as generation proceeds, then `event: result
+{case…}` or `event: error {error}`. Opening the stream with the request itself removes the
+handshake race a 202-then-subscribe design has: every event between minting the jobId and the
+client subscribing would otherwise be lost, short of a replay buffer (deferred). A `: ping`
+comment is written every `HEARTBEAT_MS` (15s; `heartbeatMs` in `RestAppOptions` overrides it
+for tests) independently of label activity — a single node (outline generation on a local
+model, one solver iteration) can stay silent for minutes, long enough for a proxy to treat the
+connection as idle; liveness and telemetry are two concerns that happen to coincide, not one
+mechanism. `jobId` is a **body field**, validated against `src/api/JobId.ts`'s `JobIdSchema`
+since it is also a NATS subject token (`cases.result.<jobId>`) even when the request arrives
+over REST — the `?jobId=` query param is gone. A duplicate jobId (still running, or finished
+within the channel's tombstone window) is a 409 `JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED` on
+either Accept path, answered before any stream opens and without starting a second generation
+— `CaseGenerationService.start()` (see "Case Generation Pipeline" above) is what makes the
+duplicate check synchronous with respect to the caller. On either path, a client disconnect
+cancels the job (`res.on("close")`) — the accepted trade of a connection-scoped transport
+(HTTP cannot tell "the user cancelled" from "the network dropped"), not an oversight.
 
 ### NATS Layer
 

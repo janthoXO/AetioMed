@@ -737,3 +737,113 @@ describe("CaseGenerationService — concurrency limit (#142)", () => {
     expect(service.cancel("done-job")).toBe(false);
   });
 });
+
+// #143 — `start()` is the synchronous primitive `generate()` is built on: it
+// reserves the jobId and opens the channel before returning, so a caller
+// (the REST POST stream) can subscribe before any node runs and learns
+// about a duplicate before committing to a response format.
+describe("CaseGenerationService — start() (#143)", () => {
+  const minimalCase: Case = {
+    patient: { name: "Jane", age: 40, sex: "female" },
+  };
+
+  it("is synchronous: right after it returns (no await), the channel is already active and result is a Promise", async () => {
+    const channel = createJobEventChannel();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const service = createCaseGenerationService(
+      fakeGraph(async () => {
+        await gate;
+        return minimalCase;
+      }),
+      new EventBus(),
+      channel
+    );
+
+    const started = service.start({
+      diagnosis: "Influenza",
+      generationFlags: ["patient"],
+      jobId: "job-start-sync",
+    });
+
+    // No `await` between calling `start` and these assertions.
+    expect(started.accepted).toBe(true);
+    expect(started.jobId).toBe("job-start-sync");
+    expect(channel.state("job-start-sync")).toBe("active");
+    if (started.accepted) {
+      expect(started.result).toBeInstanceOf(Promise);
+    }
+
+    release();
+    if (started.accepted) await started.result;
+  });
+
+  it("a duplicate jobId is rejected synchronously with { accepted: false } and a 409 result, never calling generateCase", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const generateCase = vi.fn(async () => {
+      await gate;
+      return minimalCase;
+    });
+    const service = createCaseGenerationService(
+      fakeGraph(generateCase),
+      new EventBus(),
+      createJobEventChannel()
+    );
+    const req = {
+      diagnosis: "Influenza",
+      generationFlags: ["patient" as const],
+      jobId: "job-start-dup",
+    };
+
+    const first = service.start(req);
+    expect(first.accepted).toBe(true);
+
+    // `generateCase` is only reached after `run()`'s internal awaits
+    // (language resolution, slot acquisition) settle, so it may not have
+    // been called yet at this point — the property under test is that
+    // issuing the duplicate itself never adds a call, not that the first
+    // job has already reached it.
+    const callsBeforeDuplicate = generateCase.mock.calls.length;
+
+    const duplicate = service.start(req);
+    expect(duplicate.accepted).toBe(false);
+    if (!duplicate.accepted) {
+      expect(duplicate.result.status).toBe("failed");
+      expect(duplicate.result.error).toMatchObject({
+        code: "JOB_ALREADY_ACTIVE",
+        statusCode: 409,
+      });
+    }
+    expect(generateCase.mock.calls.length).toBe(callsBeforeDuplicate);
+
+    release();
+    if (first.accepted) await first.result;
+    expect(generateCase).toHaveBeenCalledTimes(1);
+  });
+
+  it("generate() resolves the same result as start().result", async () => {
+    const graph = fakeGraph(async () => minimalCase);
+    const service = createCaseGenerationService(
+      graph,
+      new EventBus(),
+      createJobEventChannel()
+    );
+    const req = {
+      diagnosis: "Influenza",
+      generationFlags: ["patient" as const],
+      jobId: "job-start-vs-generate",
+    };
+
+    const started = service.start(req);
+    expect(started.accepted).toBe(true);
+    const viaStart = started.accepted ? await started.result : started.result;
+    const viaGenerate = await service.generate({
+      ...req,
+      jobId: "job-start-vs-generate-2",
+    });
+
+    expect(viaStart).toMatchObject({ status: "done", case: minimalCase });
+    expect(viaGenerate).toMatchObject({ status: "done", case: minimalCase });
+  });
+});

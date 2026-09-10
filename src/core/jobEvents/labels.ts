@@ -42,8 +42,7 @@ export function localizeLabel(
  *
  * Labels carry `started` **and** a terminal status. "The next start implies
  * the previous node finished" is false for this graph: `Send` fans nodes out
- * in parallel, and the blinded-solver loop revisits nodes. See the design
- * doc (`docs/issues/17-transport-parity.md`, §"Concerns with D7").
+ * in parallel, and the blinded-solver loop revisits nodes (#140).
  */
 export function wireLabels(
   bus: EventBus,

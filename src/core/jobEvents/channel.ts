@@ -104,7 +104,7 @@ export const BACKSTOP_MS = 5 * 60 * 1000;
  * How long a finished job is remembered after teardown: its `complete`
  * event, nothing else. This is what lets "finished" and "never existed" get
  * different answers (#145), and what makes a reused jobId a detectable
- * duplicate. It is not a result store (see the design doc §D1).
+ * duplicate. It is not a result store (#143).
  */
 export const TOMBSTONE_MS = 10 * 60 * 1000;
 

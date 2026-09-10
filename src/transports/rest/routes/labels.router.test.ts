@@ -272,7 +272,7 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
       text.includes("event: complete")
     );
     expect(text).toContain('"status":"done"');
-    // Watch, not collect (design doc §D4): the terminal marker never carries
+    // Watch, not collect (#145): the terminal marker never carries
     // the case.
     expect(text).not.toContain("patient");
     expect(text).not.toContain('"case"');

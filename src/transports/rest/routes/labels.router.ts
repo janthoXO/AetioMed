@@ -17,7 +17,7 @@ import { openSse } from "../sse.js";
  * - running job → `event: connected`, `event: label`…, `event: complete`.
  *
  * An observer can watch a job but not collect it: the stream never carries
- * the case (design doc §D4, "watch, not collect").
+ * the case (#145, "watch, not collect").
  */
 export default function createLabelsRouter(
   directory: JobDirectory

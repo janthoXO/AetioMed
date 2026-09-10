@@ -11,7 +11,7 @@ import type {
 /**
  * Builds the deployment's medical-basis registry: a plain list constructed
  * in the composition root, **not** a compile-time flag.
- * `docs/architecture-target.md` §4.1 fixes the deployer-facing flag count at
+ * The target architecture (roadmap #104, §4.1) fixes the deployer-facing flag count at
  * two (`TRANSLATION_SANDWICH`, `PROCEDURE_PRESELECTION`); a third env flag
  * for this would contradict it directly. The registry's *size* decides
  * whether `basis_resolve` is compiled into the graph at all
@@ -24,7 +24,7 @@ import type {
  * possible is reachable by tests and by a fork constructing its own registry
  * with nothing registered, not by an operator flipping an env var. A
  * config-file-driven registry (reading provider config from `CATALOG_DIR`,
- * say) is exactly the "option B" `docs/architecture-target.md` §4.1 already
+ * say) is exactly the "option B" the target architecture (§4.1) already
  * anticipates for extending this further, and would slot in here without
  * touching the graph.
  */

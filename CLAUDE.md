@@ -38,6 +38,14 @@ pnpm exec puppeteer browsers install chrome
 pnpm graph:export
 ```
 
+## Internal documentation
+
+Design docs, issue write-ups and reviews go in **`docs/design/`**, which is gitignored — they are
+never committed. Only `docs/graphs/` (generated diagrams) and `docs/bruno/` (the API collection)
+are tracked under `docs/`; `.gitignore` whitelists exactly those two. The public record of a
+decision is its **GitHub issue**, so cite issues (`#142`), never a `docs/design/` path, from
+anything tracked — code comments, this file, the READMEs.
+
 ## Architecture
 
 This is a backend-only repository (no frontend lives here). Node >= 22.5, pnpm.
@@ -110,7 +118,7 @@ directly on the bus event (set by `traceNode` from ALS) rather than a per-job la
 `complete` event, but — unlike `subscribe()` — never opens a subscription, so a status check
 never keeps a job's resources alive.
 
-**The `JobDirectory` port** (`core/jobEvents/directory.ts`, #145, design doc §D4/§D5) answers
+**The `JobDirectory` port** (`core/jobEvents/directory.ts`, #145) answers
 "watch/cancel this jobId, wherever it runs" — the seam that lets a REST client observe or cancel
 a job that a **different replica** accepted. `watch(jobId)` returns `{state: "active", listen(onEvent)
 => stop}` (subscribed and buffering **before** the caller decides its response, so no event
@@ -120,8 +128,7 @@ buffer-then-replay machinery both implementations use), `{state: "terminal", com
 methods are `Promise`-returning and can **reject** — that means "the answer could not be
 obtained" (a NATS timeout), which is a different failure mode from `"unknown"` ("nobody has this
 job") and maps to a 504, not a 404. A watched job's events are deliberately narrow: never
-`accepted`, and `complete`'s data never carries the case — **watch, not collect** (design doc
-§D4): an observer is not the requester, and the result only ever goes back to whoever started
+`accepted`, and `complete`'s data never carries the case — **watch, not collect**: an observer is not the requester, and the result only ever goes back to whoever started
 the job.
 
 Two implementations, chosen once in `app.ts`'s `selectJobDirectory({ features, local, nats })`:
@@ -147,7 +154,7 @@ and OTel channels from the graph. Modules augment its `EventMap` interface via T
 module augmentation.
 
 **Labels and OTel spans (#139/#140/#141) are two channels, not one — the axis of the split is
-payload, not event count** (`docs/issues/17-transport-parity.md` §D7 and §"Concerns with D7").
+payload, not event count** (#140).
 They differ in audience, content, language and gate:
 
 - **Labels** — end user. One short, localized phrase per node execution, emitted on both
@@ -159,7 +166,7 @@ They differ in audience, content, language and gate:
 - **OTel spans** — operator, cross-request analysis. One span per node, started and finished,
   carrying **attributes only** — `aetiomed.node.id`, `aetiomed.job_id`, `aetiomed.node.output_bytes`
   (a size, never the payload), `aetiomed.llm.provider`/`model`, status — never node output
-  itself (issue #141, `docs/issues/17-transport-parity.md` §"OpenTelemetry"). OTLP-exported
+  itself (#141). OTLP-exported
   only, never SSE/NATS. Gated by the standard
   `OTEL_SDK_DISABLED`/`OTEL_EXPORTER_OTLP_ENDPOINT`(`_TRACES_ENDPOINT`/`_LOGS_ENDPOINT`)/`OTEL_SERVICE_NAME`
   — its own axis, independent of any `FEATURES` flag except `DEBUG`, which only picks the
@@ -615,8 +622,7 @@ detaching via the returned `stop` on `req.on("close")`. `DELETE /api/cases/:jobI
 are both `404` (`NOT_FOUND`, with the message distinguishing "already finished" from "no active
 generation" — a client that wants to tell those apart reads the message, not the status code).
 
-**`POST /api/cases` is REST's synchronous transport, opened as a stream (#143, design doc
-§D1/§D3).** Content negotiation on the one route, not a second endpoint: `Accept:
+**`POST /api/cases` is REST's synchronous transport, opened as a stream (#143).** Content negotiation on the one route, not a second endpoint: `Accept:
 application/json` (or no preference) blocks and returns the case exactly as before; `Accept:
 text/event-stream` opens SSE on the POST's own response — `event: accepted {jobId}` written
 **before any node runs**, then `event: label`… as generation proceeds, then `event: result
@@ -641,7 +647,7 @@ cancels the job (`res.on("close")`) — the accepted trade of a connection-scope
 
 `src/transports/nats/` (requires the `NATS` feature flag). Split on **durability**, not on
 feature — a JetStream stream's retention applies to everything its subject filter captures
-(#142; see `docs/issues/17-transport-parity.md` §D6 for the defects this fixed: a single
+(#142, which records the defects this fixed: a single
 `cases.>` workqueue stream used to swallow results and cancels with no consumer, and results on
 workqueue retention were single-delivery and stealable — the first ack destroyed them for every
 other consumer).
@@ -691,7 +697,7 @@ replica rather than being pulled and queued in memory. While a generation runs,
 deadline (`REQUEST_ACK_WAIT_MS`, short) from expiring mid-generation — a crashed replica's job is
 still redelivered quickly, but a merely slow one isn't punished for it.
 
-**NATS parity (#144).** The stated requirement (`docs/issues/17-transport-parity.md` §D2) is
+**NATS parity (#144).** The stated requirement is
 that a client speaking only NATS, or only REST, has every **feature** — asymmetry is allowed only
 in delivery guarantees:
 
@@ -868,7 +874,7 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
   (issue 12); building a second copy of that machinery for non-sandwich mode would just
   duplicate it. Localized candidate grammars for non-sandwich mode
   (picking directly from a target-language catalogue) are tracked separately —
-  `docs/issues/16-localized-candidate-grammars.md` — because they reverse issue 01's Rule 4
+  #123 — because they reverse issue 01's Rule 4
   deletion and deserve their own decision.
 - **Auto-detection is a laddered resolver in `CaseGenerationService`, not the graph**
   (`src/core/languageDetection/`, issue 10). A caller may omit `language`; the service resolves

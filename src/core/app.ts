@@ -140,7 +140,7 @@ export async function createApp(): Promise<{
 }
 
 /**
- * The partial NATS backbone (#145, design doc §D5): with both `REST` and
+ * The partial NATS backbone (#145): with both `REST` and
  * `NATS` enabled, REST watches and cancels jobs over NATS, so it sees jobs
  * on every replica. Otherwise it uses the in-process channel, and a single
  * replica is a documented deployment constraint.

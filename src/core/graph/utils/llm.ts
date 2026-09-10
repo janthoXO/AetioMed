@@ -11,7 +11,7 @@ import type { Config } from "@/core/graph/config.js";
 import type { LlmPort, LlmTemperature } from "@/core/graph/runtime.js";
 
 /**
- * Fixed policy classes, not configuration — see `docs/issues/06-llm-roles.md`
+ * Fixed policy classes, not configuration — see #86 (LLM roles)
  * §1: `LLM_TEMPERATURE` was dead config (every call site went through one of
  * these three fixed values, which always won the merge), so it was deleted
  * rather than made per-role. These values are what each class has always

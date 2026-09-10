@@ -20,8 +20,7 @@ export interface NodeSpan {
    * The node's output, already sanitized (content-part bytes projected to
    * text — `sanitizeForTrace`). The adapter records its **size** as a span
    * attribute and ships the value itself as a correlated log record, never
-   * as a span attribute (docs/issues/17-transport-parity.md §"Why the node
-   * output is a log record").
+   * as a span attribute (#141).
    */
   setOutput(output: unknown): void;
   /**

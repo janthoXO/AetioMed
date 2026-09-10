@@ -2,7 +2,7 @@
 // feature: a JetStream stream's retention applies to everything its subject
 // filter captures, which is exactly how the old `cases` stream (`cases.>`,
 // workqueue) swallowed results and cancels with no consumer to ever ack
-// them. See docs/issues/17-transport-parity.md §D6.
+// them. See #142.
 import { RetentionPolicy, StorageType } from "@nats-io/jetstream";
 import type { JobEventType } from "@/core/jobEvents/index.js";
 

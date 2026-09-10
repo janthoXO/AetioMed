@@ -21,7 +21,7 @@
   "license": "ISC",
   "packageManager": "pnpm@11.22.0",
   "engines": {
-    "node": ">=22.5"
+    "node": ">=24.21.0"
   },
   "dependencies": {
     "@langchain/core": "^1.1.46",

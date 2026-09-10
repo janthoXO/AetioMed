@@ -48,7 +48,7 @@ anything tracked — code comments, this file, the READMEs.
 
 ## Architecture
 
-This is a backend-only repository (no frontend lives here). Node >= 22.5, pnpm.
+This is a backend-only repository (no frontend lives here). Node >= 24.21, pnpm.
 
 ### Composition Root
 

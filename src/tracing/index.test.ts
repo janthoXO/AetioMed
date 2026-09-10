@@ -1,164 +1,115 @@
-// Issue 15 §1.1/§1.2/§3/§6 — `wireTracing` forwards node-execution bus
-// events onto two separate per-job channels: `trace` (English, node output,
-// operator-facing) and `label` (localized, falling back to English,
-// end-user-facing). These tests drive the wiring directly against a real
-// `EventBus`/`TraceBus`, without an HTTP layer.
+// #139 — labels moved to `core/jobEvents/labels.ts` and are tested there
+// now; this file drives only `wireTracing(bus, channel, maxContentPartBytes)`
+// against a real `EventBus` + `createJobEventChannel()`.
 import { describe, expect, it } from "vitest";
 import { EventBus } from "@/core/event-bus.js";
-import { registerJobHook, runWithContext } from "@/core/graph/utils/context.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
-import { wireTracing, setupTracing, getTraceBus } from "./index.js";
-import type { TraceEvent, LabelEvent } from "./index.js";
+import {
+  createJobEventChannel,
+  type JobEvent,
+} from "@/core/jobEvents/channel.js";
+import { encodeText } from "@/core/graph/models/ContentPart.js";
+import type { Case } from "@/core/graph/models/Case.js";
+import { wireTracing } from "./index.js";
+import type { TraceEvent } from "./index.js";
 
-function collect(jobId: string) {
-  const bus = getTraceBus(jobId)!;
+function collectTraces(
+  channel: ReturnType<typeof createJobEventChannel>,
+  jobId: string
+): TraceEvent[] {
   const traces: TraceEvent[] = [];
-  const labels: LabelEvent[] = [];
-  bus.on("trace", (e: TraceEvent) => traces.push(e));
-  bus.on("label", (e: LabelEvent) => labels.push(e));
-  return { traces, labels };
+  const sub = channel.subscribe(jobId, (event: JobEvent) => {
+    if (event.type === "trace") traces.push(event.data);
+  });
+  if (sub.state !== "active") throw new Error("expected an active job");
+  return traces;
 }
 
-describe("wireTracing — labels vs traces (issue 15 §1)", () => {
-  it("a completed node emits an English `trace` event and a localized `label` event, on separate channels", async () => {
+describe("wireTracing (#139)", () => {
+  it("Node Started + Node Completed emit two trace events with kind, nodeId, English labelKey, and a capped output", async () => {
     const bus = new EventBus();
-    const labelCatalog = new InMemoryLabelCatalog({
-      "Resolving medical basis": {
-        German: "Medizinische Basis wird aufgelöst",
-      },
+    const channel = createJobEventChannel();
+    wireTracing(bus, channel, 5_000_000);
+    channel.open("job-1");
+    const traces = collectTraces(channel, "job-1");
+
+    await bus.emit("Node Started", {
+      node: "basis_resolve",
+      label: "Resolving medical basis",
+      jobId: "job-1",
+      timestamp: "t0",
     });
-    wireTracing(bus, labelCatalog, 5_000_000);
-    registerJobHook(setupTracing);
-
-    await runWithContext(
-      async () => {
-        const { traces, labels } = collect("job-1");
-
-        await bus.emit("Node Started", {
-          node: "basis_resolve",
-          label: "Resolving medical basis",
-          jobId: "job-1",
-          timestamp: "t0",
-        });
-        await bus.emit("Node Completed", {
-          node: "basis_resolve",
-          label: "Resolving medical basis",
-          result: { basisFragments: ["x"] },
-          jobId: "job-1",
-          timestamp: "t1",
-        });
-
-        expect(traces).toHaveLength(2);
-        expect(traces[0]).toMatchObject({
-          kind: "node_started",
-          nodeId: "basis_resolve",
-          labelKey: "Resolving medical basis", // English, always
-        });
-        expect(traces[1]).toMatchObject({
-          kind: "node_completed",
-          nodeId: "basis_resolve",
-          labelKey: "Resolving medical basis",
-          output: { truncated: false, value: { basisFragments: ["x"] } },
-        });
-
-        expect(labels).toHaveLength(2);
-        expect(labels[0]).toMatchObject({
-          nodeId: "basis_resolve",
-          status: "started",
-          label: "Medizinische Basis wird aufgelöst", // localized
-        });
-        expect(labels[1].label).toBe("Medizinische Basis wird aufgelöst");
-      },
-      "job-1",
-      undefined,
-      "German"
-    );
-  });
-
-  it("falls back to the English label when no translation exists — never fatal", async () => {
-    const bus = new EventBus();
-    const labelCatalog = new InMemoryLabelCatalog(); // no translations at all
-    wireTracing(bus, labelCatalog, 5_000_000);
-    registerJobHook(setupTracing);
-
-    await runWithContext(
-      async () => {
-        const { labels, traces } = collect("job-2");
-
-        await bus.emit("Node Started", {
-          node: "basis_resolve",
-          label: "Resolving medical basis",
-          jobId: "job-2",
-          timestamp: "t0",
-        });
-
-        expect(labels[0].label).toBe("Resolving medical basis"); // English fallback
-        expect(traces[0].labelKey).toBe("Resolving medical basis");
-      },
-      "job-2",
-      undefined,
-      "German"
-    );
-  });
-
-  it("a failed node emits a node_failed trace and a failed-status label, carrying the error", async () => {
-    const bus = new EventBus();
-    const labelCatalog = new InMemoryLabelCatalog();
-    wireTracing(bus, labelCatalog, 5_000_000);
-    registerJobHook(setupTracing);
-
-    await runWithContext(
-      async () => {
-        const { traces, labels } = collect("job-3");
-
-        await bus.emit("Node Failed", {
-          node: "basis_resolve",
-          label: "Resolving medical basis",
-          error: "boom",
-          jobId: "job-3",
-          timestamp: "t0",
-        });
-
-        expect(traces[0]).toMatchObject({
-          kind: "node_failed",
-          nodeId: "basis_resolve",
-          error: "boom",
-        });
-        expect(labels[0]).toMatchObject({
-          nodeId: "basis_resolve",
-          status: "failed",
-        });
-      },
-      "job-3",
-      undefined,
-      undefined
-    );
-  });
-
-  it("an English-language job gets English labels (no-op localization) and English traces — the same content on both channels", async () => {
-    const bus = new EventBus();
-    const labelCatalog = new InMemoryLabelCatalog({
-      "Resolving medical basis": { German: "anders" },
+    await bus.emit("Node Completed", {
+      node: "basis_resolve",
+      label: "Resolving medical basis",
+      result: { basisFragments: ["x"] },
+      jobId: "job-1",
+      timestamp: "t1",
     });
-    wireTracing(bus, labelCatalog, 5_000_000);
-    registerJobHook(setupTracing);
 
-    await runWithContext(
-      async () => {
-        const { traces, labels } = collect("job-4");
-        await bus.emit("Node Started", {
-          node: "basis_resolve",
-          label: "Resolving medical basis",
-          jobId: "job-4",
-          timestamp: "t0",
-        });
+    expect(traces).toHaveLength(2);
+    expect(traces[0]).toMatchObject({
+      kind: "node_started",
+      nodeId: "basis_resolve",
+      labelKey: "Resolving medical basis",
+    });
+    expect(traces[1]).toMatchObject({
+      kind: "node_completed",
+      nodeId: "basis_resolve",
+      labelKey: "Resolving medical basis",
+      output: { truncated: false, value: { basisFragments: ["x"] } },
+    });
+  });
 
-        expect(labels[0].label).toBe("Resolving medical basis");
-        expect(traces[0].labelKey).toBe("Resolving medical basis");
-      },
-      "job-4",
-      undefined,
-      "English"
-    );
+  it("Node Failed emits a node_failed trace carrying the error", async () => {
+    const bus = new EventBus();
+    const channel = createJobEventChannel();
+    wireTracing(bus, channel, 5_000_000);
+    channel.open("job-2");
+    const traces = collectTraces(channel, "job-2");
+
+    await bus.emit("Node Failed", {
+      node: "basis_resolve",
+      label: "Resolving medical basis",
+      error: "boom",
+      jobId: "job-2",
+      timestamp: "t0",
+    });
+
+    expect(traces[0]).toMatchObject({
+      kind: "node_failed",
+      nodeId: "basis_resolve",
+      error: "boom",
+    });
+  });
+
+  it("Generation Completed emits a generation_completed trace whose case is wire-encoded, not raw bytes", async () => {
+    const bus = new EventBus();
+    const channel = createJobEventChannel();
+    wireTracing(bus, channel, 5_000_000);
+    channel.open("job-3");
+    const traces = collectTraces(channel, "job-3");
+
+    const generatedCase: Case = {
+      patient: { name: "Jane", age: 40, sex: "female" },
+      chiefComplaint: [
+        { type: "text/plain", value: encodeText("hi"), alt: "hi" },
+      ],
+    };
+
+    await bus.emit("Generation Completed", {
+      case: generatedCase,
+      jobId: "job-3",
+    });
+
+    expect(traces).toHaveLength(1);
+    expect(traces[0]?.kind).toBe("generation_completed");
+    const event = traces[0] as Extract<
+      TraceEvent,
+      { kind: "generation_completed" }
+    >;
+    const wireCase = event.case as {
+      chiefComplaint: { value: string }[];
+    };
+    expect(wireCase.chiefComplaint[0]?.value).toBe("hi");
   });
 });

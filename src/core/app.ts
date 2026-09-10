@@ -6,6 +6,7 @@ import {
   resolveCacheDir,
 } from "./graph/persistence/paths.js";
 import { createCaseGenerationService } from "./caseGenerationService.js";
+import { createJobEventChannel, wireLabels } from "./jobEvents/index.js";
 import { startRestServer } from "../transports/rest/index.js";
 import { startNatsTransport } from "../transports/nats/index.js";
 import { wireTracing } from "../tracing/index.js";
@@ -53,8 +54,8 @@ export async function createApp(): Promise<{
   // Issue 15 §1.1/§5 — the OTel channel is independent of `FEATURES`:
   // always constructed here, gated only by the standard
   // `OTEL_SDK_DISABLED`, never by `TRACING` (that flag stays scoped to the
-  // EventBus/SSE label+trace channel below). See `tracing/index.ts`'s
-  // `wireTracing` doc comment for why the two are deliberately separate.
+  // SSE trace channel below). See `tracing/index.ts`'s `wireTracing` doc
+  // comment for why the two are deliberately separate.
   const tracer = await createOtelNodeTracer();
   const graph = initGraph({
     bus,
@@ -65,20 +66,21 @@ export async function createApp(): Promise<{
     tracer,
   });
 
-  const service = createCaseGenerationService(graph, bus);
+  // The per-job event channel is core-owned (#139): the service opens and
+  // closes each job on it, and every transport subscribes to it.
+  const jobEvents = createJobEventChannel();
+  wireLabels(bus, jobEvents, graph.runtime.catalogs.labels);
+
+  const service = createCaseGenerationService(graph, bus, jobEvents);
 
   if (features.has("TRACING")) {
-    wireTracing(
-      bus,
-      graph.runtime.catalogs.labels,
-      graph.config.MAX_CONTENT_PART_BYTES
-    );
+    wireTracing(bus, jobEvents, graph.config.MAX_CONTENT_PART_BYTES);
   }
 
   const closers: Closer[] = [];
 
   if (features.has("REST")) {
-    const rest = await startRestServer({ graph, service, features });
+    const rest = await startRestServer({ graph, service, jobEvents, features });
     closers.push({ name: "REST", close: rest.close });
   }
 

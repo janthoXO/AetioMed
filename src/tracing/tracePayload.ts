@@ -7,7 +7,7 @@
 // `core/graph/utils/traceSanitize.ts` so the two channels agree on what a
 // node's output "is" once bytes are stripped out of it.
 import { sanitizeForTrace } from "@/core/graph/utils/traceSanitize.js";
-import type { TracePayload } from "./traceManager.js";
+import type { TracePayload } from "./traceEvent.js";
 
 /**
  * Cap on the serialized (sanitized) trace payload, in UTF-8 bytes.

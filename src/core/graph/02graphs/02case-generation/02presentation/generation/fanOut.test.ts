@@ -18,7 +18,12 @@ import { END, Send, START, StateGraph } from "@langchain/langgraph";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { EventBus } from "@/core/event-bus.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
-import { RequestContextSchema } from "@/core/graph/utils/context.js";
+import {
+  RequestContextSchema,
+  runWithContext,
+} from "@/core/graph/utils/context.js";
+import { createJobEventChannel } from "@/core/jobEvents/channel.js";
+import { wireLabels, type LabelEvent } from "@/core/jobEvents/labels.js";
 import { buildChiefComplaintGraph } from "./chiefComplaint/index.js";
 import { buildAnamnesisGraph } from "./anamnesis/index.js";
 import { caseFanIn } from "./index.js";
@@ -170,6 +175,131 @@ describe("chief_complaint_generate + anamnesis_generate fanned out together (iss
     expect(result.case.chiefComplaint![0]!.alt).toBe("Acute dyspnea.");
     expect(result.case.anamnesis).toBeDefined();
     expect(result.case.anamnesis![0]!.category).toBe("History");
+  });
+});
+
+describe("chief_complaint_generate + anamnesis_generate fan-out labels (#140)", () => {
+  it("emits a paired started/terminal label for every node, seen from both fan-out branches", async () => {
+    const llm = makeQueuedLlmPort({
+      generator: [
+        JSON.stringify({
+          plans: [
+            {
+              key: "chiefComplaint",
+              requests: [
+                {
+                  provider: "text",
+                  input: { instruction: "Acute dyspnea." },
+                  alt: "Acute dyspnea.",
+                },
+              ],
+            },
+          ],
+        }),
+        JSON.stringify({
+          plans: [
+            {
+              key: "History",
+              requests: [
+                {
+                  provider: "text",
+                  input: { instruction: "None." },
+                  alt: "None.",
+                },
+              ],
+            },
+          ],
+        }),
+      ],
+    });
+    const runtime = buildFakeRuntime(llm);
+    const bus = new EventBus();
+    const channel = createJobEventChannel();
+    wireLabels(bus, channel, new InMemoryLabelCatalog());
+    const jobId = "job-fan-out";
+    channel.open(jobId);
+    const labels: LabelEvent[] = [];
+    channel.subscribe(jobId, (e) => {
+      if (e.type === "label") labels.push(e.data);
+    });
+
+    const traceNode = createTraceNode(bus);
+    const registry = [textProvider()];
+
+    const parent = new StateGraph(CaseGenerationStateSchema, {
+      context: RequestContextSchema,
+    })
+      .addNode(
+        "chief_complaint_generate",
+        buildChiefComplaintGraph(
+          runtime,
+          registry,
+          traceNode.scope("chief_complaint_generate")
+        )
+      )
+      .addNode(
+        "anamnesis_generate",
+        buildAnamnesisGraph(
+          runtime,
+          registry,
+          traceNode.scope("anamnesis_generate")
+        )
+      )
+      .addConditionalEdges(START, (state) => [
+        new Send("chief_complaint_generate", {
+          diagnosis: state.diagnosis,
+          outline: state.outline,
+          userInstructions: state.userInstructions,
+        }),
+        new Send("anamnesis_generate", {
+          diagnosis: state.diagnosis,
+          outline: state.outline,
+          userInstructions: state.userInstructions,
+        }),
+      ])
+      .addEdge("chief_complaint_generate", END)
+      .addEdge("anamnesis_generate", END)
+      .compile();
+
+    await runWithContext(
+      () =>
+        parent.invoke({
+          diagnosis: { name: "Influenza", icd: "1E32" },
+          generationFlags: ["chiefComplaint", "anamnesis"],
+          outline: "outline text",
+          case: {},
+        }),
+      jobId
+    );
+
+    const byNode = new Map<string, LabelEvent[]>();
+    for (const label of labels) {
+      const list = byNode.get(label.nodeId) ?? [];
+      list.push(label);
+      byNode.set(label.nodeId, list);
+    }
+
+    for (const [, nodeLabels] of byNode) {
+      const started = nodeLabels.filter((l) => l.status === "started").length;
+      const completed = nodeLabels.filter(
+        (l) => l.status === "completed"
+      ).length;
+      const failed = nodeLabels.filter((l) => l.status === "failed").length;
+      expect(started).toBeGreaterThanOrEqual(1);
+      expect(started).toBe(completed + failed);
+    }
+
+    for (const label of labels) {
+      expect(Object.keys(label).sort()).toEqual(
+        ["jobId", "label", "nodeId", "status", "timestamp"].sort()
+      );
+    }
+
+    const nodeIds = [...byNode.keys()];
+    expect(nodeIds.some((id) => id.includes("chief_complaint_generate"))).toBe(
+      true
+    );
+    expect(nodeIds.some((id) => id.includes("anamnesis_generate"))).toBe(true);
   });
 });
 

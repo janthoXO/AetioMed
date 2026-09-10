@@ -31,37 +31,71 @@ This tool aims to support medical educators and institutions in creating diverse
 - **Selectable Fields**: Generate any subset of patient, chief complaint, anamnesis, and procedures.
 - **Multi-Language**: The supported set is configured per deployment. With the translation sandwich on, generation always happens in English internally and is translated on the way out; with it off, generation runs directly in the target language.
 - **Restricted Vocabularies**: When configured, procedure names and anamnesis categories are constrained to an approved, translatable list.
-- **Live Tracing**: Per-job progress streamed over SSE while a case is generated — localized step labels for an end user, node-bound structured traces for an operator, and `GET /api/graph` so a client can render the compiled pipeline and light up nodes as they run. OpenTelemetry spans are exported in parallel.
+- **Live Progress**: Every pipeline step reports when it starts and finishes, as a short label in the requester's language. A client can fetch the compiled pipeline once and light up its steps as they run, over REST or NATS.
+- **Two Integration Styles**: A synchronous REST API that streams the job back on the same request, and an asynchronous NATS interface whose requests and results survive restarts and dropped connections. Every feature is available on both.
+- **Cancellation and Fair Scheduling**: Any running or queued job can be cancelled from either transport, and one concurrency limit applies to all of them.
+- **Operator Observability**: OpenTelemetry traces with each step's timing and output, sent to any OTLP-compatible backend, or printed to the console for local development.
 - **Structured Data**: Outputs schema-validated JSON suitable for integration with other educational platforms. Content-bearing fields (`chiefComplaint`, each `anamnesis[].answer`, each `procedures[].result`) are ordered arrays of typed content parts, so a field can carry more than plain text without a schema change.
 
 ## Architecture
 
-The server is a small core plus a set of modules started explicitly from one
-composition root. `createApp()` (`src/core/app.ts`) parses the feature flags,
-builds the event bus, the graph and the case-generation service, and then
-starts each transport whose flag is set. There is no plugin loader, no
-auto-discovery and no dependency resolution — the startup order is the order
-the code is written in.
+AetioMed is a single backend service: a generation engine at the centre, with two ways in.
 
-The core owns three things: the case-generation graph, a typed `EventBus`,
-and `CaseGenerationService`. Everything else — the HTTP API
-(`src/transports/rest/`), the NATS worker (`src/transports/nats/`), and
-tracing (`src/tracing/`) — is an ordinary module with a start function.
+```
+        REST (synchronous, streaming)            NATS (asynchronous, durable)
+                    │                                        │
+                    └─────────────┐              ┌───────────┘
+                                  ▼              ▼
+                          ┌──────────────────────────────┐
+                          │   Case generation service    │  one entry point: validation,
+                          │   (job ids, concurrency,     │  language, job lifecycle,
+                          │    cancellation, results)    │  errors — for both transports
+                          └──────────────┬───────────────┘
+                                         ▼
+                          ┌──────────────────────────────┐
+                          │   LangGraph pipeline         │  medical basis → presentation
+                          │                              │  → procedures (→ translation)
+                          └──────────────┬───────────────┘
+                                         │ node started / finished
+                          ┌──────────────┴───────────────┐
+                          ▼                              ▼
+                 Progress labels                   OpenTelemetry
+                 (end user, live)                  (operator, analysis)
+```
 
-**`CaseGenerationService` is the seam both transports call.** It owns ICD→name
-resolution, language resolution, job ids, generation-flag normalisation and
-terminal events; the routers and the NATS handler are protocol translation
-only. This is what lets a deployment be reduced to just what it needs: an
-HTTP-only instance, a NATS worker with no HTTP surface, or a bare generator
-with neither.
+**One engine, two transports, full parity.** Every product feature — submitting a case,
+watching its progress, receiving the result, cancelling it, reading the catalogues and the
+pipeline structure — is available over both REST and NATS. A client can speak only one of
+them and lose nothing. What differs is only what each protocol can promise:
 
-**Communication is one-way.** The graph emits lifecycle events — `Node
-Started`, `Node Completed`, `Node Failed`, `Generation Log` — onto the bus,
-and `CaseGenerationService` emits the terminal ones (`Generation Completed`,
-`Generation Failure`, `Generation Cancelled`). Modules subscribe. Nothing a
-subscriber does can influence how a case is generated.
+|                               | REST                                         | NATS                                         |
+| ----------------------------- | -------------------------------------------- | -------------------------------------------- |
+| Style                         | synchronous — one call, streamed back        | asynchronous — fire a request, collect later |
+| Progress                      | live on the same response, or a watch stream | a progress subject per job                   |
+| Survives a dropped connection | no — disconnecting cancels the job           | yes — requests and results are persisted     |
+| Result retrievable later      | no                                           | yes, for an hour                             |
 
-See the [Developer Guide](README-DEV.md) for the module layout.
+REST suits an interactive client that waits for its case; NATS suits a worker fleet, batch
+jobs, or anything that must not lose work to a network hiccup. When both are enabled, REST
+uses NATS as its backbone, so a REST client can watch or cancel a job running on any server
+in the deployment.
+
+**Progress and telemetry are separate channels.** End users get short, localized progress
+labels — _"Generating case outline"_, _"Choosing next procedure"_ — for every step as it
+starts and finishes, always on. Operators get OpenTelemetry: a span per step with timing and
+metadata, and the step's actual output as a correlated log record, exported to whatever
+observability backend the deployment already runs. Neither channel depends on the other.
+
+**Bounded, cancellable work.** One concurrency limit applies across both transports, so
+throughput doesn't depend on which door a request came in through; excess requests queue,
+and a queued or running job can be cancelled at any time. Resubmitting a job id never starts
+a second generation.
+
+**Deployable to its needs.** Each transport is switched on by a flag, so a deployment can be
+an HTTP API, a NATS worker with no HTTP surface, or both. There is no plugin system — every
+component is constructed explicitly at startup, in a fixed order.
+
+See the [Developer Guide](README-DEV.md) for the module layout, the APIs and the design rules.
 
 ## Generation Pipeline
 
@@ -130,7 +164,7 @@ Generation always runs in English — prompts, restricted vocabularies, and clin
 
 Translations are cache-aside. Known terms come from YAML translation files; anything missing is translated once by the LLM and persisted, so the same term is never paid for twice. The free-text pass is keyed by a stable field path, so a dropped or reordered entry is detected rather than silently mismatching, and binary content never enters a translation prompt at all.
 
-Trace step labels are translated too, warmed once up front so live progress events can be localized without slowing the pipeline.
+Progress labels are localized too, falling back to English for any step without a translation.
 
 Every LLM-generated translation is persisted with `source: "generated"`, distinguishing it from a clinician-reviewed YAML row (`source: "curated"`), so generated terms can be reviewed and promoted into the curated YAML files. Determinism holds **per deployment**, not across deployments — a fresh install can generate a different German term for the same English source than an existing one did, since nothing forces two independent LLM calls to agree. If cross-deployment stability is ever needed, the answer is curated YAML, not better locking.
 

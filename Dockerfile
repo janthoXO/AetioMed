@@ -32,6 +32,8 @@ ENV NODE_ENV=production
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY drizzle ./drizzle
+# Read at runtime for the NATS service's version (`transports/nats/metaService.ts`).
+COPY package.json ./
 
 EXPOSE 3030
 

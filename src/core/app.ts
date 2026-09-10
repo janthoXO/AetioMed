@@ -50,17 +50,18 @@ export async function createApp(): Promise<{
   console.log(`[app] Feature flags: ${[...features].join(", ") || "none"}`);
   const graphConfig = GraphConfigSchema.parse(process.env);
   const bus = new EventBus();
-  // Issue 15 §1.1/§5 — the OTel channel is independent of `FEATURES`:
-  // always constructed here, gated only by the standard OTel env vars. It is
-  // the operator's channel; labels (below) are the end user's.
-  const tracer = await createOtelNodeTracer();
+  // The operator's channel (issue 15, #141), gated by the standard OTel env
+  // vars rather than a `FEATURES` flag. `DEBUG` only picks the
+  // zero-infrastructure console exporter when no OTLP endpoint is set.
+  // Labels (below) are the end user's channel.
+  const otel = await createOtelNodeTracer({ debug: features.has("DEBUG") });
   const graph = initGraph({
     bus,
     config: graphConfig,
     catalogDir: resolveCatalogDir(process.env),
     cacheDir: resolveCacheDir(process.env),
     symptomCacheTtlDays,
-    tracer,
+    tracer: otel.tracer,
   });
 
   // The per-job event channel is core-owned (#139): the service opens and
@@ -82,6 +83,10 @@ export async function createApp(): Promise<{
     const nats = await startNatsTransport({ graph, service });
     closers.push({ name: "NATS", close: nats.close });
   }
+
+  // OTel after NATS, before the DB: flush batched spans/logs once producers
+  // have stopped emitting them, but before the process (and its DB) exits.
+  closers.push({ name: "OTel", close: otel.shutdown });
 
   // DB last, unconditionally: it always exists (unlike REST/NATS, which are
   // feature-gated), and everything that might still write to it — REST

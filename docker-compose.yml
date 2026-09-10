@@ -6,7 +6,7 @@ services:
     volumes:
       - ./data:/app/data
     environment:
-      - FEATURES=${FEATURES:-DEBUG,NATS,REST,TRACING}
+      - FEATURES=${FEATURES:-DEBUG,NATS,REST}
       - PORT=${PORT:-3030}
 
       - LLM_API_KEY=${LLM_API_KEY}

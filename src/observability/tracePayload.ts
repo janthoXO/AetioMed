@@ -1,13 +1,21 @@
-// Issue 15 §1.3 / §3 — trace payloads get a size cap, not a node's full
-// output. Case outlines are large, and issue 11 made some node outputs
-// carry `ContentPart[]` fields whose `value` is raw bytes. This module caps
-// the *size* of a `TraceEvent`'s payload; the bytes-never-reach-a-trace
-// projection itself (`sanitizeForTrace`) is shared with the OTel span's
-// output-size attribute (`nodeWrapper.ts`) and lives in
-// `core/graph/utils/traceSanitize.ts` so the two channels agree on what a
-// node's output "is" once bytes are stripped out of it.
+// Issue 15 §1.3 / §3 (formerly wired onto the now-deleted SSE `TraceEvent`;
+// its intended consumer is issue #141's OTel-bound node-output log record)
+// — a node's output gets a size cap, not its full output. Case outlines are
+// large, and issue 11 made some node outputs carry `ContentPart[]` fields
+// whose `value` is raw bytes. This module caps the *size* of a node's
+// captured output; the bytes-never-reach-a-trace projection itself
+// (`sanitizeForTrace`) is shared with the OTel span's output-size attribute
+// (`nodeWrapper.ts`) and lives in `core/graph/utils/traceSanitize.ts` so the
+// two agree on what a node's output "is" once bytes are stripped out of it.
 import { sanitizeForTrace } from "@/core/graph/utils/traceSanitize.js";
-import type { TracePayload } from "./traceEvent.js";
+
+/**
+ * A node's output, capped: never the node's raw output past the cap —
+ * `bytes`/`preview` instead. {@link buildTracePayload} is the only producer.
+ */
+export type TracePayload =
+  | { truncated: false; value: unknown }
+  | { truncated: true; bytes: number; preview: string };
 
 /**
  * Cap on the serialized (sanitized) trace payload, in UTF-8 bytes.

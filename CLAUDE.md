@@ -95,73 +95,66 @@ names double as the SSE `event:` name on REST and the last subject token on NATS
 node lifecycle bus events into localized `label` events, using the `language` now carried
 directly on the bus event (set by `traceNode` from ALS) rather than a per-job language map.
 
-**Modules under `src/transports/` and `src/tracing/`** are ordinary modules with a start
-function, not plugins: `transports/rest/` (`startRestServer`, which now also owns
-`routes/traces.router.ts` — the SSE adapter onto `core/jobEvents/`, formerly
-`tracing/sse/`), `transports/nats/` (`startNatsTransport`), and `tracing/` (`wireTracing`,
-which publishes English `trace` events onto the same core-owned channel — it registers
-nothing any more; there is no job hook). `src/api/` holds the shared request/response Zod
-schemas.
+**Modules under `src/transports/` and `src/observability/`** are ordinary modules with a start
+function, not plugins: `transports/rest/` (`createRestApp`/`startRestServer` — see the REST
+Layer section below for its always-on routes), `transports/nats/` (`startNatsTransport`), and
+`observability/` (`otel.ts`, `tracePayload.ts` — the OTel operator channel; see below). `src/api/`
+holds the shared request/response Zod schemas.
 
-The typed **`EventBus`** (`src/core/event-bus.ts`) is kept — it genuinely decouples tracing
-from the graph. Modules augment its `EventMap` interface via TypeScript module
-augmentation.
+The typed **`EventBus`** (`src/core/event-bus.ts`) is kept — it genuinely decouples the label
+and OTel channels from the graph. Modules augment its `EventMap` interface via TypeScript
+module augmentation.
 
-**Labels, traces and OTel (issue 15) are three channels, not one.** They differ in audience,
-content, language and gate:
+**Labels and OTel spans (#139/#140/#141) are two channels, not one — the axis of the split is
+payload, not event count** (`docs/issues/17-transport-parity.md` §D7 and §"Concerns with D7").
+They differ in audience, content, language and gate:
 
-|          | Labels                                       | Traces (SSE)             | OTel spans                          |
-| -------- | -------------------------------------------- | ------------------------ | ----------------------------------- |
-| Audience | end user                                     | developer/operator, live | operator, cross-request analysis    |
-| Content  | one short phrase per node                    | node output, size-capped | span attributes only, never payload |
-| Language | localized at the transport, English fallback | English, always          | n/a (attribute values only)         |
-| Gate     | `FEATURES=TRACING`                           | `FEATURES=TRACING`       | `OTEL_SDK_DISABLED` — its own axis  |
+- **Labels** — end user. One short, localized phrase per node execution, emitted on both
+  "Node Started" and every terminal status ("Node Completed"/"Node Failed") — never node
+  output, never a payload. Always on (not feature-flagged): `src/core/jobEvents/` owns the
+  per-job channel (`channel.ts`'s `createJobEventChannel`) and the label producer
+  (`labels.ts`'s `wireLabels`), served over SSE (`GET /api/cases/:jobId/labels`,
+  `transports/rest/routes/labels.router.ts`) and, per #144, NATS.
+- **OTel spans** — operator, cross-request analysis. One span per node, started and finished,
+  carrying node output (as a log record — issue #141, not yet wired) plus span attributes;
+  OTLP-exported only, never SSE/NATS. Gated by the standard
+  `OTEL_SDK_DISABLED`/`OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_SERVICE_NAME` — its own axis,
+  independent of any `FEATURES` flag. `src/observability/otel.ts` is the one place
+  `@opentelemetry/*` is imported and these env vars are read; core only knows the
+  `NodeTracer`/`NodeSpan` port (`core/graph/utils/nodeWrapper.ts`) — the same
+  port-owned-by-core/adapter-lives-outside inversion `core/jobEvents/` uses for labels.
+  `src/observability/tracePayload.ts` holds the `MAX_TRACE_PAYLOAD_BYTES` cap on a node's
+  captured output — over the cap it becomes `{ truncated: true, bytes, preview }` — for #141
+  to use once node output is actually attached to a span; `ContentPart[]` fields are always
+  projected through `textOf` first (`core/graph/utils/traceSanitize.ts`), so raw bytes never
+  reach either channel.
 
-Labels and traces are separate SSE event types (`event: label` / `event: trace`) on the same
-per-job stream, not one `type`-discriminated payload — see `core/jobEvents/labels.ts`'s
-`wireLabels`, `tracing/index.ts`'s `wireTracing`, and the SSE adapter that forwards both,
-`transports/rest/routes/traces.router.ts`. A `TraceEvent` (`tracing/traceEvent.ts`) carries the
-node's **LangGraph node id** (`nodeId`, matching `GET /api/graph` below) and English
-`labelKey`; `payload: any` is gone. A node's output is capped at `MAX_TRACE_PAYLOAD_BYTES`
-(`tracing/tracePayload.ts`) — over the cap it becomes `{ truncated: true, bytes, preview }`,
-and `ContentPart[]` fields are always projected through `textOf` first
-(`core/graph/utils/traceSanitize.ts`), so raw bytes never reach a trace event.
-
-**`GET /api/graph`** (`tracing/structure/router.ts`, mounted next to the SSE route under
-`TRACING`) returns the deployment's actually-compiled topology — nodes (with English
-`labelKey`) and edges from `getGraphAsync({ xray: true })`, the same call
-`02graphs/exportGraphs.ts` uses for mermaid diagrams. Label keys, not localized strings: the
-structure is language-independent and cacheable; a client wanting localization already has it
-on the SSE `label` channel, per job. `traceNode`'s emitted `nodeId` is the qualified path
-LangGraph itself uses for a nested node (e.g.
+Both channels key a node by its **LangGraph node id** (`nodeId`, matching `GET /api/graph`
+below), which is the qualified path LangGraph itself uses for a nested node (e.g.
 `generation_phase:presentation_phase:chief_complaint_generate:plan_content`), not the bare
 name passed to `traceNode` — two different subgraphs reuse bare names like `plan_content` and
-`render_parts`,
-so `TraceNodeFn.scope()` (`nodeWrapper.ts`) threads the same qualification LangGraph computes
-at every point a compiled subgraph is mounted.
+`render_parts`, so `TraceNodeFn.scope()` (`nodeWrapper.ts`) threads the same qualification
+LangGraph computes at every point a compiled subgraph is mounted (issue 15 §3/§4, still true).
 
-**OTel is a parallel, independent channel**, not the same mechanism as the label/trace stream
-(the likely design mistake this issue called out explicitly): one span per node from the same
-`traceNode` seam (`core/graph/utils/nodeWrapper.ts`'s `NodeTracer`/`NodeSpan` port), gated by
-the standard `OTEL_SDK_DISABLED`/`OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_SERVICE_NAME` — never
-`FEATURES=TRACING`. The concrete adapter (`tracing/otel.ts`) is the one place `@opentelemetry/*`
-is imported and these env vars are read; core only knows the port (the same
-port/adapter inversion `core/jobEvents/` uses for the per-job channel: core owns the
-interface, `tracing/` and `transports/` implement or consume it). With the SDK disabled, the
-OTel SDK is never constructed — a guarded dynamic `import()`, not a static one (see
-`tracing/otel.test.ts`). Open question, deliberately unsolved: a checkpoint-resumed node (F09)
-re-executing produces two spans for one logical step.
+**`GET /api/graph`** (`core/graph/structure.ts` + `transports/rest/routes/graph.router.ts`) is
+always on, following labels' gate: it returns the deployment's actually-compiled topology —
+nodes (with English `labelKey`) and edges from `getGraphAsync({ xray: true })`, the same call
+`02graphs/exportGraphs.ts` uses for mermaid diagrams. Label keys, not localized strings: the
+structure is language-independent and cacheable; a client wanting localization already has it
+on the label channel, per job.
 
-**Two defects fixed alongside this (issue 15 §2), each independently reviewable:**
-`traceNode` (`nodeWrapper.ts`) now wraps the node call in `try`/`catch` — a throwing node used
-to emit "Node Started" and nothing terminal; it now also emits "Node Failed" and rethrows. The
-per-job event channel (`core/jobEvents/channel.ts`, #139 — this used to be `tracing/`'s
-now-deleted `TraceBus`) no longer tears down on a hardcoded 10-second timer — it tears down
-when the job reaches a terminal state **and** its last SSE consumer has disconnected
+**Two defects fixed alongside issue 15, both still true today:** `traceNode` (`nodeWrapper.ts`)
+wraps the node call in `try`/`catch` — a throwing node used to emit "Node Started" and nothing
+terminal; it now also emits "Node Failed" and rethrows. The per-job channel
+(`core/jobEvents/channel.ts`, #139) does not tear down on a hardcoded timer — it tears down
+when the job reaches a terminal state **and** its last consumer has disconnected
 (`subscribe`/the returned `unsubscribe`), with a generous 5-minute backstop kept only for a
 consumer that never disconnects. A finished job is then remembered as a tombstone (its
 `complete` event only, nothing else) for 10 minutes, which is what lets "finished" and "never
 existed" get different answers and makes a reused jobId a detectable 409 duplicate.
+
+Open question, deliberately unsolved: a checkpoint-resumed node (F09) re-executing produces
+two OTel spans for one logical step.
 
 ### Catalog Layer
 
@@ -517,14 +510,19 @@ Plus unnumbered `catalog/`, `persistence/`, `symptoms/`, `medicalBasis/`, `modal
 
 ### REST Layer
 
-`src/transports/rest/` (requires the `REST` feature flag). Routes translate protocol only —
+`src/transports/rest/` (requires the `REST` feature flag). `createRestApp(opts)` builds the
+Express app without listening — split out from `startRestServer(opts)` (= `createRestApp` +
+listen) so tests can drive the real route table directly. Routes translate protocol only —
 generation goes through `CaseGenerationService`:
 
 - `GET /api/health`, `GET /api/features`, `GET /api/allowedLlms`
 - `routes/cases.router.ts` — `POST /api/cases` (aborts on client disconnect), `DELETE /api/cases/:jobId` (cancel)
 - `routes/diagnosis.router.ts` — `GET /api/diagnosis`
 - `routes/procedures.router.ts` — `GET /api/procedures`
-- `routes/traces.router.ts` — `GET /api/traces/:jobId/stream` (SSE, `event: label`/`event: trace`, adapting `core/jobEvents/`) and `GET /api/graph` (compiled topology, `tracing/structure/`), both mounted onto the REST app when `TRACING` is set
+- `routes/labels.router.ts` — `GET /api/cases/:jobId/labels` (SSE, `event: label`, adapting
+  `core/jobEvents/`) and `routes/graph.router.ts` — `GET /api/graph` (compiled topology,
+  `core/graph/structure.ts`), both always mounted (#140) — labels are a product feature of the
+  streaming API, not telemetry
 
 ### Data Files
 
@@ -547,14 +545,15 @@ generation goes through `CaseGenerationService`:
 `runWithContext(fn, jobId?, llmConfig?, language?)` in `src/core/graph/utils/context.ts` uses `AsyncLocalStorage` to propagate `jobId`, optional `llmConfig`, optional `language` and an abort `signal` through the entire async call chain, and registers an `AbortController` with `cancelManager` (`utils/cancelManager.ts`) so generations can be cancelled by jobId. Graph nodes read it via `getRequestContext()` — `RequestContextSchema` also doubles as LangGraph's own runtime-context schema at every `new StateGraph(state, RequestContextSchema)` call site, but `language` is never read from _that_ copy (see Language below); only `getRequestContext()` (ALS) is the real read path.
 
 `runWithContext` no longer registers a job hook of any kind (#139) — that was the old
-single-slot `registerJobHook()`, deleted along with `tracing/traceManager.ts` and
-`tracing/sse/`. It only binds ALS and registers the abort controller with `cancelManager`. The
+single-slot `registerJobHook()`, deleted along with the now-removed `src/tracing/` module
+entirely (#140). It only binds ALS and registers the abort controller with `cancelManager`. The
 per-job channel's lifetime is owned by `CaseGenerationService` instead: it calls
 `jobEvents.open(jobId)` before `runWithContext`, and `jobEvents.close(jobId, outcome)` once the
 run settles, so every transport sees the same per-job lifecycle regardless of which door the
-request came in through. Core still does not import `tracing/` or `transports/`: `NodeTracer`/
-`NodeSpan` (`utils/nodeWrapper.ts`, issue 15 §5) is the same port/adapter inversion applied to
-OTel — core owns the port, `tracing/otel.ts` implements it, `app.ts` wires the two together.
+request came in through. Core still does not import `observability/` or `transports/`:
+`NodeTracer`/`NodeSpan` (`utils/nodeWrapper.ts`, issue #141) is the same port/adapter inversion
+applied to OTel — core owns the port, `observability/otel.ts` implements it, `app.ts` wires the
+two together.
 
 ### Language
 
@@ -669,7 +668,7 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
 | Variable                                                   | Default                 | Notes                                                                                                                                                                                            |
 | ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `PORT`                                                     | `3030`                  | Server port                                                                                                                                                                                      |
-| `FEATURES`                                                 | `""`                    | Comma-separated flags: `REST`, `NATS`, `TRACING`, `DEBUG`, `ALLOW_LLMS`                                                                                                                          |
+| `FEATURES`                                                 | `""`                    | Comma-separated flags: `REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`                                                                                                                                     |
 | `LLM_PROVIDER`                                             | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                                                  |
 | `LLM_MODEL`                                                | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                                        |
 | `LLM_API_KEY`                                              | —                       | API key for Google/OpenAI                                                                                                                                                                        |
@@ -689,9 +688,9 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
 | `NATS_USER` / `NATS_PASSWORD`                              | `nats` / `nats`         |                                                                                                                                                                                                  |
 | `SYMPTOM_CACHE_TTL_DAYS`                                   | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                                                                   |
 | `MAX_CONTENT_PART_BYTES`                                   | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
-| `OTEL_SDK_DISABLED`                                        | unset (enabled)         | Standard OTel var. `"true"` skips constructing the OTel SDK entirely (no dynamic import even happens — see `tracing/otel.ts`); independent of `FEATURES=TRACING`                                 |
+| `OTEL_SDK_DISABLED`                                        | unset (enabled)         | Standard OTel var. `"true"` skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES`                     |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`                              | —                       | Standard OTel var, read by the OTLP exporter itself — no plumbing in this repo                                                                                                                   |
-| `OTEL_SERVICE_NAME`                                        | —                       | Standard OTel var, read via `envDetector` (`tracing/otel.ts`)                                                                                                                                    |
+| `OTEL_SERVICE_NAME`                                        | —                       | Standard OTel var, read via `envDetector` (`observability/otel.ts`)                                                                                                                              |
 
 Note: the `REST` flag is required for the HTTP API to load — include it in `FEATURES` when running the server.
 

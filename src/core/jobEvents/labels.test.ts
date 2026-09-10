@@ -1,14 +1,18 @@
 // #139 — `wireLabels` forwards the graph's node lifecycle onto the per-job
-// channel as localized `label` events. Ported from the old
-// `src/tracing/index.test.ts`, which used to test this behavior mixed in
-// with traces on a since-deleted `TraceBus`; labels are a core concern now
+// channel as localized `label` events. Ported from the old, now-deleted
+// `tracing` module's `index.test.ts`, which used to test this behavior mixed
+// in with traces on a since-deleted `TraceBus`; labels are a core concern now
 // (see `labels.ts`'s doc comment) and are driven here against a real
 // `EventBus` + `createJobEventChannel()`, with `language` passed directly on
-// the bus event rather than via `runWithContext`.
+// the bus event rather than via `runWithContext`. The one exception (#140)
+// is the throwing-node test below, which goes through `createTraceNode()` +
+// `runWithContext()` to prove the whole started→failed path end to end.
 import { describe, expect, it } from "vitest";
 import { EventBus } from "@/core/event-bus.js";
 import { createJobEventChannel, type JobEvent } from "./channel.js";
 import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
+import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
+import { runWithContext } from "@/core/graph/utils/context.js";
 import { wireLabels, type LabelEvent } from "./labels.js";
 
 function collectLabels(
@@ -150,6 +154,28 @@ describe("wireLabels (#139)", () => {
     expect(Object.keys(labelEvent!).sort()).toEqual(
       ["jobId", "label", "nodeId", "status", "timestamp"].sort()
     );
+  });
+
+  it("a traceNode-wrapped node that throws still emits a paired started/failed label (#140)", async () => {
+    const bus = new EventBus();
+    const channel = createJobEventChannel();
+    wireLabels(bus, channel, new InMemoryLabelCatalog());
+    const jobId = "job-throws";
+    channel.open(jobId);
+    const labels = collectLabels(channel, jobId);
+
+    const boom = createTraceNode(bus)(
+      "boom_node",
+      async () => {
+        throw new Error("x");
+      },
+      "Booming"
+    );
+
+    await expect(runWithContext(() => boom(), jobId)).rejects.toThrow("x");
+
+    expect(labels.map((l) => l.status)).toEqual(["started", "failed"]);
+    expect(labels.every((l) => l.nodeId === "boom_node")).toBe(true);
   });
 
   it("drops an event for a jobId that was never opened — no throw, other jobs unaffected", async () => {

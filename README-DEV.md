@@ -37,12 +37,12 @@ pnpm install
 
 Copy `.env.example` to `.env` and adjust. The most important variable is `FEATURES` — it decides which transports start.
 
-> **Include `REST` in `FEATURES` if you want the HTTP API.** Without it `startRestServer` is simply never called, and with it the SSE trace stream and `GET /api/graph` (both mounted onto the REST app) are unreachable too. The server starts and generates nothing, silently.
+> **Include `REST` in `FEATURES` if you want the HTTP API.** Without it `startRestServer` is simply never called, and with it the label SSE stream and `GET /api/graph` (both always mounted onto the REST app) are unreachable too. The server starts and generates nothing, silently.
 
 | Variable                                                   | Default                 | Notes                                                                                                                                                                       |
 | ---------------------------------------------------------- | ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `PORT`                                                     | `3030`                  | Server port                                                                                                                                                                 |
-| `FEATURES`                                                 | `""`                    | Comma-separated: `REST`, `NATS`, `TRACING`, `DEBUG`, `ALLOW_LLMS`                                                                                                           |
+| `FEATURES`                                                 | `""`                    | Comma-separated: `REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`                                                                                                                      |
 | `LLM_PROVIDER`                                             | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                             |
 | `LLM_MODEL`                                                | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                   |
 | `LLM_API_KEY`                                              | —                       | API key for Google / OpenAI                                                                                                                                                 |
@@ -62,7 +62,7 @@ Copy `.env.example` to `.env` and adjust. The most important variable is `FEATUR
 | `MAX_CONTENT_PART_BYTES`                                   | `5000000`               | Ceiling on one content part's decoded size; encoding a larger part fails loudly                                                                                             |
 | `NATS_URL`                                                 | `nats://localhost:4222` | `nats://nats:4222` inside docker compose                                                                                                                                    |
 | `NATS_USER` / `NATS_PASSWORD`                              | `nats` / `nats`         |                                                                                                                                                                             |
-| `OTEL_SDK_DISABLED`                                        | unset (enabled)         | Standard OTel var; `"true"` skips constructing the OTel SDK entirely — independent of `FEATURES=TRACING`                                                                    |
+| `OTEL_SDK_DISABLED`                                        | unset (enabled)         | Standard OTel var; `"true"` skips constructing the OTel SDK entirely — its own axis, independent of `FEATURES`                                                              |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`                              | —                       | Standard OTel var, read by the OTLP exporter itself                                                                                                                         |
 | `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES`           | —                       | Standard OTel vars, read via `envDetector`                                                                                                                                  |
 
@@ -125,7 +125,7 @@ src/
 │   ├── app.ts                the composition root — builds and starts everything
 │   ├── event-bus.ts          typed pub/sub; modules augment EventMap
 │   ├── caseGenerationService.ts  the seam both transports call
-│   ├── jobEvents/            core-owned per-job event channel (accepted/label/complete/trace)
+│   ├── jobEvents/            core-owned per-job event channel (accepted/label/complete)
 │   ├── languageDetection/    the request-language resolution ladder
 │   └── graph/                the case-generation pipeline
 │       ├── runtime.ts        GraphRuntime — the port bundle (llm, catalogs, log, clock)
@@ -140,14 +140,14 @@ src/
 │       ├── modality/         per-field planner grammar + rendering pipeline
 │       ├── models/           Zod domain models
 │       ├── utils/            llm, context, retry, prompt, node wrapper
+│       ├── structure.ts      GET /api/graph's builder — actually-compiled topology
 │       └── errors/
 ├── transports/
-│   ├── rest/                 Express server and routers, incl. routes/traces.router.ts (SSE)
+│   ├── rest/                 Express server and routers, incl. routes/labels.router.ts (SSE) and routes/graph.router.ts
 │   └── nats/                 JetStream consumer and publisher
-└── tracing/
-    ├── index.ts              wireTracing — English trace events onto core/jobEvents/
-    ├── structure/            GET /api/graph
-    └── otel.ts               the OTel span channel
+└── observability/
+    ├── otel.ts               the OTel span channel
+    └── tracePayload.ts       output-size cap for a node's captured output (#141)
 ```
 
 The numbered prefixes under `core/graph/` encode pipeline order: graphs call tools, tools call the aigateway. `persistence/`, `catalog/`, `symptoms/`, `medicalBasis/` and `modality/` are deliberately unnumbered — they are not pipeline steps.
@@ -231,17 +231,17 @@ The generated database lives under `CACHE_DIR` (default `data/cache/`), delibera
 
 Requires the `REST` feature flag.
 
-| Method   | Path                        | Purpose                                                                                              |
-| -------- | --------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `GET`    | `/api/health`               | Health check                                                                                         |
-| `GET`    | `/api/features`             | Active feature flags                                                                                 |
-| `GET`    | `/api/allowedLlms`          | Allowlisted LLMs (when `ALLOW_LLMS` is set)                                                          |
-| `POST`   | `/api/cases`                | Generate a case (accepts `?jobId=`; aborts on client disconnect)                                     |
-| `DELETE` | `/api/cases/:jobId`         | Cancel an in-flight generation                                                                       |
-| `GET`    | `/api/diagnosis`            | List predefined diagnoses                                                                            |
-| `GET`    | `/api/procedures`           | List predefined procedures                                                                           |
-| `GET`    | `/api/traces/:jobId/stream` | Live SSE stream: `event: label` (localized) and `event: trace` (English, node-bound) (`TRACING`)     |
-| `GET`    | `/api/graph`                | Compiled graph topology (nodes + edges + English label keys) for this deployment's flags (`TRACING`) |
+| Method   | Path                       | Purpose                                                                                         |
+| -------- | -------------------------- | ----------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/health`              | Health check                                                                                    |
+| `GET`    | `/api/features`            | Active feature flags                                                                            |
+| `GET`    | `/api/allowedLlms`         | Allowlisted LLMs (when `ALLOW_LLMS` is set)                                                     |
+| `POST`   | `/api/cases`               | Generate a case (accepts `?jobId=`; aborts on client disconnect)                                |
+| `DELETE` | `/api/cases/:jobId`        | Cancel an in-flight generation                                                                  |
+| `GET`    | `/api/diagnosis`           | List predefined diagnoses                                                                       |
+| `GET`    | `/api/procedures`          | List predefined procedures                                                                      |
+| `GET`    | `/api/cases/:jobId/labels` | Live SSE stream: `event: label` (localized, node started/terminal), ends with `event: complete` |
+| `GET`    | `/api/graph`               | Compiled graph topology (nodes + edges + English label keys) for this deployment's flags        |
 
 A request body needs either `icd` or `diagnosis`; `generationFlags` defaults to all four fields and must name at least one; `difficulty` defaults to `medium`. The response echoes the resolved `language`, and content-bearing fields are wire-encoded (see Content Parts).
 

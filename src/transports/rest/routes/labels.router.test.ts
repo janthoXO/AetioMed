@@ -1,7 +1,7 @@
-// #139 — end-to-end over real HTTP: `createTracesRouter` mounted on a real
+// #139/#140 — end-to-end over real HTTP: `createLabelsRouter` mounted on a real
 // Express app, driven with global `fetch` and a raw SSE body reader (no
 // `supertest`), wired the same way the composition root wires it: a real
-// `EventBus` + `createJobEventChannel()`, `wireLabels`/`wireTracing`
+// `EventBus` + `createJobEventChannel()`, `wireLabels`
 // producing onto it, and `CaseGenerationService` opening/closing each job's
 // channel around a fake graph.
 import type { Server } from "node:http";
@@ -14,11 +14,10 @@ import {
   type JobEventChannel,
 } from "@/core/jobEvents/channel.js";
 import { wireLabels } from "@/core/jobEvents/labels.js";
-import { wireTracing } from "@/tracing/index.js";
 import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
 import { createCaseGenerationService } from "@/core/caseGenerationService.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
-import createTracesRouter from "./traces.router.js";
+import createLabelsRouter from "./labels.router.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { Case } from "@/core/graph/models/Case.js";
 
@@ -100,7 +99,6 @@ function createHarness() {
   const bus = new EventBus();
   const channel: JobEventChannel = createJobEventChannel();
   wireLabels(bus, channel, new InMemoryLabelCatalog());
-  wireTracing(bus, channel, 5_000_000);
 
   let release: () => void = () => {};
   const gate = new Promise<void>((resolve) => {
@@ -134,14 +132,14 @@ async function startServer(channel: JobEventChannel): Promise<{
   port: number;
 }> {
   const app = express();
-  app.use("/api", createTracesRouter(channel));
+  app.use("/api/cases", createLabelsRouter(channel));
   const server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const { port } = server.address() as AddressInfo;
   return { server, port };
 }
 
-describe("traces.router (#139) — end-to-end over real HTTP", () => {
+describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
   let server: Server | undefined;
 
   afterEach(async () => {
@@ -151,7 +149,7 @@ describe("traces.router (#139) — end-to-end over real HTTP", () => {
     }
   });
 
-  it("streams connected, label and trace events for a REST-submitted job, then ends on complete", async () => {
+  it("streams connected and label events for a REST-submitted job — never a trace or a node output — then ends on complete", async () => {
     const { channel, service, release } = createHarness();
     ({ server } = await startServer(channel));
     const port = (server!.address() as AddressInfo).port;
@@ -165,7 +163,7 @@ describe("traces.router (#139) — end-to-end over real HTTP", () => {
     });
 
     const res = await fetch(
-      `http://127.0.0.1:${port}/api/traces/job-e2e/stream`
+      `http://127.0.0.1:${port}/api/cases/job-e2e/labels`
     );
     const reader = res.body!.getReader();
 
@@ -179,7 +177,9 @@ describe("traces.router (#139) — end-to-end over real HTTP", () => {
     );
 
     expect(text).toContain("event: label");
-    expect(text).toContain("event: trace");
+    // Node output left the SSE channel in #140; it goes to OTel.
+    expect(text).not.toContain("event: trace");
+    expect(text).not.toContain('"ok":true');
     expect(text).toContain('"status":"started"');
     expect(text).toContain('"status":"completed"');
 
@@ -199,10 +199,10 @@ describe("traces.router (#139) — end-to-end over real HTTP", () => {
     });
 
     const res1 = await fetch(
-      `http://127.0.0.1:${port}/api/traces/job-e2e-2/stream`
+      `http://127.0.0.1:${port}/api/cases/job-e2e-2/labels`
     );
     const res2 = await fetch(
-      `http://127.0.0.1:${port}/api/traces/job-e2e-2/stream`
+      `http://127.0.0.1:${port}/api/cases/job-e2e-2/labels`
     );
     const reader1 = res1.body!.getReader();
     const reader2 = res2.body!.getReader();
@@ -234,7 +234,7 @@ describe("traces.router (#139) — end-to-end over real HTTP", () => {
     ({ server } = await startServer(channel));
     const port = (server!.address() as AddressInfo).port;
 
-    const res = await fetch(`http://127.0.0.1:${port}/api/traces/nope/stream`);
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases/nope/labels`);
     const reader = res.body!.getReader();
 
     const text = await readUntil(reader, (text) =>
@@ -259,7 +259,7 @@ describe("traces.router (#139) — end-to-end over real HTTP", () => {
     });
 
     const res = await fetch(
-      `http://127.0.0.1:${port}/api/traces/job-term/stream`
+      `http://127.0.0.1:${port}/api/cases/job-term/labels`
     );
     const reader = res.body!.getReader();
 

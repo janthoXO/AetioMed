@@ -1,8 +1,11 @@
-// Issue 15 §4 — `GET /api/graph`: the actually compiled topology of the
-// variant this deployment serves, plus each node's English label key.
-import express from "express";
-import type { CompiledCaseGraph } from "@/core/graph/02graphs/caseGraph.js";
-import { getNodeLabels } from "@/core/graph/utils/nodeWrapper.js";
+// Issue 15 §4 — the actually compiled topology of the variant this
+// deployment serves, plus each node's English label key. Served as
+// `GET /api/graph` on REST and `meta.graph` on NATS (#144), so it lives in
+// core rather than in either transport. It follows the labels' always-on
+// gate (#140): a client that receives labels but cannot fetch the topology
+// to hang them on has half a feature.
+import type { CompiledCaseGraph } from "./02graphs/caseGraph.js";
+import { getNodeLabels } from "./utils/nodeWrapper.js";
 
 /** One node of the compiled graph, as reported to a client. */
 export interface StructureNode {
@@ -65,24 +68,4 @@ export async function buildGraphStructure(
     .map((e) => ({ source: e.source, target: e.target }));
 
   return { nodes, edges };
-}
-
-export default function createStructureRouter(
-  caseGraph: CompiledCaseGraph
-): express.Router {
-  const router = express.Router();
-
-  router.get("/graph", (_req, res) => {
-    buildGraphStructure(caseGraph)
-      .then((structure) => res.json(structure))
-      .catch((error) => {
-        console.error(
-          "[tracing/structure] Failed to build graph structure",
-          error
-        );
-        res.status(500).json({ error: "Failed to build graph structure" });
-      });
-  });
-
-  return router;
 }

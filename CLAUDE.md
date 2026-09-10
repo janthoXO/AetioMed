@@ -53,7 +53,11 @@ everything explicitly, in order:
 3. `initGraph()` builds the repos (`repos.ts`'s `createRepos`), the `GraphRuntime`, and the
    compiled graph, then validates the catalogues
 4. `createCaseGenerationService(graph, bus)`
-5. starts the transports whose flags are set
+5. starts the transports whose flags are set — **NATS before REST** (issue #145): REST's job
+   directory (below) may ride on NATS's connection, so NATS must already be up by the time
+   `startRestServer` is called. Shutdown order is unaffected — REST still closes **first**,
+   before NATS goes away, so nothing stops accepting client work before it stops being able to
+   answer it
 
 It also owns shutdown (issue 18): `createApp()` returns `{ bus, shutdown }`, where `shutdown()`
 closes everything it started in the **reverse** of construction order — REST, then NATS, then
@@ -102,6 +106,35 @@ names double as the SSE `event:` name on REST and the last subject token on NATS
 (`core/jobEvents/labels.ts`) also lives in core now, not in `tracing/` — it turns the graph's
 node lifecycle bus events into localized `label` events, using the `language` now carried
 directly on the bus event (set by `traceNode` from ALS) rather than a per-job language map.
+`channel.ts`'s `peek(jobId)` (#145) is `state`'s sibling: it also returns a terminal job's
+`complete` event, but — unlike `subscribe()` — never opens a subscription, so a status check
+never keeps a job's resources alive.
+
+**The `JobDirectory` port** (`core/jobEvents/directory.ts`, #145, design doc §D4/§D5) answers
+"watch/cancel this jobId, wherever it runs" — the seam that lets a REST client observe or cancel
+a job that a **different replica** accepted. `watch(jobId)` returns `{state: "active", listen(onEvent)
+=> stop}` (subscribed and buffering **before** the caller decides its response, so no event
+between "learn the state" and "attach a listener" is lost — `createBufferedWatch` is the shared
+buffer-then-replay machinery both implementations use), `{state: "terminal", complete}`, or
+`{state: "unknown"}`; `cancel(jobId)` returns `"cancelled" | "finished" | "unknown"`. Both
+methods are `Promise`-returning and can **reject** — that means "the answer could not be
+obtained" (a NATS timeout), which is a different failure mode from `"unknown"` ("nobody has this
+job") and maps to a 504, not a 404. A watched job's events are deliberately narrow: never
+`accepted`, and `complete`'s data never carries the case — **watch, not collect** (design doc
+§D4): an observer is not the requester, and the result only ever goes back to whoever started
+the job.
+
+Two implementations, chosen once in `app.ts`'s `selectJobDirectory({ features, local, nats })`:
+`createLocalJobDirectory(channel, cancel)` (in-process, the only option with `NATS` unset — a
+single replica is then a documented deployment constraint) and, per #145,
+`transports/nats/jobDirectory.ts`'s `createNatsJobDirectory(nc)`, selected only when **both**
+`REST` and `NATS` are enabled and NATS actually connected (a connected-but-then-lost NATS falls
+back to local with a `console.warn`, never a silent wrong answer). **Direction matters: REST
+depends on NATS here, only through this one piece of composition — NATS never imports REST**
+(`importBoundary.test.ts` scans every production module under `src/transports/nats/` for this).
+Known gap, tracked as #146: an observer attaching mid-job sees no replay of labels emitted
+before it connected — only `createBufferedWatch`'s own since-`watch()` buffer, not a full
+history.
 
 **Modules under `src/transports/` and `src/observability/`** are ordinary modules with a start
 function, not plugins: `transports/rest/` (`createRestApp`/`startRestServer` — see the REST
@@ -559,13 +592,28 @@ below), never by reaching into `GraphAppContext` directly:
 - `GET /api/features`, `GET /api/allowedLlms` — inline handlers calling
   `readModel.features()`/`readModel.allowedLlms()`
 - `routes/cases.router.ts` — `POST /api/cases` (content negotiation, see below),
-  `DELETE /api/cases/:jobId` (cancel)
+  `DELETE /api/cases/:jobId` (cancel, through the `JobDirectory` — see below)
 - `routes/diagnosis.router.ts` — `GET /api/diagnosis`, calling `readModel.diagnoses()`
 - `routes/procedures.router.ts` — `GET /api/procedures`, calling `readModel.procedures()`
-- `routes/labels.router.ts` — `GET /api/cases/:jobId/labels` (SSE, `event: label`, adapting
-  `core/jobEvents/`) and `routes/graph.router.ts` — `GET /api/graph`, calling `readModel.graph()`
-  (which wraps `core/graph/structure.ts`), both always mounted (#140) — labels are a product
-  feature of the streaming API, not telemetry
+- `routes/labels.router.ts` — `GET /api/cases/:jobId/labels` (SSE, `event: label`, through the
+  `JobDirectory` — see below) and `routes/graph.router.ts` — `GET /api/graph`, calling
+  `readModel.graph()` (which wraps `core/graph/structure.ts`), both always mounted (#140) —
+  labels are a product feature of the streaming API, not telemetry
+
+**Both routes above go through the `JobDirectory` port (#145), not the channel or the service
+directly** — `RestAppOptions.directory` is a required option, supplied by `app.ts`'s
+`selectJobDirectory` (see "Composition Root" above), so this module never imports the NATS
+transport itself. `GET /api/cases/:jobId/labels`: `directory.watch()` rejecting (the backbone
+timed out) is a `504 UPSTREAM_TIMEOUT`; `{state: "unknown"}` is a `404 NOT_FOUND` — answered
+**before any SSE stream opens**, which is the #145 behaviour change from the pre-#145 shape
+(an unknown job used to open an SSE stream and immediately end it with `event: complete`,
+making "wrong replica" indistinguishable from "job finished"); `{state: "terminal", complete}`
+opens SSE just long enough to write `event: complete` and end; `{state: "active"}` opens SSE,
+writes `event: connected`, then relays `listen()`'s events (`event: label`…, `event: complete`),
+detaching via the returned `stop` on `req.on("close")`. `DELETE /api/cases/:jobId`:
+`directory.cancel()` rejecting is a `504`; `"cancelled"` is `204`; `"finished"` and `"unknown"`
+are both `404` (`NOT_FOUND`, with the message distinguishing "already finished" from "no active
+generation" — a client that wants to tell those apart reads the message, not the status code).
 
 **`POST /api/cases` is REST's synchronous transport, opened as a stream (#143, design doc
 §D1/§D3).** Content negotiation on the one route, not a second endpoint: `Accept:
@@ -615,6 +663,16 @@ Four channels, two JetStream streams (`src/transports/nats/subjects.ts`, `stream
   "no responders" error immediately, never a wrong `{cancelled: false}` from a replica that
   merely doesn't own that job. `{cancelled: false}` only happens when the job finishes in the
   window between the request and the abort.
+- **`cases.status.<jobId>`** (`statusSubject`, #145) — core NATS request/reply, the counterpart
+  `createNatsJobDirectory`'s `watch()` requests after subscribing to the job's progress subjects.
+  Same ownership-by-subscription-interest rule as `cancel` above, but the subscription **outlives
+  the job**: `jobResponders.ts` keeps answering `{state: "terminal", complete}` for
+  `TOMBSTONE_MS` after the job's `complete` (mirroring the channel's own tombstone,
+  `core/jobEvents/channel.ts`), then stops — at which point "no responders" starts meaning
+  "unknown" again rather than "ask again in a second". This is exactly what lets a remote
+  observer's `JobDirectory.watch()` tell "finished" (`{state: "terminal"}`) from "never existed
+  here" (`{state: "unknown"}`) across replicas, the same distinction `channel.peek()` makes
+  in-process.
 - `cases.progress.<jobId>.<accepted|label|complete>` (core NATS, ephemeral fan-out, #144) — see
   "Progress publisher" below.
 
@@ -672,6 +730,14 @@ in delivery guarantees:
   identically). Subject constants live in `subjects.ts` alongside the others
   (`CATALOG_DIAGNOSIS_SUBJECT`, `CATALOG_PROCEDURES_SUBJECT`, `META_FEATURES_SUBJECT`,
   `META_ALLOWED_LLMS_SUBJECT`, `META_GRAPH_SUBJECT`).
+- **Job directory** (`jobDirectory.ts`'s `createNatsJobDirectory(nc)`, #145) is the NATS-side
+  half of the `JobDirectory` port (see "Composition Root" above for the port itself):
+  `watch(jobId)` subscribes to `progressWildcard(jobId)` (`cases.progress.<jobId>.>`) **before**
+  requesting `cases.status.<jobId>`, so a job that completes between the two still delivers its
+  `complete` into the already-open subscription rather than racing past it; `cancel(jobId)`
+  requests `cases.cancel.<jobId>`. Both map NATS's "no responders" to `{state: "unknown"}` /
+  `"unknown"` and a request timeout (`DIRECTORY_REQUEST_TIMEOUT_MS`) to a rejected promise — the
+  distinction REST's routers turn into 404 vs. 504.
 - **Shared read model** (`src/core/readModel.ts`'s `createReadModel(graph, features)`) is what
   makes "the NATS endpoint returns the same payload as its REST counterpart" true **by
   construction**: one object with `diagnoses()`, `procedures()`, `features()`, `allowedLlms()`

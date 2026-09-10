@@ -87,4 +87,39 @@ describe("import boundary (#139) — src/core/graph/ never imports tracing/trans
 
     expect(offenses).toEqual([]);
   });
+
+  // #145 — direction matters: REST depends on NATS through composition
+  // (`app.ts`'s `selectJobDirectory`), never the reverse. NATS is
+  // infrastructure here, not a peer, so no *production* module under
+  // `src/transports/nats/` may import `src/transports/rest/`. Test files are
+  // excluded on purpose: `jetstream.integration.test.ts` (#144's NATS-parity
+  // block) legitimately builds a REST app to assert "the NATS endpoint
+  // returns the same payload as its REST counterpart" — that is a test
+  // asserting parity between the two transports, not a runtime dependency of
+  // one on the other, and the distinction this rule actually cares about.
+  it("no production module under src/transports/nats/ imports transports/rest", () => {
+    const NATS_DIR = fileURLToPath(
+      new URL("../../transports/nats/", import.meta.url)
+    );
+    const files = listTsFiles(NATS_DIR).filter(
+      (file) => !file.endsWith(".test.ts")
+    );
+    expect(files.length).toBeGreaterThan(0);
+
+    const FORBIDDEN_REST_SPECIFIER = /(^|\/)rest\//;
+    const offenses: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      for (const specifier of specifiersOf(source)) {
+        if (
+          FORBIDDEN_REST_SPECIFIER.test(specifier) ||
+          specifier.startsWith("@/transports/rest")
+        ) {
+          offenses.push(`${file}: ${specifier}`);
+        }
+      }
+    }
+
+    expect(offenses).toEqual([]);
+  });
 });

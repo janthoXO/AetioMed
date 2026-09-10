@@ -379,6 +379,42 @@ Future work: [#146 Replay buffer for the label stream](https://github.com/jantho
 result store and cross-transport result collection stay recorded in §"Future work" below without
 their own issues — they only become real if D1's trade stops holding.
 
+## Decided during implementation
+
+These came up while building the stack. They amend the decisions above where they conflict.
+
+- **A duplicate `jobId` is rejected with 409, not attached** (#139, #143). The channel's
+  `open()` is a reservation, so a job id counts as an idempotency key for as long as the job
+  runs, plus a 10-minute tombstone after it finishes. On NATS a duplicate is acked and
+  ignored, because publishing an error would overwrite the real job's result.
+- **Cross-replica ownership is expressed as subscription interest** (#142, #145). Only the
+  replica that runs a job subscribes to `cases.cancel.<jobId>` and `cases.status.<jobId>`, so a
+  plain `nc.request()` reaches exactly the owner. An unknown job gets NATS's "no responders"
+  immediately. This replaces D6's `{cancelled: false}` for unknown jobs, which a broadcast
+  could not deliver correctly: a non-owner's `false` could win the race to be the first reply.
+- **`cases.status.<jobId>` is new** (#145). The owner answers it while the job runs and through
+  the tombstone window afterwards. It is what lets the REST label stream answer 404 for an
+  unknown job and `event: complete` for a finished one, across replicas.
+- **D5 is a port, not a flag check inside REST** (#145). REST's label stream and `DELETE` go
+  through a core `JobDirectory` with two adapters, one in-process and one NATS. `app.ts` picks
+  the adapter, so REST depends on NATS only through composition, and a test enforces that
+  `transports/nats/` never imports `transports/rest/`. `DELETE` over NATS stays synchronous:
+  204, 404, or 504 when the owner can't be reached.
+- **`MAX_CONCURRENT_GENERATIONS` defaults to 4, and excess jobs queue** (#142). The limiter lives
+  in `CaseGenerationService`. The NATS worker pulls a message only once a slot is free, so a
+  busy replica leaves queued work in the stream for other replicas. `ack_wait` is 60s and is
+  extended with `msg.working()` while a job runs. Cancellation moved from the module-level
+  `cancelManager` into the service and is registered at submission, so a queued job can be
+  cancelled too.
+- **`jobId` must be a NATS subject token** (`[A-Za-z0-9_-]{1,128}`) on both transports, and it is
+  **required on NATS** because it is the address of the result.
+- **Node output reaches OTel only as a log record** (#141). The exporter is chosen from existing
+  env: an OTLP endpoint → OTLP; `DEBUG` → console; otherwise nothing is constructed.
+- **Catalogue and meta reads use `@nats-io/services`** (#144), which gives NATS-only clients
+  discovery through `$SRV.*`. Both transports answer from one core `ReadModel`.
+- **Known gap, deferred:** an observer that attaches mid-job misses the labels that were emitted
+  before it subscribed. That is #146, the replay buffer.
+
 ## Public contract changes
 
 These need release notes.
@@ -400,6 +436,16 @@ These need release notes.
   deployments must delete the old stream — it cannot be reconfigured in place across a retention
   change.
 - New env var: `MAX_CONCURRENT_GENERATIONS`.
+- A duplicate `jobId` is `409 JOB_ALREADY_ACTIVE`, or `409 JOB_ALREADY_COMPLETED` within 10
+  minutes of the job finishing. `jobId` must match `[A-Za-z0-9_-]{1,128}`, and NATS requests
+  must carry one.
+- `cases.cancel.<jobId>` / `cases.status.<jobId>`: an unknown job gets "no responders" rather
+  than a reply.
+- `GET /api/cases/:jobId/labels`: an unknown job is `404`. `DELETE /api/cases/:jobId` can answer
+  `504` when the owning replica can't be reached.
+- New NATS subjects: `cases.progress.<jobId>.{accepted,label,complete}`, `cases.status.<jobId>`,
+  `catalog.*`, `meta.*`, and the `aetiomed` service under `$SRV.*`.
+- With no OTLP endpoint and no `DEBUG`, the OTel SDK is no longer constructed.
 
 ## Acceptance criteria
 

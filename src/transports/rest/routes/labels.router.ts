@@ -1,49 +1,65 @@
 import express from "express";
-import type { JobEvent, JobEventChannel } from "@/core/jobEvents/index.js";
+import type { JobDirectory } from "@/core/jobEvents/index.js";
 import { openSse } from "../sse.js";
 
 /**
- * `GET /api/cases/:jobId/labels` — the SSE adapter onto the core-owned
- * per-job channel (#139). Always on (#140): labels are a product feature of
- * the streaming API, not telemetry.
+ * `GET /api/cases/:jobId/labels` — watch any job's progress, whatever
+ * submitted it and whichever replica runs it (#145). Always on (#140):
+ * labels are a product feature of the streaming API, not telemetry.
  *
- * Carries `event: label` frames and ends with `event: complete`. It never
- * carries node output — that is the operator's, over OTLP — and never the
- * case: an observer is not the requester (design doc §D4).
+ * Goes through the {@link JobDirectory} port: in-process with one replica,
+ * over NATS when NATS is enabled — the composition root decides, so this
+ * module never imports the NATS transport.
+ *
+ * - unknown job → `404`, before any stream opens. This used to answer
+ *   `event: complete`, so "wrong replica" and "finished" looked the same.
+ * - finished job → `event: complete` with its outcome, then end.
+ * - running job → `event: connected`, `event: label`…, `event: complete`.
+ *
+ * An observer can watch a job but not collect it: the stream never carries
+ * the case (design doc §D4, "watch, not collect").
  */
 export default function createLabelsRouter(
-  channel: JobEventChannel
+  directory: JobDirectory
 ): express.Router {
   const router = express.Router();
 
-  router.get("/:jobId/labels", (req, res) => {
+  router.get("/:jobId/labels", async (req, res) => {
+    let watch;
+    try {
+      watch = await directory.watch(req.params.jobId);
+    } catch (error) {
+      console.error("[rest] Could not reach the job's owner", error);
+      res.status(504).json({
+        error: {
+          code: "UPSTREAM_TIMEOUT",
+          message: "Could not reach the replica that owns this job",
+        },
+      });
+      return;
+    }
+
+    if (watch.state === "unknown") {
+      res.status(404).json({
+        error: { code: "NOT_FOUND", message: "No job with this jobId" },
+      });
+      return;
+    }
+
     const sse = openSse(res);
 
-    const onEvent = (event: JobEvent) => {
-      if (event.type === "label") {
-        sse.event("label", event.data);
-      } else if (event.type === "complete") {
-        sse.event("complete", event.data);
-        sse.end();
-      }
-    };
-
-    const subscription = channel.subscribe(req.params.jobId, onEvent);
-
-    if (subscription.state !== "active") {
-      sse.event(
-        "complete",
-        subscription.state === "terminal" ? subscription.complete : {}
-      );
+    if (watch.state === "terminal") {
+      sse.event("complete", watch.complete);
       sse.end();
       return;
     }
 
     sse.event("connected", {});
-
-    // Unsubscribing is the "last consumer disconnected" signal the channel
-    // waits on before it releases a terminal job (issue 15 §2).
-    req.on("close", subscription.unsubscribe);
+    const stop = watch.listen((event) => {
+      sse.event(event.type, event.data);
+      if (event.type === "complete") sse.end();
+    });
+    req.on("close", stop);
   });
 
   return router;

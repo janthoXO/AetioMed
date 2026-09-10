@@ -13,6 +13,8 @@ import { createReadModel } from "@/core/readModel.js";
 import { EventBus } from "@/core/event-bus.js";
 import {
   createJobEventChannel,
+  createLocalJobDirectory,
+  type JobDirectory,
   type JobEventChannel,
 } from "@/core/jobEvents/index.js";
 import { wireLabels } from "@/core/jobEvents/labels.js";
@@ -167,12 +169,14 @@ function createHarness(opts: { maxConcurrent?: number } = {}) {
 async function startApp(
   graph: GraphAppContext,
   service: CaseGenerationService,
-  jobEvents: JobEventChannel
+  jobEvents: JobEventChannel,
+  directory?: JobDirectory
 ): Promise<{ server: Server; port: number }> {
   const app = createRestApp({
     graph,
     service,
     jobEvents,
+    directory: directory ?? createLocalJobDirectory(jobEvents, service.cancel),
     features: new Set(["REST"]),
     readModel: createReadModel(graph, new Set(["REST"])),
     heartbeatMs: 40,
@@ -682,5 +686,85 @@ describe("POST /api/cases (#143) — content negotiation, streaming, heartbeat",
 
     await readUntil(reader1, (t) => t.includes("event: result"));
     await readUntil(reader2, (t) => t.includes("event: result"));
+  });
+});
+
+/** A `JobDirectory` whose `cancel` is fully scripted — `watch` is never
+ * exercised by these tests. */
+function stubDirectory(cancel: JobDirectory["cancel"]): JobDirectory {
+  return {
+    watch: () => Promise.reject(new Error("not used by these tests")),
+    cancel,
+  };
+}
+
+describe("DELETE /api/cases/:jobId (#145) — via the JobDirectory port", () => {
+  let server: Server | undefined;
+
+  afterEach(async () => {
+    if (server) {
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+      server = undefined;
+    }
+  });
+
+  it('directory.cancel() → "cancelled" is a 204', async () => {
+    const { channel, service, graph } = createHarness();
+    const directory = stubDirectory(async () => "cancelled");
+    ({ server } = await startApp(graph, service, channel, directory));
+    const port = (server.address() as AddressInfo).port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases/job-x`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(204);
+  });
+
+  it('directory.cancel() → "finished" is a 404 mentioning "already finished"', async () => {
+    const { channel, service, graph } = createHarness();
+    const directory = stubDirectory(async () => "finished");
+    ({ server } = await startApp(graph, service, channel, directory));
+    const port = (server.address() as AddressInfo).port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases/job-x`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain("already finished");
+  });
+
+  it('directory.cancel() → "unknown" is a 404', async () => {
+    const { channel, service, graph } = createHarness();
+    const directory = stubDirectory(async () => "unknown");
+    ({ server } = await startApp(graph, service, channel, directory));
+    const port = (server.address() as AddressInfo).port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases/job-x`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("directory.cancel() rejecting (backbone timeout) is a 504", async () => {
+    const { channel, service, graph } = createHarness();
+    const directory = stubDirectory(async () => {
+      throw new Error("no reply in time");
+    });
+    ({ server } = await startApp(graph, service, channel, directory));
+    const port = (server.address() as AddressInfo).port;
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases/job-x`, {
+      method: "DELETE",
+    });
+    expect(res.status).toBe(504);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("UPSTREAM_TIMEOUT");
+    consoleError.mockRestore();
   });
 });

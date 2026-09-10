@@ -123,6 +123,44 @@ describe("job event channel — state and duplicates", () => {
   });
 });
 
+describe("job event channel — peek (#145)", () => {
+  it("active job → {state: active}", () => {
+    const channel = createJobEventChannel();
+    channel.open("job");
+    expect(channel.peek("job")).toEqual({ state: "active" });
+  });
+
+  it("terminal job → {state: terminal, complete}", () => {
+    const channel = createJobEventChannel();
+    channel.open("job");
+    channel.close("job", { status: "done" });
+    expect(channel.peek("job")).toMatchObject({
+      state: "terminal",
+      complete: { jobId: "job", status: "done" },
+    });
+  });
+
+  it("unknown job → {state: unknown}", () => {
+    const channel = createJobEventChannel();
+    expect(channel.peek("nope")).toEqual({ state: "unknown" });
+  });
+
+  it("never subscribes: peeking a terminal job with no subscribers does not keep it alive", () => {
+    const channel = createJobEventChannel();
+    channel.open("job");
+    channel.close("job", { status: "done" });
+    // The job had no subscribers at close, so it already tore down into a
+    // tombstone. A peek must not re-open or hold a subscription — it stays
+    // a tombstone, not an active job with one listener.
+    expect(channel.peek("job")).toMatchObject({ state: "terminal" });
+    expect(channel.peek("job")).toMatchObject({ state: "terminal" });
+    channel.publish("job", "label", label("job", "started"));
+    // No listener was ever added by peek, so nothing to have received it —
+    // this just confirms publish is a no-op post-close, unaffected by peek.
+    expect(channel.peek("job")).toMatchObject({ state: "terminal" });
+  });
+});
+
 describe("job event channel — deterministic teardown (issue 15 §2)", () => {
   it("releases a terminal job the moment its last subscriber leaves", () => {
     const channel = createJobEventChannel();

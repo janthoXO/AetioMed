@@ -10,7 +10,10 @@ import createLabelsRouter from "./routes/labels.router.js";
 import createGraphRouter from "./routes/graph.router.js";
 import type { GraphAppContext } from "../../core/graph/appContext.js";
 import type { CaseGenerationService } from "../../core/caseGenerationService.js";
-import type { JobEventChannel } from "../../core/jobEvents/index.js";
+import type {
+  JobDirectory,
+  JobEventChannel,
+} from "../../core/jobEvents/index.js";
 import type { ReadModel } from "../../core/readModel.js";
 
 const RestEnvSchema = z
@@ -27,6 +30,12 @@ export interface RestAppOptions {
   graph: GraphAppContext;
   service: CaseGenerationService;
   jobEvents: JobEventChannel;
+  /**
+   * Where the label stream and `DELETE` find a job by id: in-process, or
+   * over NATS when NATS is enabled (#145). Chosen by the composition root,
+   * so this module never imports the NATS transport.
+   */
+  directory: JobDirectory;
   readModel: ReadModel;
   features: Set<string>;
   /** Override the POST stream's heartbeat interval — tests only. */
@@ -38,7 +47,7 @@ export interface RestAppOptions {
  * {@link startRestServer} so tests can drive the real route table.
  */
 export function createRestApp(opts: RestAppOptions): express.Express {
-  const { graph, service, jobEvents, readModel, features } = opts;
+  const { graph, service, jobEvents, directory, readModel, features } = opts;
 
   const app = express();
   app.use(express.json());
@@ -57,13 +66,13 @@ export function createRestApp(opts: RestAppOptions): express.Express {
 
   apiRouter.use(
     "/cases",
-    createCasesRouter(graph, service, jobEvents, {
+    createCasesRouter(graph, service, jobEvents, directory, {
       ...(opts.heartbeatMs !== undefined && { heartbeatMs: opts.heartbeatMs }),
     })
   );
   // Labels and the topology they are keyed against are always on (#140):
   // they are a product feature of the streaming API, not telemetry.
-  apiRouter.use("/cases", createLabelsRouter(jobEvents));
+  apiRouter.use("/cases", createLabelsRouter(directory));
   apiRouter.use("/", createGraphRouter(readModel));
   apiRouter.use("/diagnosis", createDiagnosisRouter(readModel));
   apiRouter.use("/procedures", createProceduresRouter(readModel));

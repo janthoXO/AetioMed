@@ -6,9 +6,11 @@ import { z } from "zod";
 import createCasesRouter from "./routes/cases.router.js";
 import createDiagnosisRouter from "./routes/diagnosis.router.js";
 import createProceduresRouter from "./routes/procedures.router.js";
-import { mountTracingRest } from "../../tracing/sse/index.js";
+import createTracesRouter from "./routes/traces.router.js";
+import createStructureRouter from "../../tracing/structure/router.js";
 import type { GraphAppContext } from "../../core/graph/appContext.js";
 import type { CaseGenerationService } from "../../core/caseGenerationService.js";
+import type { JobEventChannel } from "../../core/jobEvents/index.js";
 
 const RestEnvSchema = z
   .object({
@@ -32,9 +34,10 @@ export interface RestTransportHandle {
 export async function startRestServer(opts: {
   graph: GraphAppContext;
   service: CaseGenerationService;
+  jobEvents: JobEventChannel;
   features: Set<string>;
 }): Promise<RestTransportHandle> {
-  const { graph, service, features } = opts;
+  const { graph, service, jobEvents, features } = opts;
   const { port } = RestEnvSchema.parse(process.env);
 
   const app = express();
@@ -59,8 +62,11 @@ export async function startRestServer(opts: {
     res.json(graph.config.allowedLlms || [])
   );
 
+  // The live per-job stream and the compiled graph structure: only
+  // meaningful once a client can see the pipeline it is driving.
   if (features.has("TRACING")) {
-    mountTracingRest(apiRouter, graph.caseGraph);
+    apiRouter.use("/", createTracesRouter(jobEvents));
+    apiRouter.use("/", createStructureRouter(graph.caseGraph));
   }
 
   const server = await new Promise<Server>((resolve) => {

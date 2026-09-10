@@ -1,4 +1,5 @@
 import type { EventBus } from "./event-bus.js";
+import type { JobEventChannel, JobOutcome } from "./jobEvents/index.js";
 import type { GraphAppContext } from "./graph/appContext.js";
 import type { Case } from "./graph/models/Case.js";
 import type { Language } from "./graph/models/Language.js";
@@ -42,7 +43,10 @@ export type CaseGenerationResult = {
  * The single seam both transports (rest, nats) call through. Owns what both
  * used to duplicate: ICD→name resolution, jobId minting, `runWithContext`,
  * terminal event emission ("Generation Completed"/"Failure"/"Cancelled"),
- * and error→status mapping. Transports shrink to protocol translation: parse
+ * and error→status mapping. It also owns each job's lifetime on the per-job
+ * event channel (`core/jobEvents/`, #139): it opens the channel and closes it
+ * with the job's outcome, so every transport sees the same lifecycle whatever
+ * door the request came in through. Transports shrink to protocol translation: parse
  * their wire format into a `CaseGenerationRequest`, call `generate`, and
  * translate the `CaseGenerationResult` back into their wire format.
  *
@@ -58,139 +62,194 @@ export interface CaseGenerationService {
   cancel(jobId: string): boolean;
 }
 
+/** Map a finished job's result onto the channel's terminal marker. */
+function outcomeOf(result: CaseGenerationResult): JobOutcome {
+  if (result.status === "done") return { status: "done" };
+  if (result.error?.code === "GENERATION_CANCELLED") {
+    return { status: "cancelled" };
+  }
+  return {
+    status: "failed",
+    error: {
+      code: result.error?.code ?? "GENERATION_FAILED",
+      message: result.error?.message ?? "Generation failed",
+    },
+  };
+}
+
 export function createCaseGenerationService(
   graph: GraphAppContext,
   bus: EventBus,
+  jobEvents: JobEventChannel,
   // Injectable for tests (a spy asserting the diagnosis name is never
   // passed to it — issue 10 §2); the real `tinyld`-backed detector by
   // default, constructed here rather than at module scope so nothing runs
   // at import time.
   detector: LanguageDetector = createTinyldDetector()
 ): CaseGenerationService {
-  return {
-    async generate(req): Promise<CaseGenerationResult> {
-      const jobId = req.jobId ?? crypto.randomUUID();
+  async function run(
+    req: CaseGenerationRequest,
+    jobId: string
+  ): Promise<CaseGenerationResult> {
+    // Provenance for the translate-in trigger (issue 12 §3): true only
+    // when the caller actually supplied free text — a diagnosis name
+    // (rather than only an `icd`) or any `userInstructions`. Computed
+    // BEFORE ICD→name resolution below, which would otherwise make an
+    // ICD-only request look identical to a free-text one.
+    const callerSuppliedFreeText =
+      Boolean(req.diagnosis) ||
+      (req.userInstructions !== undefined &&
+        Object.keys(req.userInstructions).length > 0);
 
-      // Provenance for the translate-in trigger (issue 12 §3): true only
-      // when the caller actually supplied free text — a diagnosis name
-      // (rather than only an `icd`) or any `userInstructions`. Computed
-      // BEFORE ICD→name resolution below, which would otherwise make an
-      // ICD-only request look identical to a free-text one.
-      const callerSuppliedFreeText =
-        Boolean(req.diagnosis) ||
-        (req.userInstructions !== undefined &&
-          Object.keys(req.userInstructions).length > 0);
-
-      let diagnosisName = req.diagnosis;
+    let diagnosisName = req.diagnosis;
+    if (!diagnosisName) {
+      diagnosisName = graph.runtime.catalogs.diagnosis.byIcd(req.icd!)?.name;
       if (!diagnosisName) {
-        diagnosisName = graph.runtime.catalogs.diagnosis.byIcd(req.icd!)?.name;
-        if (!diagnosisName) {
-          return {
-            jobId,
-            status: "failed",
-            error: {
-              code: "INVALID_REQUEST_BODY",
-              message: "No diagnosis found for icd",
-              statusCode: 400,
-            },
-          };
-        }
-      }
-
-      // A `procedures`-only request needs a presentation for the blinded
-      // solver to reason from, so one is generated internally and projected
-      // back out below. See `expandFlagsForSolver` for why the plan outline
-      // is not used instead.
-      const effectiveFlags = expandFlagsForSolver(req.generationFlags);
-
-      // The laddered resolver (issue 10 §1) — request normalisation
-      // alongside the ICD→name resolution above, and deliberately run
-      // *before* `runWithContext` binds the language: detection selects
-      // which ports generation binds, and binding happens before invoke, so
-      // a detection step inside the graph could not inform the thing its
-      // answer is for.
-      const resolvedLanguage = await resolveLanguage({
-        explicitLanguage: req.language,
-        userInstructions: req.userInstructions,
-        languages: graph.config.LANGUAGES,
-        autoDetect: graph.config.LANGUAGE_AUTO_DETECT,
-        llmFallbackEnabled: graph.config.LANGUAGE_DETECT_LLM_FALLBACK,
-        detector,
-        runtime: graph.runtime,
-      });
-
-      try {
-        const fullCase = await runWithContext(
-          () =>
-            graph.generateCase({
-              diagnosis: { name: diagnosisName!, icd: req.icd },
-              generationFlags: effectiveFlags,
-              userInstructions: req.userInstructions,
-              language: resolvedLanguage,
-              difficulty: req.difficulty,
-              callerSuppliedFreeText,
-            }),
-          jobId,
-          req.llmConfig,
-          resolvedLanguage
-        );
-
-        const generatedCase =
-          effectiveFlags === req.generationFlags
-            ? fullCase
-            : projectCaseToFlags(fullCase, req.generationFlags);
-
-        bus.emit("Generation Completed", { case: generatedCase, jobId });
-
-        return {
-          jobId,
-          status: "done",
-          case: generatedCase,
-          language: resolvedLanguage,
-        };
-      } catch (error) {
-        console.error(error);
-
-        if (error instanceof Error && error.name === "AbortError") {
-          bus.emit("Generation Cancelled", { jobId });
-          return {
-            jobId,
-            status: "failed",
-            error: {
-              code: "GENERATION_CANCELLED",
-              message: "Generation was cancelled",
-              statusCode: 499,
-            },
-          };
-        }
-
-        if (error instanceof Error) {
-          bus.emit("Generation Failure", { error, jobId });
-        }
-
-        if (error instanceof AppError) {
-          return {
-            jobId,
-            status: "failed",
-            error: {
-              code: error.code,
-              message: error.message,
-              ...(error.details !== undefined && { details: error.details }),
-              statusCode: error.statusCode,
-            },
-          };
-        }
-
         return {
           jobId,
           status: "failed",
           error: {
-            code: "GENERATION_FAILED",
-            message: "Internal server error",
-            details: error instanceof Error ? error.message : String(error),
-            statusCode: 500,
+            code: "INVALID_REQUEST_BODY",
+            message: "No diagnosis found for icd",
+            statusCode: 400,
           },
         };
+      }
+    }
+
+    // A `procedures`-only request needs a presentation for the blinded
+    // solver to reason from, so one is generated internally and projected
+    // back out below. See `expandFlagsForSolver` for why the plan outline
+    // is not used instead.
+    const effectiveFlags = expandFlagsForSolver(req.generationFlags);
+
+    // The laddered resolver (issue 10 §1) — request normalisation
+    // alongside the ICD→name resolution above, and deliberately run
+    // *before* `runWithContext` binds the language: detection selects
+    // which ports generation binds, and binding happens before invoke, so
+    // a detection step inside the graph could not inform the thing its
+    // answer is for.
+    const resolvedLanguage = await resolveLanguage({
+      explicitLanguage: req.language,
+      userInstructions: req.userInstructions,
+      languages: graph.config.LANGUAGES,
+      autoDetect: graph.config.LANGUAGE_AUTO_DETECT,
+      llmFallbackEnabled: graph.config.LANGUAGE_DETECT_LLM_FALLBACK,
+      detector,
+      runtime: graph.runtime,
+    });
+
+    try {
+      const fullCase = await runWithContext(
+        () =>
+          graph.generateCase({
+            diagnosis: { name: diagnosisName!, icd: req.icd },
+            generationFlags: effectiveFlags,
+            userInstructions: req.userInstructions,
+            language: resolvedLanguage,
+            difficulty: req.difficulty,
+            callerSuppliedFreeText,
+          }),
+        jobId,
+        req.llmConfig,
+        resolvedLanguage
+      );
+
+      const generatedCase =
+        effectiveFlags === req.generationFlags
+          ? fullCase
+          : projectCaseToFlags(fullCase, req.generationFlags);
+
+      bus.emit("Generation Completed", { case: generatedCase, jobId });
+
+      return {
+        jobId,
+        status: "done",
+        case: generatedCase,
+        language: resolvedLanguage,
+      };
+    } catch (error) {
+      console.error(error);
+
+      if (error instanceof Error && error.name === "AbortError") {
+        bus.emit("Generation Cancelled", { jobId });
+        return {
+          jobId,
+          status: "failed",
+          error: {
+            code: "GENERATION_CANCELLED",
+            message: "Generation was cancelled",
+            statusCode: 499,
+          },
+        };
+      }
+
+      if (error instanceof Error) {
+        bus.emit("Generation Failure", { error, jobId });
+      }
+
+      if (error instanceof AppError) {
+        return {
+          jobId,
+          status: "failed",
+          error: {
+            code: error.code,
+            message: error.message,
+            ...(error.details !== undefined && { details: error.details }),
+            statusCode: error.statusCode,
+          },
+        };
+      }
+
+      return {
+        jobId,
+        status: "failed",
+        error: {
+          code: "GENERATION_FAILED",
+          message: "Internal server error",
+          details: error instanceof Error ? error.message : String(error),
+          statusCode: 500,
+        },
+      };
+    }
+  }
+
+  return {
+    async generate(req): Promise<CaseGenerationResult> {
+      const jobId = req.jobId ?? crypto.randomUUID();
+
+      // Reserved before the first `await`: by the time a caller holds the
+      // returned promise, the job's channel is open, so it can subscribe
+      // before any node runs. A jobId is an idempotency key — a duplicate
+      // must never start a second generation.
+      if (!jobEvents.open(jobId)) {
+        const active = jobEvents.state(jobId) === "active";
+        return {
+          jobId,
+          status: "failed",
+          error: {
+            code: active ? "JOB_ALREADY_ACTIVE" : "JOB_ALREADY_COMPLETED",
+            message: active
+              ? "A generation with this jobId is already running"
+              : "A generation with this jobId has already finished",
+            statusCode: 409,
+          },
+        };
+      }
+
+      try {
+        const result = await run(req, jobId);
+        jobEvents.close(jobId, outcomeOf(result));
+        return result;
+      } catch (error) {
+        jobEvents.close(jobId, {
+          status: "failed",
+          error: {
+            code: "GENERATION_FAILED",
+            message: error instanceof Error ? error.message : String(error),
+          },
+        });
+        throw error;
       }
     },
 

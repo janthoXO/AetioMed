@@ -125,6 +125,7 @@ src/
 │   ├── app.ts                the composition root — builds and starts everything
 │   ├── event-bus.ts          typed pub/sub; modules augment EventMap
 │   ├── caseGenerationService.ts  the seam both transports call
+│   ├── jobEvents/            core-owned per-job event channel (accepted/label/complete/trace)
 │   ├── languageDetection/    the request-language resolution ladder
 │   └── graph/                the case-generation pipeline
 │       ├── runtime.ts        GraphRuntime — the port bundle (llm, catalogs, log, clock)
@@ -141,10 +142,10 @@ src/
 │       ├── utils/            llm, context, retry, prompt, node wrapper
 │       └── errors/
 ├── transports/
-│   ├── rest/                 Express server and routers
+│   ├── rest/                 Express server and routers, incl. routes/traces.router.ts (SSE)
 │   └── nats/                 JetStream consumer and publisher
 └── tracing/
-    ├── sse/                  live label + trace streaming
+    ├── index.ts              wireTracing — English trace events onto core/jobEvents/
     ├── structure/            GET /api/graph
     └── otel.ts               the OTel span channel
 ```

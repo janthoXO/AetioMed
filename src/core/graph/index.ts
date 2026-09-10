@@ -1,5 +1,6 @@
 import type { EventBus } from "../event-bus.js";
 import type { Case } from "./models/Case.js";
+import type { Language } from "./models/Language.js";
 import { ConfigSchema, type Config } from "./config.js";
 import { validateCatalogsOrExit } from "./catalog/startupValidation.js";
 import { buildCaseGraph } from "./02graphs/caseGraph.js";
@@ -41,6 +42,7 @@ declare module "../event-bus.js" {
       node: string;
       label?: string;
       jobId?: string;
+      language?: Language;
       timestamp: string;
     };
     "Node Completed": {
@@ -48,6 +50,7 @@ declare module "../event-bus.js" {
       label?: string;
       result: unknown;
       jobId?: string;
+      language?: Language;
       timestamp: string;
     };
     // Issue 15 §2: the defect this fixes is `traceNode` never emitting a
@@ -57,6 +60,7 @@ declare module "../event-bus.js" {
       label?: string;
       error: string;
       jobId?: string;
+      language?: Language;
       timestamp: string;
     };
   }
@@ -154,5 +158,5 @@ export function initGraph(opts: {
   return { config, runtime, generateCase, caseGraph, db: repos.db };
 }
 
-export { runWithContext, registerJobHook } from "./utils/context.js";
+export { runWithContext } from "./utils/context.js";
 export * as cancelManager from "./utils/cancelManager.js";

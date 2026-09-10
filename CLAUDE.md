@@ -85,12 +85,23 @@ contains a "Workup / Procedure Results Strategy" section, so slicing a presentat
 by heading is a parse whose failure mode is silently leaking that strategy into the _blinded_
 solver. See `expandFlagsForSolver`'s doc comment.
 
+**`src/core/jobEvents/`** (#139) is the core-owned per-job event channel:
+`createJobEventChannel()` builds one instance, constructed once in `app.ts` and handed to
+`CaseGenerationService` (which `open()`s it before its first await and `close()`s it with the
+job's outcome on every path) and to every transport, which only ever `subscribe()`s. Event
+names double as the SSE `event:` name on REST and the last subject token on NATS
+(`cases.progress.<jobId>.<name>`), so no adapter needs a name-mapping table. `wireLabels`
+(`core/jobEvents/labels.ts`) also lives in core now, not in `tracing/` — it turns the graph's
+node lifecycle bus events into localized `label` events, using the `language` now carried
+directly on the bus event (set by `traceNode` from ALS) rather than a per-job language map.
+
 **Modules under `src/transports/` and `src/tracing/`** are ordinary modules with a start
-function, not plugins: `transports/rest/` (`startRestServer`), `transports/nats/`
-(`startNatsTransport`), `tracing/` (`wireTracing`, which registers a job hook on the
-core-owned registry in `utils/context.ts`) and `tracing/sse/` (SSE streaming, mounted onto
-the Express app built by `transports/rest/` — it still depends on `rest/`, which is fine and
-unchanged). `src/api/` holds the shared request/response Zod schemas.
+function, not plugins: `transports/rest/` (`startRestServer`, which now also owns
+`routes/traces.router.ts` — the SSE adapter onto `core/jobEvents/`, formerly
+`tracing/sse/`), `transports/nats/` (`startNatsTransport`), and `tracing/` (`wireTracing`,
+which publishes English `trace` events onto the same core-owned channel — it registers
+nothing any more; there is no job hook). `src/api/` holds the shared request/response Zod
+schemas.
 
 The typed **`EventBus`** (`src/core/event-bus.ts`) is kept — it genuinely decouples tracing
 from the graph. Modules augment its `EventMap` interface via TypeScript module
@@ -107,10 +118,11 @@ content, language and gate:
 | Gate     | `FEATURES=TRACING`                           | `FEATURES=TRACING`       | `OTEL_SDK_DISABLED` — its own axis  |
 
 Labels and traces are separate SSE event types (`event: label` / `event: trace`) on the same
-per-job stream, not one `type`-discriminated payload — see `tracing/index.ts`'s `wireTracing`
-and `tracing/sse/router.ts`. A `TraceEvent` (`tracing/traceManager.ts`) carries the node's
-**LangGraph node id** (`nodeId`, matching `GET /api/graph` below) and English `labelKey`;
-`payload: any` is gone. A node's output is capped at `MAX_TRACE_PAYLOAD_BYTES`
+per-job stream, not one `type`-discriminated payload — see `core/jobEvents/labels.ts`'s
+`wireLabels`, `tracing/index.ts`'s `wireTracing`, and the SSE adapter that forwards both,
+`transports/rest/routes/traces.router.ts`. A `TraceEvent` (`tracing/traceEvent.ts`) carries the
+node's **LangGraph node id** (`nodeId`, matching `GET /api/graph` below) and English
+`labelKey`; `payload: any` is gone. A node's output is capped at `MAX_TRACE_PAYLOAD_BYTES`
 (`tracing/tracePayload.ts`) — over the cap it becomes `{ truncated: true, bytes, preview }`,
 and `ContentPart[]` fields are always projected through `textOf` first
 (`core/graph/utils/traceSanitize.ts`), so raw bytes never reach a trace event.
@@ -133,19 +145,23 @@ at every point a compiled subgraph is mounted.
 `traceNode` seam (`core/graph/utils/nodeWrapper.ts`'s `NodeTracer`/`NodeSpan` port), gated by
 the standard `OTEL_SDK_DISABLED`/`OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_SERVICE_NAME` — never
 `FEATURES=TRACING`. The concrete adapter (`tracing/otel.ts`) is the one place `@opentelemetry/*`
-is imported and these env vars are read; core only knows the port (mirroring the
-`registerJobHook` inversion already used for `TraceBus`). With the SDK disabled, the OTel SDK
-is never constructed — a guarded dynamic `import()`, not a static one (see `tracing/otel.test.ts`).
-Open question, deliberately unsolved: a checkpoint-resumed node (F09) re-executing produces two
-spans for one logical step.
+is imported and these env vars are read; core only knows the port (the same
+port/adapter inversion `core/jobEvents/` uses for the per-job channel: core owns the
+interface, `tracing/` and `transports/` implement or consume it). With the SDK disabled, the
+OTel SDK is never constructed — a guarded dynamic `import()`, not a static one (see
+`tracing/otel.test.ts`). Open question, deliberately unsolved: a checkpoint-resumed node (F09)
+re-executing produces two spans for one logical step.
 
 **Two defects fixed alongside this (issue 15 §2), each independently reviewable:**
 `traceNode` (`nodeWrapper.ts`) now wraps the node call in `try`/`catch` — a throwing node used
 to emit "Node Started" and nothing terminal; it now also emits "Node Failed" and rethrows. The
-per-job `TraceBus` (`tracing/traceManager.ts`) no longer tears down on a hardcoded 10-second
-timer — it tears down when the job reaches a terminal state **and** its last SSE consumer has
-disconnected (`registerConsumer`/`unregisterConsumer`), with a generous timer kept only as a
-backstop for a consumer that never disconnects.
+per-job event channel (`core/jobEvents/channel.ts`, #139 — this used to be `tracing/`'s
+now-deleted `TraceBus`) no longer tears down on a hardcoded 10-second timer — it tears down
+when the job reaches a terminal state **and** its last SSE consumer has disconnected
+(`subscribe`/the returned `unsubscribe`), with a generous 5-minute backstop kept only for a
+consumer that never disconnects. A finished job is then remembered as a tombstone (its
+`complete` event only, nothing else) for 10 minutes, which is what lets "finished" and "never
+existed" get different answers and makes a reused jobId a detectable 409 duplicate.
 
 ### Catalog Layer
 
@@ -508,7 +524,7 @@ generation goes through `CaseGenerationService`:
 - `routes/cases.router.ts` — `POST /api/cases` (aborts on client disconnect), `DELETE /api/cases/:jobId` (cancel)
 - `routes/diagnosis.router.ts` — `GET /api/diagnosis`
 - `routes/procedures.router.ts` — `GET /api/procedures`
-- `src/tracing/sse/` — `GET /api/traces/:jobId/stream` (SSE, `event: label`/`event: trace`) and `GET /api/graph` (compiled topology, `tracing/structure/`), both mounted onto the REST app when `TRACING` is set
+- `routes/traces.router.ts` — `GET /api/traces/:jobId/stream` (SSE, `event: label`/`event: trace`, adapting `core/jobEvents/`) and `GET /api/graph` (compiled topology, `tracing/structure/`), both mounted onto the REST app when `TRACING` is set
 
 ### Data Files
 
@@ -530,11 +546,15 @@ generation goes through `CaseGenerationService`:
 
 `runWithContext(fn, jobId?, llmConfig?, language?)` in `src/core/graph/utils/context.ts` uses `AsyncLocalStorage` to propagate `jobId`, optional `llmConfig`, optional `language` and an abort `signal` through the entire async call chain, and registers an `AbortController` with `cancelManager` (`utils/cancelManager.ts`) so generations can be cancelled by jobId. Graph nodes read it via `getRequestContext()` — `RequestContextSchema` also doubles as LangGraph's own runtime-context schema at every `new StateGraph(state, RequestContextSchema)` call site, but `language` is never read from _that_ copy (see Language below); only `getRequestContext()` (ALS) is the real read path.
 
-Core does not import the tracing module: `registerJobHook()` is a core-owned registry the
-`tracing` module registers against. With `TRACING` unset nothing is registered and no
-per-job trace bus is allocated. `NodeTracer`/`NodeSpan` (`utils/nodeWrapper.ts`, issue 15 §5)
-is the same inversion applied to OTel: core owns the port, `tracing/otel.ts` implements it,
-`app.ts` wires the two together.
+`runWithContext` no longer registers a job hook of any kind (#139) — that was the old
+single-slot `registerJobHook()`, deleted along with `tracing/traceManager.ts` and
+`tracing/sse/`. It only binds ALS and registers the abort controller with `cancelManager`. The
+per-job channel's lifetime is owned by `CaseGenerationService` instead: it calls
+`jobEvents.open(jobId)` before `runWithContext`, and `jobEvents.close(jobId, outcome)` once the
+run settles, so every transport sees the same per-job lifecycle regardless of which door the
+request came in through. Core still does not import `tracing/` or `transports/`: `NodeTracer`/
+`NodeSpan` (`utils/nodeWrapper.ts`, issue 15 §5) is the same port/adapter inversion applied to
+OTel — core owns the port, `tracing/otel.ts` implements it, `app.ts` wires the two together.
 
 ### Language
 

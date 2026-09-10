@@ -6,8 +6,7 @@ import { sanitizeForTrace } from "./traceSanitize.js";
 
 /**
  * The OTel operator channel's port (issue 15 §5/§1.1) — core (this file)
- * owns the interface, exactly the `registerJobHook` pattern `utils/context.ts`
- * already uses for the `TraceBus` hook: core never imports
+ * owns the interface and the adapter implements it: core never imports
  * `@opentelemetry/*` or reads `process.env` (both are off-limits under
  * `src/core/graph/` — see `CLAUDE.md`), so the concrete adapter
  * (`tracing/otel.ts`) lives outside core and is constructed once by the
@@ -205,10 +204,16 @@ function buildTraceNode(
       const runtime = args[1] as Runtime<RequestContext> | undefined;
       const context = runtime?.context ?? getRequestContext();
       const jobId = context?.jobId;
+      // Off ALS, never LangGraph's own runtime context: `language` is
+      // deliberately absent from `RequestContextSchema` (see `context.ts`).
+      // It rides on the event so the label channel (`core/jobEvents/`) can
+      // localize without keeping a per-job language map.
+      const language = getRequestContext()?.language;
 
       bus.emit("Node Started", {
         node: nodeId,
         label,
+        language,
         jobId,
         timestamp: new Date().toISOString(),
       });
@@ -229,6 +234,7 @@ function buildTraceNode(
           label,
           result,
           jobId,
+          language,
           timestamp: new Date().toISOString(),
         });
 
@@ -244,6 +250,7 @@ function buildTraceNode(
           label,
           error: message,
           jobId,
+          language,
           timestamp: new Date().toISOString(),
         });
 

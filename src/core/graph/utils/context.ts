@@ -29,7 +29,6 @@ export const RequestContextSchema = z.object({
  * populated — dead weight implying a mechanism that did not exist. It comes
  * back as the *live* mechanism, but only on this ALS-only type, never on
  * `RequestContextSchema` (see that schema's comment for why): `runWithContext`
- * already accepted `language` (to pass to the job hook below); it now also
  * stores it here, and ports read it via `getRequestContext()` — never off
  * graph state, and never off LangGraph's own runtime context. That is what
  * "language is a property of the bound ports" means mechanically —
@@ -50,24 +49,14 @@ export type RequestContext = z.infer<typeof RequestContextSchema> & {
 export const requestContext = new AsyncLocalStorage<RequestContext>();
 
 /**
- * Core-owned hook a per-job resource can register itself against, without
- * core importing the module that provides it (see the `tracing`
- * module's `wireTracing()`, which calls `registerJobHook`). `runWithContext`
- * calls the registered hook, if any, for every job, passing along the
- * request's language so that hook can localize per-job output (e.g. trace
- * labels) — this is a separate, one-shot delivery at job start, not a read
- * off `RequestContext` (the hook runs before `requestContext.run` below).
- * With no hook registered (`TRACING` unset) this allocates nothing — no
- * `TraceBus`, no per-request work — unlike the previous unconditional
- * `setupTracing()` import/call.
+ * Bind a request's context for the duration of `fn` and register its abort
+ * controller with `cancelManager`, so the job can be cancelled by jobId.
+ *
+ * It used to also call a single-slot `registerJobHook` that the tracing
+ * module filled in, so exactly one adapter could attach per job. The per-job
+ * event channel is now core-owned and opened by `CaseGenerationService`
+ * (`core/jobEvents/`, #139); every adapter subscribes to it instead.
  */
-type JobHook = (jobId: string, language?: Language) => { cleanup: () => void };
-let jobHook: JobHook | undefined;
-
-export function registerJobHook(hook: JobHook): void {
-  jobHook = hook;
-}
-
 export function runWithContext<T>(
   fn: () => T,
   jobId?: string,
@@ -75,16 +64,11 @@ export function runWithContext<T>(
   language?: Language
 ): T {
   const controller = new AbortController();
-  let cleanup: (() => void) | undefined;
 
-  if (jobId) {
-    ({ cleanup } = jobHook?.(jobId, language) ?? {});
-    cancelManager.register(jobId, controller);
-  }
+  if (jobId) cancelManager.register(jobId, controller);
 
   const finish = () => {
     if (jobId) cancelManager.unregister(jobId);
-    cleanup?.();
   };
 
   try {

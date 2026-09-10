@@ -6,6 +6,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { EventBus } from "@/core/event-bus.js";
 import { createCaseGenerationService } from "@/core/caseGenerationService.js";
+import { createJobEventChannel } from "@/core/jobEvents/index.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import { AppError } from "@/core/graph/errors/AppError.js";
 import type { Case } from "@/core/graph/models/Case.js";
@@ -49,7 +50,11 @@ describe("CaseGenerationService — terminal events, no transport involved", () 
     const onCompleted = vi.fn();
     bus.on("Generation Completed", onCompleted);
 
-    const service = createCaseGenerationService(graph, bus);
+    const service = createCaseGenerationService(
+      graph,
+      bus,
+      createJobEventChannel()
+    );
     const result = await service.generate({
       diagnosis: "Influenza",
       generationFlags: [],
@@ -71,7 +76,11 @@ describe("CaseGenerationService — terminal events, no transport involved", () 
     const onFailure = vi.fn();
     bus.on("Generation Failure", onFailure);
 
-    const service = createCaseGenerationService(graph, bus);
+    const service = createCaseGenerationService(
+      graph,
+      bus,
+      createJobEventChannel()
+    );
     const result = await service.generate({
       diagnosis: "Influenza",
       generationFlags: [],
@@ -92,7 +101,11 @@ describe("CaseGenerationService — terminal events, no transport involved", () 
     const onCancelled = vi.fn();
     bus.on("Generation Cancelled", onCancelled);
 
-    const service = createCaseGenerationService(graph, bus);
+    const service = createCaseGenerationService(
+      graph,
+      bus,
+      createJobEventChannel()
+    );
     const result = await service.generate({
       diagnosis: "Influenza",
       generationFlags: [],
@@ -136,7 +149,8 @@ describe("CaseGenerationService — generationFlags expansion and projection", (
     const generateCase = vi.fn(async () => fullCase);
     const service = createCaseGenerationService(
       fakeGraph(generateCase),
-      new EventBus()
+      new EventBus(),
+      createJobEventChannel()
     );
 
     const result = await service.generate({
@@ -157,7 +171,8 @@ describe("CaseGenerationService — generationFlags expansion and projection", (
     const generateCase = vi.fn(async () => fullCase);
     const service = createCaseGenerationService(
       fakeGraph(generateCase),
-      new EventBus()
+      new EventBus(),
+      createJobEventChannel()
     );
 
     const result = await service.generate({
@@ -182,7 +197,8 @@ describe("CaseGenerationService — callerSuppliedFreeText provenance (issue 12 
     const generateCase = vi.fn(async () => fullCase);
     const service = createCaseGenerationService(
       fakeGraph(generateCase),
-      new EventBus()
+      new EventBus(),
+      createJobEventChannel()
     );
 
     await service.generate({ diagnosis: "Influenza", generationFlags: [] });
@@ -198,7 +214,11 @@ describe("CaseGenerationService — callerSuppliedFreeText provenance (issue 12 
         diagnosis: { byIcd: () => ({ name: "Influenza" }) },
       },
     } as unknown as GraphAppContext["runtime"];
-    const service = createCaseGenerationService(graph, new EventBus());
+    const service = createCaseGenerationService(
+      graph,
+      new EventBus(),
+      createJobEventChannel()
+    );
 
     await service.generate({
       icd: "1A00",
@@ -217,7 +237,11 @@ describe("CaseGenerationService — callerSuppliedFreeText provenance (issue 12 
         diagnosis: { byIcd: () => ({ name: "Influenza" }) },
       },
     } as unknown as GraphAppContext["runtime"];
-    const service = createCaseGenerationService(graph, new EventBus());
+    const service = createCaseGenerationService(
+      graph,
+      new EventBus(),
+      createJobEventChannel()
+    );
 
     await service.generate({ icd: "1A00", generationFlags: [] });
 
@@ -241,6 +265,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
     const service = createCaseGenerationService(
       graph,
       new EventBus(),
+      createJobEventChannel(),
       detector
     );
 
@@ -262,6 +287,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
     const service = createCaseGenerationService(
       graph,
       new EventBus(),
+      createJobEventChannel(),
       detector
     );
 
@@ -284,6 +310,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
     const service = createCaseGenerationService(
       graph,
       new EventBus(),
+      createJobEventChannel(),
       detector
     );
 
@@ -306,6 +333,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
     const service = createCaseGenerationService(
       graph,
       new EventBus(),
+      createJobEventChannel(),
       detector
     );
 
@@ -327,6 +355,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
     const service = createCaseGenerationService(
       graph,
       new EventBus(),
+      createJobEventChannel(),
       detector
     );
 
@@ -359,6 +388,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
     const service = createCaseGenerationService(
       graph,
       new EventBus(),
+      createJobEventChannel(),
       detector
     );
 
@@ -376,7 +406,11 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
   it("echoes the resolved language on a successful result", async () => {
     const generateCase = vi.fn(async () => fullCase);
     const graph = fakeGraph(generateCase);
-    const service = createCaseGenerationService(graph, new EventBus());
+    const service = createCaseGenerationService(
+      graph,
+      new EventBus(),
+      createJobEventChannel()
+    );
 
     const result = await service.generate({
       diagnosis: "Influenza",
@@ -386,5 +420,128 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
 
     expect(result.status).toBe("done");
     expect(result.language).toBe("German");
+  });
+});
+
+// #139 — the service owns each job's lifetime on the core-owned channel, so
+// every transport sees the same lifecycle whatever door a request came in.
+describe("CaseGenerationService — job channel lifecycle", () => {
+  const minimalCase: Case = {
+    patient: { name: "Jane", age: 40, sex: "female" },
+  };
+
+  it("opens the channel before its first await, so a caller can subscribe before any node runs", async () => {
+    const channel = createJobEventChannel();
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const service = createCaseGenerationService(
+      fakeGraph(async () => {
+        await gate;
+        return minimalCase;
+      }),
+      new EventBus(),
+      channel
+    );
+
+    const pending = service.generate({
+      diagnosis: "Influenza",
+      generationFlags: ["patient"],
+      jobId: "job-sync-open",
+    });
+
+    // No `await` between calling `generate` and this line.
+    expect(channel.state("job-sync-open")).toBe("active");
+    const events: string[] = [];
+    channel.subscribe("job-sync-open", (e) => events.push(e.type));
+
+    release();
+    await pending;
+    expect(events).toEqual(["complete"]);
+  });
+
+  it("closes the channel with the outcome: done, cancelled, failed — including a request that fails before generation", async () => {
+    const channel = createJobEventChannel();
+    const completes: Record<string, unknown> = {};
+    channel.subscribeAll((jobId, e) => {
+      if (e.type === "complete") completes[jobId] = e.data;
+    });
+    const bus = new EventBus();
+    const run = (
+      generateCase: GraphAppContext["generateCase"],
+      jobId: string
+    ) =>
+      createCaseGenerationService(
+        fakeGraph(generateCase),
+        bus,
+        channel
+      ).generate({
+        diagnosis: "Influenza",
+        generationFlags: ["patient"],
+        jobId,
+      });
+
+    await run(async () => minimalCase, "done");
+    await run(async () => {
+      const err = new Error("aborted");
+      err.name = "AbortError";
+      throw err;
+    }, "cancelled");
+    await run(async () => {
+      throw new AppError("boom", "GENERATION_FAILED", 500);
+    }, "failed");
+    await createCaseGenerationService(
+      fakeGraph(async () => minimalCase),
+      bus,
+      channel
+    ).generate({ icd: "XX00", generationFlags: ["patient"], jobId: "no-icd" });
+
+    expect(completes["done"]).toMatchObject({ status: "done" });
+    expect(completes["cancelled"]).toMatchObject({ status: "cancelled" });
+    expect(completes["failed"]).toMatchObject({
+      status: "failed",
+      error: { code: "GENERATION_FAILED", message: "boom" },
+    });
+    expect(completes["no-icd"]).toMatchObject({
+      status: "failed",
+      error: { code: "INVALID_REQUEST_BODY" },
+    });
+    // The terminal marker never carries the case: an observer is not the
+    // requester.
+    expect(JSON.stringify(completes["done"])).not.toContain("Jane");
+  });
+
+  it("a duplicate jobId is rejected with 409 and never starts a second generation", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const generateCase = vi.fn(async () => {
+      await gate;
+      return minimalCase;
+    });
+    const service = createCaseGenerationService(
+      fakeGraph(generateCase),
+      new EventBus(),
+      createJobEventChannel()
+    );
+    const req = {
+      diagnosis: "Influenza",
+      generationFlags: ["patient" as const],
+      jobId: "job-dup",
+    };
+
+    const first = service.generate(req);
+    const whileRunning = await service.generate(req);
+    release();
+    await first;
+    const afterFinishing = await service.generate(req);
+
+    expect(generateCase).toHaveBeenCalledTimes(1);
+    expect(whileRunning.error).toMatchObject({
+      code: "JOB_ALREADY_ACTIVE",
+      statusCode: 409,
+    });
+    expect(afterFinishing.error).toMatchObject({
+      code: "JOB_ALREADY_COMPLETED",
+      statusCode: 409,
+    });
   });
 });

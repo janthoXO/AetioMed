@@ -1,5 +1,5 @@
 import express from "express";
-import { makeCaseGenerationRequestSchema } from "@/api/index.js";
+import { makeCaseGenerationRequestSchema, JobIdSchema } from "@/api/index.js";
 import { CaseGenerationResponseSchema } from "@/api/index.js";
 import { encodeCase } from "@/api/contentWire.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
@@ -29,7 +29,21 @@ export default function createCasesRouter(
       return;
     }
 
-    const jobId = (req.query.jobId as string) ?? crypto.randomUUID();
+    // A jobId is also a NATS subject token (#142), so it is validated like
+    // one. #143 moves it into the body.
+    const queryJobId = JobIdSchema.optional().safeParse(req.query.jobId);
+    if (!queryJobId.success) {
+      res.status(400).json({
+        error: {
+          code: "INVALID_REQUEST_BODY",
+          message: "Invalid jobId",
+          details: JSON.stringify(queryJobId.error.issues),
+        },
+      });
+      return;
+    }
+    const jobId =
+      queryJobId.data ?? bodyResult.data.jobId ?? crypto.randomUUID();
 
     // Abort generation when the HTTP client disconnects before completion
     res.on("close", () => {

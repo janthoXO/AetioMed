@@ -5,7 +5,10 @@ import {
   resolveCatalogDir,
   resolveCacheDir,
 } from "./graph/persistence/paths.js";
-import { createCaseGenerationService } from "./caseGenerationService.js";
+import {
+  createCaseGenerationService,
+  DEFAULT_MAX_CONCURRENT_GENERATIONS,
+} from "./caseGenerationService.js";
 import { createJobEventChannel, wireLabels } from "./jobEvents/index.js";
 import { startRestServer } from "../transports/rest/index.js";
 import { startNatsTransport } from "../transports/nats/index.js";
@@ -16,12 +19,20 @@ const AppEnvSchema = z
   .object({
     FEATURES: z.string().default(""),
     SYMPTOM_CACHE_TTL_DAYS: z.coerce.number().default(30),
+    // One limit for every transport (#142), so throughput does not depend
+    // on which door a request came in through. Excess jobs queue.
+    MAX_CONCURRENT_GENERATIONS: z.coerce
+      .number()
+      .int()
+      .min(1)
+      .default(DEFAULT_MAX_CONCURRENT_GENERATIONS),
   })
   .transform((env) => ({
     features: env.FEATURES.split(",")
       .map((f) => f.trim())
       .filter(Boolean),
     symptomCacheTtlDays: env.SYMPTOM_CACHE_TTL_DAYS,
+    maxConcurrentGenerations: env.MAX_CONCURRENT_GENERATIONS,
   }));
 
 /**
@@ -43,9 +54,11 @@ export async function createApp(): Promise<{
   bus: EventBus;
   shutdown: () => Promise<void>;
 }> {
-  const { features: featureList, symptomCacheTtlDays } = AppEnvSchema.parse(
-    process.env
-  );
+  const {
+    features: featureList,
+    symptomCacheTtlDays,
+    maxConcurrentGenerations,
+  } = AppEnvSchema.parse(process.env);
   const features = new Set(featureList);
   console.log(`[app] Feature flags: ${[...features].join(", ") || "none"}`);
   const graphConfig = GraphConfigSchema.parse(process.env);
@@ -70,7 +83,9 @@ export async function createApp(): Promise<{
   const jobEvents = createJobEventChannel();
   wireLabels(bus, jobEvents, graph.runtime.catalogs.labels);
 
-  const service = createCaseGenerationService(graph, bus, jobEvents);
+  const service = createCaseGenerationService(graph, bus, jobEvents, {
+    maxConcurrent: maxConcurrentGenerations,
+  });
 
   const closers: Closer[] = [];
 
@@ -80,7 +95,7 @@ export async function createApp(): Promise<{
   }
 
   if (features.has("NATS")) {
-    const nats = await startNatsTransport({ graph, service });
+    const nats = await startNatsTransport({ graph, service, jobEvents });
     closers.push({ name: "NATS", close: nats.close });
   }
 

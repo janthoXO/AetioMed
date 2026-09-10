@@ -9,6 +9,7 @@ import { z } from "zod/v4";
 import { UserInstructionsSchema } from "@/core/graph/models/UserInstructions.js";
 import type { Config } from "@/core/graph/config.js";
 import { LLMConfigSchema } from "@/core/graph/models/LLMConfig.js";
+import { JobIdSchema } from "./JobId.js";
 
 /**
  * The public request schema depends on the deployment's configured
@@ -23,6 +24,7 @@ import { LLMConfigSchema } from "@/core/graph/models/LLMConfig.js";
  */
 function makeBaseCaseGenerationRequestSchema(config: Config) {
   return z.object({
+    jobId: JobIdSchema.optional(),
     icd: ICDCodeSchema.optional().describe(
       "ICD-11 code of the diagnosis to generate a case for"
     ),

@@ -62,6 +62,7 @@ Copy `.env.example` to `.env` and adjust. The most important variable is `FEATUR
 | `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one content part's decoded size; encoding a larger part fails loudly                                                                                             |
 | `NATS_URL`                                                            | `nats://localhost:4222` | `nats://nats:4222` inside docker compose                                                                                                                                    |
 | `NATS_USER` / `NATS_PASSWORD`                                         | `nats` / `nats`         |                                                                                                                                                                             |
+| `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS; excess requests queue, and a queued one is still cancellable                                                   |
 | `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var; `"true"` (that literal only) skips constructing the OTel SDK entirely — its own axis, independent of `FEATURES`                                          |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | —                       | Standard OTel vars, read by the OTLP exporters themselves; any one set selects the `otlp` exporter mode (batch spans + batch logs)                                          |
 | `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES`                      | —                       | Standard OTel vars, read via `envDetector`                                                                                                                                  |
@@ -249,19 +250,29 @@ Requires the `REST` feature flag.
 | `GET`    | `/api/cases/:jobId/labels` | Live SSE stream: `event: label` (localized, node started/terminal), ends with `event: complete` |
 | `GET`    | `/api/graph`               | Compiled graph topology (nodes + edges + English label keys) for this deployment's flags        |
 
-A request body needs either `icd` or `diagnosis`; `generationFlags` defaults to all four fields and must name at least one; `difficulty` defaults to `medium`. The response echoes the resolved `language`, and content-bearing fields are wire-encoded (see Content Parts).
+A request body needs either `icd` or `diagnosis`; `generationFlags` defaults to all four fields and must name at least one; `difficulty` defaults to `medium`. The response echoes the resolved `language`, and content-bearing fields are wire-encoded (see Content Parts). A jobId — from `?jobId=` or the body — is validated as a NATS subject token even on REST (`.`, `*`, `>`, whitespace are rejected with 400), since it addresses `cases.result.<jobId>` on NATS too.
 
 ## NATS API
 
-Requires the `NATS` feature flag. The JetStream stream `cases` is created on startup with a workqueue retention policy.
+Requires the `NATS` feature flag. Split on **durability**, not on feature, across two JetStream streams (`src/transports/nats/subjects.ts`, `streams.ts`):
 
-| Subject           | Direction | Purpose                                                                            |
-| ----------------- | --------- | ---------------------------------------------------------------------------------- |
-| `cases.generate`  | in        | Case generation request (same body as `POST /api/cases`, plus an optional `jobId`) |
-| `cases.generated` | out       | Completed case or error payload, keyed by `jobId`                                  |
-| `cases.cancel.>`  | in        | Cancel a job (id from the body or the last subject token)                          |
+| Subject                  | Stream / kind                           | Direction | Purpose                                                                                                                                                                                                               |
+| ------------------------ | --------------------------------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cases.request.generate` | `CASE_REQUESTS` (JetStream, workqueue)  | in        | Case generation request (same body as `POST /api/cases`); `jobId` is **required**, not optional                                                                                                                       |
+| `cases.result.<jobId>`   | `CASE_RESULTS` (JetStream, limits, ~1h) | out       | Completed case or error payload for that job — replayable, and readable by multiple independent consumers                                                                                                             |
+| `cases.cancel.<jobId>`   | core NATS, request/reply                | in/out    | Cancel a job; replies `{cancelled: boolean}`. Answered only by the replica that owns the job — an unknown or finished job has no subscriber, so the caller gets NATS's own "no responders" instead of a wrong `false` |
 
-The consumer acks on success _and_ on handled errors (it publishes an error payload instead), naking only when publishing itself fails.
+Unlike REST, NATS has no server-minted jobId: it is the address of the result, so a request
+without a valid one (per `src/api/JobId.ts`) is terminated (`msg.term()`) rather than processed.
+The worker (`cases.handler.ts`'s `runRequestWorker`) pulls one request at a time and only once a
+generation slot is free (`MAX_CONCURRENT_GENERATIONS`, shared with REST), and calls
+`msg.working()` periodically while a generation runs so the ack deadline doesn't expire on a
+merely slow job. It acks on success _and_ on handled errors (it publishes an error payload
+instead), naking only when publishing itself fails.
+
+**Upgrading an existing deployment:** the pre-#142 `cases` stream (`cases.>`, workqueue) is
+incompatible with the new layout and is not migrated automatically — startup fails loudly naming
+it. Delete it manually (`nats stream rm cases`) before starting this version.
 
 ## Testing & Verification
 

@@ -554,6 +554,55 @@ generation goes through `CaseGenerationService`:
   `core/graph/structure.ts`), both always mounted (#140) — labels are a product feature of the
   streaming API, not telemetry
 
+`POST /api/cases` accepts a jobId two ways — `?jobId=` (query) or `jobId` in the body — validated
+against `src/api/JobId.ts`'s `JobIdSchema` either way, since it is also a NATS subject token
+(`cases.result.<jobId>`) even when the request arrives over REST: `.`, `*`, `>` and whitespace
+would silently address a different subject, so a jobId containing any of those is a 400, not a
+500 raised deep in a NATS-only code path.
+
+### NATS Layer
+
+`src/transports/nats/` (requires the `NATS` feature flag). Split on **durability**, not on
+feature — a JetStream stream's retention applies to everything its subject filter captures
+(#142; see `docs/issues/17-transport-parity.md` §D6 for the defects this fixed: a single
+`cases.>` workqueue stream used to swallow results and cancels with no consumer, and results on
+workqueue retention were single-delivery and stealable — the first ack destroyed them for every
+other consumer).
+
+Four channels, two JetStream streams (`src/transports/nats/subjects.ts`, `streams.ts`):
+
+- **`CASE_REQUESTS`** (workqueue) — subjects `cases.request.*`. A submitted job
+  (`cases.request.generate`) is taken by exactly one worker via the durable pull consumer
+  `case-request-worker` (`REQUEST_CONSUMER`).
+- **`CASE_RESULTS`** (limits, `max_age` ~1h) — subjects `cases.result.*`. A job's result is
+  published on its own subject, `cases.result.<jobId>` (`resultSubject`), so any number of
+  independent consumers can each read it, with replay — this is what makes "NATS provides the
+  persistence" actually true; workqueue's first ack would have destroyed it for everyone else.
+- **`cases.cancel.<jobId>`** (`cancelSubject`) — core NATS request/reply, not JetStream. Answered
+  only by the replica that owns the job: `jobResponders.ts`'s `startJobResponders` subscribes to a
+  job's cancel subject when the per-job event channel reports it `accepted` and unsubscribes on
+  `complete`, so ownership is expressed as subscription interest rather than a lookup. An unknown
+  or already-finished job therefore has **no responders at all** — the requester gets NATS's own
+  "no responders" error immediately, never a wrong `{cancelled: false}` from a replica that
+  merely doesn't own that job. `{cancelled: false}` only happens when the job finishes in the
+  window between the request and the abort.
+- `cases.progress.<jobId>.<label|trace>` (core NATS, ephemeral fan-out) is reserved for #144.
+
+`streams.ts`'s `ensureStreams(jsm)` creates or reconciles both streams and the durable consumer
+at startup. It fails loudly, not silently, in the two cases JetStream cannot fix in place: the
+**pre-#142 `cases` stream still exists** (its `cases.>` filter overlaps both new streams, and
+retention cannot be changed on an existing stream) — the error message names the stream and
+tells the operator to run `nats stream rm cases`, and existing deployments must do this manually
+before upgrading; or a stream exists with a different retention policy than configured.
+
+`cases.handler.ts`'s `runRequestWorker` pulls one request at a time, and **only once a
+generation slot is free** — `service.reserveSlot()` is awaited before the next
+`consumer.next()`, so a message this replica cannot start yet stays in the stream for another
+replica rather than being pulled and queued in memory. While a generation runs,
+`consumeCaseGenerateMessage` calls `msg.working()` every `WORKING_INTERVAL_MS` to keep the ack
+deadline (`REQUEST_ACK_WAIT_MS`, short) from expiring mid-generation — a crashed replica's job is
+still redelivered quickly, but a merely slow one isn't punished for it.
+
 ### Data Files
 
 `CATALOG_DIR` (default `data/`) contains the files synced into the SQLite cache at startup
@@ -572,18 +621,42 @@ generation goes through `CaseGenerationService`:
 
 ### Request Context
 
-`runWithContext(fn, jobId?, llmConfig?, language?)` in `src/core/graph/utils/context.ts` uses `AsyncLocalStorage` to propagate `jobId`, optional `llmConfig`, optional `language` and an abort `signal` through the entire async call chain, and registers an `AbortController` with `cancelManager` (`utils/cancelManager.ts`) so generations can be cancelled by jobId. Graph nodes read it via `getRequestContext()` — `RequestContextSchema` also doubles as LangGraph's own runtime-context schema at every `new StateGraph(state, RequestContextSchema)` call site, but `language` is never read from _that_ copy (see Language below); only `getRequestContext()` (ALS) is the real read path.
+`runWithContext(fn, jobId?, llmConfig?, language?, signal?)` in `src/core/graph/utils/context.ts`
+uses `AsyncLocalStorage` to propagate `jobId`, optional `llmConfig`, optional `language` and an
+abort `signal` through the entire async call chain. Graph nodes read it via
+`getRequestContext()` — `RequestContextSchema` also doubles as LangGraph's own runtime-context
+schema at every `new StateGraph(state, RequestContextSchema)` call site, but `language` is never
+read from _that_ copy (see Language below); only `getRequestContext()` (ALS) is the real read
+path.
+
+Cancellation is owned entirely by `CaseGenerationService`, not by `runWithContext` itself
+(`src/core/graph/utils/cancelManager.ts` is deleted, #142). `CaseGenerationService.generate`
+registers one `AbortController` per job **at submission**, before the job's generation slot is
+even acquired — so a job still queued behind `MAX_CONCURRENT_GENERATIONS` is cancellable too, not
+just a running one — and passes its `signal` into `runWithContext`. `service.cancel(jobId)` aborts
+that controller directly; there is no separate registry a transport reaches into.
 
 `runWithContext` no longer registers a job hook of any kind (#139) — that was the old
 single-slot `registerJobHook()`, deleted along with the now-removed `src/tracing/` module
-entirely (#140). It only binds ALS and registers the abort controller with `cancelManager`. The
-per-job channel's lifetime is owned by `CaseGenerationService` instead: it calls
-`jobEvents.open(jobId)` before `runWithContext`, and `jobEvents.close(jobId, outcome)` once the
-run settles, so every transport sees the same per-job lifecycle regardless of which door the
-request came in through. Core still does not import `observability/` or `transports/`:
-`NodeTracer`/`NodeSpan` (`utils/nodeWrapper.ts`, issue #141) is the same port/adapter inversion
-applied to OTel — core owns the port, `observability/otel.ts` implements it, `app.ts` wires the
-two together.
+entirely (#140). It only binds ALS now. The per-job channel's lifetime is owned by
+`CaseGenerationService` instead: it calls `jobEvents.open(jobId)` before `runWithContext`, and
+`jobEvents.close(jobId, outcome)` once the run settles, so every transport sees the same per-job
+lifecycle regardless of which door the request came in through. Core still does not import
+`observability/` or `transports/`: `NodeTracer`/`NodeSpan` (`utils/nodeWrapper.ts`, issue #141)
+is the same port/adapter inversion applied to OTel — core owns the port, `observability/otel.ts`
+implements it, `app.ts` wires the two together.
+
+**Concurrency is one limiter shared by both transports (#142).** `src/core/concurrency.ts`'s
+`createLimiter(max)` is a FIFO counting semaphore: `acquire(signal?)` resolves an idempotent
+`Release` once a slot is free, and rejects with an `AbortError` (without ever taking a slot) if
+`signal` aborts while queued — the same primitive used for both the queued-cancel case above and
+the not-yet-acquired case below. `CaseGenerationService` is constructed with one such limiter
+sized to `MAX_CONCURRENT_GENERATIONS` (default 4); `generate(req, { slot? })`'s `opts.slot` lets
+a caller hand in a slot it already holds instead of acquiring its own — the NATS worker calls
+`service.reserveSlot()` and only then pulls a message off `CASE_REQUESTS`, so a request nothing
+can run yet is never even dequeued into memory, while REST's `POST /api/cases` just lets
+`generate` acquire its own slot inline. Either way the service releases the slot exactly once
+when the job ends, including when a slot handed in turns out to address a duplicate `jobId` (a 409) that never runs.
 
 ### Language
 
@@ -716,6 +789,7 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
 | `CACHE_DIR`                                                           | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                    |
 | `NATS_URL`                                                            | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                             |
 | `NATS_USER` / `NATS_PASSWORD`                                         | `nats` / `nats`         |                                                                                                                                                                                                  |
+| `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS (`src/core/concurrency.ts`'s shared limiter). Excess requests queue; a queued job is still cancellable. See Request Context below    |
 | `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                                                                   |
 | `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
 | `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var. `"true"` (that literal only) skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES` |

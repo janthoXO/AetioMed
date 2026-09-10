@@ -34,8 +34,15 @@ jobs:
       - name: Lint
         run: pnpm run lint
 
+      - name: Start NATS
+        run: |
+          docker run -d --name nats -p 4222:4222 nats:2.10-alpine -js --user nats --pass nats
+          for i in $(seq 1 20); do nc -z localhost 4222 && break; sleep 1; done
+
       - name: Test
         run: pnpm test
+        env:
+          NATS_TEST_URL: nats://localhost:4222
 
       - name: Build
         run: pnpm run build

@@ -38,6 +38,14 @@ pnpm exec puppeteer browsers install chrome
 pnpm graph:export
 ```
 
+## Internal documentation
+
+Design docs, issue write-ups and reviews go in **`docs/design/`**, which is gitignored — they are
+never committed. Only `docs/graphs/` (generated diagrams) and `docs/bruno/` (the API collection)
+are tracked under `docs/`; `.gitignore` whitelists exactly those two. The public record of a
+decision is its **GitHub issue**, so cite issues (`#142`), never a `docs/design/` path, from
+anything tracked — code comments, this file, the READMEs.
+
 ## Architecture
 
 This is a backend-only repository (no frontend lives here). Node >= 22.5, pnpm.
@@ -53,7 +61,11 @@ everything explicitly, in order:
 3. `initGraph()` builds the repos (`repos.ts`'s `createRepos`), the `GraphRuntime`, and the
    compiled graph, then validates the catalogues
 4. `createCaseGenerationService(graph, bus)`
-5. starts the transports whose flags are set
+5. starts the transports whose flags are set — **NATS before REST** (issue #145): REST's job
+   directory (below) may ride on NATS's connection, so NATS must already be up by the time
+   `startRestServer` is called. Shutdown order is unaffected — REST still closes **first**,
+   before NATS goes away, so nothing stops accepting client work before it stops being able to
+   answer it
 
 It also owns shutdown (issue 18): `createApp()` returns `{ bus, shutdown }`, where `shutdown()`
 closes everything it started in the **reverse** of construction order — REST, then NATS, then
@@ -73,6 +85,14 @@ call. It owns ICD→name resolution, jobId minting, `runWithContext`, terminal e
 job shape (`{ jobId, status, case?, error? }`) rather than a bare `Case`. Transports are
 protocol translation only.
 
+`start(req, opts?)` is the synchronous primitive: it reserves the jobId and opens its event
+channel **before returning**, handing back a `StartedJob` (`{ accepted: true, jobId, result:
+Promise<CaseGenerationResult> }` or `{ accepted: false, jobId, result: CaseGenerationResult }`
+for a duplicate). `generate(req, opts?)` is just `start(req, opts).result` awaited. The split
+exists for REST's POST stream (#143): a caller can subscribe to the job's events before any
+node runs, and learns about a duplicate jobId before it has committed to a response format
+(SSE headers already flushed vs. a plain JSON 409).
+
 It also owns **generation-flag normalisation**
 (`models/GenerationFlags.ts`: `expandFlagsForSolver` / `projectCaseToFlags`). A
 `generationFlags: ["procedures"]` request cannot be served literally — the blinded solver
@@ -85,67 +105,134 @@ contains a "Workup / Procedure Results Strategy" section, so slicing a presentat
 by heading is a parse whose failure mode is silently leaking that strategy into the _blinded_
 solver. See `expandFlagsForSolver`'s doc comment.
 
-**Modules under `src/transports/` and `src/tracing/`** are ordinary modules with a start
-function, not plugins: `transports/rest/` (`startRestServer`), `transports/nats/`
-(`startNatsTransport`), `tracing/` (`wireTracing`, which registers a job hook on the
-core-owned registry in `utils/context.ts`) and `tracing/sse/` (SSE streaming, mounted onto
-the Express app built by `transports/rest/` — it still depends on `rest/`, which is fine and
-unchanged). `src/api/` holds the shared request/response Zod schemas.
+**`src/core/jobEvents/`** (#139) is the core-owned per-job event channel:
+`createJobEventChannel()` builds one instance, constructed once in `app.ts` and handed to
+`CaseGenerationService` (which `open()`s it before its first await and `close()`s it with the
+job's outcome on every path) and to every transport, which only ever `subscribe()`s. Event
+names double as the SSE `event:` name on REST and the last subject token on NATS
+(`cases.progress.<jobId>.<name>`), so no adapter needs a name-mapping table. `wireLabels`
+(`core/jobEvents/labels.ts`) also lives in core now, not in `tracing/` — it turns the graph's
+node lifecycle bus events into localized `label` events, using the `language` now carried
+directly on the bus event (set by `traceNode` from ALS) rather than a per-job language map.
+`channel.ts`'s `peek(jobId)` (#145) is `state`'s sibling: it also returns a terminal job's
+`complete` event, but — unlike `subscribe()` — never opens a subscription, so a status check
+never keeps a job's resources alive.
 
-The typed **`EventBus`** (`src/core/event-bus.ts`) is kept — it genuinely decouples tracing
-from the graph. Modules augment its `EventMap` interface via TypeScript module
-augmentation.
+**The `JobDirectory` port** (`core/jobEvents/directory.ts`, #145) answers
+"watch/cancel this jobId, wherever it runs" — the seam that lets a REST client observe or cancel
+a job that a **different replica** accepted. `watch(jobId)` returns `{state: "active", listen(onEvent)
+=> stop}` (subscribed and buffering **before** the caller decides its response, so no event
+between "learn the state" and "attach a listener" is lost — `createBufferedWatch` is the shared
+buffer-then-replay machinery both implementations use), `{state: "terminal", complete}`, or
+`{state: "unknown"}`; `cancel(jobId)` returns `"cancelled" | "finished" | "unknown"`. Both
+methods are `Promise`-returning and can **reject** — that means "the answer could not be
+obtained" (a NATS timeout), which is a different failure mode from `"unknown"` ("nobody has this
+job") and maps to a 504, not a 404. A watched job's events are deliberately narrow: never
+`accepted`, and `complete`'s data never carries the case — **watch, not collect**: an observer is not the requester, and the result only ever goes back to whoever started
+the job.
 
-**Labels, traces and OTel (issue 15) are three channels, not one.** They differ in audience,
-content, language and gate:
+Two implementations, chosen once in `app.ts`'s `selectJobDirectory({ features, local, nats })`:
+`createLocalJobDirectory(channel, cancel)` (in-process, the only option with `NATS` unset — a
+single replica is then a documented deployment constraint) and, per #145,
+`transports/nats/jobDirectory.ts`'s `createNatsJobDirectory(nc)`, selected only when **both**
+`REST` and `NATS` are enabled and NATS actually connected (a connected-but-then-lost NATS falls
+back to local with a `console.warn`, never a silent wrong answer). **Direction matters: REST
+depends on NATS here, only through this one piece of composition — NATS never imports REST**
+(`importBoundary.test.ts` scans every production module under `src/transports/nats/` for this).
+Known gap, tracked as #146: an observer attaching mid-job sees no replay of labels emitted
+before it connected — only `createBufferedWatch`'s own since-`watch()` buffer, not a full
+history.
 
-|          | Labels                                       | Traces (SSE)             | OTel spans                          |
-| -------- | -------------------------------------------- | ------------------------ | ----------------------------------- |
-| Audience | end user                                     | developer/operator, live | operator, cross-request analysis    |
-| Content  | one short phrase per node                    | node output, size-capped | span attributes only, never payload |
-| Language | localized at the transport, English fallback | English, always          | n/a (attribute values only)         |
-| Gate     | `FEATURES=TRACING`                           | `FEATURES=TRACING`       | `OTEL_SDK_DISABLED` — its own axis  |
+**Modules under `src/transports/` and `src/observability/`** are ordinary modules with a start
+function, not plugins: `transports/rest/` (`createRestApp`/`startRestServer` — see the REST
+Layer section below for its always-on routes), `transports/nats/` (`startNatsTransport`), and
+`observability/` (`otel.ts`, `tracePayload.ts` — the OTel operator channel; see below). `src/api/`
+holds the shared request/response Zod schemas.
 
-Labels and traces are separate SSE event types (`event: label` / `event: trace`) on the same
-per-job stream, not one `type`-discriminated payload — see `tracing/index.ts`'s `wireTracing`
-and `tracing/sse/router.ts`. A `TraceEvent` (`tracing/traceManager.ts`) carries the node's
-**LangGraph node id** (`nodeId`, matching `GET /api/graph` below) and English `labelKey`;
-`payload: any` is gone. A node's output is capped at `MAX_TRACE_PAYLOAD_BYTES`
-(`tracing/tracePayload.ts`) — over the cap it becomes `{ truncated: true, bytes, preview }`,
-and `ContentPart[]` fields are always projected through `textOf` first
-(`core/graph/utils/traceSanitize.ts`), so raw bytes never reach a trace event.
+The typed **`EventBus`** (`src/core/event-bus.ts`) is kept — it genuinely decouples the label
+and OTel channels from the graph. Modules augment its `EventMap` interface via TypeScript
+module augmentation.
 
-**`GET /api/graph`** (`tracing/structure/router.ts`, mounted next to the SSE route under
-`TRACING`) returns the deployment's actually-compiled topology — nodes (with English
-`labelKey`) and edges from `getGraphAsync({ xray: true })`, the same call
-`02graphs/exportGraphs.ts` uses for mermaid diagrams. Label keys, not localized strings: the
-structure is language-independent and cacheable; a client wanting localization already has it
-on the SSE `label` channel, per job. `traceNode`'s emitted `nodeId` is the qualified path
-LangGraph itself uses for a nested node (e.g.
+**Labels and OTel spans (#139/#140/#141) are two channels, not one — the axis of the split is
+payload, not event count** (#140).
+They differ in audience, content, language and gate:
+
+- **Labels** — end user. One short, localized phrase per node execution, emitted on both
+  "Node Started" and every terminal status ("Node Completed"/"Node Failed") — never node
+  output, never a payload. Always on (not feature-flagged): `src/core/jobEvents/` owns the
+  per-job channel (`channel.ts`'s `createJobEventChannel`) and the label producer
+  (`labels.ts`'s `wireLabels`), served over SSE (`GET /api/cases/:jobId/labels`,
+  `transports/rest/routes/labels.router.ts`) and, per #144, NATS.
+- **OTel spans** — operator, cross-request analysis. One span per node, started and finished,
+  carrying **attributes only** — `aetiomed.node.id`, `aetiomed.job_id`, `aetiomed.node.output_bytes`
+  (a size, never the payload), `aetiomed.llm.provider`/`model`, status — never node output
+  itself (#141). OTLP-exported
+  only, never SSE/NATS. Gated by the standard
+  `OTEL_SDK_DISABLED`/`OTEL_EXPORTER_OTLP_ENDPOINT`(`_TRACES_ENDPOINT`/`_LOGS_ENDPOINT`)/`OTEL_SERVICE_NAME`
+  — its own axis, independent of any `FEATURES` flag except `DEBUG`, which only picks the
+  exporter (below), never gates the channel itself. `src/observability/otel.ts` is the one
+  place `@opentelemetry/*` is imported and these env vars are read; core only knows the
+  `NodeTracer`/`NodeSpan` port (`core/graph/utils/nodeWrapper.ts`) — the same
+  port-owned-by-core/adapter-lives-outside inversion `core/jobEvents/` uses for labels.
+- **OTel logs — the node's output** (issue #141). `NodeSpan.setOutput(output)` hands the
+  adapter the node's already-sanitized result (bytes projected to text — `sanitizeForTrace`,
+  `core/graph/utils/traceSanitize.ts`); on `end()`, if an output was set, the adapter emits one
+  correlated **log record** (`Logger.emit`, `@opentelemetry/api-logs`) whose `context` carries
+  the span (`trace.setSpan`), so a backend joins the two by `trace_id`/`span_id` — before
+  ending the span itself. The log's body is `buildTracePayload(output)`'s value as JSON, or
+  `{ truncated: true, bytes, preview }` past `MAX_TRACE_PAYLOAD_BYTES`
+  (`src/observability/tracePayload.ts`); a failed node emits no output log. **Why a log record
+  and not a span attribute:** backends index every span attribute for filtering, so they cap
+  attribute values in the low kilobytes and truncate/drop past it (case outlines are large
+  markdown — that failure is silent), and billing is per-attribute; the logs signal takes a
+  body of arbitrary size and is exactly what a correlated "node output" message is. No span
+  attribute may ever carry output text — `ContentPart[]` fields are always projected through
+  `textOf` first, so raw bytes never reach either signal.
+- **Exporter selection — no dedicated flag** (`selectExporterMode`, `observability/otel.ts`):
+  `OTEL_SDK_DISABLED === "true"` (that literal only) → nothing constructed at all; else any of
+  `OTEL_EXPORTER_OTLP_ENDPOINT`/`_TRACES_ENDPOINT`/`_LOGS_ENDPOINT` set → `BatchSpanProcessor`
+  - `OTLPTraceExporter` and `BatchLogRecordProcessor` + `OTLPLogExporter` (production; needs a
+    collector/backend listening there); else `FEATURES=DEBUG` → `SimpleSpanProcessor` +
+    `ConsoleSpanExporter` and `SimpleLogRecordProcessor` + `ConsoleLogRecordExporter`
+    (zero-infrastructure local dev — JSON to stdout, immediately); else nothing constructed —
+    **behaviour change**: an unset endpoint used to still build a real SDK that tried (and
+    failed) to export to `localhost:4318`. Every SDK package (`sdk-trace-node`, `sdk-trace-base`,
+    `sdk-logs`, both OTLP exporters, `resources`) is reached only through a guarded dynamic
+    `import()`, so "nothing constructed" means the packages are never even loaded; only
+    `@opentelemetry/api`/`api-logs` (pure interfaces and no-op globals) are static imports.
+    `createOtelNodeTracer({ debug })` returns `{ tracer, shutdown }`; `app.ts` registers
+    `shutdown` as a closer, after NATS and before the DB, so batched spans/logs flush once
+    producers have stopped but before the process exits.
+- **Liveness caveat.** A span exports once, on `end()` — there is no "span started" wire
+  event, so nothing appears for a node until it finishes; watching a running generation live
+  is the label channel's job, not OTel's.
+
+Both channels key a node by its **LangGraph node id** (`nodeId`, matching `GET /api/graph`
+below), which is the qualified path LangGraph itself uses for a nested node (e.g.
 `generation_phase:presentation_phase:chief_complaint_generate:plan_content`), not the bare
 name passed to `traceNode` — two different subgraphs reuse bare names like `plan_content` and
-`render_parts`,
-so `TraceNodeFn.scope()` (`nodeWrapper.ts`) threads the same qualification LangGraph computes
-at every point a compiled subgraph is mounted.
+`render_parts`, so `TraceNodeFn.scope()` (`nodeWrapper.ts`) threads the same qualification
+LangGraph computes at every point a compiled subgraph is mounted (issue 15 §3/§4, still true).
 
-**OTel is a parallel, independent channel**, not the same mechanism as the label/trace stream
-(the likely design mistake this issue called out explicitly): one span per node from the same
-`traceNode` seam (`core/graph/utils/nodeWrapper.ts`'s `NodeTracer`/`NodeSpan` port), gated by
-the standard `OTEL_SDK_DISABLED`/`OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_SERVICE_NAME` — never
-`FEATURES=TRACING`. The concrete adapter (`tracing/otel.ts`) is the one place `@opentelemetry/*`
-is imported and these env vars are read; core only knows the port (mirroring the
-`registerJobHook` inversion already used for `TraceBus`). With the SDK disabled, the OTel SDK
-is never constructed — a guarded dynamic `import()`, not a static one (see `tracing/otel.test.ts`).
-Open question, deliberately unsolved: a checkpoint-resumed node (F09) re-executing produces two
-spans for one logical step.
+**`GET /api/graph`** (`core/graph/structure.ts` + `transports/rest/routes/graph.router.ts`) is
+always on, following labels' gate: it returns the deployment's actually-compiled topology —
+nodes (with English `labelKey`) and edges from `getGraphAsync({ xray: true })`, the same call
+`02graphs/exportGraphs.ts` uses for mermaid diagrams. Label keys, not localized strings: the
+structure is language-independent and cacheable; a client wanting localization already has it
+on the label channel, per job.
 
-**Two defects fixed alongside this (issue 15 §2), each independently reviewable:**
-`traceNode` (`nodeWrapper.ts`) now wraps the node call in `try`/`catch` — a throwing node used
-to emit "Node Started" and nothing terminal; it now also emits "Node Failed" and rethrows. The
-per-job `TraceBus` (`tracing/traceManager.ts`) no longer tears down on a hardcoded 10-second
-timer — it tears down when the job reaches a terminal state **and** its last SSE consumer has
-disconnected (`registerConsumer`/`unregisterConsumer`), with a generous timer kept only as a
-backstop for a consumer that never disconnects.
+**Two defects fixed alongside issue 15, both still true today:** `traceNode` (`nodeWrapper.ts`)
+wraps the node call in `try`/`catch` — a throwing node used to emit "Node Started" and nothing
+terminal; it now also emits "Node Failed" and rethrows. The per-job channel
+(`core/jobEvents/channel.ts`, #139) does not tear down on a hardcoded timer — it tears down
+when the job reaches a terminal state **and** its last consumer has disconnected
+(`subscribe`/the returned `unsubscribe`), with a generous 5-minute backstop kept only for a
+consumer that never disconnects. A finished job is then remembered as a tombstone (its
+`complete` event only, nothing else) for 10 minutes, which is what lets "finished" and "never
+existed" get different answers and makes a reused jobId a detectable 409 duplicate.
+
+Open question, deliberately unsolved: a checkpoint-resumed node (F09) re-executing produces
+two OTel spans for one logical step.
 
 ### Catalog Layer
 
@@ -501,14 +588,169 @@ Plus unnumbered `catalog/`, `persistence/`, `symptoms/`, `medicalBasis/`, `modal
 
 ### REST Layer
 
-`src/transports/rest/` (requires the `REST` feature flag). Routes translate protocol only —
-generation goes through `CaseGenerationService`:
+`src/transports/rest/` (requires the `REST` feature flag). `createRestApp(opts)` builds the
+Express app without listening — split out from `startRestServer(opts)` (= `createRestApp` +
+listen) so tests can drive the real route table directly. Routes translate protocol only —
+generation goes through `CaseGenerationService`, and every read-only route answers through the
+shared `ReadModel` (`src/core/readModel.ts`, #144 — see "Shared read model" under NATS Layer
+below), never by reaching into `GraphAppContext` directly:
 
-- `GET /api/health`, `GET /api/features`, `GET /api/allowedLlms`
-- `routes/cases.router.ts` — `POST /api/cases` (aborts on client disconnect), `DELETE /api/cases/:jobId` (cancel)
-- `routes/diagnosis.router.ts` — `GET /api/diagnosis`
-- `routes/procedures.router.ts` — `GET /api/procedures`
-- `src/tracing/sse/` — `GET /api/traces/:jobId/stream` (SSE, `event: label`/`event: trace`) and `GET /api/graph` (compiled topology, `tracing/structure/`), both mounted onto the REST app when `TRACING` is set
+- `GET /api/health` (not part of the read model — a liveness probe, not a domain read)
+- `GET /api/features`, `GET /api/allowedLlms` — inline handlers calling
+  `readModel.features()`/`readModel.allowedLlms()`
+- `routes/cases.router.ts` — `POST /api/cases` (content negotiation, see below),
+  `DELETE /api/cases/:jobId` (cancel, through the `JobDirectory` — see below)
+- `routes/diagnosis.router.ts` — `GET /api/diagnosis`, calling `readModel.diagnoses()`
+- `routes/procedures.router.ts` — `GET /api/procedures`, calling `readModel.procedures()`
+- `routes/labels.router.ts` — `GET /api/cases/:jobId/labels` (SSE, `event: label`, through the
+  `JobDirectory` — see below) and `routes/graph.router.ts` — `GET /api/graph`, calling
+  `readModel.graph()` (which wraps `core/graph/structure.ts`), both always mounted (#140) —
+  labels are a product feature of the streaming API, not telemetry
+
+**Both routes above go through the `JobDirectory` port (#145), not the channel or the service
+directly** — `RestAppOptions.directory` is a required option, supplied by `app.ts`'s
+`selectJobDirectory` (see "Composition Root" above), so this module never imports the NATS
+transport itself. `GET /api/cases/:jobId/labels`: `directory.watch()` rejecting (the backbone
+timed out) is a `504 UPSTREAM_TIMEOUT`; `{state: "unknown"}` is a `404 NOT_FOUND` — answered
+**before any SSE stream opens**, which is the #145 behaviour change from the pre-#145 shape
+(an unknown job used to open an SSE stream and immediately end it with `event: complete`,
+making "wrong replica" indistinguishable from "job finished"); `{state: "terminal", complete}`
+opens SSE just long enough to write `event: complete` and end; `{state: "active"}` opens SSE,
+writes `event: connected`, then relays `listen()`'s events (`event: label`…, `event: complete`),
+detaching via the returned `stop` on `req.on("close")`. `DELETE /api/cases/:jobId`:
+`directory.cancel()` rejecting is a `504`; `"cancelled"` is `204`; `"finished"` and `"unknown"`
+are both `404` (`NOT_FOUND`, with the message distinguishing "already finished" from "no active
+generation" — a client that wants to tell those apart reads the message, not the status code).
+
+**`POST /api/cases` is REST's synchronous transport, opened as a stream (#143).** Content negotiation on the one route, not a second endpoint: `Accept:
+application/json` (or no preference) blocks and returns the case exactly as before; `Accept:
+text/event-stream` opens SSE on the POST's own response — `event: accepted {jobId}` written
+**before any node runs**, then `event: label`… as generation proceeds, then `event: result
+{case…}` or `event: error {error}`. Opening the stream with the request itself removes the
+handshake race a 202-then-subscribe design has: every event between minting the jobId and the
+client subscribing would otherwise be lost, short of a replay buffer (deferred). A `: ping`
+comment is written every `HEARTBEAT_MS` (15s; `heartbeatMs` in `RestAppOptions` overrides it
+for tests) independently of label activity — a single node (outline generation on a local
+model, one solver iteration) can stay silent for minutes, long enough for a proxy to treat the
+connection as idle; liveness and telemetry are two concerns that happen to coincide, not one
+mechanism. `jobId` is a **body field**, validated against `src/api/JobId.ts`'s `JobIdSchema`
+since it is also a NATS subject token (`cases.result.<jobId>`) even when the request arrives
+over REST — the `?jobId=` query param is gone. A duplicate jobId (still running, or finished
+within the channel's tombstone window) is a 409 `JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED` on
+either Accept path, answered before any stream opens and without starting a second generation
+— `CaseGenerationService.start()` (see "Case Generation Pipeline" above) is what makes the
+duplicate check synchronous with respect to the caller. On either path, a client disconnect
+cancels the job (`res.on("close")`) — the accepted trade of a connection-scoped transport
+(HTTP cannot tell "the user cancelled" from "the network dropped"), not an oversight.
+
+### NATS Layer
+
+`src/transports/nats/` (requires the `NATS` feature flag). Split on **durability**, not on
+feature — a JetStream stream's retention applies to everything its subject filter captures
+(#142, which records the defects this fixed: a single
+`cases.>` workqueue stream used to swallow results and cancels with no consumer, and results on
+workqueue retention were single-delivery and stealable — the first ack destroyed them for every
+other consumer).
+
+Four channels, two JetStream streams (`src/transports/nats/subjects.ts`, `streams.ts`):
+
+- **`CASE_REQUESTS`** (workqueue) — subjects `cases.request.*`. A submitted job
+  (`cases.request.generate`) is taken by exactly one worker via the durable pull consumer
+  `case-request-worker` (`REQUEST_CONSUMER`).
+- **`CASE_RESULTS`** (limits, `max_age` ~1h) — subjects `cases.result.*`. A job's result is
+  published on its own subject, `cases.result.<jobId>` (`resultSubject`), so any number of
+  independent consumers can each read it, with replay — this is what makes "NATS provides the
+  persistence" actually true; workqueue's first ack would have destroyed it for everyone else.
+- **`cases.cancel.<jobId>`** (`cancelSubject`) — core NATS request/reply, not JetStream. Answered
+  only by the replica that owns the job: `jobResponders.ts`'s `startJobResponders` subscribes to a
+  job's cancel subject when the per-job event channel reports it `accepted` and unsubscribes on
+  `complete`, so ownership is expressed as subscription interest rather than a lookup. An unknown
+  or already-finished job therefore has **no responders at all** — the requester gets NATS's own
+  "no responders" error immediately, never a wrong `{cancelled: false}` from a replica that
+  merely doesn't own that job. `{cancelled: false}` only happens when the job finishes in the
+  window between the request and the abort.
+- **`cases.status.<jobId>`** (`statusSubject`, #145) — core NATS request/reply, the counterpart
+  `createNatsJobDirectory`'s `watch()` requests after subscribing to the job's progress subjects.
+  Same ownership-by-subscription-interest rule as `cancel` above, but the subscription **outlives
+  the job**: `jobResponders.ts` keeps answering `{state: "terminal", complete}` for
+  `TOMBSTONE_MS` after the job's `complete` (mirroring the channel's own tombstone,
+  `core/jobEvents/channel.ts`), then stops — at which point "no responders" starts meaning
+  "unknown" again rather than "ask again in a second". This is exactly what lets a remote
+  observer's `JobDirectory.watch()` tell "finished" (`{state: "terminal"}`) from "never existed
+  here" (`{state: "unknown"}`) across replicas, the same distinction `channel.peek()` makes
+  in-process.
+- `cases.progress.<jobId>.<accepted|label|complete>` (core NATS, ephemeral fan-out, #144) — see
+  "Progress publisher" below.
+
+`streams.ts`'s `ensureStreams(jsm)` creates or reconciles both streams and the durable consumer
+at startup. It fails loudly, not silently, in the two cases JetStream cannot fix in place: the
+**pre-#142 `cases` stream still exists** (its `cases.>` filter overlaps both new streams, and
+retention cannot be changed on an existing stream) — the error message names the stream and
+tells the operator to run `nats stream rm cases`, and existing deployments must do this manually
+before upgrading; or a stream exists with a different retention policy than configured.
+
+`cases.handler.ts`'s `runRequestWorker` pulls one request at a time, and **only once a
+generation slot is free** — `service.reserveSlot()` is awaited before the next
+`consumer.next()`, so a message this replica cannot start yet stays in the stream for another
+replica rather than being pulled and queued in memory. While a generation runs,
+`consumeCaseGenerateMessage` calls `msg.working()` every `WORKING_INTERVAL_MS` to keep the ack
+deadline (`REQUEST_ACK_WAIT_MS`, short) from expiring mid-generation — a crashed replica's job is
+still redelivered quickly, but a merely slow one isn't punished for it.
+
+**NATS parity (#144).** The stated requirement is
+that a client speaking only NATS, or only REST, has every **feature** — asymmetry is allowed only
+in delivery guarantees:
+
+| REST                        | NATS                                                 |
+| --------------------------- | ---------------------------------------------------- |
+| SSE `event: label` on a job | `cases.progress.<jobId>.<accepted\|label\|complete>` |
+| `GET /api/diagnosis`        | `catalog.diagnosis`                                  |
+| `GET /api/procedures`       | `catalog.procedures`                                 |
+| `GET /api/features`         | `meta.features`                                      |
+| `GET /api/allowedLlms`      | `meta.allowedLlms`                                   |
+| `GET /api/graph`            | `meta.graph`                                         |
+
+- **Progress publisher** (`progressPublisher.ts`'s `startProgressPublisher`) is a second adapter
+  onto the core-owned per-job channel (`src/core/jobEvents/`) — the first being the REST SSE
+  writer. It forwards **every** event (`accepted`, `label`, `complete`) onto
+  `cases.progress.<jobId>.<type>` — the subject's last token is the event type, exactly like the
+  SSE `event:` name, so there is no mapping table. Deliberately **core NATS, never JetStream**:
+  labels are high-frequency and worthless after the job ends, so a stream write per node event
+  would be pure overhead for data with a useful life of milliseconds, and publishing to a subject
+  with no subscriber is essentially free on core NATS — so there is no subscriber check. An
+  invalid jobId (fails `JobIdSchema`, same guard as `jobResponders.ts`) is skipped with a
+  once-per-job warning; a publish failure (e.g. a closing connection) is caught and logged — a
+  side channel must never break generation.
+- **Request/reply meta service** (`metaService.ts`'s `startMetaService`) answers the five
+  catalogue/feature/graph reads above using **`@nats-io/services`**, the NATS "micro" framework
+  (`Svcm`/`Service`/`ServiceMsg`). Chosen over five bare `nc.subscribe` request/reply handlers
+  because it gives a NATS-only client discovery (`$SRV.PING|INFO|STATS.aetiomed`), per-endpoint
+  stats, and a standard error mechanism (`msg.respondError(500, message)`) for free — close to the
+  literal definition of "a NATS-only client has every feature" — at the cost of one small
+  dependency from the same `@nats-io/*` org already in `package.json`. The service is named
+  `aetiomed`, versioned from the repo's own `package.json` (`version` field, read at runtime
+  relative to `import.meta.url`, three directories below the repo root in both `src/` and
+  `dist/`, and copied into the `Dockerfile`'s `runner` stage for this; falls back to `"0.0.0"`
+  if unreadable). Every endpoint replies `JSON.stringify(value ?? null)`
+  on success; the framework's default queue group is used (every replica answers reads
+  identically). Subject constants live in `subjects.ts` alongside the others
+  (`CATALOG_DIAGNOSIS_SUBJECT`, `CATALOG_PROCEDURES_SUBJECT`, `META_FEATURES_SUBJECT`,
+  `META_ALLOWED_LLMS_SUBJECT`, `META_GRAPH_SUBJECT`).
+- **Job directory** (`jobDirectory.ts`'s `createNatsJobDirectory(nc)`, #145) is the NATS-side
+  half of the `JobDirectory` port (see "Composition Root" above for the port itself):
+  `watch(jobId)` subscribes to `progressWildcard(jobId)` (`cases.progress.<jobId>.>`) **before**
+  requesting `cases.status.<jobId>`, so a job that completes between the two still delivers its
+  `complete` into the already-open subscription rather than racing past it; `cancel(jobId)`
+  requests `cases.cancel.<jobId>`. Both map NATS's "no responders" to `{state: "unknown"}` /
+  `"unknown"` and a request timeout (`DIRECTORY_REQUEST_TIMEOUT_MS`) to a rejected promise — the
+  distinction REST's routers turn into 404 vs. 504.
+- **Shared read model** (`src/core/readModel.ts`'s `createReadModel(graph, features)`) is what
+  makes "the NATS endpoint returns the same payload as its REST counterpart" true **by
+  construction**: one object with `diagnoses()`, `procedures()`, `features()`, `allowedLlms()`
+  and `graph()`, constructed once in `app.ts` and handed to both `startRestServer` (as
+  `createRestApp`'s `readModel` option) and `startNatsTransport`. REST's routers and the meta
+  service both call the same five functions rather than each reimplementing the read against
+  `GraphAppContext`.
 
 ### Data Files
 
@@ -528,13 +770,42 @@ generation goes through `CaseGenerationService`:
 
 ### Request Context
 
-`runWithContext(fn, jobId?, llmConfig?, language?)` in `src/core/graph/utils/context.ts` uses `AsyncLocalStorage` to propagate `jobId`, optional `llmConfig`, optional `language` and an abort `signal` through the entire async call chain, and registers an `AbortController` with `cancelManager` (`utils/cancelManager.ts`) so generations can be cancelled by jobId. Graph nodes read it via `getRequestContext()` — `RequestContextSchema` also doubles as LangGraph's own runtime-context schema at every `new StateGraph(state, RequestContextSchema)` call site, but `language` is never read from _that_ copy (see Language below); only `getRequestContext()` (ALS) is the real read path.
+`runWithContext(fn, jobId?, llmConfig?, language?, signal?)` in `src/core/graph/utils/context.ts`
+uses `AsyncLocalStorage` to propagate `jobId`, optional `llmConfig`, optional `language` and an
+abort `signal` through the entire async call chain. Graph nodes read it via
+`getRequestContext()` — `RequestContextSchema` also doubles as LangGraph's own runtime-context
+schema at every `new StateGraph(state, RequestContextSchema)` call site, but `language` is never
+read from _that_ copy (see Language below); only `getRequestContext()` (ALS) is the real read
+path.
 
-Core does not import the tracing module: `registerJobHook()` is a core-owned registry the
-`tracing` module registers against. With `TRACING` unset nothing is registered and no
-per-job trace bus is allocated. `NodeTracer`/`NodeSpan` (`utils/nodeWrapper.ts`, issue 15 §5)
-is the same inversion applied to OTel: core owns the port, `tracing/otel.ts` implements it,
-`app.ts` wires the two together.
+Cancellation is owned entirely by `CaseGenerationService`, not by `runWithContext` itself
+(`src/core/graph/utils/cancelManager.ts` is deleted, #142). `CaseGenerationService.generate`
+registers one `AbortController` per job **at submission**, before the job's generation slot is
+even acquired — so a job still queued behind `MAX_CONCURRENT_GENERATIONS` is cancellable too, not
+just a running one — and passes its `signal` into `runWithContext`. `service.cancel(jobId)` aborts
+that controller directly; there is no separate registry a transport reaches into.
+
+`runWithContext` no longer registers a job hook of any kind (#139) — that was the old
+single-slot `registerJobHook()`, deleted along with the now-removed `src/tracing/` module
+entirely (#140). It only binds ALS now. The per-job channel's lifetime is owned by
+`CaseGenerationService` instead: it calls `jobEvents.open(jobId)` before `runWithContext`, and
+`jobEvents.close(jobId, outcome)` once the run settles, so every transport sees the same per-job
+lifecycle regardless of which door the request came in through. Core still does not import
+`observability/` or `transports/`: `NodeTracer`/`NodeSpan` (`utils/nodeWrapper.ts`, issue #141)
+is the same port/adapter inversion applied to OTel — core owns the port, `observability/otel.ts`
+implements it, `app.ts` wires the two together.
+
+**Concurrency is one limiter shared by both transports (#142).** `src/core/concurrency.ts`'s
+`createLimiter(max)` is a FIFO counting semaphore: `acquire(signal?)` resolves an idempotent
+`Release` once a slot is free, and rejects with an `AbortError` (without ever taking a slot) if
+`signal` aborts while queued — the same primitive used for both the queued-cancel case above and
+the not-yet-acquired case below. `CaseGenerationService` is constructed with one such limiter
+sized to `MAX_CONCURRENT_GENERATIONS` (default 4); `generate(req, { slot? })`'s `opts.slot` lets
+a caller hand in a slot it already holds instead of acquiring its own — the NATS worker calls
+`service.reserveSlot()` and only then pulls a message off `CASE_REQUESTS`, so a request nothing
+can run yet is never even dequeued into memory, while REST's `POST /api/cases` just lets
+`generate` acquire its own slot inline. Either way the service releases the slot exactly once
+when the job ends, including when a slot handed in turns out to address a duplicate `jobId` (a 409) that never runs.
 
 ### Language
 
@@ -603,7 +874,7 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
   (issue 12); building a second copy of that machinery for non-sandwich mode would just
   duplicate it. Localized candidate grammars for non-sandwich mode
   (picking directly from a target-language catalogue) are tracked separately —
-  `docs/issues/16-localized-candidate-grammars.md` — because they reverse issue 01's Rule 4
+  #123 — because they reverse issue 01's Rule 4
   deletion and deserve their own decision.
 - **Auto-detection is a laddered resolver in `CaseGenerationService`, not the graph**
   (`src/core/languageDetection/`, issue 10). A caller may omit `language`; the service resolves
@@ -646,32 +917,33 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
 
 ## Environment Variables
 
-| Variable                                                   | Default                 | Notes                                                                                                                                                                                            |
-| ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PORT`                                                     | `3030`                  | Server port                                                                                                                                                                                      |
-| `FEATURES`                                                 | `""`                    | Comma-separated flags: `REST`, `NATS`, `TRACING`, `DEBUG`, `ALLOW_LLMS`                                                                                                                          |
-| `LLM_PROVIDER`                                             | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                                                  |
-| `LLM_MODEL`                                                | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                                        |
-| `LLM_API_KEY`                                              | —                       | API key for Google/OpenAI                                                                                                                                                                        |
-| `LLM_URL`                                                  | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                                                                             |
-| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`  | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                                                                        |
-| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`      | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                                                                       |
-| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                  |
-| `TRANSLATION_SANDWICH`                                     | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                            |
-| `PROCEDURE_PRESELECTION`                                   | `false`                 | `true`/`1` selects the `CategoryScopedPick` procedure strategy (splits the blinded procedure step into a category pick then a procedure pick)                                                    |
-| `LANGUAGES`                                                | `English,German`        | Comma-separated deployment language set, trimmed/de-duplicated/order-preserved; must include `English`. Validated at startup and against every request's `language` (see Language section below) |
-| `LANGUAGE_AUTO_DETECT`                                     | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                 |
-| `LANGUAGE_DETECT_LLM_FALLBACK`                             | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                            |
-| `ALLOWED_LLMS`                                             | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                               |
-| `CATALOG_DIR`                                              | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                     |
-| `CACHE_DIR`                                                | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                    |
-| `NATS_URL`                                                 | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                             |
-| `NATS_USER` / `NATS_PASSWORD`                              | `nats` / `nats`         |                                                                                                                                                                                                  |
-| `SYMPTOM_CACHE_TTL_DAYS`                                   | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                                                                   |
-| `MAX_CONTENT_PART_BYTES`                                   | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
-| `OTEL_SDK_DISABLED`                                        | unset (enabled)         | Standard OTel var. `"true"` skips constructing the OTel SDK entirely (no dynamic import even happens — see `tracing/otel.ts`); independent of `FEATURES=TRACING`                                 |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                              | —                       | Standard OTel var, read by the OTLP exporter itself — no plumbing in this repo                                                                                                                   |
-| `OTEL_SERVICE_NAME`                                        | —                       | Standard OTel var, read via `envDetector` (`tracing/otel.ts`)                                                                                                                                    |
+| Variable                                                              | Default                 | Notes                                                                                                                                                                                            |
+| --------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`                                                                | `3030`                  | Server port                                                                                                                                                                                      |
+| `FEATURES`                                                            | `""`                    | Comma-separated flags: `REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`                                                                                                                                     |
+| `LLM_PROVIDER`                                                        | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                                                  |
+| `LLM_MODEL`                                                           | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                                        |
+| `LLM_API_KEY`                                                         | —                       | API key for Google/OpenAI                                                                                                                                                                        |
+| `LLM_URL`                                                             | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                                                                             |
+| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`             | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                                                                        |
+| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`                 | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                                                                       |
+| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`            | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                  |
+| `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                            |
+| `PROCEDURE_PRESELECTION`                                              | `false`                 | `true`/`1` selects the `CategoryScopedPick` procedure strategy (splits the blinded procedure step into a category pick then a procedure pick)                                                    |
+| `LANGUAGES`                                                           | `English,German`        | Comma-separated deployment language set, trimmed/de-duplicated/order-preserved; must include `English`. Validated at startup and against every request's `language` (see Language section below) |
+| `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                 |
+| `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                            |
+| `ALLOWED_LLMS`                                                        | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                               |
+| `CATALOG_DIR`                                                         | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                     |
+| `CACHE_DIR`                                                           | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                    |
+| `NATS_URL`                                                            | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                             |
+| `NATS_USER` / `NATS_PASSWORD`                                         | `nats` / `nats`         |                                                                                                                                                                                                  |
+| `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS (`src/core/concurrency.ts`'s shared limiter). Excess requests queue; a queued job is still cancellable. See Request Context below    |
+| `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                                                                   |
+| `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
+| `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var. `"true"` (that literal only) skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | —                       | Standard OTel vars, read by the OTLP trace/log exporters themselves — no plumbing in this repo; any one set selects the `"otlp"` exporter mode (`selectExporterMode`)                            |
+| `OTEL_SERVICE_NAME`                                                   | —                       | Standard OTel var, read via `envDetector` (`observability/otel.ts`)                                                                                                                              |
 
 Note: the `REST` flag is required for the HTTP API to load — include it in `FEATURES` when running the server.
 

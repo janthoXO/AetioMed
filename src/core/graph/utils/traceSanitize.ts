@@ -1,5 +1,5 @@
-// Shared by `tracing/tracePayload.ts` (the SSE trace channel's size-capped
-// payload) and `nodeWrapper.ts` (the OTel span's output-size attribute) —
+// Shared by `observability/tracePayload.ts` (the OTLP-bound payload cap,
+// #141) and `nodeWrapper.ts` (the OTel span's output-size attribute) —
 // both need "this node's result, with bytes projected to text" and must
 // agree on what that means, so it lives here once rather than twice. Pure:
 // only depends on `ContentPart`'s `textOf`, no env, no I/O — safe under

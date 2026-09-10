@@ -7,3 +7,5 @@ export {
 } from "./CaseGenerationRequest.js";
 
 export { CaseGenerationResponseSchema } from "./CaseGenerationResponse.js";
+
+export { JobIdSchema } from "./JobId.js";

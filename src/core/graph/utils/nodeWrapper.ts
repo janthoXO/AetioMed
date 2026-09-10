@@ -5,19 +5,24 @@ import type { RequestContext } from "./context.js";
 import { sanitizeForTrace } from "./traceSanitize.js";
 
 /**
- * The OTel operator channel's port (issue 15 §5/§1.1) — core (this file)
- * owns the interface, exactly the `registerJobHook` pattern `utils/context.ts`
- * already uses for the `TraceBus` hook: core never imports
- * `@opentelemetry/*` or reads `process.env` (both are off-limits under
- * `src/core/graph/` — see `CLAUDE.md`), so the concrete adapter
- * (`tracing/otel.ts`) lives outside core and is constructed once by the
- * composition root (`app.ts`), independent of `FEATURES=TRACING` — see
- * `tracing/index.ts`'s doc comment on `wireTracing` for why the two
- * channels are deliberately separate.
+ * The OTel operator channel's port (issue #141, formerly issue 15 §5/§1.1)
+ * — core (this file) owns the interface and the adapter implements it:
+ * core never imports `@opentelemetry/*` or reads `process.env` (both are
+ * off-limits under `src/core/graph/` — see `CLAUDE.md`), so the concrete
+ * adapter (`observability/otel.ts`) lives outside core and is constructed
+ * once by the composition root (`app.ts`), gated only by the standard
+ * `OTEL_SDK_DISABLED` — this is a separate channel from labels
+ * (`core/jobEvents/labels.ts`), which are always on (#140) and carry no
+ * node output.
  */
 export interface NodeSpan {
-  /** The node's (sanitized, bytes-projected-to-text) output size. */
-  setOutputBytes(bytes: number): void;
+  /**
+   * The node's output, already sanitized (content-part bytes projected to
+   * text — `sanitizeForTrace`). The adapter records its **size** as a span
+   * attribute and ships the value itself as a correlated log record, never
+   * as a span attribute (#141).
+   */
+  setOutput(output: unknown): void;
   /**
    * Model/provider used by this node's request, when known — only
    * available today via per-request `llmConfig` (the `ALLOW_LLMS` path);
@@ -37,7 +42,7 @@ export interface NodeTracer {
 }
 
 const noopSpan: NodeSpan = {
-  setOutputBytes() {},
+  setOutput() {},
   setLlm() {},
   fail() {},
   end() {},
@@ -68,7 +73,7 @@ export function getKnownLabels(): string[] {
 /**
  * `nodeId -> labelKey`, populated the same way `knownLabels` is — as
  * `buildCaseGraph()` constructs every graph variant. This is what
- * `GET /api/graph` (issue 15 §4, `tracing/structure/`) joins against the
+ * `GET /api/graph` (issue #140, `core/graph/structure.ts`) joins against the
  * compiled topology's node ids to attach each node's English label key,
  * without the structure endpoint reaching back into every subgraph module
  * to ask. `knownLabels` stays a `Set<string>` (startup validation only cares
@@ -108,9 +113,9 @@ export interface TraceNodeFn {
  *
  * Wraps a graph node function to automatically emit "Node Started" and
  * "Node Completed" (or, on failure, "Node Failed") bus events around the
- * node's logic. Trace labels are always emitted in English — a transport
- * that wants a localized label (see `tracing/index.ts`) looks up the
- * translation itself and falls back to English.
+ * node's logic. Labels are always emitted in English on the bus — the
+ * per-job channel (`core/jobEvents/labels.ts`'s `wireLabels`) looks up the
+ * request's language and localizes, falling back to English.
  *
  * **Issue 15 §2 defect fix.** This used to have no `try`/`catch`: a
  * throwing node emitted "Node Started" and never anything terminal, so any
@@ -166,18 +171,6 @@ export function createTraceNode(
   return buildTraceNode(bus, tracer, undefined);
 }
 
-/** Best-effort output size for the OTel span attribute — never throws. */
-function outputByteSize(value: unknown): number {
-  try {
-    return Buffer.byteLength(
-      JSON.stringify(sanitizeForTrace(value)) ?? "null",
-      "utf8"
-    );
-  } catch {
-    return 0;
-  }
-}
-
 function buildTraceNode(
   bus: EventBus,
   tracer: NodeTracer,
@@ -205,10 +198,16 @@ function buildTraceNode(
       const runtime = args[1] as Runtime<RequestContext> | undefined;
       const context = runtime?.context ?? getRequestContext();
       const jobId = context?.jobId;
+      // Off ALS, never LangGraph's own runtime context: `language` is
+      // deliberately absent from `RequestContextSchema` (see `context.ts`).
+      // It rides on the event so the label channel (`core/jobEvents/`) can
+      // localize without keeping a per-job language map.
+      const language = getRequestContext()?.language;
 
       bus.emit("Node Started", {
         node: nodeId,
         label,
+        language,
         jobId,
         timestamp: new Date().toISOString(),
       });
@@ -221,7 +220,7 @@ function buildTraceNode(
       try {
         const result = await fn(...args);
 
-        span.setOutputBytes(outputByteSize(result));
+        span.setOutput(sanitizeForTrace(result));
         span.end();
 
         bus.emit("Node Completed", {
@@ -229,6 +228,7 @@ function buildTraceNode(
           label,
           result,
           jobId,
+          language,
           timestamp: new Date().toISOString(),
         });
 
@@ -244,6 +244,7 @@ function buildTraceNode(
           label,
           error: message,
           jobId,
+          language,
           timestamp: new Date().toISOString(),
         });
 

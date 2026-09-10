@@ -1,11 +1,11 @@
 import express from "express";
-import type { GraphAppContext } from "@/core/graph/appContext.js";
+import type { ReadModel } from "@/core/readModel.js";
 
-export default function createDiagnosisRouter(graph: GraphAppContext) {
+export default function createDiagnosisRouter(readModel: ReadModel) {
   const router = express.Router();
 
   router.get("/", async (_, res) => {
-    res.status(200).json(graph.runtime.catalogs.diagnosis.all());
+    res.status(200).json(readModel.diagnoses());
   });
 
   return router;

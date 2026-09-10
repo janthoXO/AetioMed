@@ -7,7 +7,10 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRestApp } from "./index.js";
-import { createJobEventChannel } from "@/core/jobEvents/index.js";
+import {
+  createJobEventChannel,
+  createLocalJobDirectory,
+} from "@/core/jobEvents/index.js";
 import { createReadModel } from "@/core/readModel.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { CaseGenerationService } from "@/core/caseGenerationService.js";
@@ -68,13 +71,16 @@ describe("createRestApp (#140) — app-level route table", () => {
   async function startApp(): Promise<{ server: Server; port: number }> {
     const graph = fakeGraph();
     const features = new Set(["REST"]);
+    const jobEvents = createJobEventChannel();
+    const service = {
+      generate: vi.fn(),
+      cancel: vi.fn(),
+    } as unknown as CaseGenerationService;
     const app = createRestApp({
       graph,
-      service: {
-        generate: vi.fn(),
-        cancel: vi.fn(),
-      } as unknown as CaseGenerationService,
-      jobEvents: createJobEventChannel(),
+      service,
+      jobEvents,
+      directory: createLocalJobDirectory(jobEvents, service.cancel),
       readModel: createReadModel(graph, features),
       features,
     });
@@ -108,17 +114,16 @@ describe("createRestApp (#140) — app-level route table", () => {
     expect(body.edges).toEqual([{ source: "a", target: "b" }]);
   });
 
-  it("GET /api/cases/unknown/labels streams SSE and ends with event: complete", async () => {
+  it("GET /api/cases/unknown/labels answers 404 (#145) — unknown is never a stream", async () => {
     ({ server } = await startApp());
     const port = (server!.address() as AddressInfo).port;
 
     const res = await fetch(
       `http://127.0.0.1:${port}/api/cases/unknown/labels`
     );
-    expect(res.headers.get("content-type")).toMatch(/^text\/event-stream/);
-
-    const text = await res.text();
-    expect(text).toContain("event: complete");
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("NOT_FOUND");
   });
 
   it("GET /api/traces/x/stream is gone (404) — the old SSE trace route", async () => {

@@ -9,7 +9,12 @@ import {
   createCaseGenerationService,
   DEFAULT_MAX_CONCURRENT_GENERATIONS,
 } from "./caseGenerationService.js";
-import { createJobEventChannel, wireLabels } from "./jobEvents/index.js";
+import {
+  createJobEventChannel,
+  createLocalJobDirectory,
+  wireLabels,
+  type JobDirectory,
+} from "./jobEvents/index.js";
 import { createReadModel } from "./readModel.js";
 import { startRestServer } from "../transports/rest/index.js";
 import { startNatsTransport } from "../transports/nats/index.js";
@@ -93,28 +98,31 @@ export async function createApp(): Promise<{
   // by construction rather than by keeping two copies in sync.
   const readModel = createReadModel(graph, features);
 
+  // NATS starts first when enabled, because REST may ride on it (#145) —
+  // but REST still closes first: stop accepting work before the backbone
+  // goes away.
+  const nats = features.has("NATS")
+    ? await startNatsTransport({ graph, service, jobEvents, readModel })
+    : undefined;
+
+  const rest = features.has("REST")
+    ? await startRestServer({
+        graph,
+        service,
+        jobEvents,
+        directory: selectJobDirectory({
+          features,
+          local: createLocalJobDirectory(jobEvents, service.cancel),
+          nats: nats?.directory,
+        }),
+        readModel,
+        features,
+      })
+    : undefined;
+
   const closers: Closer[] = [];
-
-  if (features.has("REST")) {
-    const rest = await startRestServer({
-      graph,
-      service,
-      jobEvents,
-      readModel,
-      features,
-    });
-    closers.push({ name: "REST", close: rest.close });
-  }
-
-  if (features.has("NATS")) {
-    const nats = await startNatsTransport({
-      graph,
-      service,
-      jobEvents,
-      readModel,
-    });
-    closers.push({ name: "NATS", close: nats.close });
-  }
+  if (rest) closers.push({ name: "REST", close: rest.close });
+  if (nats) closers.push({ name: "NATS", close: nats.close });
 
   // OTel after NATS, before the DB: flush batched spans/logs once producers
   // have stopped emitting them, but before the process (and its DB) exits.
@@ -129,4 +137,26 @@ export async function createApp(): Promise<{
   const shutdown = () => runClosers(closers);
 
   return { bus, shutdown };
+}
+
+/**
+ * The partial NATS backbone (#145, design doc §D5): with both `REST` and
+ * `NATS` enabled, REST watches and cancels jobs over NATS, so it sees jobs
+ * on every replica. Otherwise it uses the in-process channel, and a single
+ * replica is a documented deployment constraint.
+ *
+ * REST depends on NATS here — through composition only — and never the
+ * reverse: NATS is infrastructure in this one place, not a peer.
+ */
+export function selectJobDirectory(opts: {
+  features: ReadonlySet<string>;
+  local: JobDirectory;
+  nats: JobDirectory | undefined;
+}): JobDirectory {
+  if (!opts.features.has("NATS")) return opts.local;
+  if (opts.nats) return opts.nats;
+  console.warn(
+    "[app] NATS is enabled but not connected: REST falls back to in-process job lookups, which only see this replica's jobs."
+  );
+  return opts.local;
 }

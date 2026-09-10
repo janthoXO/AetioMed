@@ -11,8 +11,10 @@ import express from "express";
 import { EventBus } from "@/core/event-bus.js";
 import {
   createJobEventChannel,
+  createLocalJobDirectory,
+  type JobDirectory,
   type JobEventChannel,
-} from "@/core/jobEvents/channel.js";
+} from "@/core/jobEvents/index.js";
 import { wireLabels } from "@/core/jobEvents/labels.js";
 import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
 import { createCaseGenerationService } from "@/core/caseGenerationService.js";
@@ -124,15 +126,22 @@ function createHarness() {
     channel
   );
 
-  return { channel, service, release: () => release() };
+  return {
+    channel,
+    service,
+    directory: createLocalJobDirectory(channel, service.cancel),
+    release: () => release(),
+  };
 }
 
-async function startServer(channel: JobEventChannel): Promise<{
+async function startServer(
+  directory: ReturnType<typeof createLocalJobDirectory>
+): Promise<{
   server: Server;
   port: number;
 }> {
   const app = express();
-  app.use("/api/cases", createLabelsRouter(channel));
+  app.use("/api/cases", createLabelsRouter(directory));
   const server = app.listen(0, "127.0.0.1");
   await new Promise<void>((resolve) => server.once("listening", resolve));
   const { port } = server.address() as AddressInfo;
@@ -150,8 +159,8 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
   });
 
   it("streams connected and label events for a REST-submitted job — never a trace or a node output — then ends on complete", async () => {
-    const { channel, service, release } = createHarness();
-    ({ server } = await startServer(channel));
+    const { service, directory, release } = createHarness();
+    ({ server } = await startServer(directory));
     const port = (server!.address() as AddressInfo).port;
 
     // The channel is opened synchronously by `service.generate`, before its
@@ -188,8 +197,8 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
   });
 
   it("delivers every event to two independent subscribers of the same job", async () => {
-    const { channel, service, release } = createHarness();
-    ({ server } = await startServer(channel));
+    const { service, directory, release } = createHarness();
+    ({ server } = await startServer(directory));
     const port = (server!.address() as AddressInfo).port;
 
     const p = service.generate({
@@ -229,26 +238,22 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     expect(text2).toContain("event: complete");
   });
 
-  it("an unknown job's stream ends immediately with an empty complete event", async () => {
+  it("an unknown job answers 404 JSON, never an SSE stream (#145)", async () => {
     const channel = createJobEventChannel();
-    ({ server } = await startServer(channel));
+    const directory = createLocalJobDirectory(channel, () => false);
+    ({ server } = await startServer(directory));
     const port = (server!.address() as AddressInfo).port;
 
     const res = await fetch(`http://127.0.0.1:${port}/api/cases/nope/labels`);
-    const reader = res.body!.getReader();
-
-    const text = await readUntil(reader, (text) =>
-      text.includes("event: complete")
-    );
-    expect(text).toContain("data: {}");
-
-    const { done } = await reader.read();
-    expect(done).toBe(true);
+    expect(res.status).toBe(404);
+    expect(res.headers.get("content-type")).toMatch(/^application\/json/);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("NOT_FOUND");
   });
 
   it("a terminal job's stream (no live subscriber) ends with its complete event", async () => {
-    const { channel, service, release } = createHarness();
-    ({ server } = await startServer(channel));
+    const { service, directory, release } = createHarness();
+    ({ server } = await startServer(directory));
     const port = (server!.address() as AddressInfo).port;
 
     release();
@@ -267,8 +272,33 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
       text.includes("event: complete")
     );
     expect(text).toContain('"status":"done"');
+    // Watch, not collect (design doc §D4): the terminal marker never carries
+    // the case.
+    expect(text).not.toContain("patient");
+    expect(text).not.toContain('"case"');
 
     const { done } = await reader.read();
     expect(done).toBe(true);
+  });
+
+  it("directory.watch() rejecting (backbone timeout) is a 504", async () => {
+    const rejecting: JobDirectory = {
+      watch: () => Promise.reject(new Error("no reply in time")),
+      cancel: () => Promise.reject(new Error("not used by this test")),
+    };
+    const app = express();
+    app.use("/api/cases", createLabelsRouter(rejecting));
+    server = app.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const port = (server!.address() as AddressInfo).port;
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases/job-x/labels`);
+    expect(res.status).toBe(504);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("UPSTREAM_TIMEOUT");
+    consoleError.mockRestore();
   });
 });

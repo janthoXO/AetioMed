@@ -7,7 +7,7 @@ import type {
   CaseGenerationResult,
   CaseGenerationService,
 } from "@/core/caseGenerationService.js";
-import type { JobEventChannel } from "@/core/jobEvents/index.js";
+import type { JobDirectory, JobEventChannel } from "@/core/jobEvents/index.js";
 import { openSse } from "../sse.js";
 
 /**
@@ -34,6 +34,7 @@ export default function createCasesRouter(
   graph: GraphAppContext,
   service: CaseGenerationService,
   jobEvents: JobEventChannel,
+  directory: JobDirectory,
   opts: { heartbeatMs?: number } = {}
 ) {
   const heartbeatMs = opts.heartbeatMs ?? HEARTBEAT_MS;
@@ -155,19 +156,43 @@ export default function createCasesRouter(
     }
   });
 
-  router.delete("/:jobId", (req, res) => {
+  /**
+   * `DELETE /api/cases/:jobId` — cancel any job, whatever submitted it and
+   * whichever replica runs it (#145), through the {@link JobDirectory}. With
+   * NATS enabled this is a request to `cases.cancel.<jobId>`, answered only
+   * by the owner, so the answer is synchronous and exact: 204 when it was
+   * cancelled, 404 when no replica runs it (never started, or finished), 504
+   * when the owner could not be reached in time.
+   */
+  router.delete("/:jobId", async (req, res) => {
     const { jobId } = req.params;
-    const aborted = service.cancel(jobId);
-    if (aborted) {
-      res.status(204).end();
-    } else {
-      res.status(404).json({
+    let result;
+    try {
+      result = await directory.cancel(jobId);
+    } catch (error) {
+      console.error("[rest] Could not reach the job's owner", error);
+      res.status(504).json({
         error: {
-          code: "NOT_FOUND",
-          message: "No active generation for this jobId",
+          code: "UPSTREAM_TIMEOUT",
+          message: "Could not reach the replica that owns this job",
         },
       });
+      return;
     }
+
+    if (result === "cancelled") {
+      res.status(204).end();
+      return;
+    }
+    res.status(404).json({
+      error: {
+        code: "NOT_FOUND",
+        message:
+          result === "finished"
+            ? "This job has already finished"
+            : "No active generation for this jobId",
+      },
+    });
   });
 
   return router;

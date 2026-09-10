@@ -29,6 +29,18 @@ export const progressSubject = (jobId: string, type: JobEventType) =>
  */
 export const cancelSubject = (jobId: string) => `cases.cancel.${jobId}`;
 
+/** Every progress event of one job — what a remote observer subscribes to (#145). */
+export const progressWildcard = (jobId: string) => `cases.progress.${jobId}.>`;
+
+/**
+ * Core NATS request/reply → `{ state: "active" } | { state: "terminal",
+ * complete }`, answered by the owning replica while the job runs and for the
+ * tombstone window after it (#145). "No responders" means no replica knows
+ * the job, which is what lets a remote observer tell "unknown" (404) from
+ * "finished" (`event: complete`).
+ */
+export const statusSubject = (jobId: string) => `cases.status.${jobId}`;
+
 /**
  * Core NATS request/reply, the `@nats-io/services` meta service (#144). One
  * subject per REST read-only counterpart — see `metaService.ts`.

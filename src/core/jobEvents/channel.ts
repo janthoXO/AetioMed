@@ -53,6 +53,11 @@ export type SubscribeResult =
   | { state: "terminal"; complete: JobCompleteEvent }
   | { state: "unknown" };
 
+export type JobPeek =
+  | { state: "active" }
+  | { state: "terminal"; complete: JobCompleteEvent }
+  | { state: "unknown" };
+
 export interface JobEventChannel {
   /**
    * Reserve `jobId` and open its channel. Returns `false` if the id is
@@ -83,6 +88,8 @@ export interface JobEventChannel {
   subscribeAll(listener: GlobalJobListener): () => void;
   /** Whether a job is running, finished recently, or was never seen here. */
   state(jobId: string): "active" | "terminal" | "unknown";
+  /** {@link state}, plus the `complete` event of a terminal job. Never subscribes. */
+  peek(jobId: string): JobPeek;
 }
 
 /**
@@ -214,6 +221,16 @@ export function createJobEventChannel(): JobEventChannel {
     subscribeAll(listener) {
       globalListeners.add(listener);
       return () => globalListeners.delete(listener);
+    },
+
+    peek(jobId) {
+      const state = jobs.get(jobId);
+      if (state?.complete)
+        return { state: "terminal", complete: state.complete };
+      if (state) return { state: "active" };
+      const tombstone = tombstones.get(jobId);
+      if (tombstone) return { state: "terminal", complete: tombstone.complete };
+      return { state: "unknown" };
     },
 
     state(jobId) {

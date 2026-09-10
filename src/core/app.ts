@@ -10,6 +10,7 @@ import {
   DEFAULT_MAX_CONCURRENT_GENERATIONS,
 } from "./caseGenerationService.js";
 import { createJobEventChannel, wireLabels } from "./jobEvents/index.js";
+import { createReadModel } from "./readModel.js";
 import { startRestServer } from "../transports/rest/index.js";
 import { startNatsTransport } from "../transports/nats/index.js";
 import { createOtelNodeTracer } from "../observability/otel.js";
@@ -87,15 +88,31 @@ export async function createApp(): Promise<{
     maxConcurrent: maxConcurrentGenerations,
   });
 
+  // Shared read model (#144): both transports' read-only endpoints answer
+  // the same question through the same function, so "NATS parity" is true
+  // by construction rather than by keeping two copies in sync.
+  const readModel = createReadModel(graph, features);
+
   const closers: Closer[] = [];
 
   if (features.has("REST")) {
-    const rest = await startRestServer({ graph, service, jobEvents, features });
+    const rest = await startRestServer({
+      graph,
+      service,
+      jobEvents,
+      readModel,
+      features,
+    });
     closers.push({ name: "REST", close: rest.close });
   }
 
   if (features.has("NATS")) {
-    const nats = await startNatsTransport({ graph, service, jobEvents });
+    const nats = await startNatsTransport({
+      graph,
+      service,
+      jobEvents,
+      readModel,
+    });
     closers.push({ name: "NATS", close: nats.close });
   }
 

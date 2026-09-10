@@ -551,17 +551,21 @@ Plus unnumbered `catalog/`, `persistence/`, `symptoms/`, `medicalBasis/`, `modal
 `src/transports/rest/` (requires the `REST` feature flag). `createRestApp(opts)` builds the
 Express app without listening — split out from `startRestServer(opts)` (= `createRestApp` +
 listen) so tests can drive the real route table directly. Routes translate protocol only —
-generation goes through `CaseGenerationService`:
+generation goes through `CaseGenerationService`, and every read-only route answers through the
+shared `ReadModel` (`src/core/readModel.ts`, #144 — see "Shared read model" under NATS Layer
+below), never by reaching into `GraphAppContext` directly:
 
-- `GET /api/health`, `GET /api/features`, `GET /api/allowedLlms`
+- `GET /api/health` (not part of the read model — a liveness probe, not a domain read)
+- `GET /api/features`, `GET /api/allowedLlms` — inline handlers calling
+  `readModel.features()`/`readModel.allowedLlms()`
 - `routes/cases.router.ts` — `POST /api/cases` (content negotiation, see below),
   `DELETE /api/cases/:jobId` (cancel)
-- `routes/diagnosis.router.ts` — `GET /api/diagnosis`
-- `routes/procedures.router.ts` — `GET /api/procedures`
+- `routes/diagnosis.router.ts` — `GET /api/diagnosis`, calling `readModel.diagnoses()`
+- `routes/procedures.router.ts` — `GET /api/procedures`, calling `readModel.procedures()`
 - `routes/labels.router.ts` — `GET /api/cases/:jobId/labels` (SSE, `event: label`, adapting
-  `core/jobEvents/`) and `routes/graph.router.ts` — `GET /api/graph` (compiled topology,
-  `core/graph/structure.ts`), both always mounted (#140) — labels are a product feature of the
-  streaming API, not telemetry
+  `core/jobEvents/`) and `routes/graph.router.ts` — `GET /api/graph`, calling `readModel.graph()`
+  (which wraps `core/graph/structure.ts`), both always mounted (#140) — labels are a product
+  feature of the streaming API, not telemetry
 
 **`POST /api/cases` is REST's synchronous transport, opened as a stream (#143, design doc
 §D1/§D3).** Content negotiation on the one route, not a second endpoint: `Accept:
@@ -611,7 +615,8 @@ Four channels, two JetStream streams (`src/transports/nats/subjects.ts`, `stream
   "no responders" error immediately, never a wrong `{cancelled: false}` from a replica that
   merely doesn't own that job. `{cancelled: false}` only happens when the job finishes in the
   window between the request and the abort.
-- `cases.progress.<jobId>.<label|trace>` (core NATS, ephemeral fan-out) is reserved for #144.
+- `cases.progress.<jobId>.<accepted|label|complete>` (core NATS, ephemeral fan-out, #144) — see
+  "Progress publisher" below.
 
 `streams.ts`'s `ensureStreams(jsm)` creates or reconciles both streams and the durable consumer
 at startup. It fails loudly, not silently, in the two cases JetStream cannot fix in place: the
@@ -627,6 +632,53 @@ replica rather than being pulled and queued in memory. While a generation runs,
 `consumeCaseGenerateMessage` calls `msg.working()` every `WORKING_INTERVAL_MS` to keep the ack
 deadline (`REQUEST_ACK_WAIT_MS`, short) from expiring mid-generation — a crashed replica's job is
 still redelivered quickly, but a merely slow one isn't punished for it.
+
+**NATS parity (#144).** The stated requirement (`docs/issues/17-transport-parity.md` §D2) is
+that a client speaking only NATS, or only REST, has every **feature** — asymmetry is allowed only
+in delivery guarantees:
+
+| REST                        | NATS                                                 |
+| --------------------------- | ---------------------------------------------------- |
+| SSE `event: label` on a job | `cases.progress.<jobId>.<accepted\|label\|complete>` |
+| `GET /api/diagnosis`        | `catalog.diagnosis`                                  |
+| `GET /api/procedures`       | `catalog.procedures`                                 |
+| `GET /api/features`         | `meta.features`                                      |
+| `GET /api/allowedLlms`      | `meta.allowedLlms`                                   |
+| `GET /api/graph`            | `meta.graph`                                         |
+
+- **Progress publisher** (`progressPublisher.ts`'s `startProgressPublisher`) is a second adapter
+  onto the core-owned per-job channel (`src/core/jobEvents/`) — the first being the REST SSE
+  writer. It forwards **every** event (`accepted`, `label`, `complete`) onto
+  `cases.progress.<jobId>.<type>` — the subject's last token is the event type, exactly like the
+  SSE `event:` name, so there is no mapping table. Deliberately **core NATS, never JetStream**:
+  labels are high-frequency and worthless after the job ends, so a stream write per node event
+  would be pure overhead for data with a useful life of milliseconds, and publishing to a subject
+  with no subscriber is essentially free on core NATS — so there is no subscriber check. An
+  invalid jobId (fails `JobIdSchema`, same guard as `jobResponders.ts`) is skipped with a
+  once-per-job warning; a publish failure (e.g. a closing connection) is caught and logged — a
+  side channel must never break generation.
+- **Request/reply meta service** (`metaService.ts`'s `startMetaService`) answers the five
+  catalogue/feature/graph reads above using **`@nats-io/services`**, the NATS "micro" framework
+  (`Svcm`/`Service`/`ServiceMsg`). Chosen over five bare `nc.subscribe` request/reply handlers
+  because it gives a NATS-only client discovery (`$SRV.PING|INFO|STATS.aetiomed`), per-endpoint
+  stats, and a standard error mechanism (`msg.respondError(500, message)`) for free — close to the
+  literal definition of "a NATS-only client has every feature" — at the cost of one small
+  dependency from the same `@nats-io/*` org already in `package.json`. The service is named
+  `aetiomed`, versioned from the repo's own `package.json` (`version` field, read at runtime
+  relative to `import.meta.url`, three directories below the repo root in both `src/` and
+  `dist/`, and copied into the `Dockerfile`'s `runner` stage for this; falls back to `"0.0.0"`
+  if unreadable). Every endpoint replies `JSON.stringify(value ?? null)`
+  on success; the framework's default queue group is used (every replica answers reads
+  identically). Subject constants live in `subjects.ts` alongside the others
+  (`CATALOG_DIAGNOSIS_SUBJECT`, `CATALOG_PROCEDURES_SUBJECT`, `META_FEATURES_SUBJECT`,
+  `META_ALLOWED_LLMS_SUBJECT`, `META_GRAPH_SUBJECT`).
+- **Shared read model** (`src/core/readModel.ts`'s `createReadModel(graph, features)`) is what
+  makes "the NATS endpoint returns the same payload as its REST counterpart" true **by
+  construction**: one object with `diagnoses()`, `procedures()`, `features()`, `allowedLlms()`
+  and `graph()`, constructed once in `app.ts` and handed to both `startRestServer` (as
+  `createRestApp`'s `readModel` option) and `startNatsTransport`. REST's routers and the meta
+  service both call the same five functions rather than each reimplementing the read against
+  `GraphAppContext`.
 
 ### Data Files
 

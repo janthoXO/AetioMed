@@ -11,6 +11,7 @@ import createGraphRouter from "./routes/graph.router.js";
 import type { GraphAppContext } from "../../core/graph/appContext.js";
 import type { CaseGenerationService } from "../../core/caseGenerationService.js";
 import type { JobEventChannel } from "../../core/jobEvents/index.js";
+import type { ReadModel } from "../../core/readModel.js";
 
 const RestEnvSchema = z
   .object({
@@ -26,6 +27,7 @@ export interface RestAppOptions {
   graph: GraphAppContext;
   service: CaseGenerationService;
   jobEvents: JobEventChannel;
+  readModel: ReadModel;
   features: Set<string>;
   /** Override the POST stream's heartbeat interval — tests only. */
   heartbeatMs?: number;
@@ -36,7 +38,7 @@ export interface RestAppOptions {
  * {@link startRestServer} so tests can drive the real route table.
  */
 export function createRestApp(opts: RestAppOptions): express.Express {
-  const { graph, service, jobEvents, features } = opts;
+  const { graph, service, jobEvents, readModel, features } = opts;
 
   const app = express();
   app.use(express.json());
@@ -50,7 +52,7 @@ export function createRestApp(opts: RestAppOptions): express.Express {
   apiRouter.get("/health", (_req, res) =>
     res.json({ status: "ok", timestamp: new Date().toISOString() })
   );
-  apiRouter.get("/features", (_req, res) => res.json([...features]));
+  apiRouter.get("/features", (_req, res) => res.json(readModel.features()));
   app.use("/api", apiRouter);
 
   apiRouter.use(
@@ -62,11 +64,11 @@ export function createRestApp(opts: RestAppOptions): express.Express {
   // Labels and the topology they are keyed against are always on (#140):
   // they are a product feature of the streaming API, not telemetry.
   apiRouter.use("/cases", createLabelsRouter(jobEvents));
-  apiRouter.use("/", createGraphRouter(graph.caseGraph));
-  apiRouter.use("/diagnosis", createDiagnosisRouter(graph));
-  apiRouter.use("/procedures", createProceduresRouter(graph));
+  apiRouter.use("/", createGraphRouter(readModel));
+  apiRouter.use("/diagnosis", createDiagnosisRouter(readModel));
+  apiRouter.use("/procedures", createProceduresRouter(readModel));
   apiRouter.get("/allowedLlms", (_req, res) =>
-    res.json(graph.config.allowedLlms || [])
+    res.json(readModel.allowedLlms())
   );
 
   return app;

@@ -133,6 +133,7 @@ src/
 │   ├── event-bus.ts          typed pub/sub; modules augment EventMap
 │   ├── caseGenerationService.ts  the seam both transports call
 │   ├── jobEvents/            core-owned per-job event channel (accepted/label/complete)
+│   ├── readModel.ts          shared read-only accessors both transports serve identically
 │   ├── languageDetection/    the request-language resolution ladder
 │   └── graph/                the case-generation pipeline
 │       ├── runtime.ts        GraphRuntime — the port bundle (llm, catalogs, log, clock)
@@ -151,7 +152,8 @@ src/
 │       └── errors/
 ├── transports/
 │   ├── rest/                 Express server and routers, incl. routes/labels.router.ts (SSE) and routes/graph.router.ts
-│   └── nats/                 JetStream consumer and publisher
+│   └── nats/                 JetStream consumer/publisher, plus the progress publisher and the
+│                              request/reply meta service (both #144, NATS parity)
 └── observability/
     ├── otel.ts               the OTel span channel
     └── tracePayload.ts       output-size cap for a node's captured output (#141)
@@ -301,6 +303,41 @@ instead), naking only when publishing itself fails.
 **Upgrading an existing deployment:** the pre-#142 `cases` stream (`cases.>`, workqueue) is
 incompatible with the new layout and is not migrated automatically — startup fails loudly naming
 it. Delete it manually (`nats stream rm cases`) before starting this version.
+
+### NATS parity: progress and request/reply reads (#144)
+
+Every REST read has a NATS counterpart, so a NATS-only client has the same features as a
+REST-only one (delivery guarantees are the only sanctioned difference — see
+`docs/issues/17-transport-parity.md` §D2):
+
+| REST                          | NATS subject                                         | Kind                          |
+| ----------------------------- | ---------------------------------------------------- | ----------------------------- |
+| `event: label` (SSE, per job) | `cases.progress.<jobId>.<accepted\|label\|complete>` | core NATS, fan-out, ephemeral |
+| `GET /api/diagnosis`          | `catalog.diagnosis`                                  | core NATS, request/reply      |
+| `GET /api/procedures`         | `catalog.procedures`                                 | core NATS, request/reply      |
+| `GET /api/features`           | `meta.features`                                      | core NATS, request/reply      |
+| `GET /api/allowedLlms`        | `meta.allowedLlms`                                   | core NATS, request/reply      |
+| `GET /api/graph`              | `meta.graph`                                         | core NATS, request/reply      |
+
+**Progress is core NATS, never JetStream** (`progressPublisher.ts`): labels are high-frequency
+and worthless once the job ends, so persisting them would cost a stream write per node event for
+data with a useful life of milliseconds. `startProgressPublisher` forwards every event on the
+core-owned per-job channel (`src/core/jobEvents/`) onto its subject unconditionally — publishing
+to a subject nobody has subscribed to is essentially free on core NATS, so there's no
+subscriber check.
+
+**The request/reply endpoints use `@nats-io/services`** (the NATS "micro" framework,
+`metaService.ts`), registered as one service named `aetiomed` (version = `package.json`'s
+`version`). This was chosen over five bare `nc.subscribe` handlers because it gives a NATS-only
+client discovery (`$SRV.PING|INFO|STATS.aetiomed`), per-endpoint stats, and a standard error
+mechanism (`msg.respondError`) for free — close to the literal definition of "a NATS-only client
+has every feature" — at the cost of one small dependency from the same `@nats-io/*` org already
+in use.
+
+**Both REST and NATS answer from the same `ReadModel`** (`src/core/readModel.ts`), constructed
+once in `app.ts` and handed to both transports — so "the NATS endpoint returns the same payload
+as its REST counterpart" is true by construction rather than by keeping two implementations in
+sync.
 
 ## Testing & Verification
 

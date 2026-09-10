@@ -29,6 +29,16 @@ export const progressSubject = (jobId: string, type: JobEventType) =>
  */
 export const cancelSubject = (jobId: string) => `cases.cancel.${jobId}`;
 
+/**
+ * Core NATS request/reply, the `@nats-io/services` meta service (#144). One
+ * subject per REST read-only counterpart — see `metaService.ts`.
+ */
+export const CATALOG_DIAGNOSIS_SUBJECT = "catalog.diagnosis";
+export const CATALOG_PROCEDURES_SUBJECT = "catalog.procedures";
+export const META_FEATURES_SUBJECT = "meta.features";
+export const META_ALLOWED_LLMS_SUBJECT = "meta.allowedLlms";
+export const META_GRAPH_SUBJECT = "meta.graph";
+
 export const RESULT_MAX_AGE_MS = 60 * 60 * 1000;
 
 const nanos = (ms: number) => ms * 1_000_000;

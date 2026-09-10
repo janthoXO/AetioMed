@@ -9,6 +9,7 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createRestApp } from "../index.js";
+import { createReadModel } from "@/core/readModel.js";
 import { EventBus } from "@/core/event-bus.js";
 import {
   createJobEventChannel,
@@ -173,6 +174,7 @@ async function startApp(
     service,
     jobEvents,
     features: new Set(["REST"]),
+    readModel: createReadModel(graph, new Set(["REST"])),
     heartbeatMs: 40,
   });
   const server = app.listen(0, "127.0.0.1");

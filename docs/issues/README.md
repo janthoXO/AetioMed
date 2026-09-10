@@ -25,6 +25,10 @@ Each issue is written to be handed to a coding agent together with **`docs/archi
 | 14  | [Medical basis registry](14-medical-basis-registry.md)                             | 04             | no                               |
 | 15  | [Node-bound tracing and labels](15-node-bound-tracing-otel.md)                     | 05, 08         | yes — new capability             |
 | 16  | [Localized candidate grammars](16-localized-candidate-grammars.md)                 | 09             | yes — new capability             |
+| 17  | [Transport parity](17-transport-parity.md)                                         | 15             | yes — breaking wire changes      |
+
+Issue 17 ships as a stacked PR chain: #139 → #140 → #141 → #142 → #143 → #144 → #145. See that
+document's §"Implementation split".
 
 **Hard ordering constraints:** 01–03 before everything; 04 before 06–09; 11 before 12 and 13.
 
@@ -41,6 +45,8 @@ Each issue is written to be handed to a coding agent together with **`docs/archi
 | F07 | [Licence and data redistribution](F07-licence-and-data.md)                           |
 | F08 | [Case schema versioning](F08-case-schema-versioning.md)                              |
 | F09 | [Checkpointing and crash resumption](F09-checkpointing.md)                           |
+| F10 | Replay buffer for the label stream — #146 (see `17-transport-parity.md`)             |
+| F11 | OTel collector deployment profile — #147 (see `17-transport-parity.md`)              |
 
 ## Conventions for issue authors
 

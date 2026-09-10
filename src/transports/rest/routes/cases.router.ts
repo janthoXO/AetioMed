@@ -51,7 +51,7 @@ export default function createCasesRouter(
     });
 
   /**
-   * `POST /api/cases` — the synchronous transport (design doc §D1, §D3).
+   * `POST /api/cases` — the synchronous transport (#143).
    *
    * - `Accept: application/json` (or no preference): blocks and returns the
    *   case, exactly as before.

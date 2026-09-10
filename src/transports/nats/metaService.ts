@@ -3,7 +3,7 @@
 // `/allowedLlms`, `/graph`), built on `@nats-io/services`, the NATS "micro"
 // framework.
 //
-// Decision (design doc §D2, docs/issues/17-transport-parity.md): use `@nats-io/services` rather than five bare `nc.subscribe`
+// Decision (#144): use `@nats-io/services` rather than five bare `nc.subscribe`
 // request/reply handlers. It gives a NATS-only client discovery
 // (`$SRV.PING|INFO|STATS`), per-endpoint stats, and an error-header
 // mechanism (`msg.respondError`) for free — close to the literal definition

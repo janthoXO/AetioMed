@@ -9,8 +9,7 @@ import { progressSubject } from "./subjects.js";
  *
  * Labels are high-frequency and worthless after the job ends; a stream
  * write per node event for data with a useful life of milliseconds is
- * exactly the overhead the design doc (docs/issues/17-transport-parity.md
- * §D6) rejects. Publishing to a subject nobody has subscribed to is
+ * exactly the overhead #142's stream layout rejects. Publishing to a subject nobody has subscribed to is
  * essentially free on core NATS, so this deliberately does not check for a
  * subscriber first.
  *

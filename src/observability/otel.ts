@@ -3,8 +3,7 @@
 // mechanism as the end-user labels channel (`core/jobEvents/`, #139/#140):
 // labels carry a localized phrase and no payload and are always on; OTel
 // carries node output — as a correlated **log record**, never a span
-// attribute (docs/issues/17-transport-parity.md §"Why the node output is a
-// log record") — and is gated by its own standard `OTEL_SDK_DISABLED`/
+// attribute — and is gated by its own standard `OTEL_SDK_DISABLED`/
 // exporter env vars, never by a `FEATURES` flag — a deployer can run either
 // channel independently of the other.
 //
@@ -42,8 +41,7 @@ const LOGGER_NAME = "aetiomed";
 
 /**
  * Which exporter/processor pair to build, decided purely from env — no new
- * flag (issue #141 / docs/issues/17-transport-parity.md §"Exporter
- * selection"):
+ * flag (#141):
  *
  * - `OTEL_SDK_DISABLED === "true"` (only that literal) → `"none"`.
  * - Any OTLP endpoint var set (general or signal-specific) → `"otlp"`.
@@ -242,8 +240,8 @@ async function ensureInitialized(mode: ExporterMode): Promise<void> {
       exporter: new OTLPLogExporter(),
     });
   } else {
-    // "console" — the zero-infrastructure development path (see
-    // docs/issues/17-transport-parity.md §"Exporters and processors").
+    // "console" — the zero-infrastructure development path: no collector,
+    // no backend, no batching delay.
     spanProcessor = new SimpleSpanProcessor(new ConsoleSpanExporter());
     logProcessor = new SimpleLogRecordProcessor({
       exporter: new ConsoleLogRecordExporter(),

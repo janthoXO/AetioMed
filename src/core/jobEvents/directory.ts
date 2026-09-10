@@ -77,7 +77,7 @@ export function createBufferedWatch(stop: () => void): {
 /**
  * The single-process directory: the job must be running in this process.
  * With `NATS` disabled this is the only option, and a single replica is a
- * documented deployment constraint (design doc §D5).
+ * documented deployment constraint (#145).
  */
 export function createLocalJobDirectory(
   channel: JobEventChannel,

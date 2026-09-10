@@ -155,3 +155,11 @@ data/cache/
 
 # macOS
 .DS_Store
+
+# Only generated graph diagrams and the Bruno API collection are tracked
+# under docs/. Internal documentation — design docs, issue write-ups,
+# reviews — lives in docs/design/ and is never committed: the GitHub issues
+# are the public record.
+docs/*
+!docs/graphs/
+!docs/bruno/

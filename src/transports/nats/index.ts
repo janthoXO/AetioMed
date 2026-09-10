@@ -7,12 +7,15 @@ import {
 } from "./client.js";
 import { runRequestWorker } from "./cases.handler.js";
 import { startJobResponders } from "./jobResponders.js";
+import { startProgressPublisher } from "./progressPublisher.js";
+import { startMetaService } from "./metaService.js";
 import { ensureStreams } from "./streams.js";
 import { REQUESTS_STREAM, REQUEST_CONSUMER } from "./subjects.js";
 import { ConfigSchema } from "./config.js";
 import type { GraphAppContext } from "../../core/graph/appContext.js";
 import type { CaseGenerationService } from "../../core/caseGenerationService.js";
 import type { JobEventChannel } from "../../core/jobEvents/index.js";
+import type { ReadModel } from "../../core/readModel.js";
 
 export interface NatsTransportHandle {
   close(): Promise<void>;
@@ -33,13 +36,18 @@ export async function startNatsTransport(opts: {
   graph: GraphAppContext;
   service: CaseGenerationService;
   jobEvents: JobEventChannel;
+  readModel: ReadModel;
 }): Promise<NatsTransportHandle> {
-  const { graph, service, jobEvents } = opts;
+  const { graph, service, jobEvents, readModel } = opts;
   const config = ConfigSchema.parse(process.env);
   let stopResponders: (() => void) | undefined;
+  let stopProgressPublisher: (() => void) | undefined;
+  let stopMetaService: (() => Promise<void>) | undefined;
 
   const close = async () => {
     stopResponders?.();
+    stopProgressPublisher?.();
+    await stopMetaService?.();
     await closeNats();
   };
 
@@ -50,6 +58,8 @@ export async function startNatsTransport(opts: {
 
     await ensureStreams(await jetstreamManager(nc));
     stopResponders = startJobResponders({ nc, jobEvents, service });
+    stopProgressPublisher = startProgressPublisher({ nc, jobEvents });
+    stopMetaService = await startMetaService({ nc, readModel });
 
     const consumer = await getJetStreamClient().consumers.get(
       REQUESTS_STREAM.name,

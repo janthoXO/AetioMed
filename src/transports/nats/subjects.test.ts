@@ -9,6 +9,11 @@ import {
   REQUESTS_STREAM,
   RESULTS_STREAM,
   RESULT_MAX_AGE_MS,
+  CATALOG_DIAGNOSIS_SUBJECT,
+  CATALOG_PROCEDURES_SUBJECT,
+  META_FEATURES_SUBJECT,
+  META_ALLOWED_LLMS_SUBJECT,
+  META_GRAPH_SUBJECT,
 } from "./subjects.js";
 
 describe("subjectMatches", () => {
@@ -46,11 +51,11 @@ describe("no stream captures another channel's subjects (#142)", () => {
     progressAccepted: progressSubject("j1", "accepted"),
     progressComplete: progressSubject("j1", "complete"),
     cancel: cancelSubject("j1"),
-    catalogDiagnosis: "catalog.diagnosis",
-    catalogProcedures: "catalog.procedures",
-    metaFeatures: "meta.features",
-    metaAllowedLlms: "meta.allowedLlms",
-    metaGraph: "meta.graph",
+    catalogDiagnosis: CATALOG_DIAGNOSIS_SUBJECT,
+    catalogProcedures: CATALOG_PROCEDURES_SUBJECT,
+    metaFeatures: META_FEATURES_SUBJECT,
+    metaAllowedLlms: META_ALLOWED_LLMS_SUBJECT,
+    metaGraph: META_GRAPH_SUBJECT,
   };
 
   function matchingStreams(subject: string): string[] {

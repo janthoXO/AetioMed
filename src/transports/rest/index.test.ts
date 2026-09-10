@@ -8,6 +8,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createRestApp } from "./index.js";
 import { createJobEventChannel } from "@/core/jobEvents/index.js";
+import { createReadModel } from "@/core/readModel.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { CaseGenerationService } from "@/core/caseGenerationService.js";
 import type { CompiledCaseGraph } from "@/core/graph/02graphs/caseGraph.js";
@@ -65,14 +66,17 @@ describe("createRestApp (#140) — app-level route table", () => {
   });
 
   async function startApp(): Promise<{ server: Server; port: number }> {
+    const graph = fakeGraph();
+    const features = new Set(["REST"]);
     const app = createRestApp({
-      graph: fakeGraph(),
+      graph,
       service: {
         generate: vi.fn(),
         cancel: vi.fn(),
       } as unknown as CaseGenerationService,
       jobEvents: createJobEventChannel(),
-      features: new Set(["REST"]),
+      readModel: createReadModel(graph, features),
+      features,
     });
     const server = app.listen(0, "127.0.0.1");
     await new Promise<void>((resolve) => server.once("listening", resolve));

@@ -9,8 +9,7 @@ import { createCaseGenerationService } from "./caseGenerationService.js";
 import { createJobEventChannel, wireLabels } from "./jobEvents/index.js";
 import { startRestServer } from "../transports/rest/index.js";
 import { startNatsTransport } from "../transports/nats/index.js";
-import { wireTracing } from "../tracing/index.js";
-import { createOtelNodeTracer } from "../tracing/otel.js";
+import { createOtelNodeTracer } from "../observability/otel.js";
 import { runClosers, type Closer } from "../shutdown.js";
 
 const AppEnvSchema = z
@@ -28,7 +27,7 @@ const AppEnvSchema = z
 /**
  * The composition root: everything is constructed here, explicitly and in
  * order. `FEATURES` is a comma-separated set of flags — `REST`, `NATS`,
- * `TRACING`, `DEBUG`, `ALLOW_LLMS` — each gating one construction below.
+ * `DEBUG`, `ALLOW_LLMS` — each gating one construction below.
  *
  * It also owns shutdown (issue 18): `shutdown()` closes everything this
  * function started, in the **reverse** of construction order — REST first
@@ -52,10 +51,8 @@ export async function createApp(): Promise<{
   const graphConfig = GraphConfigSchema.parse(process.env);
   const bus = new EventBus();
   // Issue 15 §1.1/§5 — the OTel channel is independent of `FEATURES`:
-  // always constructed here, gated only by the standard
-  // `OTEL_SDK_DISABLED`, never by `TRACING` (that flag stays scoped to the
-  // SSE trace channel below). See `tracing/index.ts`'s `wireTracing` doc
-  // comment for why the two are deliberately separate.
+  // always constructed here, gated only by the standard OTel env vars. It is
+  // the operator's channel; labels (below) are the end user's.
   const tracer = await createOtelNodeTracer();
   const graph = initGraph({
     bus,
@@ -67,15 +64,12 @@ export async function createApp(): Promise<{
   });
 
   // The per-job event channel is core-owned (#139): the service opens and
-  // closes each job on it, and every transport subscribes to it.
+  // closes each job on it, and every transport subscribes to it. Labels are
+  // always on (#140) — a product feature of the streaming API.
   const jobEvents = createJobEventChannel();
   wireLabels(bus, jobEvents, graph.runtime.catalogs.labels);
 
   const service = createCaseGenerationService(graph, bus, jobEvents);
-
-  if (features.has("TRACING")) {
-    wireTracing(bus, jobEvents, graph.config.MAX_CONTENT_PART_BYTES);
-  }
 
   const closers: Closer[] = [];
 

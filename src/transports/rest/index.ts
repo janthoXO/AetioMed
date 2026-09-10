@@ -6,8 +6,8 @@ import { z } from "zod";
 import createCasesRouter from "./routes/cases.router.js";
 import createDiagnosisRouter from "./routes/diagnosis.router.js";
 import createProceduresRouter from "./routes/procedures.router.js";
-import createTracesRouter from "./routes/traces.router.js";
-import createStructureRouter from "../../tracing/structure/router.js";
+import createLabelsRouter from "./routes/labels.router.js";
+import createGraphRouter from "./routes/graph.router.js";
 import type { GraphAppContext } from "../../core/graph/appContext.js";
 import type { CaseGenerationService } from "../../core/caseGenerationService.js";
 import type { JobEventChannel } from "../../core/jobEvents/index.js";
@@ -22,23 +22,19 @@ export interface RestTransportHandle {
   close(): Promise<void>;
 }
 
-/**
- * Start the REST transport: an Express server exposing `/api/*`. Constructed
- * explicitly from resolved config by the composition root (`app.ts`) — no
- * loader, no topological sort, no cascade-skip. Called when the `REST` flag
- * is set.
- *
- * Returns a closer rather than registering its own signal handlers — see
- * `src/shutdown.ts` for why shutdown is owned by the composition root.
- */
-export async function startRestServer(opts: {
+export interface RestAppOptions {
   graph: GraphAppContext;
   service: CaseGenerationService;
   jobEvents: JobEventChannel;
   features: Set<string>;
-}): Promise<RestTransportHandle> {
+}
+
+/**
+ * Build the Express app exposing `/api/*`, without listening — split from
+ * {@link startRestServer} so tests can drive the real route table.
+ */
+export function createRestApp(opts: RestAppOptions): express.Express {
   const { graph, service, jobEvents, features } = opts;
-  const { port } = RestEnvSchema.parse(process.env);
 
   const app = express();
   app.use(express.json());
@@ -56,18 +52,32 @@ export async function startRestServer(opts: {
   app.use("/api", apiRouter);
 
   apiRouter.use("/cases", createCasesRouter(graph, service));
+  // Labels and the topology they are keyed against are always on (#140):
+  // they are a product feature of the streaming API, not telemetry.
+  apiRouter.use("/cases", createLabelsRouter(jobEvents));
+  apiRouter.use("/", createGraphRouter(graph.caseGraph));
   apiRouter.use("/diagnosis", createDiagnosisRouter(graph));
   apiRouter.use("/procedures", createProceduresRouter(graph));
   apiRouter.get("/allowedLlms", (_req, res) =>
     res.json(graph.config.allowedLlms || [])
   );
 
-  // The live per-job stream and the compiled graph structure: only
-  // meaningful once a client can see the pipeline it is driving.
-  if (features.has("TRACING")) {
-    apiRouter.use("/", createTracesRouter(jobEvents));
-    apiRouter.use("/", createStructureRouter(graph.caseGraph));
-  }
+  return app;
+}
+
+/**
+ * Start the REST transport. Constructed explicitly from resolved config by
+ * the composition root (`app.ts`) — no loader, no topological sort, no
+ * cascade-skip. Called when the `REST` flag is set.
+ *
+ * Returns a closer rather than registering its own signal handlers — see
+ * `src/shutdown.ts` for why shutdown is owned by the composition root.
+ */
+export async function startRestServer(
+  opts: RestAppOptions
+): Promise<RestTransportHandle> {
+  const { port } = RestEnvSchema.parse(process.env);
+  const app = createRestApp(opts);
 
   const server = await new Promise<Server>((resolve) => {
     const s = app.listen(port, () => {
@@ -79,9 +89,9 @@ export async function startRestServer(opts: {
   return {
     async close() {
       // `server.close()` alone stops accepting new connections and then
-      // waits for existing ones to end — but under `FEATURES=TRACING` the
-      // SSE stream (`GET /api/traces/:jobId/stream`) holds connections open
-      // indefinitely by design, so that wait would never finish. Destroy
+      // waits for existing ones to end — but an SSE label stream
+      // (`GET /api/cases/:jobId/labels`) holds its connection open by
+      // design, so that wait could outlast the shutdown deadline. Destroy
       // every open socket first so close() can actually resolve.
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => {

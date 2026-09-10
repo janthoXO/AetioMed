@@ -5,10 +5,7 @@
 // freshly built variant's `getNodeLabels()` already *is* that variant's
 // complete traceable node-id set — no execution required to prove coverage.
 import { describe, expect, it } from "vitest";
-import {
-  assembleCaseGraph,
-  type AssemblyDeps,
-} from "../../core/graph/02graphs/caseGraph.js";
+import { assembleCaseGraph, type AssemblyDeps } from "./02graphs/caseGraph.js";
 import { EventBus } from "@/core/event-bus.js";
 import {
   createTraceNode,
@@ -26,7 +23,7 @@ import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
 import z from "zod";
 import type { ModalityProvider } from "@/core/graph/modality/ports.js";
 import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
-import { buildGraphStructure } from "./router.js";
+import { buildGraphStructure } from "./structure.js";
 
 /** The one production-shaped provider: batch-in, batch-out, `{instruction}` input. */
 function fakeTextProvider(): ModalityProvider<unknown> {

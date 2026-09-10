@@ -27,6 +27,9 @@ import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
 import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.js";
 import { EventBus } from "@/core/event-bus.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
+import { runWithContext } from "@/core/graph/utils/context.js";
+import { createJobEventChannel } from "@/core/jobEvents/channel.js";
+import { wireLabels, type LabelEvent } from "@/core/jobEvents/labels.js";
 
 // ─── Fakes ──────────────────────────────────────────────────────────────────
 
@@ -242,6 +245,86 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
     // instructions arrive in a single batch, not one call each.
     expect(calls).toHaveLength(1);
     expect(calls[0]).toHaveLength(2);
+  });
+
+  it("emits a paired started/terminal label for every node, blinded_step revisited 3x, result_step 2x (#140)", async () => {
+    const llm = makeQueuedLlmPort({
+      generator: [
+        planResponse("CBC", "obligatory", "WBC 11k"),
+        planResponse("CT chest", "obligatory", "Infiltrate"),
+      ],
+      judge: [JSON.stringify({ matches: true })],
+    });
+    const runtime = buildFakeRuntime(llm);
+    const { provider } = makeRecordingTextProvider();
+
+    const { strategy } = makeScriptedStrategy({
+      nextSteps: [
+        { action: "order", procedures: [{ name: "CBC" }] },
+        { action: "order", procedures: [{ name: "CT chest" }] },
+        { action: "diagnose", diagnosisName: "Pneumonia" },
+      ],
+    });
+
+    const bus = new EventBus();
+    const channel = createJobEventChannel();
+    wireLabels(bus, channel, new InMemoryLabelCatalog());
+    const jobId = "job-solver-loop";
+    channel.open(jobId);
+    const labels: LabelEvent[] = [];
+    channel.subscribe(jobId, (e) => {
+      if (e.type === "label") labels.push(e.data);
+    });
+
+    const graph = buildProcedureGraph(
+      runtime,
+      strategy,
+      [provider],
+      createTraceNode(bus)
+    );
+
+    await runWithContext(
+      () =>
+        graph.invoke({
+          diagnosis: { name: "Pneumonia" },
+          case: {},
+        }),
+      jobId
+    );
+
+    const byNode = new Map<string, LabelEvent[]>();
+    for (const label of labels) {
+      const list = byNode.get(label.nodeId) ?? [];
+      list.push(label);
+      byNode.set(label.nodeId, list);
+    }
+
+    for (const [, nodeLabels] of byNode) {
+      const started = nodeLabels.filter((l) => l.status === "started").length;
+      const completed = nodeLabels.filter(
+        (l) => l.status === "completed"
+      ).length;
+      const failed = nodeLabels.filter((l) => l.status === "failed").length;
+      expect(started).toBeGreaterThanOrEqual(1);
+      expect(started).toBe(completed + failed);
+    }
+
+    expect(
+      [...byNode.entries()]
+        .find(([nodeId]) => nodeId.endsWith("blinded_step"))?.[1]
+        .filter((l) => l.status === "started")
+    ).toHaveLength(3);
+    expect(
+      [...byNode.entries()]
+        .find(([nodeId]) => nodeId.endsWith("result_step"))?.[1]
+        .filter((l) => l.status === "started")
+    ).toHaveLength(2);
+
+    for (const label of labels) {
+      expect(Object.keys(label).sort()).toEqual(
+        ["jobId", "label", "nodeId", "status", "timestamp"].sort()
+      );
+    }
   });
 
   it("iteration-cap exhaustion routes to bridge without ever calling nextStep", async () => {

@@ -309,13 +309,13 @@ export function buildCaseGraph(
   repos: CaseGraphRepos,
   medicalBasisRegistry: MedicalBasisProvider[],
   modalityRegistries: ModalityRegistries,
-  // The OTel operator channel's port (issue 15 §5) — optional and
+  // The OTel operator channel's port (issue #141) — optional and
   // defaulted to the no-op so every existing caller (`exportGraphs.ts`,
   // every test building a graph directly) is unaffected. The composition
   // root (`app.ts`) is the only real caller that passes a constructed one,
-  // via `tracing/otel.ts`'s `createOtelNodeTracer()`, independent of
-  // `FEATURES=TRACING` — see `tracing/index.ts`'s doc comment on
-  // `wireTracing` for why the two channels are separate.
+  // via `observability/otel.ts`'s `createOtelNodeTracer()`, gated only by
+  // the standard `OTEL_SDK_DISABLED` — a separate channel from labels
+  // (`core/jobEvents/`, #140), which are always on.
   tracer: NodeTracer = noopNodeTracer
 ) {
   const deps: AssemblyDeps = {

@@ -14,7 +14,7 @@ function fakeTracer() {
   const spans: {
     nodeId: string;
     jobId?: string;
-    outputBytes?: number;
+    output?: unknown;
     llm?: { provider: string; model: string };
     failed?: string;
     ended: boolean;
@@ -26,8 +26,8 @@ function fakeTracer() {
       if (attrs.jobId !== undefined) record.jobId = attrs.jobId;
       spans.push(record);
       const span: NodeSpan = {
-        setOutputBytes(bytes) {
-          record.outputBytes = bytes;
+        setOutput(output) {
+          record.output = output;
         },
         setLlm(provider, model) {
           record.llm = { provider, model };
@@ -122,7 +122,7 @@ describe("traceNode — terminal-event pairing (issue 15 §2)", () => {
 });
 
 describe("traceNode — OTel span lifecycle (issue 15 §5)", () => {
-  it("a successful node opens and closes exactly one span, carrying jobId and output size", async () => {
+  it("a successful node opens and closes exactly one span, carrying jobId and the sanitized output", async () => {
     const bus = new EventBus();
     const { tracer, spans } = fakeTracer();
     const traceNode = createTraceNode(bus, tracer);
@@ -139,7 +139,7 @@ describe("traceNode — OTel span lifecycle (issue 15 §5)", () => {
     expect(spans[0].jobId).toBe("job-otel-1");
     expect(spans[0].ended).toBe(true);
     expect(spans[0].failed).toBeUndefined();
-    expect(spans[0].outputBytes).toBeGreaterThan(0);
+    expect(spans[0].output).toEqual({ value: "x".repeat(100) });
   });
 
   it("a failing node ends its span via fail(), and the error still propagates", async () => {

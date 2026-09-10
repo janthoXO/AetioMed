@@ -116,18 +116,48 @@ They differ in audience, content, language and gate:
   (`labels.ts`'s `wireLabels`), served over SSE (`GET /api/cases/:jobId/labels`,
   `transports/rest/routes/labels.router.ts`) and, per #144, NATS.
 - **OTel spans** — operator, cross-request analysis. One span per node, started and finished,
-  carrying node output (as a log record — issue #141, not yet wired) plus span attributes;
-  OTLP-exported only, never SSE/NATS. Gated by the standard
-  `OTEL_SDK_DISABLED`/`OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_SERVICE_NAME` — its own axis,
-  independent of any `FEATURES` flag. `src/observability/otel.ts` is the one place
-  `@opentelemetry/*` is imported and these env vars are read; core only knows the
+  carrying **attributes only** — `aetiomed.node.id`, `aetiomed.job_id`, `aetiomed.node.output_bytes`
+  (a size, never the payload), `aetiomed.llm.provider`/`model`, status — never node output
+  itself (issue #141, `docs/issues/17-transport-parity.md` §"OpenTelemetry"). OTLP-exported
+  only, never SSE/NATS. Gated by the standard
+  `OTEL_SDK_DISABLED`/`OTEL_EXPORTER_OTLP_ENDPOINT`(`_TRACES_ENDPOINT`/`_LOGS_ENDPOINT`)/`OTEL_SERVICE_NAME`
+  — its own axis, independent of any `FEATURES` flag except `DEBUG`, which only picks the
+  exporter (below), never gates the channel itself. `src/observability/otel.ts` is the one
+  place `@opentelemetry/*` is imported and these env vars are read; core only knows the
   `NodeTracer`/`NodeSpan` port (`core/graph/utils/nodeWrapper.ts`) — the same
   port-owned-by-core/adapter-lives-outside inversion `core/jobEvents/` uses for labels.
-  `src/observability/tracePayload.ts` holds the `MAX_TRACE_PAYLOAD_BYTES` cap on a node's
-  captured output — over the cap it becomes `{ truncated: true, bytes, preview }` — for #141
-  to use once node output is actually attached to a span; `ContentPart[]` fields are always
-  projected through `textOf` first (`core/graph/utils/traceSanitize.ts`), so raw bytes never
-  reach either channel.
+- **OTel logs — the node's output** (issue #141). `NodeSpan.setOutput(output)` hands the
+  adapter the node's already-sanitized result (bytes projected to text — `sanitizeForTrace`,
+  `core/graph/utils/traceSanitize.ts`); on `end()`, if an output was set, the adapter emits one
+  correlated **log record** (`Logger.emit`, `@opentelemetry/api-logs`) whose `context` carries
+  the span (`trace.setSpan`), so a backend joins the two by `trace_id`/`span_id` — before
+  ending the span itself. The log's body is `buildTracePayload(output)`'s value as JSON, or
+  `{ truncated: true, bytes, preview }` past `MAX_TRACE_PAYLOAD_BYTES`
+  (`src/observability/tracePayload.ts`); a failed node emits no output log. **Why a log record
+  and not a span attribute:** backends index every span attribute for filtering, so they cap
+  attribute values in the low kilobytes and truncate/drop past it (case outlines are large
+  markdown — that failure is silent), and billing is per-attribute; the logs signal takes a
+  body of arbitrary size and is exactly what a correlated "node output" message is. No span
+  attribute may ever carry output text — `ContentPart[]` fields are always projected through
+  `textOf` first, so raw bytes never reach either signal.
+- **Exporter selection — no dedicated flag** (`selectExporterMode`, `observability/otel.ts`):
+  `OTEL_SDK_DISABLED === "true"` (that literal only) → nothing constructed at all; else any of
+  `OTEL_EXPORTER_OTLP_ENDPOINT`/`_TRACES_ENDPOINT`/`_LOGS_ENDPOINT` set → `BatchSpanProcessor`
+  - `OTLPTraceExporter` and `BatchLogRecordProcessor` + `OTLPLogExporter` (production; needs a
+    collector/backend listening there); else `FEATURES=DEBUG` → `SimpleSpanProcessor` +
+    `ConsoleSpanExporter` and `SimpleLogRecordProcessor` + `ConsoleLogRecordExporter`
+    (zero-infrastructure local dev — JSON to stdout, immediately); else nothing constructed —
+    **behaviour change**: an unset endpoint used to still build a real SDK that tried (and
+    failed) to export to `localhost:4318`. Every SDK package (`sdk-trace-node`, `sdk-trace-base`,
+    `sdk-logs`, both OTLP exporters, `resources`) is reached only through a guarded dynamic
+    `import()`, so "nothing constructed" means the packages are never even loaded; only
+    `@opentelemetry/api`/`api-logs` (pure interfaces and no-op globals) are static imports.
+    `createOtelNodeTracer({ debug })` returns `{ tracer, shutdown }`; `app.ts` registers
+    `shutdown` as a closer, after NATS and before the DB, so batched spans/logs flush once
+    producers have stopped but before the process exits.
+- **Liveness caveat.** A span exports once, on `end()` — there is no "span started" wire
+  event, so nothing appears for a node until it finishes; watching a running generation live
+  is the label channel's job, not OTel's.
 
 Both channels key a node by its **LangGraph node id** (`nodeId`, matching `GET /api/graph`
 below), which is the qualified path LangGraph itself uses for a nested node (e.g.
@@ -665,32 +695,32 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
 
 ## Environment Variables
 
-| Variable                                                   | Default                 | Notes                                                                                                                                                                                            |
-| ---------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PORT`                                                     | `3030`                  | Server port                                                                                                                                                                                      |
-| `FEATURES`                                                 | `""`                    | Comma-separated flags: `REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`                                                                                                                                     |
-| `LLM_PROVIDER`                                             | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                                                  |
-| `LLM_MODEL`                                                | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                                        |
-| `LLM_API_KEY`                                              | —                       | API key for Google/OpenAI                                                                                                                                                                        |
-| `LLM_URL`                                                  | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                                                                             |
-| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`  | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                                                                        |
-| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`      | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                                                                       |
-| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL` | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                  |
-| `TRANSLATION_SANDWICH`                                     | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                            |
-| `PROCEDURE_PRESELECTION`                                   | `false`                 | `true`/`1` selects the `CategoryScopedPick` procedure strategy (splits the blinded procedure step into a category pick then a procedure pick)                                                    |
-| `LANGUAGES`                                                | `English,German`        | Comma-separated deployment language set, trimmed/de-duplicated/order-preserved; must include `English`. Validated at startup and against every request's `language` (see Language section below) |
-| `LANGUAGE_AUTO_DETECT`                                     | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                 |
-| `LANGUAGE_DETECT_LLM_FALLBACK`                             | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                            |
-| `ALLOWED_LLMS`                                             | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                               |
-| `CATALOG_DIR`                                              | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                     |
-| `CACHE_DIR`                                                | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                    |
-| `NATS_URL`                                                 | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                             |
-| `NATS_USER` / `NATS_PASSWORD`                              | `nats` / `nats`         |                                                                                                                                                                                                  |
-| `SYMPTOM_CACHE_TTL_DAYS`                                   | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                                                                   |
-| `MAX_CONTENT_PART_BYTES`                                   | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
-| `OTEL_SDK_DISABLED`                                        | unset (enabled)         | Standard OTel var. `"true"` skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES`                     |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`                              | —                       | Standard OTel var, read by the OTLP exporter itself — no plumbing in this repo                                                                                                                   |
-| `OTEL_SERVICE_NAME`                                        | —                       | Standard OTel var, read via `envDetector` (`observability/otel.ts`)                                                                                                                              |
+| Variable                                                              | Default                 | Notes                                                                                                                                                                                            |
+| --------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PORT`                                                                | `3030`                  | Server port                                                                                                                                                                                      |
+| `FEATURES`                                                            | `""`                    | Comma-separated flags: `REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`                                                                                                                                     |
+| `LLM_PROVIDER`                                                        | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                                                  |
+| `LLM_MODEL`                                                           | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                                        |
+| `LLM_API_KEY`                                                         | —                       | API key for Google/OpenAI                                                                                                                                                                        |
+| `LLM_URL`                                                             | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                                                                             |
+| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`             | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                                                                        |
+| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`                 | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                                                                       |
+| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`            | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                  |
+| `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                            |
+| `PROCEDURE_PRESELECTION`                                              | `false`                 | `true`/`1` selects the `CategoryScopedPick` procedure strategy (splits the blinded procedure step into a category pick then a procedure pick)                                                    |
+| `LANGUAGES`                                                           | `English,German`        | Comma-separated deployment language set, trimmed/de-duplicated/order-preserved; must include `English`. Validated at startup and against every request's `language` (see Language section below) |
+| `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                 |
+| `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                            |
+| `ALLOWED_LLMS`                                                        | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                               |
+| `CATALOG_DIR`                                                         | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                     |
+| `CACHE_DIR`                                                           | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                    |
+| `NATS_URL`                                                            | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                             |
+| `NATS_USER` / `NATS_PASSWORD`                                         | `nats` / `nats`         |                                                                                                                                                                                                  |
+| `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                                                                   |
+| `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
+| `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var. `"true"` (that literal only) skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES` |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | —                       | Standard OTel vars, read by the OTLP trace/log exporters themselves — no plumbing in this repo; any one set selects the `"otlp"` exporter mode (`selectExporterMode`)                            |
+| `OTEL_SERVICE_NAME`                                                   | —                       | Standard OTel var, read via `envDetector` (`observability/otel.ts`)                                                                                                                              |
 
 Note: the `REST` flag is required for the HTTP API to load — include it in `FEATURES` when running the server.
 

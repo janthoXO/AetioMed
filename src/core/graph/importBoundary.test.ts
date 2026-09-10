@@ -61,4 +61,30 @@ describe("import boundary (#139) — src/core/graph/ never imports tracing/trans
 
     expect(offenses).toEqual([]);
   });
+
+  // #141 — `observability/otel.ts` is the *only* place `@opentelemetry/*`
+  // may be imported. This is a package-shaped boundary, not the
+  // directory-shaped one above, so it is scanned separately and over all of
+  // `src/core/` (not just `src/core/graph/`): `src/core/app.ts` is the
+  // composition root that imports the *adapter* (`observability/otel.ts`)
+  // without ever importing an `@opentelemetry/*` package itself — core only
+  // knows the `NodeTracer`/`NodeSpan` port (`utils/nodeWrapper.ts`).
+  it("no module under src/core/ imports @opentelemetry/*", () => {
+    const CORE_DIR = fileURLToPath(new URL("../", import.meta.url));
+    const files = listTsFiles(CORE_DIR);
+    expect(files.length).toBeGreaterThan(0);
+
+    const OTEL_SPECIFIER = /^@opentelemetry\//;
+    const offenses: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      for (const specifier of specifiersOf(source)) {
+        if (OTEL_SPECIFIER.test(specifier)) {
+          offenses.push(`${file}: ${specifier}`);
+        }
+      }
+    }
+
+    expect(offenses).toEqual([]);
+  });
 });

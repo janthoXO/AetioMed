@@ -16,8 +16,14 @@ import { sanitizeForTrace } from "./traceSanitize.js";
  * node output.
  */
 export interface NodeSpan {
-  /** The node's (sanitized, bytes-projected-to-text) output size. */
-  setOutputBytes(bytes: number): void;
+  /**
+   * The node's output, already sanitized (content-part bytes projected to
+   * text — `sanitizeForTrace`). The adapter records its **size** as a span
+   * attribute and ships the value itself as a correlated log record, never
+   * as a span attribute (docs/issues/17-transport-parity.md §"Why the node
+   * output is a log record").
+   */
+  setOutput(output: unknown): void;
   /**
    * Model/provider used by this node's request, when known — only
    * available today via per-request `llmConfig` (the `ALLOW_LLMS` path);
@@ -37,7 +43,7 @@ export interface NodeTracer {
 }
 
 const noopSpan: NodeSpan = {
-  setOutputBytes() {},
+  setOutput() {},
   setLlm() {},
   fail() {},
   end() {},
@@ -166,18 +172,6 @@ export function createTraceNode(
   return buildTraceNode(bus, tracer, undefined);
 }
 
-/** Best-effort output size for the OTel span attribute — never throws. */
-function outputByteSize(value: unknown): number {
-  try {
-    return Buffer.byteLength(
-      JSON.stringify(sanitizeForTrace(value)) ?? "null",
-      "utf8"
-    );
-  } catch {
-    return 0;
-  }
-}
-
 function buildTraceNode(
   bus: EventBus,
   tracer: NodeTracer,
@@ -227,7 +221,7 @@ function buildTraceNode(
       try {
         const result = await fn(...args);
 
-        span.setOutputBytes(outputByteSize(result));
+        span.setOutput(sanitizeForTrace(result));
         span.end();
 
         bus.emit("Node Completed", {

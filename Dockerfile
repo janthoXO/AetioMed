@@ -1,9 +1,11 @@
 # Stage 1: Build the application
-FROM node:24-slim AS base
+FROM node:26-slim AS base
 
 ENV PNPM_HOME="/pnpm"
 ENV PATH="$PNPM_HOME:$PATH"
-RUN corepack enable
+# Corepack is no longer bundled with Node.js 25+, so pnpm is installed
+# directly. Keep this version in sync with `packageManager` in package.json.
+RUN npm install -g pnpm@11.22.0
 
 WORKDIR /app
 # pnpm-workspace.yaml carries the `allowBuilds` allow-list. Without it pnpm 11
@@ -24,7 +26,7 @@ RUN --mount=type=cache,id=pnpm,target=/pnpm/store pnpm install --frozen-lockfile
 RUN pnpm run build
 
 # Stage 2: Production image using Distroless
-FROM gcr.io/distroless/nodejs24-debian12 AS runner
+FROM gcr.io/distroless/nodejs26-debian13 AS runner
 WORKDIR /app
 
 ENV NODE_ENV=production

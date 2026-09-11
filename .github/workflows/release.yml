@@ -8,6 +8,7 @@ on:
       - main
     paths:
       - "src/**"
+      - ".github/workflows/release.yml"
 
 jobs:
   versioning:

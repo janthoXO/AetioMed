@@ -6,7 +6,7 @@ This is a **backend-only** repository — no frontend lives here.
 
 ## Tech Stack
 
-- **Runtime**: Node.js (>= 22.5, uses the built-in `node:sqlite`)
+- **Runtime**: Node.js (>= 24.21, uses the built-in `node:sqlite`; the shipped images run Node 26)
 - **Language**: TypeScript (ESM, `@/*` → `src/*` path alias)
 - **Framework**: Express 5
 - **AI/LLM**: LangChain + LangGraph, with Ollama / Google / OpenAI-compatible providers
@@ -19,7 +19,7 @@ This is a **backend-only** repository — no frontend lives here.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) v22.5 or higher
+- [Node.js](https://nodejs.org/) v24.21 or higher
 - [pnpm](https://pnpm.io/) (`npm install -g pnpm`)
 - [Docker](https://www.docker.com/) & Docker Compose (only needed for NATS or a local Ollama)
 

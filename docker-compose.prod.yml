@@ -1,0 +1,96 @@
+# Runs the released server image (no build) plus an optional NATS backbone.
+#
+# Every variable below is `NAME=${NAME}` with no default — an unset one
+# arrives inside the container as an empty string, and several of these are
+# parsed with `z.url()` / `z.coerce.number().positive()` / a regex
+# (`ALLOWED_LLMS`) that reject "" at startup. That is deliberate: this file
+# fails fast on an incomplete `.env` rather than silently running on
+# fallbacks. Your `.env` must set *every* variable referenced here,
+# including the optional ones (leave them present but empty only if you
+# have verified the corresponding feature tolerates that — most do not).
+services:
+  server:
+    image: ghcr.io/janthoxo/aetiomed/server:0.0.22
+    ports:
+      - "${PORT}:${PORT}"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - FEATURES=${FEATURES}
+      - PORT=${PORT}
+
+      # ─── LLM ──────────────────────────────────────────────────────────
+      - LLM_API_KEY=${LLM_API_KEY}
+      - LLM_PROVIDER=${LLM_PROVIDER}
+      - LLM_MODEL=${LLM_MODEL}
+      - LLM_URL=${LLM_URL}
+
+      - LLM_GENERATOR_PROVIDER=${LLM_GENERATOR_PROVIDER}
+      - LLM_GENERATOR_MODEL=${LLM_GENERATOR_MODEL}
+      - LLM_GENERATOR_API_KEY=${LLM_GENERATOR_API_KEY}
+      - LLM_GENERATOR_URL=${LLM_GENERATOR_URL}
+      - LLM_JUDGE_PROVIDER=${LLM_JUDGE_PROVIDER}
+      - LLM_JUDGE_MODEL=${LLM_JUDGE_MODEL}
+      - LLM_JUDGE_API_KEY=${LLM_JUDGE_API_KEY}
+      - LLM_JUDGE_URL=${LLM_JUDGE_URL}
+      - LLM_TRANSLATOR_PROVIDER=${LLM_TRANSLATOR_PROVIDER}
+      - LLM_TRANSLATOR_MODEL=${LLM_TRANSLATOR_MODEL}
+      - LLM_TRANSLATOR_API_KEY=${LLM_TRANSLATOR_API_KEY}
+      - LLM_TRANSLATOR_URL=${LLM_TRANSLATOR_URL}
+
+      - ALLOWED_LLMS=${ALLOWED_LLMS}
+
+      # ─── Graph topology ──────────────────────────────────────────────
+      - TRANSLATION_SANDWICH=${TRANSLATION_SANDWICH}
+      - PROCEDURE_PRESELECTION=${PROCEDURE_PRESELECTION}
+
+      # ─── Language ────────────────────────────────────────────────────
+      - LANGUAGES=${LANGUAGES}
+      - LANGUAGE_AUTO_DETECT=${LANGUAGE_AUTO_DETECT}
+      - LANGUAGE_DETECT_LLM_FALLBACK=${LANGUAGE_DETECT_LLM_FALLBACK}
+
+      # ─── Data ────────────────────────────────────────────────────────
+      - CATALOG_DIR=${CATALOG_DIR}
+      - CACHE_DIR=${CACHE_DIR}
+      - SYMPTOM_CACHE_TTL_DAYS=${SYMPTOM_CACHE_TTL_DAYS}
+      - MAX_CONTENT_PART_BYTES=${MAX_CONTENT_PART_BYTES}
+
+      # ─── NATS (only read when NATS is in FEATURES) ──────────────────
+      - NATS_URL=${NATS_URL}
+      - NATS_USER=${NATS_USER}
+      - NATS_PASSWORD=${NATS_PASSWORD}
+
+      # ─── Concurrency ─────────────────────────────────────────────────
+      - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS}
+
+      # ─── OpenTelemetry ───────────────────────────────────────────────
+      - OTEL_SDK_DISABLED=${OTEL_SDK_DISABLED}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=${OTEL_EXPORTER_OTLP_ENDPOINT}
+      - OTEL_EXPORTER_OTLP_TRACES_ENDPOINT=${OTEL_EXPORTER_OTLP_TRACES_ENDPOINT}
+      - OTEL_EXPORTER_OTLP_LOGS_ENDPOINT=${OTEL_EXPORTER_OTLP_LOGS_ENDPOINT}
+      - OTEL_SERVICE_NAME=${OTEL_SERVICE_NAME}
+      - OTEL_RESOURCE_ATTRIBUTES=${OTEL_RESOURCE_ATTRIBUTES}
+
+    restart: unless-stopped
+
+  # Only started when the NATS profile is enabled
+  # (`docker compose -f docker-compose.prod.yml --profile NATS up`).
+  # No `depends_on` from `server` on purpose — compose refuses to start an
+  # unrelated service that depends on one whose profile isn't active, which
+  # would break the default (no-profile) `up`.
+  nats:
+    profiles: [NATS]
+    image: nats:2.12.1
+    ports:
+      - "4222:4222" # client connections
+      - "8222:8222" # monitoring http (server stats)
+    command: >
+      --js --store_dir /data
+      --user ${NATS_USER} --pass ${NATS_PASSWORD}
+      --http_port 8222
+    volumes:
+      - nats_data:/data
+    restart: unless-stopped
+
+volumes:
+  nats_data:

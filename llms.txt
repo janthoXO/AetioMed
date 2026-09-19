@@ -1,0 +1,33 @@
+# AetioMed
+
+> AetioMed is a self-hostable backend service that uses large language models to generate realistic, internally consistent synthetic medical cases for medical education. Given an ICD-11 code or a diagnosis name, it returns a structured virtual patient case as schema-validated JSON: patient, chief complaint, anamnesis (medical history) and a diagnostic workup with procedure results.
+
+Key facts:
+
+- Audience: medical educators, medical schools, virtual-patient and e-learning platforms, researchers in AI for medical education.
+- Not for clinical use: cases are fictional; output is not medical advice. No real patient data is used.
+- Outline-first generation: one judged case blueprint is the source of truth for every field, so fields cannot contradict each other.
+- Blinded diagnostic workup: procedures are ordered by a solver that does not know the diagnosis; a judge checks its final answer.
+- Difficulty: `easy`, `medium` or `hard`, enforced by an LLM judge.
+- Languages: configured per deployment (`LANGUAGES`, default English and German), with cached, curated-first translations.
+- LLM providers: Ollama (local), Google Gemini, any OpenAI-compatible endpoint; separate models per role (generator, judge, translator).
+- Interfaces: REST API with Server-Sent Events progress streaming, and a durable NATS/JetStream interface with full feature parity.
+- Stack: TypeScript, Node.js >= 24.21, LangChain, LangGraph, Express 5, SQLite (Drizzle ORM), NATS, OpenTelemetry.
+- Distribution: Docker image `ghcr.io/janthoxo/aetiomed/server`.
+
+## Docs
+
+- [README](https://github.com/janthoXO/AetioMed/blob/main/README.md): what AetioMed is, features, comparison, quick start, generation pipeline, difficulty levels, FAQ
+- [Developer Guide](https://github.com/janthoXO/AetioMed/blob/main/README-DEV.md): installation, environment variables, architecture, REST API, NATS API, observability, testing
+
+## API
+
+- [REST API reference](https://github.com/janthoXO/AetioMed/blob/main/README-DEV.md#rest-api): `POST /api/cases` generates a case (blocking JSON or SSE stream); watch, cancel and catalogue endpoints
+- [NATS API reference](https://github.com/janthoXO/AetioMed/blob/main/README-DEV.md#nats-api): subjects for requests, results, progress, cancel, status and catalogue reads
+- [Request schema](https://github.com/janthoXO/AetioMed/blob/main/src/api/CaseGenerationRequest.ts): Zod schema of a case generation request
+
+## Optional
+
+- [Pipeline diagram](https://github.com/janthoXO/AetioMed/blob/main/docs/graphs/case-graph.translation-sandwich.svg): the compiled LangGraph topology
+- [Bruno API collection](https://github.com/janthoXO/AetioMed/tree/main/docs/bruno): ready-made requests for every endpoint
+- [Releases](https://github.com/janthoXO/AetioMed/releases): versioned releases and Docker images

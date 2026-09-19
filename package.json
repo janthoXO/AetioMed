@@ -1,7 +1,7 @@
 {
   "name": "aetiomed",
   "version": "1.0.0",
-  "description": "",
+  "description": "LLM-based generator of synthetic medical cases for medical education: patient, chief complaint, anamnesis and blinded diagnostic workup from an ICD-11 code.",
   "type": "module",
   "scripts": {
     "db:generate": "drizzle-kit generate",
@@ -16,7 +16,25 @@
     "format:check": "prettier --check src",
     "graph:export": "tsx src/core/graph/02graphs/exportGraphs.ts"
   },
-  "keywords": [],
+  "keywords": [
+    "medical-education",
+    "synthetic-data",
+    "medical-case-generator",
+    "virtual-patient",
+    "clinical-reasoning",
+    "icd-11",
+    "llm",
+    "langgraph",
+    "langchain",
+    "ollama",
+    "nats"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/janthoXO/AetioMed.git"
+  },
+  "homepage": "https://github.com/janthoXO/AetioMed#readme",
+  "bugs": "https://github.com/janthoXO/AetioMed/issues",
   "author": "",
   "license": "ISC",
   "packageManager": "pnpm@11.22.0",

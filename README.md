@@ -1,28 +1,41 @@
-# AetioMed
+# AetioMed — AI Medical Case Generator for Medical Education
 
-Welcome to AetioMed!
+**AetioMed is a self-hostable backend service that uses large language models (LLMs) to generate realistic, internally consistent synthetic patient cases — patient, chief complaint, anamnesis and a blinded diagnostic workup — from an ICD-11 code or diagnosis name, for medical educators and training platforms.**
 
-## Introduction
-
-AetioMed is an advanced system designed to generate synthetic medical cases for educational and training purposes. By leveraging state-of-the-art Artificial Intelligence (Large Language Models), AetioMed creates realistic patient scenarios, including detailed anamnesis (medical history), chief complaints, and a full diagnostic workup.
-
-This tool aims to support medical educators and institutions in creating diverse and consistent training materials, ensuring high-quality resources for students and professionals.
+[![Release](https://img.shields.io/github/v/release/janthoXO/AetioMed)](https://github.com/janthoXO/AetioMed/releases)
+[![Build](https://github.com/janthoXO/AetioMed/actions/workflows/build.yml/badge.svg)](https://github.com/janthoXO/AetioMed/actions/workflows/build.yml)
+[![Docker image](https://img.shields.io/badge/docker-ghcr.io%2Fjanthoxo%2Faetiomed%2Fserver-blue)](https://github.com/janthoXO/AetioMed/pkgs/container/aetiomed%2Fserver)
+![Node.js >= 24.21](https://img.shields.io/badge/node-%3E%3D24.21-brightgreen)
 
 ## Table of Contents
 
-1. [Introduction](#introduction)
-2. [Features](#features)
-3. [Architecture](#architecture)
-4. [Generation Pipeline](#generation-pipeline)
+1. [What is AetioMed?](#what-is-aetiomed)
+2. [Key Features](#key-features)
+3. [Use Cases](#use-cases)
+4. [How AetioMed Compares](#how-aetiomed-compares)
+5. [Quick Start](#quick-start)
+6. [Architecture](#architecture)
+7. [Generation Pipeline](#generation-pipeline)
    - [Medical Basis](#medical-basis)
    - [Presentation](#presentation)
    - [Procedures](#procedures)
    - [Translation](#translation)
-5. [Difficulty](#difficulty)
-6. [Design Notes](#design-notes)
-7. [Developer Guide](README-DEV.md)
+8. [Difficulty Levels](#difficulty-levels)
+9. [Design Notes](#design-notes)
+10. [FAQ](#faq)
+11. [Developer Guide](README-DEV.md)
 
-## Features
+## What is AetioMed?
+
+AetioMed is a synthetic medical case generator for medical education and clinical reasoning training. Given a diagnosis — an ICD-11 code or a free-text name — it produces a structured virtual patient case: patient demographics, a chief complaint, a patient-voiced anamnesis (medical history), and a step-by-step diagnostic workup with procedure results.
+
+It is built for medical schools, educators, e-learning and virtual-patient platforms, and researchers who need many diverse, consistent practice cases without writing each one by hand. AetioMed is a backend only: it exposes a REST API and a NATS messaging interface, and returns schema-validated JSON that any frontend or learning platform can render.
+
+AetioMed runs with Ollama (fully local, self-hosted models), Google Gemini, or any OpenAI-compatible LLM endpoint. It is built with TypeScript, Node.js, LangChain and LangGraph.
+
+> **Not for clinical use.** AetioMed generates fictional cases for teaching and training. Its output is not medical advice and must not be used for diagnosis or treatment of real patients.
+
+## Key Features
 
 - **Automated Case Generation**: Create detailed medical cases from an ICD-11 code or a diagnosis name.
 - **Outline-First Generation**: A single case blueprint is written first and acts as the source of truth for every generated field, so the patient, chief complaint, and anamnesis cannot contradict each other.
@@ -36,6 +49,60 @@ This tool aims to support medical educators and institutions in creating diverse
 - **Cancellation and Fair Scheduling**: Any running or queued job can be cancelled from either transport, and one concurrency limit applies to all of them.
 - **Operator Observability**: OpenTelemetry traces with each step's timing and output, sent to any OTLP-compatible backend, or printed to the console for local development.
 - **Structured Data**: Outputs schema-validated JSON suitable for integration with other educational platforms. Content-bearing fields (`chiefComplaint`, each `anamnesis[].answer`, each `procedures[].result`) are ordered arrays of typed content parts, so a field can carry more than plain text without a schema change.
+
+## Use Cases
+
+- **Medical schools and educators** — generate practice cases for problem-based learning, OSCE preparation, or case-based seminars, at a chosen difficulty.
+- **Virtual patient and e-learning platforms** — back an interactive case player with an API that returns structured, schema-validated JSON, with live progress while a case is generated.
+- **Clinical reasoning training** — let students work through a diagnostic workup that was ordered by a solver that did not know the answer, including plausible dead ends.
+- **Multilingual curricula** — serve the same pipeline in several languages, with controlled vocabularies (procedure names, anamnesis categories) translated from a curated catalogue.
+- **Research on AI in medical education** — a reproducible, observable LLM pipeline (LangGraph, OpenTelemetry) for studying generated-case quality across models.
+
+## How AetioMed Compares
+
+|                                             | AetioMed                                        | Prompting a general-purpose chatbot | Static case bank / hand-written vignettes |
+| ------------------------------------------- | ----------------------------------------------- | ----------------------------------- | ----------------------------------------- |
+| New case per diagnosis on demand            | Yes                                             | Yes                                 | No — fixed set                            |
+| Fields consistent with each other           | Yes — all rendered from one judged outline      | Not enforced                        | Yes — checked by the author               |
+| Workup chosen without knowing the diagnosis | Yes — blinded solver                            | No                                  | Depends on the author                     |
+| Difficulty control                          | `easy` / `medium` / `hard`, enforced by a judge | Prompt-dependent                    | Fixed per case                            |
+| Procedures limited to your approved list    | Yes — grammar-constrained                       | No                                  | Not applicable                            |
+| Output format                               | Schema-validated JSON                           | Free text, not guaranteed           | Varies                                    |
+| Languages                                   | Configurable, with cached translations          | Any, unmanaged                      | Usually one                               |
+| Self-hosted, local models                   | Yes — Ollama                                    | Depends on the provider             | Not applicable                            |
+| Authoring effort per case                   | None                                            | One prompt per case                 | High                                      |
+
+## Quick Start
+
+Requirements: Docker, and an LLM — an API key for Google Gemini or an OpenAI-compatible endpoint, or a local Ollama.
+
+**1. Get the catalogues and configure an LLM.** The server image does not bundle the catalogue data, so clone the repository for its `data/` directory:
+
+```bash
+git clone https://github.com/janthoXO/AetioMed.git
+cd AetioMed
+cp .env.example .env   # set LLM_PROVIDER, LLM_MODEL and LLM_API_KEY
+```
+
+**2. Run the released Docker image:**
+
+```bash
+docker run --rm -p 3030:3030 --env-file .env \
+  -v "$PWD/data:/app/data" \
+  ghcr.io/janthoxo/aetiomed/server:latest
+```
+
+To run fully locally instead, set `LLM_PROVIDER=ollama` and `LLM_MODEL=llama3.1` in `.env` and run `docker compose up --build`: it starts the server together with an Ollama container that pulls the model.
+
+**3. Generate a case:**
+
+```bash
+curl -X POST http://localhost:3030/api/cases \
+  -H 'Content-Type: application/json' \
+  -d '{"diagnosis": "Influenza", "difficulty": "easy", "language": "English"}'
+```
+
+The response is a JSON case with `patient`, `chiefComplaint`, `anamnesis` and `procedures`. Send `Accept: text/event-stream` to receive live progress events on the same request. See the [Developer Guide](README-DEV.md) for every configuration option, the full REST and NATS APIs, and local development setup.
 
 ## Architecture
 
@@ -109,6 +176,8 @@ With it disabled the translation phases are **not compiled into the graph at all
 
 The case-generation phase runs up to three stages: **medical basis → presentation → procedures**.
 
+The full compiled graph is in [`docs/graphs/case-graph.translation-sandwich.svg`](docs/graphs/case-graph.translation-sandwich.svg) (sandwich on) and [`docs/graphs/case-graph.none.svg`](docs/graphs/case-graph.none.svg) (sandwich off).
+
 ### Medical Basis
 
 Establishes the disease knowledge the plan may draw from. This is a registry of providers rather than a fixed step: with no providers registered the node is not compiled in at all, and with one or more, all of them run and their fragments are concatenated in registry order. No LLM call is ever spent deciding which source to use.
@@ -168,7 +237,7 @@ Progress labels are localized too, falling back to English for any step without 
 
 Every LLM-generated translation is persisted with `source: "generated"`, distinguishing it from a clinician-reviewed YAML row (`source: "curated"`), so generated terms can be reviewed and promoted into the curated YAML files. Determinism holds **per deployment**, not across deployments — a fresh install can generate a different German term for the same English source than an existing one did, since nothing forces two independent LLM calls to agree. If cross-deployment stability is ever needed, the answer is curated YAML, not better locking.
 
-## Difficulty
+## Difficulty Levels
 
 Difficulty (`easy` | `medium` | `hard`, default `medium`) is not a post-hoc filter — it is threaded through outline generation, outline evaluation, and workup results:
 
@@ -191,6 +260,36 @@ Approaches that were tried and replaced, kept here so the reasoning isn't reliti
 **Non-blinded procedure generation.** Generating the workup with knowledge of the diagnosis produced unrealistically direct test sequences — exactly the confirmatory pathway a student is supposed to _derive_. Blinding the solver and generating results separately restores plausible clinical reasoning, including the occasional unhelpful test.
 
 **Explicit chain-of-thought steps.** Separate CoT-generation steps for non-thinking models were dropped in favor of provider-level reasoning control and prompts that carry their own structure.
+
+## FAQ
+
+### What is AetioMed?
+
+AetioMed is a self-hostable, LLM-based generator of synthetic medical cases for medical education. It turns an ICD-11 code or diagnosis name into a structured virtual patient case: patient, chief complaint, anamnesis, and a diagnostic workup with results.
+
+### Does AetioMed use real patient data?
+
+No. Cases are fictional. The inputs are a diagnosis plus curated catalogues shipped in `data/` — an ICD-11 diagnosis list, a UMLS-derived symptom list, and approved procedure and anamnesis-category lists. No patient records are needed or stored.
+
+### Which LLMs does AetioMed support?
+
+Ollama, Google Gemini, and any OpenAI-compatible endpoint. The generator, judge and translator roles can each use a different model, and a deployment can let each request choose a model from an allowlist.
+
+### Can AetioMed run locally without a cloud LLM?
+
+Yes. With Ollama as the provider, the whole pipeline runs self-hosted. `docker compose up --build` starts the server with an Ollama container (see [Quick Start](#quick-start)).
+
+### Which languages does AetioMed support?
+
+The deployer configures the language set (`LANGUAGES`, default `English,German`). English is always included. Cases are either generated in English and translated, or generated directly in the target language.
+
+### Does AetioMed include a user interface?
+
+No. AetioMed is a backend service with a REST API (with Server-Sent Events streaming) and a NATS interface. Any frontend, LMS or virtual-patient player can consume its JSON output.
+
+### Can AetioMed be used for clinical decision support?
+
+No. AetioMed is for teaching and training only. Its cases are fictional and its output is not medical advice.
 
 ## Developer Guide
 

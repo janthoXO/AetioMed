@@ -32,6 +32,7 @@ import { buildFieldGenerationGraph } from "./02case-generation/02presentation/ge
 import { buildCaseGenerationGraph } from "./02case-generation/index.js";
 import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
 import { createProcedureStrategy } from "./02case-generation/03procedure/strategy/index.js";
+import { taggedOutlineFixture } from "@/core/graph/outline/fixtures.js";
 
 const TRANSLATION_NODES = [
   "translation_to_english_phase",
@@ -164,7 +165,7 @@ describe("phase-level graphs — output surface (issue 17 §1)", () => {
     // `outline_evaluate` (judge, structured JSON) → accepted → fan out to
     // `patient_generate` (generator, structured JSON).
     const generatorQueue = [
-      "## Outline\nSome outline.",
+      taggedOutlineFixture(),
       JSON.stringify({
         name: "Jane Doe",
         age: 40,

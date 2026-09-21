@@ -21,11 +21,21 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
 import { buildChiefComplaintGraph } from "./chiefComplaint/index.js";
 import { buildAnamnesisGraph } from "./anamnesis/index.js";
+import {
+  OutlineSegmentsSchema,
+  joinOutline,
+} from "@/core/graph/outline/segments.js";
 
 const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
 
 const GenerationGraphStateSchema = CaseGenerationStateSchema.extend({
   outline: z.string(),
+  /**
+   * The outline as the positional segment array it was generated as (#159).
+   * `outline` above is always `joinOutline(outlineSegments)` — the
+   * prompt-ready text every downstream generator reads.
+   */
+  outlineSegments: OutlineSegmentsSchema.default([]),
   /** Iterations remaining before the current outline is accepted as-is. */
   outlineEvaluationIterationsRemaining: z
     .number()
@@ -54,30 +64,31 @@ function makeGenerateCaseOutline(runtime: GraphRuntime) {
   return async function generateCaseOutline(
     state: GenerationGraphState,
     lgRuntime?: Runtime<RequestContext>
-  ): Promise<Pick<GenerationGraphState, "outline">> {
-    const outline = await fieldGenerationBlueprintTools.generateCaseOutline
-      .invoke(
-        {
-          diagnosis: state.diagnosis,
-          generationFlags: state.generationFlags,
-          basisFragments: state.basisFragments,
-          difficulty: state.difficulty,
-          userInstructions: renderUserInstructions(state.userInstructions),
-        },
-        runtime,
-        lgRuntime?.context
-      )
-      .catch((error) => {
-        runtime.log.error(
-          `[GenerationGraph] Error generating case outline: ${error}`
-        );
-        throw error;
-      });
+  ): Promise<Pick<GenerationGraphState, "outline" | "outlineSegments">> {
+    const outlineSegments =
+      await fieldGenerationBlueprintTools.generateCaseOutline
+        .invoke(
+          {
+            diagnosis: state.diagnosis,
+            basisFragments: state.basisFragments,
+            difficulty: state.difficulty,
+            userInstructions: renderUserInstructions(state.userInstructions),
+          },
+          runtime,
+          lgRuntime?.context
+        )
+        .catch((error) => {
+          runtime.log.error(
+            `[GenerationGraph] Error generating case outline: ${error}`
+          );
+          throw error;
+        });
 
+    const outline = joinOutline(outlineSegments);
     runtime.log.info(
       `[GenerationGraph] Case outline generated:\n\`\`\` ${outline}\`\`\``
     );
-    return { outline };
+    return { outline, outlineSegments };
   };
 }
 
@@ -192,27 +203,28 @@ function makeOutlineRegenerate(runtime: GraphRuntime) {
     state: GenerationGraphState,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Command> {
-    const outline = await fieldGenerationBlueprintTools.generateCaseOutline
-      .invoke(
-        {
-          diagnosis: state.diagnosis,
-          generationFlags: state.generationFlags,
-          basisFragments: state.basisFragments,
-          difficulty: state.difficulty,
-          userInstructions: renderUserInstructions(state.userInstructions),
-          feedback: state.outlineFeedback,
-          previousOutline: state.outline,
-        },
-        runtime,
-        lgRuntime?.context
-      )
-      .catch((error) => {
-        runtime.log.error(
-          `[GenerationGraph] Error regenerating case outline: ${error}`
-        );
-        throw error;
-      });
+    const outlineSegments =
+      await fieldGenerationBlueprintTools.generateCaseOutline
+        .invoke(
+          {
+            diagnosis: state.diagnosis,
+            basisFragments: state.basisFragments,
+            difficulty: state.difficulty,
+            userInstructions: renderUserInstructions(state.userInstructions),
+            feedback: state.outlineFeedback,
+            previousOutline: state.outlineSegments,
+          },
+          runtime,
+          lgRuntime?.context
+        )
+        .catch((error) => {
+          runtime.log.error(
+            `[GenerationGraph] Error regenerating case outline: ${error}`
+          );
+          throw error;
+        });
 
+    const outline = joinOutline(outlineSegments);
     runtime.log.info(
       `[GenerationGraph] Case outline regenerated:\n\`\`\` ${outline}\`\`\``
     );
@@ -220,6 +232,7 @@ function makeOutlineRegenerate(runtime: GraphRuntime) {
     return new Command({
       update: {
         outline,
+        outlineSegments,
         outlineEvaluationIterationsRemaining:
           state.outlineEvaluationIterationsRemaining - 1,
       },

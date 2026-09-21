@@ -1,10 +1,9 @@
 import type { Consumer, JsMsg } from "@nats-io/jetstream";
 import { makeCaseGenerationRequestSchema, JobIdSchema } from "@/api/index.js";
-import { encodeCase } from "@/api/contentWire.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { CaseGenerationService } from "@/core/caseGenerationService.js";
 import type { Release } from "@/core/concurrency.js";
-import { publishCaseResult } from "./cases.publisher.js";
+import { publishCaseResult, publishStop } from "./cases.publisher.js";
 import { REQUEST_SUBJECT, WORKING_INTERVAL_MS } from "./subjects.js";
 
 const DUPLICATE_CODES = new Set([
@@ -17,6 +16,16 @@ const DUPLICATE_CODES = new Set([
  * the caller already reserved; it is handed to the service, which releases
  * it — and released here too on every path that never reaches the service
  * (releasing twice is a no-op).
+ *
+ * **Ack at the first checkpoint, not at the end (#159).** Before the first
+ * outline is saved, a crash simply redelivers this message — cheap, since
+ * nothing durable exists yet. Once it exists, a crash resumes the job from
+ * its checkpoint instead (`service.resume`), so holding the message
+ * unacked past that point would only risk a second, redundant run on
+ * redelivery. `msg.working()` therefore only needs to run up to that same
+ * point — once acked, the ack deadline no longer matters. `acked` guards
+ * against a double ack: the segment may stop at a review (acking early) and
+ * the handler still reaches its own `ack()` at the end of this function.
  */
 export async function consumeCaseGenerateMessage(
   msg: JsMsg,
@@ -24,11 +33,18 @@ export async function consumeCaseGenerateMessage(
   service: CaseGenerationService,
   slot?: Release
 ): Promise<void> {
-  // Extend the ack deadline for as long as the generation runs, so a slow
-  // job is never redelivered to a second worker while the first still has
-  // it — the ack wait itself stays short, so a crashed worker's job is
-  // redelivered quickly (#142).
-  const working = setInterval(() => msg.working(), WORKING_INTERVAL_MS);
+  let acked = false;
+  const ack = () => {
+    if (acked) return;
+    acked = true;
+    msg.ack();
+  };
+
+  // Extend the ack deadline only until the checkpoint acks — after that
+  // there is no deadline left to keep alive.
+  const working = setInterval(() => {
+    if (!acked) msg.working();
+  }, WORKING_INTERVAL_MS);
   working.unref?.();
 
   try {
@@ -62,41 +78,31 @@ export async function consumeCaseGenerateMessage(
           details: JSON.stringify(request.error.issues),
         },
       });
-      msg.ack();
+      ack();
       return;
     }
 
     console.log(`[NATS] Generating case (jobId=${jobId})`);
     const result = await service.generate(
       { ...request.data, jobId },
-      slot ? { slot } : {}
+      { ...(slot && { slot }), transport: "nats", onCheckpoint: ack }
     );
 
-    if (result.status === "done") {
-      await publishCaseResult(jobId, {
-        ...encodeCase(result.case!, graph.config.MAX_CONTENT_PART_BYTES),
-        language: result.language,
-      });
-    } else if (DUPLICATE_CODES.has(result.error!.code)) {
+    if (result.status === "failed" && DUPLICATE_CODES.has(result.error!.code)) {
       // The job with this id is running or finished here already, and
       // publishes (or published) its own result. Answering this duplicate
       // with an error would overwrite that result for the client.
       console.warn(`[NATS] Ignoring duplicate request for jobId=${jobId}`);
     } else {
-      await publishCaseResult(jobId, {
-        error: {
-          code: result.error!.code,
-          message: result.error!.message,
-          details: result.error!.details,
-        },
-      });
+      await publishStop(graph, result);
     }
-    msg.ack();
+    ack();
   } catch (error) {
     // Protocol-level failures only (the publish itself failing): retry.
-    // Domain failures are results, published above.
+    // Domain failures are results, published above. Never nak once acked —
+    // the checkpoint already made a crash-and-resume the recovery path.
     console.error("[NATS] Error processing message:", error);
-    msg.nak();
+    if (!acked) msg.nak();
   } finally {
     clearInterval(working);
     slot?.();

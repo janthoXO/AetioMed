@@ -174,10 +174,13 @@ export interface CaseGenerationService {
   resume(transport: JobTransport): ResumedJob[];
   /**
    * Outcomes nobody is waiting on: a paused job cancelled or expired. NATS
-   * publishes these to the result subject.
+   * publishes these to the job's stop subject (#159's `publishStop`) —
+   * `transport` says which transport owns the job, so a non-NATS transport
+   * (today, only `"rest"`, which has no channel-less way to deliver this)
+   * is not mistakenly published to a NATS subject.
    */
   onDetachedOutcome(
-    listener: (result: CaseGenerationResult) => void
+    listener: (result: CaseGenerationResult, transport: JobTransport) => void
   ): () => void;
   /** Stop the review-expiry sweep. */
   close(): void;
@@ -318,7 +321,9 @@ export function createCaseGenerationService(
   // One per running segment — and for a new job, from submission, so a job
   // still queued for a slot can be cancelled too. A paused job has none.
   const controllers = new Map<string, AbortController>();
-  const detachedListeners = new Set<(result: CaseGenerationResult) => void>();
+  const detachedListeners = new Set<
+    (result: CaseGenerationResult, transport: JobTransport) => void
+  >();
 
   // ─── request normalisation ────────────────────────────────────────────────
 
@@ -726,10 +731,13 @@ export function createCaseGenerationService(
     }
   }
 
-  function notifyDetached(result: CaseGenerationResult): void {
+  function notifyDetached(
+    result: CaseGenerationResult,
+    transport: JobTransport
+  ): void {
     for (const listener of [...detachedListeners]) {
       try {
-        listener(result);
+        listener(result, transport);
       } catch (error) {
         console.error("[jobs] Detached-outcome listener failed", error);
       }
@@ -739,7 +747,7 @@ export function createCaseGenerationService(
   /** End a paused job nobody is waiting on — cancelled or expired. */
   function endPaused(record: JobRecord, result: CaseGenerationResult): void {
     end(record.jobId, result);
-    notifyDetached(result);
+    notifyDetached(result, record.transport);
   }
 
   function sweepExpired(): void {

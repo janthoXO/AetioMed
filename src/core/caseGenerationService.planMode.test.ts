@@ -378,7 +378,8 @@ describe("plan mode — decisions", () => {
       expect.objectContaining({
         jobId: "c",
         error: expect.objectContaining({ code: "GENERATION_CANCELLED" }),
-      })
+      }),
+      "rest"
     );
   });
 });

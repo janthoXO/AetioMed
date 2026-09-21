@@ -33,6 +33,26 @@ export const cancelSubject = (jobId: string) => `cases.cancel.${jobId}`;
 export const progressWildcard = (jobId: string) => `cases.progress.${jobId}.>`;
 
 /**
+ * JetStream, limits: a plan-mode pause (#159), on its own subject so a
+ * client filters to its own job, with replay for the review time limit
+ * (`CASE_REVIEWS`'s `max_age`, wired from `REVIEW_TTL_MINUTES`) — the same
+ * "durable per-job subject" shape as `resultSubject`, for the same reason:
+ * a workqueue stream's first ack would destroy the review for a client that
+ * reconnects before answering it.
+ */
+export const reviewSubject = (jobId: string) => `cases.review.${jobId}`;
+
+/**
+ * Core NATS request/reply, deliberately a **different subject prefix** than
+ * `cases.request.*`/`cases.result.*`/`cases.review.*` — see #159's design:
+ * it must never be captured by any JetStream stream's filter (a decision is
+ * answered synchronously by the owning replica, never replayed), and a
+ * distinct prefix is what keeps that true without a stream needing to name
+ * an exclusion.
+ */
+export const decisionSubject = (jobId: string) => `cases.decision.${jobId}`;
+
+/**
  * Core NATS request/reply → `{ state: "active" } | { state: "terminal",
  * complete }`, answered by the owning replica while the job runs and for the
  * tombstone window after it (#145). "No responders" means no replica knows
@@ -73,6 +93,25 @@ export const RESULTS_STREAM = {
 } as const;
 
 export const STREAMS = [REQUESTS_STREAM, RESULTS_STREAM] as const;
+
+/**
+ * `CASE_REVIEWS`'s `max_age` is the review time limit itself, not a fixed
+ * constant like `RESULT_MAX_AGE_MS` — a review outliving its own expiry
+ * would let a client fetch a decision window that the service has already
+ * swept (#159). Built by a function, not a `const`, because it depends on
+ * `REVIEW_TTL_MINUTES` (read at startup, `config.ts`), unknown at module
+ * load time.
+ */
+export function reviewsStream(reviewTtlMs: number) {
+  return {
+    name: "CASE_REVIEWS",
+    subjects: ["cases.review.*"],
+    retention: RetentionPolicy.Limits,
+    storage: StorageType.File,
+    max_age: nanos(reviewTtlMs),
+    duplicate_window: nanos(2 * 60 * 1000),
+  } as const;
+}
 
 /** The pre-#142 stream. Its `cases.>` filter overlaps both new streams. */
 export const LEGACY_STREAM = "cases";

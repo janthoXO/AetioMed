@@ -120,4 +120,112 @@ describe("createLimiter", () => {
     expect(limiter.waiting).toBe(0);
     expect(limiter.active).toBe(0);
   });
+
+  it("a high-priority waiter queued after normal waiters is granted first", async () => {
+    const limiter = createLimiter(1);
+    const release1 = await limiter.acquire();
+
+    const order: string[] = [];
+    const pNormal = limiter.acquire().then((release) => {
+      order.push("normal");
+      return release;
+    });
+    const pHigh = limiter
+      .acquire(undefined, { priority: "high" })
+      .then((release) => {
+        order.push("high");
+        return release;
+      });
+    expect(limiter.waiting).toBe(2);
+    expect(limiter.waitingHigh).toBe(1);
+
+    release1();
+    const releaseHigh = await pHigh;
+    expect(order).toEqual(["high"]);
+    expect(limiter.waitingHigh).toBe(0);
+    expect(limiter.waiting).toBe(1);
+
+    releaseHigh();
+    await pNormal;
+    expect(order).toEqual(["high", "normal"]);
+    expect(limiter.waiting).toBe(0);
+  });
+
+  it("is FIFO within the high lane and within the normal lane", async () => {
+    const limiter = createLimiter(1);
+    const release1 = await limiter.acquire();
+
+    const order: string[] = [];
+    const pHigh1 = limiter
+      .acquire(undefined, { priority: "high" })
+      .then((r) => {
+        order.push("high1");
+        return r;
+      });
+    const pHigh2 = limiter
+      .acquire(undefined, { priority: "high" })
+      .then((r) => {
+        order.push("high2");
+        return r;
+      });
+    const pNormal1 = limiter.acquire().then((r) => {
+      order.push("normal1");
+      return r;
+    });
+    const pNormal2 = limiter.acquire().then((r) => {
+      order.push("normal2");
+      return r;
+    });
+
+    release1();
+    const rHigh1 = await pHigh1;
+    rHigh1();
+    const rHigh2 = await pHigh2;
+    rHigh2();
+    const rNormal1 = await pNormal1;
+    rNormal1();
+    await pNormal2;
+
+    expect(order).toEqual(["high1", "high2", "normal1", "normal2"]);
+  });
+
+  it("aborting a queued high waiter does not affect normal waiters' order", async () => {
+    const limiter = createLimiter(1);
+    const release1 = await limiter.acquire();
+
+    const controller = new AbortController();
+    const order: string[] = [];
+    const pHigh = limiter.acquire(controller.signal, { priority: "high" });
+    const pNormal1 = limiter.acquire().then((r) => {
+      order.push("normal1");
+      return r;
+    });
+    const pNormal2 = limiter.acquire().then((r) => {
+      order.push("normal2");
+      return r;
+    });
+    expect(limiter.waiting).toBe(3);
+    expect(limiter.waitingHigh).toBe(1);
+
+    controller.abort();
+    await expect(pHigh).rejects.toMatchObject({ name: "AbortError" });
+    expect(limiter.waitingHigh).toBe(0);
+    expect(limiter.waiting).toBe(2);
+
+    release1();
+    const rNormal1 = await pNormal1;
+    rNormal1();
+    await pNormal2;
+    expect(order).toEqual(["normal1", "normal2"]);
+  });
+
+  it("default priority is normal, keeping the existing call signature working", async () => {
+    const limiter = createLimiter(1);
+    const release1 = await limiter.acquire();
+    const pDefault = limiter.acquire();
+    expect(limiter.waitingHigh).toBe(0);
+    expect(limiter.waiting).toBe(1);
+    release1();
+    await pDefault;
+  });
 });

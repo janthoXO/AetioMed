@@ -48,8 +48,14 @@ export async function startNatsTransport(opts: {
   service: CaseGenerationService;
   jobEvents: JobEventChannel;
   readModel: ReadModel;
+  /**
+   * `CASE_REVIEWS`'s `max_age` (#159): the same review time limit the
+   * service enforces, so a pending review stays on the wire exactly as long
+   * as the job waits for it.
+   */
+  reviewTtlMs: number;
 }): Promise<NatsTransportHandle> {
-  const { graph, service, jobEvents, readModel } = opts;
+  const { graph, service, jobEvents, readModel, reviewTtlMs } = opts;
   const config = ConfigSchema.parse(process.env);
   let stopResponders: (() => void) | undefined;
   let stopProgressPublisher: (() => void) | undefined;
@@ -70,7 +76,7 @@ export async function startNatsTransport(opts: {
     await connectNats(config);
     const nc = getNatsConnection();
 
-    await ensureStreams(await jetstreamManager(nc), config.reviewTtlMs);
+    await ensureStreams(await jetstreamManager(nc), reviewTtlMs);
     stopResponders = startJobResponders({ nc, graph, jobEvents, service });
     stopProgressPublisher = startProgressPublisher({ nc, jobEvents });
     stopMetaService = await startMetaService({ nc, readModel });

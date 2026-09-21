@@ -352,6 +352,16 @@ describe("assembleCaseGraphs", () => {
     ).toThrow(/modality registry is empty/i);
   });
 
+  it("compiles the outline translation graphs only with the sandwich (#159)", async () => {
+    const off = assembleCaseGraphs(buildDeps(), flags(false, false));
+    expect(off.outlineOut).toBeUndefined();
+    expect(off.reviewIn).toBeUndefined();
+
+    const on = assembleCaseGraphs(buildDeps(), flags(true, false));
+    expect(await nodeIds(on.outlineOut!)).toContain("translate_outline_out");
+    expect(await nodeIds(on.reviewIn!)).toContain("translate_review_in");
+  });
+
   it("gives the two preselection variants of a topology identical shapes", async () => {
     // This is the premise `exportGraphs.ts` rests on when it writes two
     // diagrams instead of four: PROCEDURE_PRESELECTION swaps a strategy

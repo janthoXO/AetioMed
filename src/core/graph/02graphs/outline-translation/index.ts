@@ -136,15 +136,22 @@ export function buildOutlineTranslationGraph(
     .compile();
 }
 
-/** `generateCase`'s pattern (`caseGraph.ts`) — invoke and unwrap. */
+/**
+ * Invoke and unwrap, for the request bound on ALS — the same invoke options
+ * `caseGraph.ts`'s `planCase`/`renderCase` pass, so labels carry the job id
+ * and a per-request LLM config and abort signal reach the translator.
+ */
 export async function translateOutlineValues(
   graph: ReturnType<typeof buildOutlineTranslationGraph>,
-  values: Record<string, string>,
-  opts?: { signal?: AbortSignal }
+  values: Record<string, string>
 ): Promise<Record<string, string>> {
+  const context = getRequestContext();
   const result = await graph.invoke(
     { values },
-    opts?.signal !== undefined ? { signal: opts.signal } : undefined
+    {
+      context: { llmConfig: context?.llmConfig, jobId: context?.jobId },
+      ...(context?.signal !== undefined ? { signal: context.signal } : {}),
+    }
   );
   return result.translations;
 }

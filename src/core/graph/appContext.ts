@@ -57,6 +57,17 @@ export interface GraphAppContext {
   /** Run the case graph only, from an outline {@link planCase} produced. */
   renderCase: (opts: RenderCaseInput) => Promise<Case>;
   /**
+   * Translate outline values keyed by segment index — `"out"` to the
+   * request language, `"in"` back to English (#159). Present only when the
+   * translation sandwich is compiled in.
+   */
+  translateOutline:
+    | ((
+        values: Record<string, string>,
+        direction: "out" | "in"
+      ) => Promise<Record<string, string>>)
+    | undefined;
+  /**
    * The compiled top-level graphs this deployment actually serves (bound to
    * the deployer's flags, not one of the other eagerly-built variants — see
    * `buildCaseGraph`'s doc comment): the plan graph and the case graph

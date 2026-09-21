@@ -124,15 +124,16 @@ export function initGraph(opts: {
     procedureResult: createProcedureResultProviders(runtime),
   };
 
-  const { graphs, planCase, renderCase, generateCase } = buildCaseGraph(
-    runtime,
-    bus,
-    config,
-    repos,
-    medicalBasisRegistry,
-    modalityRegistries,
-    tracer
-  );
+  const { graphs, planCase, renderCase, generateCase, translateOutline } =
+    buildCaseGraph(
+      runtime,
+      bus,
+      config,
+      repos,
+      medicalBasisRegistry,
+      modalityRegistries,
+      tracer
+    );
 
   // Validate catalogue translation files here, and not any earlier: the
   // "labels" catalogue's base key set is `getKnownLabels()`
@@ -161,6 +162,7 @@ export function initGraph(opts: {
     generateCase,
     planCase,
     renderCase,
+    translateOutline,
     graphs,
     db: repos.db,
   };

@@ -20,6 +20,10 @@ import {
 } from "../errors/AppError.js";
 import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
 import {
+  buildOutlineTranslationGraph,
+  translateOutlineValues,
+} from "./outline-translation/index.js";
+import {
   createTraceNode,
   noopNodeTracer,
   type NodeTracer,
@@ -296,6 +300,11 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
         .addEdge(START, "generation_phase")
         .addEdge("generation_phase", END)
         .compile(),
+      // The sandwich's middle layer (#159) exists only when the sandwich
+      // does: with it off, plan mode generates the outline directly in the
+      // request language, so there is nothing to translate.
+      outlineOut: undefined,
+      reviewIn: undefined,
     };
   }
 
@@ -339,6 +348,13 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
       })
       .addEdge("translation_from_english_phase", END)
       .compile(),
+    // The sandwich's middle layer (#159): the outline out to the reviewer
+    // and their edits back in. Compiled with the sandwich, entered only by
+    // plan-mode requests in a language other than English — never by normal
+    // mode. Built from the unmodified `runtime`: they translate to and from
+    // the request's real language.
+    outlineOut: buildOutlineTranslationGraph(runtime, traceNode, "out"),
+    reviewIn: buildOutlineTranslationGraph(runtime, traceNode, "in"),
   };
 }
 
@@ -508,7 +524,29 @@ export function buildCaseGraph(
     return generatedCase;
   }
 
-  return { graphs, getCaseGraphs, planCase, renderCase, generateCase };
+  /**
+   * Translate outline values keyed by segment index (#159): `"out"` from
+   * English to the request language for the reviewer, `"in"` back to
+   * English. `undefined` when the sandwich is compiled out — plan mode then
+   * writes the outline in the request language and never translates it.
+   */
+  const translateOutline =
+    graphs.outlineOut && graphs.reviewIn
+      ? (values: Record<string, string>, direction: "out" | "in") =>
+          translateOutlineValues(
+            direction === "out" ? graphs.outlineOut! : graphs.reviewIn!,
+            values
+          )
+      : undefined;
+
+  return {
+    graphs,
+    getCaseGraphs,
+    planCase,
+    renderCase,
+    generateCase,
+    translateOutline,
+  };
 }
 
 export type PlanCaseInput = {

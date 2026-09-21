@@ -102,37 +102,24 @@ export function buildOutlineTranslationGraph(
   traceNode: ReturnType<typeof createTraceNode>,
   direction: "out" | "in"
 ) {
-  const builder = new StateGraph(OutlineTranslationStateSchema, {
+  const [node, label] =
+    direction === "out"
+      ? (["translate_outline_out", "Translating case outline"] as const)
+      : ([
+          "translate_review_in",
+          "Translating reviewed outline to English",
+        ] as const);
+
+  return new StateGraph(OutlineTranslationStateSchema, {
     context: RequestContextSchema,
     output: OutlineTranslationOutputSchema,
-  });
-
-  if (direction === "out") {
-    return builder
-      .addNode(
-        "translate_outline_out",
-        traceNode(
-          "translate_outline_out",
-          makeTranslateOutline(runtime, "out"),
-          "Translating case outline"
-        )
-      )
-      .addEdge(START, "translate_outline_out")
-      .addEdge("translate_outline_out", END)
-      .compile();
-  }
-
-  return builder
+  })
     .addNode(
-      "translate_review_in",
-      traceNode(
-        "translate_review_in",
-        makeTranslateOutline(runtime, "in"),
-        "Translating reviewed outline to English"
-      )
+      node,
+      traceNode(node, makeTranslateOutline(runtime, direction), label)
     )
-    .addEdge(START, "translate_review_in")
-    .addEdge("translate_review_in", END)
+    .addEdge(START, node)
+    .addEdge(node, END)
     .compile();
 }
 

@@ -139,6 +139,17 @@ describe("compare-and-set update", () => {
     expect(got?.status).toBe("generating");
   });
 
+  it("clears expiresAt when the patch names it as undefined, and leaves it alone when it doesn't", () => {
+    const record = freshRecord({ expiresAt: 1_000 });
+    repo.insert(record);
+
+    repo.update(record.jobId, { status: "generating" });
+    expect(repo.get(record.jobId)?.expiresAt).toBe(1_000);
+
+    repo.update(record.jobId, { expiresAt: undefined });
+    expect(repo.get(record.jobId)?.expiresAt).toBeUndefined();
+  });
+
   it("returns false for an unknown jobId", () => {
     expect(repo.update("nope", { status: "generating" })).toBe(false);
   });

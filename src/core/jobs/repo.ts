@@ -92,9 +92,12 @@ export function createJobRecordRepo(handle: DbHandle): JobRecordRepo {
     if (patch.mode !== undefined) set.mode = patch.mode;
     if (patch.status !== undefined) set.status = patch.status;
     if (patch.revision !== undefined) set.revision = patch.revision;
-    if (patch.expiresAt !== undefined) set.expiresAt = patch.expiresAt ?? null;
+    // `in`, not `!== undefined`: a patch that names `expiresAt` or
+    // `encryptedApiKey` with an undefined value clears it (a resumed job no
+    // longer has a review deadline).
+    if ("expiresAt" in patch) set.expiresAt = patch.expiresAt ?? null;
     if (patch.data !== undefined) set.data = JSON.stringify(patch.data);
-    if (patch.encryptedApiKey !== undefined)
+    if ("encryptedApiKey" in patch)
       set.encryptedApiKey = patch.encryptedApiKey ?? null;
     set.updatedAt = patch.updatedAt ?? Date.now();
 

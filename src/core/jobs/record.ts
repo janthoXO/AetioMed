@@ -1,5 +1,3 @@
-import z from "zod";
-
 /**
  * Job checkpoint types (#159, plan mode). A `JobRecord` is the durable row
  * in `job_record` (`persistence/schema.ts`) that lets a paused or in-flight
@@ -21,11 +19,6 @@ export type JobStatus =
  * it, only JSON-encodes/decodes and fully replaces it on write.
  */
 export type JobRecordData = Record<string, unknown>;
-
-export const JobRecordDataSchema: z.ZodType<JobRecordData> = z.record(
-  z.string(),
-  z.unknown()
-);
 
 export interface JobRecord {
   jobId: string;

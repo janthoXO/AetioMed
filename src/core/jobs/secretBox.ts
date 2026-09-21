@@ -9,13 +9,6 @@ import crypto from "node:crypto";
  * `v1.<iv b64>.<tag b64>.<ciphertext b64>` — versioned so a future format
  * change can be detected rather than misparsed.
  */
-export class SecretBoxError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "SecretBoxError";
-  }
-}
-
 export interface SecretBox {
   seal(plain: string): string;
   open(sealed: string): string;
@@ -32,14 +25,9 @@ const VERSION = "v1";
  * that should fail loudly at construction, not silently at the first seal.
  */
 export function createSecretBox(keyBase64: string): SecretBox {
-  let key: Buffer;
-  try {
-    key = Buffer.from(keyBase64, "base64");
-  } catch {
-    throw new Error(
-      `Invalid JOB_ENCRYPTION_KEY: not valid base64 (expected base64 of exactly ${KEY_BYTES} bytes).`
-    );
-  }
+  // `Buffer.from` never throws on bad base64 — it decodes what it can, so the
+  // length check below is what catches a malformed key.
+  const key = Buffer.from(keyBase64, "base64");
   if (key.length !== KEY_BYTES) {
     throw new Error(
       `Invalid JOB_ENCRYPTION_KEY: decoded to ${key.length} bytes, expected exactly ${KEY_BYTES} (generate one with \`openssl rand -base64 32\`).`
@@ -65,9 +53,7 @@ export function createSecretBox(keyBase64: string): SecretBox {
   function open(sealed: string): string {
     const parts = sealed.split(".");
     if (parts.length !== 4 || parts[0] !== VERSION) {
-      throw new SecretBoxError(
-        "Cannot open sealed value: unknown format or version."
-      );
+      throw new Error("Cannot open sealed value: unknown format or version.");
     }
     const [, ivB64, tagB64, ciphertextB64] = parts;
     try {
@@ -82,8 +68,9 @@ export function createSecretBox(keyBase64: string): SecretBox {
       ]);
       return plain.toString("utf-8");
     } catch (err) {
-      throw new SecretBoxError(
-        `Cannot open sealed value: wrong key or tampered data (${err instanceof Error ? err.message : String(err)}).`
+      throw new Error(
+        `Cannot open sealed value: wrong key or tampered data (${err instanceof Error ? err.message : String(err)}).`,
+        { cause: err }
       );
     }
   }
@@ -120,12 +107,5 @@ export function parseJobEncryptionKey(
     return undefined;
   }
 
-  try {
-    return createSecretBox(keyBase64);
-  } catch (err) {
-    throw new Error(
-      `Invalid JOB_ENCRYPTION_KEY: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err }
-    );
-  }
+  return createSecretBox(keyBase64);
 }

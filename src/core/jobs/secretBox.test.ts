@@ -3,7 +3,6 @@ import crypto from "node:crypto";
 import {
   createSecretBox,
   parseJobEncryptionKey,
-  SecretBoxError,
 } from "@/core/jobs/secretBox.js";
 
 const KEY = crypto.randomBytes(32).toString("base64");
@@ -28,7 +27,7 @@ describe("createSecretBox", () => {
   it("fails to open with the wrong key", () => {
     const sealed = createSecretBox(KEY).seal("secret");
     const wrongBox = createSecretBox(OTHER_KEY);
-    expect(() => wrongBox.open(sealed)).toThrow(SecretBoxError);
+    expect(() => wrongBox.open(sealed)).toThrow(/Cannot open sealed value/);
   });
 
   it("fails to open tampered ciphertext", () => {
@@ -43,7 +42,7 @@ describe("createSecretBox", () => {
       parts[2],
       ciphertext.slice(0, -1) + (ciphertext.endsWith("A") ? "B" : "A"),
     ].join(".");
-    expect(() => box.open(tampered)).toThrow(SecretBoxError);
+    expect(() => box.open(tampered)).toThrow(/Cannot open sealed value/);
   });
 
   it("rejects a key of the wrong length", () => {
@@ -54,8 +53,8 @@ describe("createSecretBox", () => {
 
   it("open rejects an unknown version/format", () => {
     const box = createSecretBox(KEY);
-    expect(() => box.open("v2.a.b.c")).toThrow(SecretBoxError);
-    expect(() => box.open("garbage")).toThrow(SecretBoxError);
+    expect(() => box.open("v2.a.b.c")).toThrow(/Cannot open sealed value/);
+    expect(() => box.open("garbage")).toThrow(/Cannot open sealed value/);
   });
 });
 

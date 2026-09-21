@@ -23,8 +23,6 @@ export interface Limiter {
   acquire(signal?: AbortSignal, opts?: AcquireOptions): Promise<Release>;
   readonly active: number;
   readonly waiting: number;
-  /** Waiters currently in the high-priority lane (a subset of `waiting`). */
-  readonly waitingHigh: number;
 }
 
 function abortError(): Error {
@@ -97,9 +95,6 @@ export function createLimiter(max: number): Limiter {
     },
     get waiting() {
       return high.length + normal.length;
-    },
-    get waitingHigh() {
-      return high.length;
     },
   };
 }

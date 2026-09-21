@@ -63,6 +63,9 @@ Copy `.env.example` to `.env` and adjust. The most important variable is `FEATUR
 | `NATS_URL`                                                            | `nats://localhost:4222` | `nats://nats:4222` inside docker compose                                                                                                                                    |
 | `NATS_USER` / `NATS_PASSWORD`                                         | `nats` / `nats`         |                                                                                                                                                                             |
 | `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS; excess requests queue, and a queued one is still cancellable                                                   |
+| `REVIEW_TTL_MINUTES`                                                  | `1440`                  | Plan mode: how long a paused job waits for its reviewer before it is abandoned                                                                                              |
+| `MAX_REVIEW_ROUNDS`                                                   | `3`                     | Plan mode: how many AI revisions a reviewer may request before having to approve or edit the outline instead                                                                |
+| `JOB_ENCRYPTION_KEY`                                                  | —                       | Seals a per-request LLM API key at rest on a paused job. **Required** when `ALLOW_LLMS` is set. Generate with `openssl rand -base64 32`                                     |
 | `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var; `"true"` (that literal only) skips constructing the OTel SDK entirely — its own axis, independent of `FEATURES`                                          |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | —                       | Standard OTel vars, read by the OTLP exporters themselves; any one set selects the `otlp` exporter mode (batch spans + batch logs)                                          |
 | `OTEL_SERVICE_NAME` / `OTEL_RESOURCE_ATTRIBUTES`                      | —                       | Standard OTel vars, read via `envDetector`                                                                                                                                  |
@@ -124,8 +127,9 @@ src/
 ├── api/                      shared request/response Zod schemas, JobId rule, wire codec
 ├── core/
 │   ├── app.ts                the composition root — builds and starts everything
-│   ├── caseGenerationService.ts  the seam both transports call
-│   ├── concurrency.ts        the FIFO limiter behind MAX_CONCURRENT_GENERATIONS
+│   ├── caseGenerationService.ts  the seam both transports call, and the job segment/checkpoint machine
+│   ├── concurrency.ts        the FIFO limiter behind MAX_CONCURRENT_GENERATIONS (+ a resumed-work priority lane)
+│   ├── jobs/                 the job_record checkpoint repo, and SecretBox (per-request API key encryption)
 │   ├── jobEvents/            the per-job event channel, progress labels, the JobDirectory port
 │   ├── readModel.ts          catalogue/meta/graph reads, served identically by both transports
 │   ├── event-bus.ts          typed pub/sub between the graph and its observers
@@ -135,7 +139,12 @@ src/
 │       ├── repos.ts          composes every repo into one bundle
 │       ├── config.ts         graph env schema
 │       ├── structure.ts      the actually-compiled topology behind GET /api/graph
+│       ├── outline/          the outline's segment model — parse/render/compare/merge
 │       ├── 02graphs/         LangGraph graphs, numbered by pipeline phase
+│       │   ├── caseGraph.ts  assembles the plan graph and the case graph
+│       │   ├── outline-translation/  translates the outline out to a reviewer and their edits back
+│       │   └── 02case-generation/
+│       │       └── 01plan/   the outline generate ⇄ judge loop (mounted into the plan graph)
 │       ├── 03aigateway/      prompt building, LLM calls, retries, output parsing
 │       ├── catalog/          one vertical slice per catalogue domain (repo + port adapters)
 │       ├── persistence/      shared SQLite infrastructure
@@ -146,12 +155,13 @@ src/
 │       ├── utils/            llm, context, retry, prompt, node wrapper
 │       └── errors/
 ├── transports/
-│   ├── rest/                 Express app (createRestApp), SSE framing, routers
+│   ├── rest/                 Express app (createRestApp), SSE framing, routers (incl. the review endpoints)
 │   └── nats/                 streams + worker, per-job responders, progress publisher,
 │                             meta service, and the NATS JobDirectory adapter
-└── observability/
-    ├── otel.ts               the OTel adapter — exporter selection, spans, log records
-    └── tracePayload.ts       the size cap on a node's output in a log record
+├── observability/
+│   ├── otel.ts               the OTel adapter — exporter selection, spans, log records
+│   └── tracePayload.ts       the size cap on a node's output in a log record
+└── testing/                  shared test fakes (graphFakes.ts) used across the suite
 ```
 
 The numbered prefixes under `core/graph/` encode pipeline order: graphs call tools, tools call the aigateway. `persistence/`, `catalog/`, `symptoms/`, `medicalBasis/` and `modality/` are deliberately unnumbered — they are not pipeline steps.
@@ -261,17 +271,19 @@ The generated database lives under `CACHE_DIR` (default `data/cache/`), delibera
 
 Requires the `REST` feature flag.
 
-| Method   | Path                       | Purpose                                                                                  |
-| -------- | -------------------------- | ---------------------------------------------------------------------------------------- |
-| `GET`    | `/api/health`              | Health check                                                                             |
-| `GET`    | `/api/features`            | Active feature flags                                                                     |
-| `GET`    | `/api/allowedLlms`         | Allowlisted LLMs (when `ALLOW_LLMS` is set)                                              |
-| `GET`    | `/api/diagnosis`           | List predefined diagnoses                                                                |
-| `GET`    | `/api/procedures`          | List predefined procedures                                                               |
-| `GET`    | `/api/graph`               | Compiled graph topology — nodes, edges, English label keys — for this deployment's flags |
-| `POST`   | `/api/cases`               | Generate a case — streamed as SSE, or blocking JSON (see below)                          |
-| `GET`    | `/api/cases/:jobId/labels` | Watch any job's progress as SSE — `404` for an unknown job                               |
-| `DELETE` | `/api/cases/:jobId`        | Cancel any job — `204` cancelled, `404` finished or unknown, `504` owner unreachable     |
+| Method   | Path                       | Purpose                                                                                                          |
+| -------- | -------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/health`              | Health check                                                                                                     |
+| `GET`    | `/api/features`            | Active feature flags                                                                                             |
+| `GET`    | `/api/allowedLlms`         | Allowlisted LLMs (when `ALLOW_LLMS` is set)                                                                      |
+| `GET`    | `/api/diagnosis`           | List predefined diagnoses                                                                                        |
+| `GET`    | `/api/procedures`          | List predefined procedures                                                                                       |
+| `GET`    | `/api/graph`               | Compiled graph topology — nodes, edges, English label keys — for this deployment's flags                         |
+| `POST`   | `/api/cases`               | Generate a case — streamed as SSE, or blocking JSON (see below)                                                  |
+| `GET`    | `/api/cases/:jobId/review` | Plan mode: read a paused job's pending review — `404` if there is none                                           |
+| `POST`   | `/api/cases/:jobId/review` | Plan mode: submit a reviewer's decision — runs the job's next segment, same response shapes as `POST /api/cases` |
+| `GET`    | `/api/cases/:jobId/labels` | Watch any job's progress as SSE — `404` for an unknown job                                                       |
+| `DELETE` | `/api/cases/:jobId`        | Cancel any job — `204` cancelled, `404` finished or unknown, `504` owner unreachable                             |
 
 A request body needs either `icd` or `diagnosis`; `generationFlags` defaults to all four fields and must name at least one; `difficulty` defaults to `medium`. `jobId` is optional — the server mints a UUID when it is omitted — and must match `[A-Za-z0-9_-]{1,128}`, because it is also a NATS subject token. The response echoes the resolved `language`, and content-bearing fields are wire-encoded (see Content Parts).
 
@@ -327,15 +339,17 @@ An observer can **watch** a job but not **collect** it: `complete` carries the o
 
 Requires the `NATS` feature flag. Subjects are split on **durability**, not on feature: a JetStream stream's retention applies to everything its filter captures, so each retention policy gets its own stream (`transports/nats/subjects.ts`).
 
-| Subject                                            | Kind                                 | Purpose                                                                                    |
-| -------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `cases.request.generate`                           | JetStream `CASE_REQUESTS`, workqueue | Submit a job — the same body as `POST /api/cases`, with `jobId` **required**               |
-| `cases.result.<jobId>`                             | JetStream `CASE_RESULTS`, limits, 1h | The job's case or error — replayable, by any number of readers                             |
-| `cases.progress.<jobId>.{accepted,label,complete}` | core NATS, fan-out                   | The job's progress events — the same payloads as the SSE stream                            |
-| `cases.cancel.<jobId>`                             | core NATS, request/reply             | Cancel → `{cancelled}`; "no responders" for an unknown or finished job                     |
-| `cases.status.<jobId>`                             | core NATS, request/reply             | `{state: "active"}` or `{state: "terminal", complete}`; "no responders" for an unknown job |
-| `catalog.diagnosis`, `catalog.procedures`          | request/reply, service `aetiomed`    | The same payloads as `GET /api/diagnosis` and `/api/procedures`                            |
-| `meta.features`, `meta.allowedLlms`, `meta.graph`  | request/reply, service `aetiomed`    | The same payloads as `GET /api/features`, `/api/allowedLlms` and `/api/graph`              |
+| Subject                                            | Kind                                                   | Purpose                                                                                                                             |
+| -------------------------------------------------- | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `cases.request.generate`                           | JetStream `CASE_REQUESTS`, workqueue                   | Submit a job — the same body as `POST /api/cases`, with `jobId` **required**                                                        |
+| `cases.result.<jobId>`                             | JetStream `CASE_RESULTS`, limits, 1h                   | The job's case or error — replayable, by any number of readers                                                                      |
+| `cases.review.<jobId>`                             | JetStream `CASE_REVIEWS`, limits, `REVIEW_TTL_MINUTES` | Plan mode: a paused job's outline — replayable, like `cases.result.<jobId>`                                                         |
+| `cases.decision.<jobId>`                           | core NATS, request/reply                               | Plan mode: submit a reviewer's decision → `{accepted}`, then the job's next stop is published as usual                              |
+| `cases.progress.<jobId>.{accepted,label,complete}` | core NATS, fan-out                                     | The job's progress events — the same payloads as the SSE stream                                                                     |
+| `cases.cancel.<jobId>`                             | core NATS, request/reply                               | Cancel → `{cancelled}`; "no responders" for an unknown or finished job                                                              |
+| `cases.status.<jobId>`                             | core NATS, request/reply                               | `{state: "active"}`, `{state: "awaiting_review", revision}`, or `{state: "terminal", complete}`; "no responders" for an unknown job |
+| `catalog.diagnosis`, `catalog.procedures`          | request/reply, service `aetiomed`                      | The same payloads as `GET /api/diagnosis` and `/api/procedures`                                                                     |
+| `meta.features`, `meta.allowedLlms`, `meta.graph`  | request/reply, service `aetiomed`                      | The same payloads as `GET /api/features`, `/api/allowedLlms` and `/api/graph`                                                       |
 
 **Why the jobId is required.** It is the address of the result: a client subscribes to `cases.result.<jobId>` before or after submitting, and a server-minted id would be unfindable. A request without a valid one is terminated, not processed.
 

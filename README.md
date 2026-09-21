@@ -20,10 +20,11 @@
    - [Presentation](#presentation)
    - [Procedures](#procedures)
    - [Translation](#translation)
-8. [Difficulty Levels](#difficulty-levels)
-9. [Design Notes](#design-notes)
-10. [FAQ](#faq)
-11. [Developer Guide](README-DEV.md)
+8. [Plan Mode](#plan-mode)
+9. [Difficulty Levels](#difficulty-levels)
+10. [Design Notes](#design-notes)
+11. [FAQ](#faq)
+12. [Developer Guide](README-DEV.md)
 
 ## What is AetioMed?
 
@@ -46,6 +47,7 @@ AetioMed runs with Ollama (fully local, self-hosted models), Google Gemini, or a
 - **Restricted Vocabularies**: When configured, procedure names and anamnesis categories are constrained to an approved, translatable list.
 - **Live Progress**: Every pipeline step reports when it starts and finishes, as a short label in the requester's language. A client can fetch the compiled pipeline once and light up its steps as they run, over REST or NATS.
 - **Two Integration Styles**: A synchronous REST API that streams the job back on the same request, and an asynchronous NATS interface whose requests and results survive restarts and dropped connections. Every feature is available on both.
+- **Plan Mode**: Optionally pause generation once the case outline exists, show it to a human reviewer in the request's own language, and let them approve it, edit it, or ask for an AI revision before the rest of the case is generated.
 - **Cancellation and Fair Scheduling**: Any running or queued job can be cancelled from either transport, and one concurrency limit applies to all of them.
 - **Operator Observability**: OpenTelemetry traces with each step's timing and output, sent to any OTLP-compatible backend, or printed to the console for local development.
 - **Structured Data**: Outputs schema-validated JSON suitable for integration with other educational platforms. Content-bearing fields (`chiefComplaint`, each `anamnesis[].answer`, each `procedures[].result`) are ordered arrays of typed content parts, so a field can carry more than plain text without a schema change.
@@ -236,6 +238,44 @@ Translations are cache-aside. Known terms come from YAML translation files; anyt
 Progress labels are localized too, falling back to English for any step without a translation.
 
 Every LLM-generated translation is persisted with `source: "generated"`, distinguishing it from a clinician-reviewed YAML row (`source: "curated"`), so generated terms can be reviewed and promoted into the curated YAML files. Determinism holds **per deployment**, not across deployments — a fresh install can generate a different German term for the same English source than an existing one did, since nothing forces two independent LLM calls to agree. If cross-deployment stability is ever needed, the answer is curated YAML, not better locking.
+
+## Plan Mode
+
+By default (`mode: "normal"`) a case generates end to end with no human in the loop. Setting
+`"mode": "plan"` in the request pauses generation once the outline exists and returns it for
+review, in the request's own language, before anything else is generated.
+
+**REST** — `POST /api/cases` with `"mode": "plan"` stops instead of returning a finished case:
+`202` with a JSON body (or, over `Accept: text/event-stream`, an `event: review`) carrying the
+outline as an array of editable/fixed segments, a `revision` number, and an expiry. The reviewer
+answers with `POST /api/cases/:jobId/review`:
+
+```bash
+curl -X POST http://localhost:3030/api/cases \
+  -H 'Content-Type: application/json' \
+  -d '{"diagnosis": "Influenza", "mode": "plan", "language": "German"}'
+# → 202 {"jobId": "...", "status": "awaiting_review", "review": {"revision": 1, "outline": [...], ...}}
+
+curl -X POST http://localhost:3030/api/cases/<jobId>/review \
+  -H 'Content-Type: application/json' \
+  -d '{"revision": 1, "decision": {"action": "approve"}}'
+# → 200, the finished case (or another 202 if the reviewer asked for a revision)
+```
+
+A decision is one of `approve` (generate from the outline as shown), `edit` (submit the same
+segment array with only its editable text changed — the segment count and every fixed section
+must stay exactly as shown), or `revise` (ask the AI to regenerate the outline from written
+feedback; not re-judged automatically, and bounded by a configurable round limit). A paused job
+can also be read back with `GET /api/cases/:jobId/review`.
+
+**NATS** — the same round trip, asynchronous: a plan-mode `cases.request.generate` publishes its
+pause to `cases.review.<jobId>` instead of `cases.result.<jobId>`, and a decision is a
+request/reply on `cases.decision.<jobId>`, answered by the replica running the job. Both modes
+still finish on `cases.result.<jobId>`.
+
+A paused job survives a restart and waits out a configurable time limit
+(`REVIEW_TTL_MINUTES`) before it is abandoned. See the [Developer Guide](README-DEV.md) for the
+full outline segment format and every status code.
 
 ## Difficulty Levels
 

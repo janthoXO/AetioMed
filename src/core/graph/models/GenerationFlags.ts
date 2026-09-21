@@ -34,15 +34,16 @@ export const PresentationGenerationFlags: GenerationFlag[] = [
  * fields they asked for; the solver gets exactly the input it gets today.
  *
  * The obvious cheaper alternative — reusing the plan outline as the solver's
- * presentation — is *not* safe. `state.outline` is a free-text markdown
- * string that, by `case.aigateway.ts`'s own instruction 4, contains a
- * "Workup / Procedure Results Strategy" section describing how results should
- * be shaped to reach the diagnosis. Slicing a presentation out of it by
- * heading is a parse whose failure mode is silently leaking that strategy
- * into the *blinded* solver — destroying the pipeline's core asymmetry while
- * still producing plausible output. Doing it properly means giving the plan a
- * structured, blinded-safe presentation summary, which is a change to the
- * most sensitive prompt in the pipeline and belongs in its own change.
+ * presentation — is *not* safe. The outline is a tag-delimited markdown
+ * skeleton (`graph/outline/segments.ts`, #159) whose fixed procedures
+ * section, by `case.aigateway.ts`'s own instruction 4, describes how results
+ * should be shaped to reach the diagnosis. Slicing a presentation out of it
+ * by heading is a parse whose failure mode is silently leaking that
+ * procedures section into the *blinded* solver — destroying the pipeline's
+ * core asymmetry while still producing plausible output. Doing it properly
+ * means giving the plan a structured, blinded-safe presentation summary,
+ * which is a change to the most sensitive prompt in the pipeline and belongs
+ * in its own change.
  *
  * The honest cost of the approach taken here: three presentation fields are
  * generated and discarded. That is still strictly less waste than the

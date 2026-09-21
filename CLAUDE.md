@@ -60,7 +60,10 @@ everything explicitly, in order:
    environment as an argument; nothing under `src/core/graph/` reads `process.env`)
 3. `initGraph()` builds the repos (`repos.ts`'s `createRepos`), the `GraphRuntime`, and the
    compiled graph, then validates the catalogues
-4. `createCaseGenerationService(graph, bus)`
+4. `createCaseGenerationService(graph, bus, jobEvents, opts)` — `opts` wires the embedded DB's
+   job-record repo (`graph.jobRecords`, #159), the `SecretBox` built from `JOB_ENCRYPTION_KEY`
+   (`jobs/secretBox.ts`'s `parseJobEncryptionKey`, which throws at startup if `ALLOW_LLMS` is set
+   and the key is missing or malformed), and `REVIEW_TTL_MINUTES`/`MAX_REVIEW_ROUNDS`
 5. starts the transports whose flags are set — **NATS before REST** (issue #145): REST's job
    directory (below) may ride on NATS's connection, so NATS must already be up by the time
    `startRestServer` is called. Shutdown order is unaffected — REST still closes **first**,
@@ -100,10 +103,37 @@ reasons from the patient presentation, and would otherwise be handed an empty on
 plan and its judge loop had already been paid for. So the three presentation fields are
 generated **internally** and projected back out of the response, and the caller gets exactly
 the fields they asked for. The cheaper-looking alternative — reusing the plan outline as the
-solver's presentation — is unsafe: `state.outline` is free-text markdown that by construction
-contains a "Workup / Procedure Results Strategy" section, so slicing a presentation out of it
-by heading is a parse whose failure mode is silently leaking that strategy into the _blinded_
-solver. See `expandFlagsForSolver`'s doc comment.
+solver's presentation — is unsafe: the outline is a tag-delimited markdown skeleton (see
+"Outline segments" below, #159) whose fixed procedures section, by construction, describes how
+results should be shaped to reach the diagnosis, so slicing a presentation out of it by heading
+is a parse whose failure mode is silently leaking that section into the _blinded_ solver. See
+`expandFlagsForSolver`'s doc comment.
+
+**Since #159, a job runs as one or more checkpointed segments, not one call end to end.**
+`start`/`generate` still look the same from outside, but between them `CaseGenerationService`
+now runs the plan graph, the outline-translation graphs (sandwich on, non-English, plan mode
+only) and the case graph as separate steps, writing a checkpoint to a `JobRecordRepo`
+(`core/jobs/repo.ts` — the compare-and-set store over the embedded DB's `job_record` table,
+`graph.jobRecords`) between each. Normal mode runs every segment back to back; plan mode stops
+after the outline and waits. Four more methods hang off the same seam: `decide(jobId, request)`
+applies a reviewer's decision and runs the job's next segment; `getReview(jobId)` reads the
+pending review without advancing anything; `resume(transport)` reattaches that transport's
+checkpointed jobs after a restart (see the NATS Layer section below for what each status
+resumes into); `onDetachedOutcome(listener)` delivers the outcome of a paused job nobody is
+waiting on any more (cancelled or expired by the review-TTL sweep); `close()` stops that sweep.
+A per-request `llmConfig.apiKey` is never written to a checkpoint in plain text — it is sealed
+with a `SecretBox` (`core/jobs/secretBox.ts`, AES-256-GCM, one random IV per seal) under
+`JOB_ENCRYPTION_KEY`, required whenever `ALLOW_LLMS` is set (`parseJobEncryptionKey` fails
+startup otherwise). `REVIEW_TTL_MINUTES` (default 1440) bounds how long a paused job waits for
+its reviewer before a background sweep expires it with `REVIEW_EXPIRED`; `MAX_REVIEW_ROUNDS`
+(default 3) bounds how many AI revisions a reviewer may request before having to approve or
+edit instead. A segment that stops at a review publishes `awaiting_review` on the job's
+per-job event channel (below) — deliberately **payload-free**, just `{jobId, revision,
+timestamp}` — so an observer learns a job paused without being handed the outline; both
+`JobDirectory` implementations (the in-process one and the NATS one, see NATS Layer below)
+forward it like any other event, and the review payload itself is fetched separately
+(`getReview`/`GET /api/cases/:jobId/review`/`cases.status.<jobId>`), never carried on the
+channel.
 
 **`src/core/jobEvents/`** (#139) is the core-owned per-job event channel:
 `createJobEventChannel()` builds one instance, constructed once in `app.ts` and handed to
@@ -219,7 +249,11 @@ always on, following labels' gate: it returns the deployment's actually-compiled
 nodes (with English `labelKey`) and edges from `getGraphAsync({ xray: true })`, the same call
 `02graphs/exportGraphs.ts` uses for mermaid diagrams. Label keys, not localized strings: the
 structure is language-independent and cacheable; a client wanting localization already has it
-on the label channel, per job.
+on the label channel, per job. Since #159 the pipeline is two top-level graphs (plan, case), so
+`buildGraphStructure` returns their **union**, in execution order — plan, then the sandwich's
+middle translation graphs (`outlineOut`/`reviewIn`, when compiled in), then case — with no edge
+between them: the job service, not a graph, runs one after the other, so there is nothing to
+draw there.
 
 **Two defects fixed alongside issue 15, both still true today:** `traceNode` (`nodeWrapper.ts`)
 wraps the node call in `try`/`catch` — a throwing node used to emit "Node Started" and nothing
@@ -269,49 +303,129 @@ as the graph is built.
 
 ### Case Generation Pipeline (LangGraph)
 
-All AI generation uses LangGraph. Graphs live in `src/core/graph/02graphs/`. The top-level
-graph is assembled from the deployer's flags by `assembleCaseGraph(deps, flags)`
-(`caseGraph.ts`) and sequences up to three subgraphs:
+All AI generation uses LangGraph. Graphs live in `src/core/graph/02graphs/`. Since #159 the
+pipeline is **two top-level graphs, not one** — `assembleCaseGraphs(deps, flags)` (`caseGraph.ts`,
+now plural) builds a **plan graph** that ends with an outline and a **case graph** that starts
+from one. The seam between them is where a plan-mode job pauses for a human reviewer, and where
+`CaseGenerationService` checkpoints the outline in both modes (normal mode runs straight
+through it without stopping). With `TRANSLATION_SANDWICH` on:
 
-1. **`01case-translation-to-english/`** — translates `diagnosis.name` and, alongside it, every
-   `userInstructions` value, to English. Two disjoint-channel `Send` nodes
-   (`translate_diagnosis`/`translate_user_instructions`) run in parallel from `START`, each
-   writing only its own top-level field — no merge is needed.
-2. **`02case-generation/`** — the core generation pipeline (see below)
-3. **`03case-translation-from-english/`** — three nodes, not a chain (issue 12): `translate_defined`
-   and `translate_rest` run in parallel from `START`, each writing only its own state channel
-   (`definedTranslations`/`restTranslations`, never `case`); `translate_merge` is the **only**
-   node that writes `case`, applying both maps to it. See "Content Parts" below for why this
-   replaced a whole-case, single-LLM-call translator.
+- **plan graph**: `01case-translation-to-english/` (mounted at `START`, conditional — see
+  below) → `planning_phase` (mounts `01plan/`'s outline ⇄ judge loop; see below)
+- **case graph**: `generation_phase` (mounts the field fan-out and procedures; see below) →
+  `03case-translation-from-english/` (conditional on the response actually needing translation)
 
-`generateCase(opts)` invokes the top-level graph, taking one options object —
-`{ diagnosis, generationFlags, userInstructions?, language?, difficulty?, callerSuppliedFreeText }`
-(`GenerateCaseFn`, `appContext.ts`) — rather than positional scalars, since a sixth parameter
-(`callerSuppliedFreeText`, issue 12 §3) would have made the positional form unreadable at the
-call site. `language` is **not** threaded into graph state or LangGraph's own runtime context —
-by the time this runs, `runWithContext` (called by `CaseGenerationService`) has already bound it
-on `AsyncLocalStorage`, which is what the translation-routing edges and every generation gateway
-actually read. `callerSuppliedFreeText` **is** threaded into graph state (`CaseStateSchema`) —
-see the Language section below for why the two differ.
+`01case-translation-to-english/` translates `diagnosis.name` and, alongside it, every
+`userInstructions` value, to English — two disjoint-channel `Send` nodes
+(`translate_diagnosis`/`translate_user_instructions`) run in parallel from `START`, each writing
+only its own top-level field, no merge needed. `03case-translation-from-english/` is three
+nodes, not a chain (issue 12): `translate_defined` and `translate_rest` run in parallel from
+`START`, each writing only its own state channel (`definedTranslations`/`restTranslations`,
+never `case`); `translate_merge` is the **only** node that writes `case`, applying both maps to
+it. See "Content Parts" below for why this replaced a whole-case, single-LLM-call translator.
 
-The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs up to three phases — the first is compiled in only when the medical-basis registry is non-empty:
+With `TRANSLATION_SANDWICH` off, both translation phases are absent (see the assembly rule
+below), and — with it on — two more single-node graphs, `outlineOut`/`reviewIn`
+(`buildOutlineTranslationGraph`, `02graphs/outline-translation/`), are compiled alongside the
+plan and case graphs but mounted in neither: they are invoked directly by
+`CaseGenerationService` between the plan graph and the case graph, and only for a plan-mode
+request in a non-English language — never by normal mode, and never with the sandwich off (plan
+mode then generates and shows the outline directly in the request language). They exist as two
+separate compiled graphs, not two nodes of one, because a checkpoint sits right where the human
+reviewer edits the outline — `outlineOut` translates out to the reviewer, `reviewIn` translates
+their edited segments back to English, and each run is its own segment (see "Composition Root"
+above).
 
-- **`basis_resolve`** — runs first, and only when the medical-basis registry (`src/core/graph/medicalBasis/`) is non-empty: an absent registry means an absent node, not a node that runs and does nothing. The registry is a plain list built once in the composition root (`graph/index.ts`'s `createMedicalBasisRegistry`), **not** a third compile-time flag — its _size_ decides whether `basis_resolve` is compiled in, the same rule `caseGraph.ts` applies to `TRANSLATION_SANDWICH`/`PROCEDURE_PRESELECTION`. Every registered `MedicalBasisProvider` (`medicalBasis/ports.ts`) is run concurrently and their `BasisFragment`s are concatenated in **registry order** (not completion order) — there is no LLM call spent deciding which source to use; a throwing provider is logged and skipped, a hanging one is bounded by the request's abort signal. `medicalBasis/render.ts` renders the concatenated fragments into one "Medical basis" section of the plan's **user** message only (never the system message), each fragment fenced and tagged with its `sourceId`/`label`/`retrievedAt`(/`licence`) — the fence delimiters are escaped if they appear inside a fragment's own content, so a fragment can never close its own fence early. `medicalBasis/providers/umlsSymptoms.ts` is the only provider today: it reproduces the former `01symptom/` node verbatim — a static UMLS symptom floor (per ICD code) unioned with cache-aside LLM-generated additions (skips the LLM on a fresh cache hit) — as a single "Typical symptoms" fragment.
-- **`02presentation/`** — `generation/` generates a detailed case outline (the complete factual record of the case), then a combined outline evaluate ⇄ revise `Command` loop (max 2 iterations) judging obviousness AND clinical consistency in one LLM call; once accepted, fans out via `Send` to `patient_generate` / `chief_complaint_generate` / `anamnesis_generate` (gated per `generationFlags`), joining at `case_fan_in`. There is no post-fan-out consistency check. `chief_complaint_generate` and `anamnesis_generate` are **compiled subgraphs** (`chiefComplaint/index.ts`, `anamnesis/index.ts`), not function nodes — see "Modality Planning and Rendering" below for their internal `plan_content → render_parts` shape. `patient_generate` stays a plain function node: `patient` is not a `ContentPart[]` field (it stayed a structured `Patient` object through issue 11), so there is nothing for a modality provider to render — the `Send` payload (`{ diagnosis, outline, userInstructions }`) is identical across all three targets either way, whether the target is a function or a compiled subgraph.
-- **Subgraph output schemas (issue 17).** A compiled subgraph mounted with `addNode` writes back its **entire state schema** by default, not just the channels its nodes actually touched. `chief_complaint_generate` and `anamnesis_generate` are `Send`-fanned out in parallel from `outline_evaluate` above, so both writing back the whole state made their shared `diagnosis`/`userInstructions`/`outline` `LastValue` channels each receive two values in one superstep — `INVALID_CONCURRENT_GRAPH_UPDATE` on every default request. The rule: **a compiled subgraph's state schema is its input surface; its `output` schema is its write surface, and the write surface must be declared explicitly** — every `addNode`'d or `.invoke()`d subgraph in `02graphs/` gets an `output` built with `.pick()` off that graph's own state schema (never a hand-written duplicate, so the picked channel keeps the identical reducer registration). `chiefComplaintGraph`/`anamnesisGraph` output `{ case }`; `presentation_phase` (`buildFieldGenerationGraph`) deliberately outputs `{ case, outline }` — `outline` is not obvious to drop, but `03procedure/`'s `result_step` needs it for `generateProcedureResults`; `procedure_phase`/`generation_phase`/`translation_from_english_phase` output `{ case }`; `translation_to_english_phase` outputs `{ diagnosis, userInstructions }`, since translating those two is its entire job; the blinded solver's child graph (`.invoke()`d, not mounted) outputs `{ move }`. `case_fan_in` used to be `passthrough` (echoing the whole incoming state as its "update"); a join point produces no update, so it is now a node returning `{}`.
+`planCase(opts)` and `renderCase(opts)` are the two entry points `CaseGenerationService` calls —
+`planCase` invokes the plan graph and returns `{ diagnosis, userInstructions, basisFragments,
+outlineSegments, outlineAccepted }` (all in the working language: English after translate-in);
+`renderCase` invokes the case graph from a prompt-ready outline string (`joinOutline`, see
+"Outline segments" below) and returns the finished `Case`. `generateCase(opts)` composes both in
+one call for normal mode's non-checkpointed callers (`exportGraphs.ts`, tests): plan, then
+render, throwing `OutlineNotAcceptedError` if the judge loop never accepted the outline — a
+**behaviour change** (#159): this used to render anyway. `language` is **not** threaded into
+graph state or LangGraph's own runtime context — by the time either entry point runs,
+`runWithContext` (called by `CaseGenerationService`) has already bound it on
+`AsyncLocalStorage`, which is what the translation-routing edges and every generation gateway
+actually read. `callerSuppliedFreeText` **is** threaded into the plan graph's state — see the
+Language section below for why the two differ.
+
+**`planning_phase`** (`buildPlanningPhaseGraph`, `02case-generation/index.ts`) runs up to two
+steps — the first compiled in only when the medical-basis registry is non-empty:
+
+- **`basis_resolve`** — runs first, and only when the medical-basis registry (`src/core/graph/medicalBasis/`) is non-empty: an absent registry means an absent node, not a node that runs and does nothing. The registry is a plain list built once in the composition root (`graph/index.ts`'s `createMedicalBasisRegistry`), **not** a third compile-time flag — its _size_ decides whether `basis_resolve` is compiled in, the same rule `caseGraph.ts` applies to `TRANSLATION_SANDWICH`/`PROCEDURE_PRESELECTION`. Every registered `MedicalBasisProvider` (`medicalBasis/ports.ts`) is run concurrently and their `BasisFragment`s are concatenated in **registry order** (not completion order) — there is no LLM call spent deciding which source to use; a throwing provider is logged and skipped, a hanging one is bounded by the request's abort signal. `medicalBasis/render.ts` renders the concatenated fragments into one "Medical basis" section of the plan's **user** message only (never the system message), each fragment fenced and tagged with its `sourceId`/`label`/`retrievedAt`(/`licence`) — the fence delimiters are escaped if they appear inside a fragment's own content, so a fragment can never close its own fence early. `medicalBasis/providers/umlsSymptoms.ts` is the only provider today: it reproduces the former `01symptom/` node verbatim — a static UMLS symptom floor (per ICD code) unioned with cache-aside LLM-generated additions (skips the LLM on a fresh cache hit) — as a single "Typical symptoms" fragment. On a revise entry (below) this step is skipped and the saved `basisFragments` are reused.
+- **`outline_phase`** (mounts `01plan/`'s `buildPlanGraph`) — generates the tag-delimited outline (see "Outline segments" below), then a combined evaluate ⇄ revise `Command` loop (max 2 iterations, `outline_evaluate`/`outline_regenerate`) judging obviousness AND clinical consistency in one LLM call. On the iteration cap, the loop ends with `outlineAccepted: false` rather than looping forever — what that means is the caller's call: normal mode throws `OutlineNotAcceptedError` (a behaviour change, #159 — it used to render anyway), plan mode shows the outline to the reviewer regardless, with no marker, and lets them judge consistency themselves. A **revise entry** (`entryOf`, #159) starts the graph at `outline_regenerate` instead of `case_outline_generate` whenever `outlineSegments`/`outlineFeedback` are both non-empty on invoke — this is how a reviewer's "request revision" decision re-runs the loop from their feedback instead of generating from scratch. `audienceOf(state)` binds the outline and its judge prompts to `"user-facing"` (the request language) only in plan mode; normal mode keeps them `"internal"` (English) — independent of the sandwich, which controls the case-generation runtime's `languageOverride`, not this phase's audience.
+
+**`generation_phase`** (`buildCaseGenerationGraph`, `02case-generation/index.ts`) takes an
+outline as **input** (no outline generation happens here any more — that moved to
+`planning_phase` above) and runs up to two phases:
+
+- **`presentation_phase`** — `02presentation/generation/` fans the outline straight out via `Send` to `patient_generate` / `chief_complaint_generate` / `anamnesis_generate` (gated per `generationFlags`), joining at `case_fan_in`. There is no post-fan-out consistency check — that judgment already happened on the outline, in `planning_phase`, before any field exists. `chief_complaint_generate` and `anamnesis_generate` are **compiled subgraphs** (`chiefComplaint/index.ts`, `anamnesis/index.ts`), not function nodes — see "Modality Planning and Rendering" below for their internal `plan_content → render_parts` shape. `patient_generate` stays a plain function node: `patient` is not a `ContentPart[]` field (it stayed a structured `Patient` object through issue 11), so there is nothing for a modality provider to render — the `Send` payload (`{ diagnosis, outline, userInstructions }`) is identical across all three targets either way, whether the target is a function or a compiled subgraph.
+- **Subgraph output schemas (issue 17).** A compiled subgraph mounted with `addNode` writes back its **entire state schema** by default, not just the channels its nodes actually touched. `chief_complaint_generate` and `anamnesis_generate` are `Send`-fanned out in parallel above, so both writing back the whole state made their shared `diagnosis`/`userInstructions`/`outline` `LastValue` channels each receive two values in one superstep — `INVALID_CONCURRENT_GRAPH_UPDATE` on every default request. The rule: **a compiled subgraph's state schema is its input surface; its `output` schema is its write surface, and the write surface must be declared explicitly** — every `addNode`'d or `.invoke()`d subgraph in `02graphs/` gets an `output` built with `.pick()` off that graph's own state schema (never a hand-written duplicate, so the picked channel keeps the identical reducer registration). `chiefComplaintGraph`/`anamnesisGraph` output `{ case }`; `presentation_phase` (`buildFieldGenerationGraph`) outputs `{ case }` only now (#159 — it used to also output `outline`, when `03procedure/`'s `result_step` still read it out of `generation_phase`'s own state; the outline reaches `renderCase` as a plain string input instead); `outline_phase` (`buildPlanGraph`) outputs `{ outlineSegments, outlineAccepted }`, and `planning_phase` around it outputs `{ outlineSegments, outlineAccepted, basisFragments }`; `procedure_phase`/`generation_phase`/`translation_from_english_phase` output `{ case }`; `translation_to_english_phase` outputs `{ diagnosis, userInstructions }`, since translating those two is its entire job; the blinded solver's child graph (`.invoke()`d, not mounted) outputs `{ move }`. `case_fan_in` used to be `passthrough` (echoing the whole incoming state as its "update"); a join point produces no update, so it is now a node returning `{}`.
 - **`03procedure/`** — only when the `procedures` flag is set. A **blinded solver** loop (max 6 iterations) with 4 nodes: `blinded_step` orders procedures without knowing the true diagnosis, `result_step` _plans_ their results non-blinded (issue 21 — nothing renders inside the loop; see "Modality Planning and Rendering" below), and the terminal `render_results` renders every procedure's parts in one grouped pass and is the only node that writes `case.procedures`; when the solver commits to a diagnosis, an LLM judge checks the match (loop continues with `ruledOutDiagnoses` on mismatch). On exhaustion, a `bridge` node generates confirmatory procedures for the true diagnosis. The approved procedure list is presented (and picked) grouped by category (`{ "Category": ["Name", …] }`, with uncategorized procedures under a synthetic `"General"` bucket) rather than as one flat list — this applies to both the blinded pick and the (non-blinded) bridge pick, the latter grouping full `{name, relevance, result}` objects per category. Procedure selection is a `ProcedureStrategy` port (`03procedure/strategy/`: `ports.ts`, `directPick.ts`, `categoryScopedPick.ts`, `index.ts`'s `createProcedureStrategy`) rather than a branch of a global config read inside the node — `blinded_step` and `bridge` call `strategy.nextStep()` / `strategy.bridge()` and never read `PROCEDURE_PRESELECTION` themselves; the strategy is selected once at graph-assembly time and threaded down as a constructed object. `DirectPick` is one LLM call against the full candidate list per step (the default). `CategoryScopedPick` — selected only when `PROCEDURE_PRESELECTION` is set **and** the approved list has real categories (a flat catalogue has nothing to scope on) — splits that single call into two sequential calls (a category-only pick, over-inclusive, followed by a procedure/results-only pick scoped to those categories plus `"General"`); the graph shape stays fixed at 4 nodes regardless of which strategy runs. The blinded scoped pick may answer with an `expand` action requesting additional categories: a bounded loop in `CategoryScopedPick.nextStep` unions them into a local scope set and retries (max 2 expansions per `blinded_step`; the expand grammar only admits categories not yet in scope, and past the cap the branch is removed from the schema entirely — the visited set lives in code, never the model). The bridge's scoped pick instead retries deterministically once with all categories if it returns empty. The blinded step's own compiled child graph (built once per strategy, invoked — not added as a node — from inside `blinded_step`) has a state schema that structurally omits `diagnosis`: the `BlindedView` type already makes passing it a compile error, and the child graph is a runtime backstop on top of that (LangGraph filters input against a graph's state schema before it reaches a channel). `matchDiagnosis` stays in the parent node, outside the blinded path, since it's an oracle call. Additional guards: already-ordered procedures are excluded from every candidate list/grammar (duplicate orders are impossible by construction), category-pick prompts show per-category counts plus sample names, and blinded prompts include the remaining iteration budget as convergence pressure.
+
+### Outline segments
+
+Since #159 the outline is never stored or diffed as raw markdown — it is a **positional
+segment array** (`OutlineSegments`, `graph/outline/segments.ts`), and every downstream
+comparison (what did the reviewer change? did they touch a heading?) is done **by position**,
+never by matching label text: a reviewer who retypes a heading verbatim could otherwise smuggle
+a moved heading through as "unchanged".
+
+The LLM still emits markdown, but with its fixed (server-owned) headings wrapped in
+`<fixed>…</fixed>` tags — `parseTaggedOutline`/`renderTaggedOutline` convert between that and the
+canonical shape: `segments.length` is always odd, even indices (0, 2, …) are editable
+(`fixed: false`, possibly empty string), odd indices are fixed (`fixed: true`). The skeleton
+(`outlineSkeleton`/`checkSkeleton`) is server-owned and always has the same five top-level
+sections — `## General`, `## Patient`, `## Chief complaint`, `## Anamnesis`, `## Procedures` —
+plus, between Anamnesis and Procedures, one `### <category>` heading per configured anamnesis
+catalogue category (or LLM-named ones, in order, when the catalogue is freeform). `checkSkeleton`
+is the retry signal for an LLM that emits a malformed or incomplete skeleton.
+
+A reviewer's submission is checked against the outline it was displayed with by
+`compareSubmission` — the same segment **count**, and every **fixed** segment byte-for-byte
+unchanged (after `normalizeSegmentText` irons out CRLF/trailing-space/Unicode-normalization
+noise from a reviewer's editor); only the editable gaps may differ. `mergeSegments` then rebuilds
+a canonical outline from the original, applying only the editable replacements a caller supplies
+— fixed segments always come from the original, never from what was submitted, so a submission
+can never smuggle a structural edit through even if `compareSubmission` were skipped by mistake.
+
+**Only the changed segments are translated back.** `edits_received` (`caseGenerationService.ts`)
+diffs the reviewer's submission against what they were shown, translates just the changed
+editable segments to English (`translateOutline(..., "in")`), and merges the rest back in from
+the original English outline — an untouched segment is never re-translated. There is no
+label-based translation cache here (unlike `procedures[].name`/`anamnesis[].category`): a
+segment is addressed purely by its index in the array, both ways.
+
+**The sandwich-off cosmetic gap.** With `TRANSLATION_SANDWICH` off, plan mode generates the
+outline directly in the request language (`audienceOf`'s `"user-facing"` binds the outline
+prompts to it) — but the five fixed section headings above are still the literal English
+strings `checkSkeleton` expects, since the skeleton is shared code, not a per-language template.
+A non-English plan-mode reviewer with the sandwich off therefore sees English headings over
+localized body text; fixing that is a skeleton-localization change, not a bug in this comparison
+logic. `joinOutline` — the prompt-ready text every downstream generator reads — always escapes
+any `<fixed>`/`</fixed>` a reviewer might have typed inside an editable segment, so a submitted
+edit can never re-create outline structure that only the server is allowed to own.
 
 **Tool pattern:** each subgraph directory has a `tools.ts` exporting `Tool<TInput, TOutput>` objects (`src/core/graph/utils/tool.ts`). Graph nodes are thin — prompt building, LLM calls, retries, and structured-output parsing live in the aigateway behind the tools. Nodes are wrapped with `traceNode()` (`utils/nodeWrapper.ts`) to emit "Node Started/Completed" bus events with translated labels.
 
-**Assembly** (`caseGraph.ts`) follows one rule, and the next person to touch it will get it
-backwards: **compile on what the deployer chose; branch on what the caller asked for.**
-`TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are compiled
-away — an _absent flag means an absent node_, not a node that is skipped. With
+**Assembly** (`caseGraph.ts`'s `assembleCaseGraphs`) follows one rule, and the next person to
+touch it will get it backwards: **compile on what the deployer chose; branch on what the caller
+asked for.** `TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are
+compiled away — an _absent flag means an absent node_, not a node that is skipped. With
 `TRANSLATION_SANDWICH=false` the two translation phases and their two conditional edges do not
-exist. `generationFlags`, `difficulty` and `language` are per-request and stay runtime
-branches — which is why, with the sandwich _on_, the two conditional edges remain (whether this
-deployment can translate is the deployer's choice; whether this request needs to is the
-caller's). They are two **different** predicates, not one reused twice (issue 12 §3):
+exist, and neither does the sandwich's middle layer (#159): `assembleCaseGraphs` returns
+`outlineOut: undefined, reviewIn: undefined`, and plan mode generates and shows the outline
+directly in the request language instead (see "Outline segments" above). `generationFlags`,
+`difficulty` and `language` are per-request and stay runtime branches — which is why, with the
+sandwich _on_, the two conditional edges remain (whether this deployment can translate is the
+deployer's choice; whether this request needs to is the caller's). Whether a _particular_
+plan-mode request enters the compiled-in middle layer is itself a runtime branch, made outside
+the graph: `CaseGenerationService.translatesOutline(data)` (`sandwich && language !==
+"English"`) decides per job, in the job's status machine, not as a conditional edge — there is
+no seam inside either top-level graph where that decision belongs, since the middle layer is
+invoked between them, never mounted in either. They are two **different** predicates, not one
+reused twice (issue 12 §3):
 `requestNeedsTranslationOut()` (after generation) reads only `getRequestContext()?.language` off
 ALS — generation always runs in English under the sandwich, so the response is translated back
 regardless of how the request arrived. `requestNeedsTranslationIn(state)` (before generation)
@@ -328,10 +442,12 @@ generation flag stays a conditional edge in every variant, for the same "deploye
 caller branches" reason.
 
 `buildCaseGraph` compiles **all four** flag combinations eagerly at boot into a map keyed by
-`graphVariantKey`, and binds `generateCase` to the one the config selects. Only one is ever
-served; the other three prove every variant compiles at boot rather than at config-change
-time, and give `exportGraphs.ts` and the tests a single source of assembly truth rather than a
-parallel code path that can drift. Compilation is pure wiring with no I/O, so four is cheap.
+`graphVariantKey` — each value now the `{ plan, case, outlineOut, reviewIn }` bundle
+`assembleCaseGraphs` returns — and binds `planCase`/`renderCase`/`generateCase`/`translateOutline`
+to the one the config selects. Only one is ever served; the other three prove every variant
+compiles at boot rather than at config-change time, and give `exportGraphs.ts` and the tests a
+single source of assembly truth rather than a parallel code path that can drift. Compilation is
+pure wiring with no I/O, so four is cheap.
 
 `pnpm graph:export` writes **two** topologies to `docs/graphs/`, not four:
 `PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter and leaves the procedure graph at
@@ -553,7 +669,8 @@ constructs them once, from `createApp()`.
 `src/core/graph/persistence/`:
 
 - `db.ts` — `createDb(cacheDir)` opens the DB and runs migrations; `syncSource()` re-ingests a YAML file only when its sha256 changed (fingerprints in `_meta`, keyed on the domain name so moving `CATALOG_DIR` does not invalidate the cache)
-- `schema.ts` — tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`
+- `schema.ts` — tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`,
+  `job_record` (#159 — see below)
 - `translationStore.ts` — cache-aside translation store used by diagnosis, procedures, anamnesis categories and trace labels. In-flight work is deduped **per key**; retries live inside the shared promise; runtime fills insert-if-absent and read back (first-writer-wins), while a YAML sync overwrites. `source` marks a row `curated` or `generated`; generated values persist in the DB, never back into YAML
 - `paths.ts` — `resolveCatalogDir`/`resolveCacheDir` (`CATALOG_DIR`/`CACHE_DIR` resolution) and `catalogFile()`
 - `predefinedList.ts` — reads a translations YAML file directly (bypassing `syncSource`'s hash cache) for startup validation
@@ -563,6 +680,20 @@ constructs them once, from `createApp()`.
 language-independent**; only the translation accessors take a language.
 
 `src/core/graph/symptoms/repo.ts` — static UMLS floor from `diagnosis_symptoms.json` + LLM-symptom cache with TTL (`SYMPTOM_CACHE_TTL_DAYS`)
+
+`src/core/jobs/repo.ts`'s `createJobRecordRepo(handle)` (#159) is the `job_record` checkpoint
+store, following the same `createXxx(handle)`/no-I/O-on-import convention. Every write is
+**compare-and-set**: `update(jobId, patch, expect?)` compiles to one `UPDATE ... WHERE job_id =
+? [AND status IN (...)] [AND revision = ?]` and returns whether a row actually changed —
+`CaseGenerationService`'s `checkpoint()` helper passes `expect: { status: [record.status],
+revision: record.revision }` and throws if nothing changed, which is what makes "the record
+must still be where this segment left it" an enforced invariant rather than a comment. A row
+holds the job's `transport`/`mode`/`status`/`revision`/`expiresAt`/`data` (opaque
+`JobRecordData` JSON the repo never interprets, fully replaced on write) and
+`encryptedApiKey` — **never a plain-text API key**: `CaseGenerationService` strips
+`llmConfig.apiKey` out of `data` before it ever reaches this repo and stores it, sealed by a
+`SecretBox`, in this one separate column instead (see "Composition Root" above). `listByTransport`
+and `listExpired` back `resume()` and the review-TTL sweep respectively.
 
 ### Numbered Directory Convention
 
@@ -598,8 +729,9 @@ below), never by reaching into `GraphAppContext` directly:
 - `GET /api/health` (not part of the read model — a liveness probe, not a domain read)
 - `GET /api/features`, `GET /api/allowedLlms` — inline handlers calling
   `readModel.features()`/`readModel.allowedLlms()`
-- `routes/cases.router.ts` — `POST /api/cases` (content negotiation, see below),
-  `DELETE /api/cases/:jobId` (cancel, through the `JobDirectory` — see below)
+- `routes/cases.router.ts` — `POST /api/cases` and `POST /api/cases/:jobId/review` (content
+  negotiation, both segmented since #159 — see below), `GET /api/cases/:jobId/review` (read a
+  pending review), `DELETE /api/cases/:jobId` (cancel, through the `JobDirectory` — see below)
 - `routes/diagnosis.router.ts` — `GET /api/diagnosis`, calling `readModel.diagnoses()`
 - `routes/procedures.router.ts` — `GET /api/procedures`, calling `readModel.procedures()`
 - `routes/labels.router.ts` — `GET /api/cases/:jobId/labels` (SSE, `event: label`, through the
@@ -622,26 +754,69 @@ detaching via the returned `stop` on `req.on("close")`. `DELETE /api/cases/:jobI
 are both `404` (`NOT_FOUND`, with the message distinguishing "already finished" from "no active
 generation" — a client that wants to tell those apart reads the message, not the status code).
 
-**`POST /api/cases` is REST's synchronous transport, opened as a stream (#143).** Content negotiation on the one route, not a second endpoint: `Accept:
-application/json` (or no preference) blocks and returns the case exactly as before; `Accept:
-text/event-stream` opens SSE on the POST's own response — `event: accepted {jobId}` written
-**before any node runs**, then `event: label`… as generation proceeds, then `event: result
-{case…}` or `event: error {error}`. Opening the stream with the request itself removes the
-handshake race a 202-then-subscribe design has: every event between minting the jobId and the
-client subscribing would otherwise be lost, short of a replay buffer (deferred). A `: ping`
-comment is written every `HEARTBEAT_MS` (15s; `heartbeatMs` in `RestAppOptions` overrides it
-for tests) independently of label activity — a single node (outline generation on a local
-model, one solver iteration) can stay silent for minutes, long enough for a proxy to treat the
-connection as idle; liveness and telemetry are two concerns that happen to coincide, not one
-mechanism. `jobId` is a **body field**, validated against `src/api/JobId.ts`'s `JobIdSchema`
-since it is also a NATS subject token (`cases.result.<jobId>`) even when the request arrives
-over REST — the `?jobId=` query param is gone. A duplicate jobId (still running, or finished
-within the channel's tombstone window) is a 409 `JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED` on
-either Accept path, answered before any stream opens and without starting a second generation
-— `CaseGenerationService.start()` (see "Case Generation Pipeline" above) is what makes the
-duplicate check synchronous with respect to the caller. On either path, a client disconnect
-cancels the job (`res.on("close")`) — the accepted trade of a connection-scoped transport
-(HTTP cannot tell "the user cancelled" from "the network dropped"), not an oversight.
+**`POST /api/cases` is REST's synchronous transport, opened as a stream (#143), and since #159 it
+answers one _segment_, not necessarily the whole job.** `POST /api/cases/:jobId/review` (a
+reviewer's decision on a paused job) answers a segment the same way, through the same
+`respondWithSegment` helper — a segment ends at its first stop: `done`, `failed`, or
+`awaiting_review`, and every stop is answered **on that request's own response**; a paused job
+holds no connection of its own between segments. Content negotiation on each route, not a second
+endpoint per mode: `Accept: application/json` (or no preference) blocks and returns the stop —
+the case (`200`), the review (`202`, plan mode's `awaiting_review` stop), or the error; `Accept:
+text/event-stream` opens SSE on the response — `event: accepted {jobId}` written **before any
+node runs**, then `event: label`… as the segment proceeds, then `event: result {case…}` /
+`event: review {review…}` / `event: error {error}`. Opening the stream with the request itself
+removes the handshake race a 202-then-subscribe design has: every event between minting the
+jobId and the client subscribing would otherwise be lost, short of a replay buffer (deferred). A
+`: ping` comment is written every `HEARTBEAT_MS` (15s; `heartbeatMs` in `RestAppOptions`
+overrides it for tests) independently of label activity — a single node (outline generation on a
+local model, one solver iteration) can stay silent for minutes, long enough for a proxy to treat
+the connection as idle; liveness and telemetry are two concerns that happen to coincide, not one
+mechanism. `jobId` is a **body field** on `POST /api/cases` (a **path param** on the review
+routes), validated against `src/api/JobId.ts`'s `JobIdSchema` since it is also a NATS subject
+token (`cases.result.<jobId>`) even when the request arrives over REST — the `?jobId=` query
+param is gone. A duplicate jobId (still running, or finished within the channel's tombstone
+window) is a 409 `JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED` on either Accept path, answered
+before any stream opens and without starting a second generation — `CaseGenerationService.start()`
+(see "Case Generation Pipeline" above) is what makes the duplicate check synchronous with
+respect to the caller. On either path, a client disconnect cancels the job **only while a
+segment is still running** (`res.on("close")` calling `service.cancel(jobId)`) — a disconnect
+between segments (while paused, waiting for a review) has no connection to fire on, so it does
+nothing; the paused job simply waits out its `REVIEW_TTL_MINUTES`. This is the accepted trade of
+a connection-scoped transport (HTTP cannot tell "the user cancelled" from "the network
+dropped"), not an oversight.
+
+**`GET /api/cases/:jobId/review`** is a plain read of the pending review (`service.getReview`,
+`200`, or `404 NOT_FOUND` when there is none — never paused, already decided, or
+finished/expired) — it never opens a stream and never advances the job, unlike the two segment
+routes above. **`POST /api/cases/:jobId/review`** validates the body against
+`ReviewDecisionRequestSchema` (`400 INVALID_REQUEST_BODY` on failure), then calls
+`service.decide`; a refusal (stale revision, not awaiting review, review rounds exhausted,
+changed fixed segment, wrong segment count, unknown job) is answered with the outcome's
+`error.statusCode` and never opens a stream, while an accepted decision runs the job's next
+segment through `respondWithSegment` exactly like `POST /api/cases` — including `event: accepted
+{jobId}` on the SSE path, since this call is what (re)starts the connection a paused job
+otherwise holds none of.
+
+**Known multi-replica limitation (#159, documented rather than fixed):** unlike the label stream
+and `DELETE`, which go through the `JobDirectory` port and so reach a job on whichever replica
+owns it, both review routes call `service.getReview`/`service.decide` **directly** — a REST
+review call only ever sees jobs paused on the replica it happens to hit. Forwarding a review
+call to the owning replica (the way `JobDirectory` forwards a cancel or a watch) is deferred;
+today, running REST plan-mode with more than one replica and no sticky routing to the job's
+owner means a review call can 404 a job that is, in fact, still paused elsewhere. NATS's
+`cases.decision.<jobId>` (below) has no such limitation — it is already owning-replica request/reply.
+
+**Resume at startup.** `startRestServer` calls `service.resume("rest")` before it starts
+listening (`transports/rest/index.ts`). Before the first outline checkpoint there is nothing to
+resume — the requester's HTTP connection is gone, so those records are simply deleted. Past
+that point the two modes diverge: a **normal-mode** REST job is also deleted — nothing over
+REST can push a result to a connection that no longer exists, so its crash-recovery story stays
+"the client sees the connection drop and retries", exactly as before #159. A **plan-mode** job
+resumes: if it was mid-translation (`outline_ready`) that segment finishes; otherwise it goes
+back to `awaiting_review` with whatever outline the reviewer last saw or submitted — either way
+nobody is pushed a result (`.catch`-only, the same reason `onDetachedOutcome` exists for a paused
+job cancelled or expired), and the reviewer picks the job back up with `GET
+/api/cases/:jobId/review`, which just reads the checkpoint.
 
 ### NATS Layer
 
@@ -652,7 +827,7 @@ feature — a JetStream stream's retention applies to everything its subject fil
 workqueue retention were single-delivery and stealable — the first ack destroyed them for every
 other consumer).
 
-Four channels, two JetStream streams (`src/transports/nats/subjects.ts`, `streams.ts`):
+Six channels, three JetStream streams since #159 (`src/transports/nats/subjects.ts`, `streams.ts`):
 
 - **`CASE_REQUESTS`** (workqueue) — subjects `cases.request.*`. A submitted job
   (`cases.request.generate`) is taken by exactly one worker via the durable pull consumer
@@ -661,6 +836,27 @@ Four channels, two JetStream streams (`src/transports/nats/subjects.ts`, `stream
   published on its own subject, `cases.result.<jobId>` (`resultSubject`), so any number of
   independent consumers can each read it, with replay — this is what makes "NATS provides the
   persistence" actually true; workqueue's first ack would have destroyed it for everyone else.
+- **`CASE_REVIEWS`** (limits, `max_age` = `REVIEW_TTL_MINUTES`, #159) — subjects
+  `cases.review.*`. A plan-mode pause is published on its own subject, `cases.review.<jobId>`
+  (`reviewSubject`), the same "durable per-job subject" shape as `resultSubject` and for the same
+  reason: a workqueue stream's first ack would destroy the review for a client that reconnects
+  before answering it. `max_age` tracks the review time limit itself, not a fixed constant, so a
+  review can never outlive the service's own expiry sweep — `reviewsStream(reviewTtlMs)` builds
+  the config at startup from `REVIEW_TTL_MINUTES`, not a `const`, because the deployment's TTL
+  is unknown at module load time. `msgID` is keyed on `jobId-revision`, not just `jobId`: unlike
+  a result, a job can pause more than once (a revision, a resubmitted edit), and each pause is a
+  distinct message a reconnecting client should be able to replay.
+- **`cases.decision.<jobId>`** (`decisionSubject`, #159) — core NATS request/reply, deliberately
+  on a **different subject prefix** than `cases.request.*`/`cases.result.*`/`cases.review.*`: it
+  must never be captured by any JetStream stream's filter, since a decision is answered
+  synchronously by the owning replica and is never meant to be replayed. Answered by the same
+  ownership-by-subscription-interest rule as `cancel`/`status` below — `jobResponders.ts`
+  subscribes on the job's `accepted` event — but a paused job never emits `complete` (the channel
+  stays open across a review, #159), so this subscription, like `cancel`'s, is naturally still
+  live for as long as the job can be decided on. Replies `{accepted: true}` **before** the next
+  segment runs, then the segment's stop is delivered through `publishStop` exactly as the request
+  worker delivers a first segment's — a refusal (stale revision, invalid outline, not paused) is
+  answered synchronously instead, with nothing published, since there is no new stop to deliver.
 - **`cases.cancel.<jobId>`** (`cancelSubject`) — core NATS request/reply, not JetStream. Answered
   only by the replica that owns the job: `jobResponders.ts`'s `startJobResponders` subscribes to a
   job's cancel subject when the per-job event channel reports it `accepted` and unsubscribes on
@@ -678,16 +874,23 @@ Four channels, two JetStream streams (`src/transports/nats/subjects.ts`, `stream
   "unknown" again rather than "ask again in a second". This is exactly what lets a remote
   observer's `JobDirectory.watch()` tell "finished" (`{state: "terminal"}`) from "never existed
   here" (`{state: "unknown"}`) across replicas, the same distinction `channel.peek()` makes
-  in-process.
+  in-process. Since #159 the reply type (`JobStatusReply`) adds `{state: "awaiting_review",
+revision}`: a paused job's channel is still open (it never emits `complete`), so `peek` alone
+  cannot tell a running segment from one waiting on a reviewer — the responder checks
+  `service.getReview(jobId)` first and only falls back to `jobEvents.peek(jobId)` when that
+  returns nothing.
 - `cases.progress.<jobId>.<accepted|label|complete>` (core NATS, ephemeral fan-out, #144) — see
   "Progress publisher" below.
 
-`streams.ts`'s `ensureStreams(jsm)` creates or reconciles both streams and the durable consumer
-at startup. It fails loudly, not silently, in the two cases JetStream cannot fix in place: the
-**pre-#142 `cases` stream still exists** (its `cases.>` filter overlaps both new streams, and
-retention cannot be changed on an existing stream) — the error message names the stream and
-tells the operator to run `nats stream rm cases`, and existing deployments must do this manually
-before upgrading; or a stream exists with a different retention policy than configured.
+`streams.ts`'s `ensureStreams(jsm, reviewTtlMs)` creates or reconciles all three streams and the
+durable consumer at startup — `reviewTtlMs` (from `REVIEW_TTL_MINUTES`, threaded in rather than
+read from `process.env` here) is `CASE_REVIEWS`'s `max_age`, so this module stays free of
+environment access. It fails loudly, not silently, in the two cases JetStream cannot fix in
+place: the **pre-#142 `cases` stream still exists** (its `cases.>` filter overlaps every stream
+here, and retention cannot be changed on an existing stream) — the error message names the
+stream and tells the operator to run `nats stream rm cases`, and existing deployments must do
+this manually before upgrading; or a stream exists with a different retention policy than
+configured.
 
 `cases.handler.ts`'s `runRequestWorker` pulls one request at a time, and **only once a
 generation slot is free** — `service.reserveSlot()` is awaited before the next
@@ -697,18 +900,49 @@ replica rather than being pulled and queued in memory. While a generation runs,
 deadline (`REQUEST_ACK_WAIT_MS`, short) from expiring mid-generation — a crashed replica's job is
 still redelivered quickly, but a merely slow one isn't punished for it.
 
+**Ack at the first checkpoint, not at the end (#159).** `service.start`'s `opts.onCheckpoint` is
+wired to `msg.ack()` (guarded against a double ack — the segment may stop at a review, acking
+early, and the handler still reaches its own `ack()` call at the end of the function): once the
+plan graph's first outline is saved, the job is durable in `job_record`, and a crash from that
+point on resumes it from its checkpoint (`service.resume`) rather than needing redelivery — so
+holding the message unacked any longer would only risk a redundant second run. Before that
+point a crash still means plain redelivery, same as pre-#159: nothing durable exists yet, so
+`msg.working()` only needs to run up to the same point, and does — once acked, the ack deadline
+no longer matters. `publishStop(graph, result)` (`cases.publisher.ts`) is the one function every
+caller of a segment's result goes through — the request worker, the decision responder below,
+`resume()`, and detached outcomes — so "what a stop publishes" is decided once:
+`awaiting_review` goes to `cases.review.<jobId>`, `done`/`failed` go to `cases.result.<jobId>`
+exactly as before #159.
+
+**Resume at startup (#159).** `startNatsTransport` calls `service.resume("nats")` after the
+streams are reconciled and before the request worker starts pulling, delivering each resumed
+job's next stop through `publishStop` (failures logged, never thrown — one unresumable job must
+not abort the whole transport's startup). Unlike REST, NATS resumes a **normal-mode** job too:
+`resume()` moves it straight to `ready_to_generate` and runs its next segment with high
+priority, because — unlike REST — `cases.result.<jobId>` can still deliver the eventual result
+to whichever client originally subscribed to it. A **plan-mode** job resumes the same way REST's
+does (finish a mid-translation segment, or go back to `awaiting_review`), except its stop is
+published to `cases.review.<jobId>`/`cases.result.<jobId>` instead of read back on demand.
+`service.onDetachedOutcome` covers the remaining case: a paused job cancelled or expired with
+nobody actively waiting on its `result` promise still has a client that will ask
+`cases.result.<jobId>`/`cases.review.<jobId>` for an answer — `startNatsTransport` publishes it
+through the same `publishStop`, exactly as a live segment's stop would be.
+
 **NATS parity (#144).** The stated requirement is
 that a client speaking only NATS, or only REST, has every **feature** — asymmetry is allowed only
 in delivery guarantees:
 
-| REST                        | NATS                                                 |
-| --------------------------- | ---------------------------------------------------- |
-| SSE `event: label` on a job | `cases.progress.<jobId>.<accepted\|label\|complete>` |
-| `GET /api/diagnosis`        | `catalog.diagnosis`                                  |
-| `GET /api/procedures`       | `catalog.procedures`                                 |
-| `GET /api/features`         | `meta.features`                                      |
-| `GET /api/allowedLlms`      | `meta.allowedLlms`                                   |
-| `GET /api/graph`            | `meta.graph`                                         |
+| REST                            | NATS                                                                                             |
+| ------------------------------- | ------------------------------------------------------------------------------------------------ |
+| SSE `event: label` on a job     | `cases.progress.<jobId>.<accepted\|label\|complete>`                                             |
+| `GET /api/diagnosis`            | `catalog.diagnosis`                                                                              |
+| `GET /api/procedures`           | `catalog.procedures`                                                                             |
+| `GET /api/features`             | `meta.features`                                                                                  |
+| `GET /api/allowedLlms`          | `meta.allowedLlms`                                                                               |
+| `GET /api/graph`                | `meta.graph`                                                                                     |
+| `event: review` / `202` stop    | `cases.review.<jobId>` (#159)                                                                    |
+| `GET /api/cases/:jobId/review`  | `cases.review.<jobId>`'s replay, or `cases.status.<jobId>` → `{state: "awaiting_review"}` (#159) |
+| `POST /api/cases/:jobId/review` | `cases.decision.<jobId>` (#159)                                                                  |
 
 - **Progress publisher** (`progressPublisher.ts`'s `startProgressPublisher`) is a second adapter
   onto the core-owned per-job channel (`src/core/jobEvents/`) — the first being the REST SSE
@@ -806,6 +1040,17 @@ a caller hand in a slot it already holds instead of acquiring its own — the NA
 can run yet is never even dequeued into memory, while REST's `POST /api/cases` just lets
 `generate` acquire its own slot inline. Either way the service releases the slot exactly once
 when the job ends, including when a slot handed in turns out to address a duplicate `jobId` (a 409) that never runs.
+
+**Two priority lanes since #159.** `acquire(signal?, { priority })` grants a freed slot to the
+oldest `"high"`-priority waiter if any, else the oldest `"normal"` waiter — FIFO within each
+lane. `runSegment`'s caller passes `priority: "high"` for exactly the two cases where a job is
+**continuing** rather than starting — a decision accepted by `decide()` and a job picked back up
+by `resume()` — and `"normal"` for a fresh `start()`. This is what lets a job resumed after a
+human review or a restart jump ahead of brand-new requests already queued behind
+`MAX_CONCURRENT_GENERATIONS`, instead of losing its slot to whatever queued first. It cannot
+starve new work indefinitely only because every high-priority waiter belongs to an
+already-admitted job and is bounded by `MAX_REVIEW_ROUNDS` — a property of the callers, not of
+the limiter itself, which has no notion of how many high waiters are still coming.
 
 ### Language
 
@@ -917,33 +1162,36 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
 
 ## Environment Variables
 
-| Variable                                                              | Default                 | Notes                                                                                                                                                                                            |
-| --------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PORT`                                                                | `3030`                  | Server port                                                                                                                                                                                      |
-| `FEATURES`                                                            | `""`                    | Comma-separated flags: `REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`                                                                                                                                     |
-| `LLM_PROVIDER`                                                        | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                                                  |
-| `LLM_MODEL`                                                           | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                                        |
-| `LLM_API_KEY`                                                         | —                       | API key for Google/OpenAI                                                                                                                                                                        |
-| `LLM_URL`                                                             | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                                                                             |
-| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`             | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                                                                        |
-| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`                 | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                                                                       |
-| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`            | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                  |
-| `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                            |
-| `PROCEDURE_PRESELECTION`                                              | `false`                 | `true`/`1` selects the `CategoryScopedPick` procedure strategy (splits the blinded procedure step into a category pick then a procedure pick)                                                    |
-| `LANGUAGES`                                                           | `English,German`        | Comma-separated deployment language set, trimmed/de-duplicated/order-preserved; must include `English`. Validated at startup and against every request's `language` (see Language section below) |
-| `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                 |
-| `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                            |
-| `ALLOWED_LLMS`                                                        | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                               |
-| `CATALOG_DIR`                                                         | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                     |
-| `CACHE_DIR`                                                           | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                    |
-| `NATS_URL`                                                            | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                             |
-| `NATS_USER` / `NATS_PASSWORD`                                         | `nats` / `nats`         |                                                                                                                                                                                                  |
-| `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS (`src/core/concurrency.ts`'s shared limiter). Excess requests queue; a queued job is still cancellable. See Request Context below    |
-| `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                                                                   |
-| `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
-| `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var. `"true"` (that literal only) skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` / `_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | —                       | Standard OTel vars, read by the OTLP trace/log exporters themselves — no plumbing in this repo; any one set selects the `"otlp"` exporter mode (`selectExporterMode`)                            |
-| `OTEL_SERVICE_NAME`                                                   | —                       | Standard OTel var, read via `envDetector` (`observability/otel.ts`)                                                                                                                              |
+| Variable                                                              | Default                 | Notes                                                                                                                                                                                                          |
+| --------------------------------------------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                                                | `3030`                  | Server port                                                                                                                                                                                                    |
+| `FEATURES`                                                            | `""`                    | Comma-separated flags: `REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`                                                                                                                                                   |
+| `LLM_PROVIDER`                                                        | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                                                                |
+| `LLM_MODEL`                                                           | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                                                      |
+| `LLM_API_KEY`                                                         | —                       | API key for Google/OpenAI                                                                                                                                                                                      |
+| `LLM_URL`                                                             | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                                                                                           |
+| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`             | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                                                                                      |
+| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`                 | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                                                                                     |
+| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`            | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                                |
+| `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                                          |
+| `PROCEDURE_PRESELECTION`                                              | `false`                 | `true`/`1` selects the `CategoryScopedPick` procedure strategy (splits the blinded procedure step into a category pick then a procedure pick)                                                                  |
+| `LANGUAGES`                                                           | `English,German`        | Comma-separated deployment language set, trimmed/de-duplicated/order-preserved; must include `English`. Validated at startup and against every request's `language` (see Language section below)               |
+| `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                               |
+| `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                                          |
+| `ALLOWED_LLMS`                                                        | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                                             |
+| `CATALOG_DIR`                                                         | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                                   |
+| `CACHE_DIR`                                                           | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                                  |
+| `NATS_URL`                                                            | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                                           |
+| `NATS_USER` / `NATS_PASSWORD`                                         | `nats` / `nats`         |                                                                                                                                                                                                                |
+| `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS (`src/core/concurrency.ts`'s shared limiter). Excess requests queue; a queued job is still cancellable. See Request Context below                  |
+| `REVIEW_TTL_MINUTES`                                                  | `1440`                  | Plan mode (#159): how long a paused job waits for its reviewer before a background sweep expires it (`REVIEW_EXPIRED`); also `CASE_REVIEWS`'s JetStream `max_age`                                              |
+| `MAX_REVIEW_ROUNDS`                                                   | `3`                     | Plan mode (#159): how many AI revisions (`decision.action === "revise"`) a reviewer may request before having to approve or edit the outline instead                                                           |
+| `JOB_ENCRYPTION_KEY`                                                  | —                       | Plan mode (#159): seals a per-request LLM API key at rest on a paused job's checkpoint (AES-256-GCM). **Required** when `ALLOW_LLMS` is set — startup fails otherwise. Generate with `openssl rand -base64 32` |
+| `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                                                                                 |
+| `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                                         |
+| `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var. `"true"` (that literal only) skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES`               |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | —                       | Standard OTel vars, read by the OTLP trace/log exporters themselves — no plumbing in this repo; any one set selects the `"otlp"` exporter mode (`selectExporterMode`)                                          |
+| `OTEL_SERVICE_NAME`                                                   | —                       | Standard OTel var, read via `envDetector` (`observability/otel.ts`)                                                                                                                                            |
 
 Note: the `REST` flag is required for the HTTP API to load — include it in `FEATURES` when running the server.
 

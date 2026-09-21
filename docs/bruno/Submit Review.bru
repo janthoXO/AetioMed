@@ -1,0 +1,46 @@
+meta {
+  name: Submit Review
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{base_url}}/api/cases/{{jobId}}/review
+  body: json
+  auth: inherit
+}
+
+body:json {
+  // Approve the outline shown by "Get Review" as-is:
+  {
+    "revision": 1,
+    "decision": { "action": "approve" }
+  }
+
+  // Edit (submit the same segment array from "Get Review", with only the
+  // editable segments changed — fixed segments and the segment count must
+  // stay untouched) or ask for an AI revision instead:
+  // {
+  //   "revision": 1,
+  //   "decision": {
+  //     "action": "edit",
+  //     "outline": [
+  //       { "fixed": false, "text": "" },
+  //       { "fixed": true, "text": "## General" },
+  //       { "fixed": false, "text": "…edited editable text…" }
+  //     ]
+  //   }
+  // }
+  // {
+  //   "revision": 1,
+  //   "decision": {
+  //     "action": "revise",
+  //     "feedback": ["Make the patient older than 60."]
+  //   }
+  // }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

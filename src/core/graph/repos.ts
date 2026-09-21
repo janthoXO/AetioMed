@@ -16,6 +16,7 @@ import {
   type DiagnosisRepo,
 } from "./catalog/diagnosis/index.js";
 import { createSymptomsRepo, type SymptomsRepo } from "./symptoms/repo.js";
+import { createJobRecordRepo, type JobRecordRepo } from "../jobs/repo.js";
 
 export interface Repos {
   db: DbHandle;
@@ -24,6 +25,7 @@ export interface Repos {
   labels: LabelsRepo;
   diagnosis: DiagnosisRepo;
   symptoms: SymptomsRepo;
+  jobRecords: JobRecordRepo;
 }
 
 export function createRepos(opts: {
@@ -42,6 +44,7 @@ export function createRepos(opts: {
     labels: createLabelsRepo(db, opts.catalogDir),
     diagnosis: createDiagnosisRepo(db, opts.catalogDir),
     symptoms: createSymptomsRepo(db, opts.catalogDir, opts.symptomCacheTtlDays),
+    jobRecords: createJobRecordRepo(db),
   };
 }
 
@@ -52,4 +55,5 @@ export type {
   LabelsRepo,
   DiagnosisRepo,
   SymptomsRepo,
+  JobRecordRepo,
 };

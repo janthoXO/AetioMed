@@ -88,3 +88,31 @@ export const symptomCache = sqliteTable("symptom_cache", {
   symptoms: text("symptoms").notNull(),
   updatedAt: int("updated_at").notNull(),
 });
+
+/**
+ * Checkpoint for a generation job (#159, plan mode): the durable record that
+ * lets a paused (`awaiting_review`) or in-flight job survive a process
+ * restart. `data` is an opaque JSON blob owned by the job service — the repo
+ * never interprets it, only stores/replaces it whole. `encryptedApiKey`
+ * holds a per-request LLM API key sealed by `core/jobs/secretBox.ts` before
+ * it ever reaches this table; the repo stores the ciphertext only.
+ */
+export const jobRecord = sqliteTable(
+  "job_record",
+  {
+    jobId: text("job_id").primaryKey(),
+    transport: text("transport", { enum: ["rest", "nats"] }).notNull(),
+    mode: text("mode", { enum: ["normal", "plan"] }).notNull(),
+    status: text("status").notNull(),
+    revision: int("revision").notNull().default(0),
+    expiresAt: int("expires_at"),
+    updatedAt: int("updated_at").notNull(),
+    // JSON-encoded JobRecordData
+    data: text("data").notNull(),
+    encryptedApiKey: text("encrypted_api_key"),
+  },
+  (table) => [
+    index("idx_job_record_transport").on(table.transport),
+    index("idx_job_record_expires_at").on(table.expiresAt),
+  ]
+);

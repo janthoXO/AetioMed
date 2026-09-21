@@ -7,7 +7,14 @@ import type { GenerationFlag } from "./models/GenerationFlags.js";
 import type { UserInstructions } from "./models/UserInstructions.js";
 import type { Language } from "./models/Language.js";
 import type { Difficulty } from "./models/Difficulty.js";
-import type { CompiledCaseGraph } from "./02graphs/caseGraph.js";
+import type {
+  CompiledCaseGraphs,
+  PlanCaseInput,
+  PlanResult,
+  RenderCaseInput,
+} from "./02graphs/caseGraph.js";
+
+export type { PlanCaseInput, PlanResult, RenderCaseInput };
 
 export type GenerateCaseFn = (opts: {
   diagnosis: Diagnosis;
@@ -43,13 +50,20 @@ export interface GraphAppContext {
    */
   db: DbHandle;
   /**
-   * The compiled top-level graph this deployment actually serves (bound to
-   * the deployer's flags, not one of the other three eagerly-built
-   * variants — see `buildCaseGraph`'s doc comment). `GET /api/graph`
-   * (`core/graph/structure.ts`, #140) is the one consumer: it calls
-   * `getGraphAsync({ xray: true })` on exactly this graph, the same call
-   * `02graphs/exportGraphs.ts` uses to draw mermaid diagrams, so the two
-   * must not drift.
+   * Run the plan graph only: the outline and its judge loop, with the
+   * working-language inputs the case graph needs (#159).
    */
-  caseGraph: CompiledCaseGraph;
+  planCase: (opts: PlanCaseInput) => Promise<PlanResult>;
+  /** Run the case graph only, from an outline {@link planCase} produced. */
+  renderCase: (opts: RenderCaseInput) => Promise<Case>;
+  /**
+   * The compiled top-level graphs this deployment actually serves (bound to
+   * the deployer's flags, not one of the other eagerly-built variants — see
+   * `buildCaseGraph`'s doc comment): the plan graph and the case graph
+   * (#159). `GET /api/graph` (`core/graph/structure.ts`, #140) is the one
+   * consumer: it calls `getGraphAsync({ xray: true })` on exactly these, the
+   * same call `02graphs/exportGraphs.ts` uses to draw mermaid diagrams, so
+   * the two must not drift.
+   */
+  graphs: CompiledCaseGraphs;
 }

@@ -124,7 +124,7 @@ export function initGraph(opts: {
     procedureResult: createProcedureResultProviders(runtime),
   };
 
-  const { caseGraph, generateCase } = buildCaseGraph(
+  const { graphs, planCase, renderCase, generateCase } = buildCaseGraph(
     runtime,
     bus,
     config,
@@ -155,7 +155,15 @@ export function initGraph(opts: {
     }
   }
 
-  return { config, runtime, generateCase, caseGraph, db: repos.db };
+  return {
+    config,
+    runtime,
+    generateCase,
+    planCase,
+    renderCase,
+    graphs,
+    db: repos.db,
+  };
 }
 
 export { runWithContext } from "./utils/context.js";

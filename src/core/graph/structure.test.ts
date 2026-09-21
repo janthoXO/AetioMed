@@ -5,7 +5,7 @@
 // freshly built variant's `getNodeLabels()` already *is* that variant's
 // complete traceable node-id set — no execution required to prove coverage.
 import { describe, expect, it } from "vitest";
-import { assembleCaseGraph, type AssemblyDeps } from "./02graphs/caseGraph.js";
+import { assembleCaseGraphs, type AssemblyDeps } from "./02graphs/caseGraph.js";
 import { EventBus } from "@/core/event-bus.js";
 import {
   createTraceNode,
@@ -91,13 +91,13 @@ function buildDeps(
 describe("GET /api/graph structure (issue 15 §4)", () => {
   it("reflects a flag-varied topology: the sandwich-off graph has no translation nodes, the sandwich-on graph does", async () => {
     const off = await buildGraphStructure(
-      assembleCaseGraph(buildDeps(), {
+      assembleCaseGraphs(buildDeps(), {
         translationSandwich: false,
         procedurePreselection: false,
       })
     );
     const on = await buildGraphStructure(
-      assembleCaseGraph(buildDeps(), {
+      assembleCaseGraphs(buildDeps(), {
         translationSandwich: true,
         procedurePreselection: false,
       })
@@ -119,7 +119,7 @@ describe("GET /api/graph structure (issue 15 §4)", () => {
 
   it("excludes LangGraph's own synthetic __start__/__end__ nodes", async () => {
     const structure = await buildGraphStructure(
-      assembleCaseGraph(buildDeps(), {
+      assembleCaseGraphs(buildDeps(), {
         translationSandwich: true,
         procedurePreselection: false,
       })
@@ -133,7 +133,7 @@ describe("GET /api/graph structure (issue 15 §4)", () => {
 
   it("every node carries the English labelKey it was constructed with", async () => {
     const structure = await buildGraphStructure(
-      assembleCaseGraph(buildDeps(), {
+      assembleCaseGraphs(buildDeps(), {
         translationSandwich: false,
         procedurePreselection: false,
       })
@@ -145,11 +145,11 @@ describe("GET /api/graph structure (issue 15 §4)", () => {
   });
 
   it("both directions: every structure node id can emit an event, and every id a node can emit under appears in the structure", async () => {
-    // `assembleCaseGraph` wraps every node via `traceNode` at *construction*
+    // `assembleCaseGraphs` wraps every node via `traceNode` at *construction*
     // time (see `nodeWrapper.ts`) — so with this the only variant built in
     // this test, `getNodeLabels()` already is this topology's complete
     // traceable node-id set, without running anything.
-    const compiled = assembleCaseGraph(buildDeps(), {
+    const compiled = assembleCaseGraphs(buildDeps(), {
       translationSandwich: true,
       procedurePreselection: false,
     });

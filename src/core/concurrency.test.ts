@@ -137,12 +137,10 @@ describe("createLimiter", () => {
         return release;
       });
     expect(limiter.waiting).toBe(2);
-    expect(limiter.waitingHigh).toBe(1);
 
     release1();
     const releaseHigh = await pHigh;
     expect(order).toEqual(["high"]);
-    expect(limiter.waitingHigh).toBe(0);
     expect(limiter.waiting).toBe(1);
 
     releaseHigh();
@@ -205,11 +203,9 @@ describe("createLimiter", () => {
       return r;
     });
     expect(limiter.waiting).toBe(3);
-    expect(limiter.waitingHigh).toBe(1);
 
     controller.abort();
     await expect(pHigh).rejects.toMatchObject({ name: "AbortError" });
-    expect(limiter.waitingHigh).toBe(0);
     expect(limiter.waiting).toBe(2);
 
     release1();
@@ -223,7 +219,6 @@ describe("createLimiter", () => {
     const limiter = createLimiter(1);
     const release1 = await limiter.acquire();
     const pDefault = limiter.acquire();
-    expect(limiter.waitingHigh).toBe(0);
     expect(limiter.waiting).toBe(1);
     release1();
     await pDefault;

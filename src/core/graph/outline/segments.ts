@@ -134,9 +134,7 @@ export function joinOutline(segments: OutlineSegments): string {
 }
 
 function escapeFixedTags(text: string): string {
-  return text
-    .replace(/<fixed>/g, "&lt;fixed&gt;")
-    .replace(/<\/fixed>/g, "&lt;/fixed&gt;");
+  return text.replace(/<(\/?)fixed>/g, "&lt;$1fixed&gt;");
 }
 
 /** The five fixed top-level section headings every outline skeleton starts and ends with. */
@@ -158,101 +156,42 @@ export const OUTLINE_SECTIONS = Object.freeze([
 export function outlineSkeleton(opts: {
   anamnesisCategories?: string[] | undefined;
 }): string[] {
-  const [general, patient, chiefComplaint, anamnesis, procedures] =
-    OUTLINE_SECTIONS;
-  const skeleton: string[] = [general, patient, chiefComplaint, anamnesis];
-  if (opts.anamnesisCategories?.length) {
-    for (const category of opts.anamnesisCategories) {
-      skeleton.push(`### ${category}`);
-    }
-  }
-  skeleton.push(procedures);
-  return skeleton;
-}
-
-function validateCanonicalShape(
-  segments: OutlineSegments
-): { ok: true } | { ok: false; message: string } {
-  if (segments.length % 2 === 0) {
-    return {
-      ok: false,
-      message: `Expected an odd number of segments (alternating editable/fixed, starting and ending editable), got ${segments.length}`,
-    };
-  }
-  for (let i = 0; i < segments.length; i++) {
-    const expectedFixed = i % 2 === 1;
-    const segment = segments[i]!;
-    if (segment.fixed !== expectedFixed) {
-      return {
-        ok: false,
-        message: `Segment at index ${i} should be ${expectedFixed ? "fixed" : "editable"} (odd indices are fixed, even indices are editable), but got ${segment.fixed ? "fixed" : "editable"}`,
-      };
-    }
-  }
-  return { ok: true };
+  return [
+    ...OUTLINE_SECTIONS.slice(0, 4),
+    ...(opts.anamnesisCategories ?? []).map((category) => `### ${category}`),
+    OUTLINE_SECTIONS[4],
+  ];
 }
 
 /**
- * Validates the canonical shape and that the outline's fixed sections match
- * what the server expects to see — the retry signal for an LLM that emitted
- * a malformed or incomplete skeleton (#159).
+ * Validates that the outline's fixed sections match what the server expects
+ * to see — the retry signal for an LLM that emitted a malformed or incomplete
+ * skeleton (#159). Takes `parseTaggedOutline`'s output, whose alternating
+ * shape is guaranteed by construction.
+ *
+ * Without a catalogue (freeform anamnesis) the categories are whatever
+ * `### <name>` headings the LLM wrote between Anamnesis and Procedures; a
+ * heading there without that prefix is left out of the expected skeleton,
+ * so it surfaces as a mismatch at its own index.
  */
 export function checkSkeleton(
   segments: OutlineSegments,
   opts: { anamnesisCategories?: string[] | undefined }
 ): { ok: true } | { ok: false; message: string } {
-  const shapeCheck = validateCanonicalShape(segments);
-  if (!shapeCheck.ok) return shapeCheck;
-
   const fixedTexts = segments.filter((s) => s.fixed).map((s) => s.text);
+  const anamnesisCategories =
+    opts.anamnesisCategories ??
+    fixedTexts
+      .slice(4, -1)
+      .filter((text) => /^### \S/.test(text))
+      .map((text) => text.slice(4));
+  const expected = outlineSkeleton({ anamnesisCategories });
 
-  if (opts.anamnesisCategories !== undefined) {
-    const expected = outlineSkeleton(opts);
-    for (let i = 0; i < Math.max(expected.length, fixedTexts.length); i++) {
-      if (expected[i] !== fixedTexts[i]) {
-        return {
-          ok: false,
-          message: `Fixed section mismatch at index ${i}: expected ${JSON.stringify(expected[i] ?? "<none>")}, got ${JSON.stringify(fixedTexts[i] ?? "<none>")}`,
-        };
-      }
-    }
-    return { ok: true };
-  }
-
-  // Freeform anamnesis catalogue: the five top-level headings in order, with
-  // zero or more LLM-named `### <category>` headings between Anamnesis and
-  // Procedures — never anywhere else.
-  const [general, patient, chiefComplaint, anamnesis, procedures] =
-    OUTLINE_SECTIONS;
-  const fixedRequiredPrefix = [general, patient, chiefComplaint, anamnesis];
-  for (let i = 0; i < fixedRequiredPrefix.length; i++) {
-    if (fixedTexts[i] !== fixedRequiredPrefix[i]) {
+  for (let i = 0; i < Math.max(expected.length, fixedTexts.length); i++) {
+    if (expected[i] !== fixedTexts[i]) {
       return {
         ok: false,
-        message: `Fixed section mismatch at index ${i}: expected ${JSON.stringify(fixedRequiredPrefix[i])}, got ${JSON.stringify(fixedTexts[i] ?? "<none>")}`,
-      };
-    }
-  }
-  if (fixedTexts.length < fixedRequiredPrefix.length + 1) {
-    return {
-      ok: false,
-      message: `Missing trailing ${JSON.stringify(procedures)} section`,
-    };
-  }
-  const lastIndex = fixedTexts.length - 1;
-  if (fixedTexts[lastIndex] !== procedures) {
-    return {
-      ok: false,
-      message: `Fixed section mismatch at index ${lastIndex}: expected ${JSON.stringify(procedures)}, got ${JSON.stringify(fixedTexts[lastIndex])}`,
-    };
-  }
-  for (let i = fixedRequiredPrefix.length; i < lastIndex; i++) {
-    const text = fixedTexts[i]!;
-    const name = text.startsWith("### ") ? text.slice(4).trim() : "";
-    if (!text.startsWith("### ") || !name) {
-      return {
-        ok: false,
-        message: `Fixed section mismatch at index ${i}: expected a "### <category>" anamnesis category heading with a non-empty name, got ${JSON.stringify(text)}`,
+        message: `Fixed section mismatch at index ${i}: expected ${JSON.stringify(expected[i] ?? "<none>")}, got ${JSON.stringify(fixedTexts[i] ?? "<none>")}`,
       };
     }
   }
@@ -265,13 +204,11 @@ export function checkSkeleton(
  * as a semantic edit.
  */
 export function normalizeSegmentText(text: string): string {
-  const nfc = text.normalize("NFC");
-  const lf = nfc.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  const trimmedLines = lf
-    .split("\n")
-    .map((line) => line.replace(/[ \t]+$/, ""))
-    .join("\n");
-  return trimmedLines.trim();
+  return text
+    .normalize("NFC")
+    .replace(/\r\n?/g, "\n")
+    .replace(/[ \t]+$/gm, "")
+    .trim();
 }
 
 export type CompareSubmissionResult =
@@ -333,39 +270,17 @@ export function compareSubmission(
   return { ok: true, changed };
 }
 
-/** Structural + normalized-text equality, index by index. */
-export function segmentsEqual(a: OutlineSegments, b: OutlineSegments): boolean {
-  if (a.length !== b.length) return false;
-  for (let i = 0; i < a.length; i++) {
-    const segA = a[i]!;
-    const segB = b[i]!;
-    if (segA.fixed !== segB.fixed) return false;
-    if (normalizeSegmentText(segA.text) !== normalizeSegmentText(segB.text)) {
-      return false;
-    }
-  }
-  return true;
-}
-
 /**
  * Rebuilds a canonical outline from `original`, applying only the editable
- * replacements the caller supplies (e.g. per-segment translations, or the
+ * replacements the caller supplies (per-segment translations, or the
  * submitted text itself where no translation is needed). Fixed segments
- * always come from `original` — `submitted` is used only to assert the two
- * arrays are the same shape, never read for content, so a caller cannot
- * accidentally let a submitted fixed-segment edit leak through here after
- * skipping {@link compareSubmission}.
+ * always come from `original`, so a submitted heading can never leak
+ * through here.
  */
 export function mergeSegments(
   original: OutlineSegments,
-  submitted: OutlineSegments,
   replacements: ReadonlyMap<number, string>
 ): OutlineSegments {
-  if (original.length !== submitted.length) {
-    throw new Error(
-      `mergeSegments: length mismatch (original has ${original.length} segments, submitted has ${submitted.length})`
-    );
-  }
   return original.map((segment, i) => {
     if (segment.fixed) return segment;
     const replacement = replacements.get(i);

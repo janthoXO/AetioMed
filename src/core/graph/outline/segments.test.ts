@@ -10,7 +10,6 @@ import {
   OUTLINE_SECTIONS,
   parseTaggedOutline,
   renderTaggedOutline,
-  segmentsEqual,
   type OutlineSegments,
 } from "./segments.js";
 
@@ -196,12 +195,6 @@ describe("checkSkeleton", () => {
     });
   });
 
-  it("rejects a non-canonical shape", () => {
-    const segments: OutlineSegments = [{ fixed: true, text: "## General" }];
-    const result = checkSkeleton(segments, { anamnesisCategories: [] });
-    expect(result.ok).toBe(false);
-  });
-
   it("rejects a mismatched heading, naming the index", () => {
     const segments = skeletonSegments(["Pain"]);
     segments[1] = { fixed: true, text: "## Wrong" };
@@ -319,24 +312,6 @@ describe("compareSubmission", () => {
   });
 });
 
-describe("segmentsEqual", () => {
-  it("is true for identical segments modulo normalization", () => {
-    const a: OutlineSegments = [{ fixed: false, text: "hello  \n" }];
-    const b: OutlineSegments = [{ fixed: false, text: "hello" }];
-    expect(segmentsEqual(a, b)).toBe(true);
-  });
-
-  it("is false when lengths differ", () => {
-    expect(segmentsEqual([{ fixed: false, text: "a" }], [])).toBe(false);
-  });
-
-  it("is false when a fixed flag differs", () => {
-    expect(
-      segmentsEqual([{ fixed: false, text: "a" }], [{ fixed: true, text: "a" }])
-    ).toBe(false);
-  });
-});
-
 describe("mergeSegments", () => {
   const original: OutlineSegments = [
     { fixed: false, text: "old intro" },
@@ -344,20 +319,14 @@ describe("mergeSegments", () => {
     { fixed: false, text: "old body" },
   ];
 
-  it("keeps fixed segments from original even if submitted differs", () => {
-    const submitted: OutlineSegments = [
-      original[0],
-      { fixed: true, text: "## Tampered" },
-      original[2],
-    ];
-    const merged = mergeSegments(original, submitted, new Map());
+  it("keeps fixed segments from original, ignoring a replacement aimed at one", () => {
+    const merged = mergeSegments(original, new Map([[1, "## Tampered"]]));
     expect(merged[1]).toEqual({ fixed: true, text: "## General" });
   });
 
   it("applies replacements to editable segments by index", () => {
-    const submitted = original;
     const replacements = new Map([[2, "translated body"]]);
-    const merged = mergeSegments(original, submitted, replacements);
+    const merged = mergeSegments(original, replacements);
     expect(merged).toEqual([
       { fixed: false, text: "old intro" },
       { fixed: true, text: "## General" },
@@ -366,13 +335,7 @@ describe("mergeSegments", () => {
   });
 
   it("falls back to original text for editable segments with no replacement", () => {
-    const merged = mergeSegments(original, original, new Map());
+    const merged = mergeSegments(original, new Map());
     expect(merged).toEqual(original);
-  });
-
-  it("throws when original and submitted lengths differ", () => {
-    expect(() =>
-      mergeSegments(original, original.slice(0, 1), new Map())
-    ).toThrow();
   });
 });

@@ -340,9 +340,8 @@ above).
 `planCase` invokes the plan graph and returns `{ diagnosis, userInstructions, basisFragments,
 outlineSegments, outlineAccepted }` (all in the working language: English after translate-in);
 `renderCase` invokes the case graph from a prompt-ready outline string (`joinOutline`, see
-"Outline segments" below) and returns the finished `Case`. `generateCase(opts)` composes both in
-one call for normal mode's non-checkpointed callers (`exportGraphs.ts`, tests): plan, then
-render, throwing `OutlineNotAcceptedError` if the judge loop never accepted the outline — a
+"Outline segments" below) and returns the finished `Case`. The service throws
+`OutlineNotAcceptedError` in normal mode when the judge loop never accepted the outline — a
 **behaviour change** (#159): this used to render anyway. `language` is **not** threaded into
 graph state or LangGraph's own runtime context — by the time either entry point runs,
 `runWithContext` (called by `CaseGenerationService`) has already bound it on
@@ -434,7 +433,7 @@ English name from the catalogue, so translating it "to English" anyway used to p
 translation store with identity entries (`German: { "Diabetes": "Diabetes" }`) — a real bug, not
 a hypothetical one. `callerSuppliedFreeText` is true when the request supplied a diagnosis
 **name** (rather than only an `icd`) or any `userInstructions`; only `CaseGenerationService`
-knows this; it computes the flag before ICD→name resolution and passes it into `generateCase`'s
+knows this; it computes the flag before ICD→name resolution and passes it into `planCase`'s
 options object. Unlike `language`, `callerSuppliedFreeText` **is** a `CaseStateSchema` field —
 it is per-request routing input the caller supplied, not a property of the bound ports (see the
 Language section below for that distinction). The conditional edge on the `procedures`
@@ -443,7 +442,7 @@ caller branches" reason.
 
 `buildCaseGraph` compiles **all four** flag combinations eagerly at boot into a map keyed by
 `graphVariantKey` — each value now the `{ plan, case, outlineOut, reviewIn }` bundle
-`assembleCaseGraphs` returns — and binds `planCase`/`renderCase`/`generateCase`/`translateOutline`
+`assembleCaseGraphs` returns — and binds `planCase`/`renderCase`/`translateOutline`
 to the one the config selects. Only one is ever served; the other three prove every variant
 compiles at boot rather than at config-change time, and give `exportGraphs.ts` and the tests a
 single source of assembly truth rather than a parallel code path that can drift. Compilation is

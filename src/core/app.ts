@@ -128,7 +128,13 @@ export async function createApp(): Promise<{
   // but REST still closes first: stop accepting work before the backbone
   // goes away.
   const nats = features.has("NATS")
-    ? await startNatsTransport({ graph, service, jobEvents, readModel })
+    ? await startNatsTransport({
+        graph,
+        service,
+        jobEvents,
+        readModel,
+        reviewTtlMs,
+      })
     : undefined;
 
   const rest = features.has("REST")

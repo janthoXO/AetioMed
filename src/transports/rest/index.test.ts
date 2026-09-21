@@ -14,6 +14,7 @@ import {
 import { createReadModel } from "@/core/readModel.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { CaseGenerationService } from "@/core/caseGenerationService.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
 
 // Same shape as `caseGenerationService.test.ts`'s `fakeGraph`.
 function fakeGraph(): GraphAppContext {
@@ -32,7 +33,7 @@ function fakeGraph(): GraphAppContext {
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase: vi.fn(),
+    ...planAndRenderFrom(vi.fn()),
     graphs: {
       plan: {
         getGraphAsync: async () => ({

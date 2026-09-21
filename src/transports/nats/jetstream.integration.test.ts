@@ -62,12 +62,12 @@ import { createReadModel } from "@/core/readModel.js";
 import { createRestApp } from "@/transports/rest/index.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { Case } from "@/core/graph/models/Case.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
+import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
 const NATS_TEST_URL = process.env.NATS_TEST_URL;
 
-function fakeGraph(
-  generateCase: GraphAppContext["generateCase"] = vi.fn()
-): GraphAppContext {
+function fakeGraph(generateCase: GenerateCaseFn = vi.fn()): GraphAppContext {
   return {
     config: {
       llm: { provider: "ollama", model: "test-model" },
@@ -83,7 +83,7 @@ function fakeGraph(
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
+    ...planAndRenderFrom(generateCase),
   } as GraphAppContext;
 }
 
@@ -177,25 +177,23 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
       const js = getJetStreamClient();
       const nc = getNatsConnection();
 
-      const generateCase: GraphAppContext["generateCase"] = vi.fn(
-        async (): Promise<Case> => {
-          const signal = getRequestContext()?.signal;
-          await new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(resolve, 300);
-            signal?.addEventListener(
-              "abort",
-              () => {
-                clearTimeout(timer);
-                const error = new Error("aborted");
-                error.name = "AbortError";
-                reject(error);
-              },
-              { once: true }
-            );
-          });
-          return { patient: { name: "Jane", age: 40, sex: "female" } };
-        }
-      );
+      const generateCase: GenerateCaseFn = vi.fn(async (): Promise<Case> => {
+        const signal = getRequestContext()?.signal;
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 300);
+          signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            },
+            { once: true }
+          );
+        });
+        return { patient: { name: "Jane", age: 40, sex: "female" } };
+      });
 
       const graph = fakeGraph(generateCase);
       const channel = createJobEventChannel();
@@ -349,7 +347,7 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
     async () => ({ ok: true }),
     "Doing a thing"
   );
-  const generateCase: GraphAppContext["generateCase"] = vi.fn(async () => {
+  const generateCase: GenerateCaseFn = vi.fn(async () => {
     await doThing();
     return {
       patient: {
@@ -382,7 +380,7 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
+    ...planAndRenderFrom(generateCase),
     graphs: {
       plan: {
         getGraphAsync: async () => ({ nodes: {}, edges: [] }),
@@ -694,7 +692,7 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
     return err;
   }
 
-  const generateCase: GraphAppContext["generateCase"] = vi.fn(async () => {
+  const generateCase: GenerateCaseFn = vi.fn(async () => {
     const signal = getRequestContext()?.signal;
     for (let i = 0; i < 3; i++) {
       if (signal?.aborted) throw abortError();
@@ -735,7 +733,7 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
+    ...planAndRenderFrom(generateCase),
     graphs: {
       plan: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
       case: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },

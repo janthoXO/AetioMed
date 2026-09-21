@@ -18,9 +18,21 @@ export interface JobEventMap {
   accepted: JobAcceptedEvent;
   /** A node started or reached a terminal status — see `labels.ts`. */
   label: LabelEvent;
+  /**
+   * A plan-mode job paused for review (#159). Payload-free on purpose: the
+   * outline goes only to the requester, with the segment's result — an
+   * observer learns that the job waits, never what it waits on.
+   */
+  awaiting_review: JobAwaitingReviewEvent;
   /** The job reached a terminal state. Always the last event. */
   complete: JobCompleteEvent;
 }
+
+export type JobAwaitingReviewEvent = {
+  jobId: string;
+  revision: number;
+  timestamp: string;
+};
 
 export type JobEventType = keyof JobEventMap;
 

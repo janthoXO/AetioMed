@@ -29,14 +29,14 @@ import { AppError } from "@/core/graph/errors/AppError.js";
 import { CaseGenerationResponseSchema } from "@/api/index.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { Case } from "@/core/graph/models/Case.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
+import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
 // Same shape as `caseGenerationService.test.ts`'s `fakeGraph`, plus
 // `MAX_CONTENT_PART_BYTES` (read by `encodeCase` on the success path) and a
 // `graphs` stub — `GET /api/graph` is not exercised here, so
 // `getGraphAsync` is never called.
-function fakeGraph(
-  generateCase: GraphAppContext["generateCase"]
-): GraphAppContext {
+function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
   return {
     config: {
       llm: { provider: "ollama", model: "test-model" },
@@ -53,7 +53,7 @@ function fakeGraph(
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
+    ...planAndRenderFrom(generateCase),
     graphs: {
       plan: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
       case: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
@@ -135,7 +135,7 @@ function makeGatedGenerateCase(bus: EventBus) {
         gender: "female",
       },
     } as Case;
-  }) as unknown as GraphAppContext["generateCase"];
+  }) as unknown as GenerateCaseFn;
 
   return {
     generateCase,
@@ -385,7 +385,7 @@ describe("POST /api/cases (#143) — content negotiation, streaming, heartbeat",
     wireLabels(bus, channel, new InMemoryLabelCatalog());
     const generateCase = vi.fn(async () => {
       throw new AppError("boom", "GENERATION_FAILED", 500);
-    }) as unknown as GraphAppContext["generateCase"];
+    }) as unknown as GenerateCaseFn;
     const graph = fakeGraph(generateCase);
     const service = createCaseGenerationService(graph, bus, channel);
     ({ server } = await startApp(graph, service, channel));
@@ -420,7 +420,7 @@ describe("POST /api/cases (#143) — content negotiation, streaming, heartbeat",
     // sent — the same shape as a content part over MAX_CONTENT_PART_BYTES.
     const generateCase = vi.fn(async () => ({
       patient: { name: "Jane" },
-    })) as unknown as GraphAppContext["generateCase"];
+    })) as unknown as GenerateCaseFn;
     const graph = fakeGraph(generateCase);
     const service = createCaseGenerationService(graph, bus, channel);
     ({ server } = await startApp(graph, service, channel));

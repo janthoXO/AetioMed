@@ -10,6 +10,7 @@ import { UserInstructionsSchema } from "@/core/graph/models/UserInstructions.js"
 import type { Config } from "@/core/graph/config.js";
 import { LLMConfigSchema } from "@/core/graph/models/LLMConfig.js";
 import { JobIdSchema } from "./JobId.js";
+import { RunModeSchema } from "@/core/graph/models/RunMode.js";
 
 /**
  * The public request schema depends on the deployment's configured
@@ -57,6 +58,11 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
         "results; 'medium' adds distractor symptoms from other diseases and minor/borderline " +
         "changes in procedure results; 'hard' presents an atypical case with omitted " +
         "hallmark symptoms and ambiguous procedure results. Defaults to 'medium'."
+    ),
+    mode: RunModeSchema.default("normal").describe(
+      "'normal' generates the case end to end. 'plan' pauses once the case " +
+        "outline exists and returns it for review in the request language; " +
+        "the case is generated after the reviewer approves or edits it."
     ),
     llmConfig: LLMConfigSchema.optional().describe(
       "Optional per-request model selection for the LLM used in case " +

@@ -22,12 +22,12 @@ import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import createLabelsRouter from "./labels.router.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { Case } from "@/core/graph/models/Case.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
+import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
 // Same shape as `caseGenerationService.test.ts`'s `fakeGraph` — a minimal
 // stand-in for the composition root's real `GraphAppContext`.
-function fakeGraph(
-  generateCase: GraphAppContext["generateCase"]
-): GraphAppContext {
+function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
   return {
     config: {
       llm: { provider: "ollama", model: "test-model" },
@@ -43,7 +43,7 @@ function fakeGraph(
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
+    ...planAndRenderFrom(generateCase),
   } as GraphAppContext;
 }
 

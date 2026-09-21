@@ -4,7 +4,8 @@
  * job survive a process restart — see `repo.ts` for the CAS-based store.
  */
 export type JobTransport = "rest" | "nats";
-export type RunMode = "normal" | "plan";
+import type { RunMode } from "../graph/models/RunMode.js";
+export type { RunMode };
 export type JobStatus =
   | "planning"
   | "outline_ready"

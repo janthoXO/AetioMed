@@ -196,6 +196,88 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     expect(done).toBe(true);
   });
 
+  it("relays event: awaiting_review for a plan-mode job (#159), then keeps streaming", async () => {
+    // A gated `planCase`, not `planAndRenderFrom` (whose plan stage never
+    // awaits anything) — this test needs the pause to land *after* the
+    // labels stream subscribes, or the buffered-watch race the harness
+    // above exists for real generation would let the pause happen before
+    // any listener attaches.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const graph = {
+      config: {
+        llm: { provider: "ollama", model: "test-model" },
+        allowedLlms: undefined,
+        PROCEDURE_PRESELECTION: false,
+        LANGUAGES: ["English", "German"],
+        LANGUAGE_AUTO_DETECT: false,
+        LANGUAGE_DETECT_LLM_FALLBACK: false,
+      } as GraphAppContext["config"],
+      runtime: {
+        catalogs: { diagnosis: { byIcd: () => undefined } },
+        llm: { for: vi.fn() },
+      } as unknown as GraphAppContext["runtime"],
+      async planCase(opts: { diagnosis: unknown; userInstructions: unknown }) {
+        await gate;
+        return {
+          diagnosis: opts.diagnosis,
+          userInstructions: opts.userInstructions,
+          basisFragments: [],
+          outlineAccepted: true,
+          outlineSegments: [
+            { fixed: false, text: "" },
+            { fixed: true, text: "## Plan options" },
+            { fixed: false, text: "{}" },
+          ],
+        };
+      },
+      async renderCase() {
+        return { patient: { name: "Jane", age: 40, sex: "female" } } as Case;
+      },
+      translateOutline: undefined,
+    } as unknown as GraphAppContext;
+
+    const channel: JobEventChannel = createJobEventChannel();
+    const service = createCaseGenerationService(graph, new EventBus(), channel);
+    const directory = createLocalJobDirectory(channel, service.cancel);
+    ({ server } = await startServer(directory));
+    const port = (server!.address() as AddressInfo).port;
+
+    const p = service.generate({
+      diagnosis: "Influenza",
+      generationFlags: ["patient"],
+      jobId: "job-plan-labels",
+      mode: "plan",
+      language: "English",
+    });
+
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-labels/labels`
+    );
+    const reader = res.body!.getReader();
+    await readUntil(reader, (text) => text.includes("event: connected"));
+
+    release();
+    const result = await p;
+    expect(result.status).toBe("awaiting_review");
+
+    const text = await readUntil(reader, (text) =>
+      text.includes("event: awaiting_review")
+    );
+    // The channel's payload-free pause marker (#159): jobId/revision/
+    // timestamp only — an observer never sees the outline, which only the
+    // requester gets from `GET/POST /api/cases/:jobId/review`.
+    expect(text).toContain('"jobId":"job-plan-labels"');
+    expect(text).toContain('"revision":1');
+    expect(text).not.toContain("outline");
+    // Paused, not finished: the stream is still open — cancel it ourselves
+    // (nothing server-side will ever end it) so `afterEach`'s
+    // `server.close()` doesn't wait on a connection nobody is going to
+    // close.
+    expect(text).not.toContain("event: complete");
+    await reader.cancel().catch(() => {});
+  });
+
   it("delivers every event to two independent subscribers of the same job", async () => {
     const { service, directory, release } = createHarness();
     ({ server } = await startServer(directory));

@@ -14,10 +14,7 @@ import { createProcedureStrategy } from "./02case-generation/03procedure/strateg
 import { buildCaseTranslationFromEnglishGraph } from "./03case-translation-from-english/index.js";
 import type { Language } from "../models/Language.js";
 import type { Difficulty } from "../models/Difficulty.js";
-import {
-  GenerationError,
-  OutlineNotAcceptedError,
-} from "../errors/AppError.js";
+import { GenerationError } from "../errors/AppError.js";
 import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
 import {
   buildOutlineTranslationGraph,
@@ -38,7 +35,6 @@ import type {
 } from "../medicalBasis/ports.js";
 import {
   OutlineSegmentsSchema,
-  joinOutline,
   type OutlineSegments,
 } from "../outline/segments.js";
 import { RunModeSchema, type RunMode } from "../models/RunMode.js";
@@ -366,7 +362,7 @@ export type CompiledPlanGraph = CompiledCaseGraphs["plan"];
 export type CompiledCaseGraph = CompiledCaseGraphs["case"];
 
 /**
- * Builds every flag variant eagerly, and binds `generateCase` to the one the
+ * Builds every flag variant eagerly, and binds `planCase`/`renderCase` to the one the
  * deployer's config selects. Called once from the composition root
  * (`graph/index.ts`) — and once from `exportGraphs.ts`, with a minimal
  * in-memory runtime, purely to render topologies.
@@ -505,35 +501,6 @@ export function buildCaseGraph(
   }
 
   /**
-   * Plan, then render — the whole pipeline in one call (normal mode). An
-   * outline the judge never accepted fails the job (#159): generating a case
-   * from it used to be a silent downgrade.
-   */
-  async function generateCase(opts: PlanCaseInput): Promise<Case> {
-    console.log(
-      `[CaseGraph] Starting case generation for:\n`,
-      JSON.stringify(opts, null, 2)
-    );
-
-    const plan = await planCase(opts);
-    if (!plan.outlineAccepted) throw new OutlineNotAcceptedError();
-
-    const generatedCase = await renderCase({
-      diagnosis: plan.diagnosis,
-      generationFlags: opts.generationFlags,
-      userInstructions: plan.userInstructions,
-      difficulty: opts.difficulty,
-      outline: joinOutline(plan.outlineSegments),
-    });
-
-    console.log(
-      "[CaseGraph] Generation complete",
-      JSON.stringify(generatedCase, null, 2)
-    );
-    return generatedCase;
-  }
-
-  /**
    * Translate outline values keyed by segment index (#159): `"out"` from
    * English to the request language for the reviewer, `"in"` back to
    * English. `undefined` when the sandwich is compiled out — plan mode then
@@ -553,7 +520,6 @@ export function buildCaseGraph(
     getCaseGraphs,
     planCase,
     renderCase,
-    generateCase,
     translateOutline,
   };
 }

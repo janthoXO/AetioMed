@@ -27,7 +27,6 @@ import {
   compareSubmission,
   joinOutline,
   mergeSegments,
-  segmentsEqual,
   type OutlineSegments,
 } from "./graph/outline/segments.js";
 import type { LanguageDetector } from "./languageDetection/port.js";
@@ -413,21 +412,14 @@ export function createCaseGenerationService(
 
   // ─── checkpoints ──────────────────────────────────────────────────────────
 
-  /** Whether plan mode translates the outline for this job (#159). */
+  /**
+   * Whether plan mode translates the outline for this job (#159). True only
+   * when the record was written with the sandwich on — and `resume` rejects
+   * records from a different variant — so `graph.translateOutline` exists
+   * whenever this holds.
+   */
   function translatesOutline(data: JobData): boolean {
     return data.sandwich && data.language !== "English";
-  }
-
-  function translateOutline(
-    values: Record<string, string>,
-    direction: "out" | "in"
-  ): Promise<Record<string, string>> {
-    if (!graph.translateOutline) {
-      throw new GenerationError(
-        "Outline translation reached without the translation sandwich compiled in"
-      );
-    }
-    return graph.translateOutline(values, direction);
   }
 
   /** Write a checkpoint; the record must still be where this segment left it. */
@@ -523,7 +515,10 @@ export function createCaseGenerationService(
         case "revising": {
           let feedback = data.pendingFeedback ?? [];
           if (translatesOutline(data)) {
-            const translated = await translateOutline(indexed(feedback), "in");
+            const translated = await graph.translateOutline!(
+              indexed(feedback),
+              "in"
+            );
             feedback = feedback.map((f, i) => translated[String(i)] ?? f);
           }
           // Working-language inputs and no free text: translate-in is
@@ -555,7 +550,7 @@ export function createCaseGenerationService(
           // The sandwich's middle layer, out (#159): every segment, fixed
           // ones included for display — the server never reads them back.
           const original = data.original!;
-          const translated = await translateOutline(
+          const translated = await graph.translateOutline!(
             indexed(original.map((s) => s.text)),
             "out"
           );
@@ -595,11 +590,10 @@ export function createCaseGenerationService(
             );
             const replacements =
               translatesOutline(data) && Object.keys(changed).length > 0
-                ? await translateOutline(changed, "in")
+                ? await graph.translateOutline!(changed, "in")
                 : changed;
             merged = mergeSegments(
               data.original!,
-              reviewed,
               new Map(
                 Object.entries(replacements).map(([i, text]) => [
                   Number(i),
@@ -895,10 +889,13 @@ export function createCaseGenerationService(
       }
       // Checkpoint 3. An unchanged resubmission of an already-translated
       // outline keeps its English translation (#159).
+      const unchanged = data.reviewed
+        ? compareSubmission(data.reviewed, submitted)
+        : undefined;
       const reuse =
         data.merged !== undefined &&
-        data.reviewed !== undefined &&
-        segmentsEqual(data.reviewed, submitted);
+        unchanged?.ok === true &&
+        unchanged.changed.length === 0;
       const reviewed: JobData = { ...data, reviewed: submitted };
       delete reviewed.pendingFeedback;
       if (!reuse) delete reviewed.merged;

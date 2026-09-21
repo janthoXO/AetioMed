@@ -208,7 +208,7 @@ Ownership over NATS is **subscription interest**: the replica running a job subs
 
 > **Compile on what the deployer chose; branch on what the caller asked for.**
 
-`TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are compiled away — an absent flag means an **absent node**, not a skipped one. `generationFlags`, `difficulty` and `language` are per-request and stay runtime branches. All four flag combinations are compiled eagerly at boot; `generateCase` is bound to the one the config selects.
+`TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are compiled away — an absent flag means an **absent node**, not a skipped one. `generationFlags`, `difficulty` and `language` are per-request and stay runtime branches. All four flag combinations are compiled eagerly at boot; `planCase`/`renderCase` are bound to the one the config selects.
 
 ### Tool Pattern
 

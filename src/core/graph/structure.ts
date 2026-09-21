@@ -59,13 +59,23 @@ function isSynthetic(nodeId: string): boolean {
  * the job service, not a graph, runs one after the other.
  */
 export async function buildGraphStructure(
-  graphs: Pick<CompiledCaseGraphs, "plan" | "case">
+  graphs: Pick<CompiledCaseGraphs, "plan" | "case"> &
+    Partial<Pick<CompiledCaseGraphs, "outlineOut" | "reviewIn">>
 ): Promise<GraphStructure> {
   const labels = getNodeLabels();
   const nodes: StructureNode[] = [];
   const edges: StructureEdge[] = [];
 
-  for (const compiled of [graphs.plan, graphs.case]) {
+  // The middle translation graphs (sandwich on only) sit between the two,
+  // in the order plan mode runs them.
+  const ordered = [
+    graphs.plan,
+    graphs.outlineOut,
+    graphs.reviewIn,
+    graphs.case,
+  ].filter((g) => g !== undefined);
+
+  for (const compiled of ordered) {
     const graph = await compiled.getGraphAsync({ xray: true });
     for (const id of Object.keys(graph.nodes)) {
       if (isSynthetic(id)) continue;

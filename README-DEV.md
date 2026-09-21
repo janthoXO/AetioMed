@@ -1,6 +1,6 @@
-# AetioMed - Developer Guide
+# AetioMed Developer Guide — Setup, Configuration, REST and NATS API
 
-This document provides technical details for setting up, running, and contributing to the AetioMed project.
+This guide covers how to install, configure, run, test and extend AetioMed, the LLM-based synthetic medical case generator. For what AetioMed does and why, see the [README](README.md).
 
 This is a **backend-only** repository — no frontend lives here.
 
@@ -23,12 +23,12 @@ This is a **backend-only** repository — no frontend lives here.
 - [pnpm](https://pnpm.io/) (`npm install -g pnpm`)
 - [Docker](https://www.docker.com/) & Docker Compose (only needed for NATS or a local Ollama)
 
-## Getting Started
+## How to Install and Run
 
 ### 1. Installation
 
 ```bash
-git clone <repository-url>
+git clone https://github.com/janthoXO/AetioMed.git
 cd AetioMed
 pnpm install
 ```
@@ -367,7 +367,7 @@ The exporter is selected from the standard env, with no flag of our own:
 
 A span exports when its node **ends**, so OTel shows a node only once it finishes — watching a job live is what the label stream is for.
 
-## Testing & Verification
+## How to Test
 
 ```bash
 pnpm test

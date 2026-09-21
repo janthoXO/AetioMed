@@ -41,6 +41,7 @@ import {
   joinOutline,
   type OutlineSegments,
 } from "../outline/segments.js";
+import { RunModeSchema, type RunMode } from "../models/RunMode.js";
 import type { ModalityRegistries } from "../modality/registry.js";
 
 // No `language` field (issue 09 §2): the outer graphs resolve language
@@ -73,7 +74,9 @@ const PlanStateSchema = CaseGenerationStateSchema.pick({
    * routing signal like this one.
    */
   callerSuppliedFreeText: z.boolean(),
+  mode: RunModeSchema.default("normal"),
   outlineSegments: OutlineSegmentsSchema.default([]),
+  outlineFeedback: z.array(z.string()).default([]),
   outlineAccepted: z.boolean().default(false),
 });
 
@@ -459,6 +462,12 @@ export function buildCaseGraph(
         userInstructions: opts.userInstructions,
         difficulty: opts.difficulty,
         callerSuppliedFreeText: opts.callerSuppliedFreeText,
+        mode: opts.mode ?? "normal",
+        ...(opts.revise && {
+          outlineSegments: opts.revise.outlineSegments,
+          outlineFeedback: opts.revise.feedback,
+          basisFragments: opts.revise.basisFragments,
+        }),
       },
       invokeOptions()
     );
@@ -556,6 +565,21 @@ export type PlanCaseInput = {
   language?: Language | undefined;
   difficulty?: Difficulty | undefined;
   callerSuppliedFreeText: boolean;
+  mode?: RunMode | undefined;
+  /**
+   * Revise a previous outline with the reviewer's feedback (#159) instead of
+   * generating one. Every value is in the working language: the service
+   * translates the feedback in first when the sandwich is on, and passes
+   * the working-language `diagnosis` and no free text, so translate-in is
+   * skipped and the saved basis is reused.
+   */
+  revise?:
+    | {
+        outlineSegments: OutlineSegments;
+        feedback: string[];
+        basisFragments: BasisFragment[];
+      }
+    | undefined;
 };
 
 export type PlanResult = {

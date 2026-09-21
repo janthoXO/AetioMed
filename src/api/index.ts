@@ -9,3 +9,9 @@ export {
 export { CaseGenerationResponseSchema } from "./CaseGenerationResponse.js";
 
 export { JobIdSchema } from "./JobId.js";
+
+export {
+  ReviewDecisionRequestSchema,
+  type ReviewDecisionRequest,
+  type ReviewDecision,
+} from "./ReviewDecision.js";

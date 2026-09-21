@@ -15,9 +15,11 @@ import {
   type ContentPart,
 } from "@/core/graph/models/ContentPart.js";
 import type { LanguageDetector } from "@/core/languageDetection/port.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
+import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
 function fakeGraph(
-  generateCase: GraphAppContext["generateCase"],
+  generateCase: GenerateCaseFn,
   configOverrides: Partial<GraphAppContext["config"]> = {}
 ): GraphAppContext {
   return {
@@ -36,7 +38,7 @@ function fakeGraph(
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
+    ...planAndRenderFrom(generateCase),
   };
 }
 
@@ -466,10 +468,7 @@ describe("CaseGenerationService — job channel lifecycle", () => {
       if (e.type === "complete") completes[jobId] = e.data;
     });
     const bus = new EventBus();
-    const run = (
-      generateCase: GraphAppContext["generateCase"],
-      jobId: string
-    ) =>
+    const run = (generateCase: GenerateCaseFn, jobId: string) =>
       createCaseGenerationService(
         fakeGraph(generateCase),
         bus,
@@ -570,7 +569,7 @@ describe("CaseGenerationService — concurrency limit (#142)", () => {
       await new Promise<void>((resolve) => pending.push(resolve));
       inFlight -= 1;
       return minimalCase;
-    }) as unknown as GraphAppContext["generateCase"];
+    }) as unknown as GenerateCaseFn;
     return {
       generateCase,
       maxInFlight: () => maxInFlight,

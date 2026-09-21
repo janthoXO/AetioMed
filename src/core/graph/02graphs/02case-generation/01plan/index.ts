@@ -19,6 +19,8 @@ import {
   OutlineSegmentsSchema,
   joinOutline,
 } from "@/core/graph/outline/segments.js";
+import { RunModeSchema } from "@/core/graph/models/RunMode.js";
+import type { PromptAudience } from "@/core/graph/utils/prompt.js";
 
 const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
 
@@ -34,6 +36,13 @@ export const PlanGraphStateSchema = CaseGenerationStateSchema.pick({
   difficulty: true,
   basisFragments: true,
 }).extend({
+  /**
+   * Plan mode binds the outline and its judge to the request language (the
+   * reviewer reads it as written); normal mode keeps both English. With the
+   * sandwich on, the bound runtime's `languageOverride` keeps them English
+   * either way — plan mode translates the outline instead.
+   */
+  mode: RunModeSchema.default("normal"),
   outlineSegments: OutlineSegmentsSchema.default([]),
   /**
    * Whether the judge accepted `outlineSegments`. `false` after the loop
@@ -44,9 +53,28 @@ export const PlanGraphStateSchema = CaseGenerationStateSchema.pick({
   outlineEvaluationIterationsRemaining: z
     .number()
     .default(OUTLINE_EVALUATION_MAX_ITERATIONS),
-  /** Feedback from the last outline evaluation, fed into the revision. */
+  /**
+   * Feedback fed into the next revision: the judge's, or — on the revise
+   * entry — the reviewer's (#159).
+   */
   outlineFeedback: z.array(z.string()).default([]),
 });
+
+/** `"user-facing"` binds the outline prompts to the request language. */
+function audienceOf(state: PlanGraphState): PromptAudience {
+  return state.mode === "plan" ? "user-facing" : "internal";
+}
+
+/**
+ * The revise entry (#159): a reviewer asked for an AI revision, so the graph
+ * starts at `outline_regenerate` with the previous outline and their
+ * feedback, instead of generating from scratch.
+ */
+function entryOf(state: PlanGraphState) {
+  return state.outlineSegments.length > 0 && state.outlineFeedback.length > 0
+    ? "outline_regenerate"
+    : "case_outline_generate";
+}
 
 type PlanGraphState = z.infer<typeof PlanGraphStateSchema>;
 
@@ -70,6 +98,7 @@ function makeGenerateCaseOutline(runtime: GraphRuntime) {
             basisFragments: state.basisFragments,
             difficulty: state.difficulty,
             userInstructions: renderUserInstructions(state.userInstructions),
+            audience: audienceOf(state),
           },
           runtime,
           lgRuntime?.context
@@ -107,6 +136,7 @@ function makeOutlineEvaluate(runtime: GraphRuntime) {
           outline: joinOutline(state.outlineSegments),
           difficulty: state.difficulty,
           userInstructions: renderUserInstructions(state.userInstructions),
+          audience: audienceOf(state),
         },
         runtime,
         lgRuntime?.context
@@ -150,6 +180,7 @@ function makeOutlineRegenerate(runtime: GraphRuntime) {
             userInstructions: renderUserInstructions(state.userInstructions),
             feedback: state.outlineFeedback,
             previousOutline: state.outlineSegments,
+            audience: audienceOf(state),
           },
           runtime,
           lgRuntime?.context
@@ -210,7 +241,10 @@ export function buildPlanGraph(
       ),
       { ends: ["outline_evaluate"] }
     )
-    .addEdge(START, "case_outline_generate")
+    .addConditionalEdges(START, entryOf, [
+      "case_outline_generate",
+      "outline_regenerate",
+    ])
     .addEdge("case_outline_generate", "outline_evaluate")
     .compile();
 }

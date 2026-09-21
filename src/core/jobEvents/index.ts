@@ -7,6 +7,7 @@ export {
   type JobEventType,
   type JobEvent,
   type JobAcceptedEvent,
+  type JobAwaitingReviewEvent,
   type JobCompleteEvent,
   type JobOutcome,
   type JobListener,

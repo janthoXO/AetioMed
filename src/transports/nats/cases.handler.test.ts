@@ -22,6 +22,7 @@ vi.mock("./cases.publisher.js", () => ({
 }));
 
 import { publishCaseResult } from "./cases.publisher.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
 
 function fakeMsg(payload: unknown): JsMsg {
   return {
@@ -47,7 +48,7 @@ function fakeGraph(): GraphAppContext {
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
     runtime: {} as GraphAppContext["runtime"],
-    generateCase: vi.fn(),
+    ...planAndRenderFrom(vi.fn()),
   } as unknown as GraphAppContext;
 }
 

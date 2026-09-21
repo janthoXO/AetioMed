@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createReadModel } from "./readModel.js";
 import type { GraphAppContext } from "./graph/appContext.js";
 import type { GraphStructure } from "./graph/structure.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
 
 function fakeGraph(): GraphAppContext {
   return {
@@ -18,7 +19,7 @@ function fakeGraph(): GraphAppContext {
         procedures: { list: () => ["Chest X-ray", "CBC"] },
       },
     } as unknown as GraphAppContext["runtime"],
-    generateCase: vi.fn(),
+    ...planAndRenderFrom(vi.fn()),
     graphs: {
       plan: {
         getGraphAsync: async () => ({

@@ -43,7 +43,13 @@ export function createNatsJobDirectory(nc: NatsConnection): JobDirectory {
       (async () => {
         for await (const msg of subscription) {
           const type = msg.subject.split(".").pop();
-          if (type !== "label" && type !== "complete") continue;
+          if (
+            type !== "label" &&
+            type !== "awaiting_review" &&
+            type !== "complete"
+          ) {
+            continue;
+          }
           buffered.push({ type, data: msg.json() } as WatchedEvent);
           if (type === "complete") subscription.unsubscribe();
         }

@@ -1,10 +1,11 @@
+import type { RunMode } from "../graph/models/RunMode.js";
+
 /**
  * Job checkpoint types (#159, plan mode). A `JobRecord` is the durable row
  * in `job_record` (`persistence/schema.ts`) that lets a paused or in-flight
  * job survive a process restart — see `repo.ts` for the CAS-based store.
  */
 export type JobTransport = "rest" | "nats";
-import type { RunMode } from "../graph/models/RunMode.js";
 export type { RunMode };
 export type JobStatus =
   | "planning"

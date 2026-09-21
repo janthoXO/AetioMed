@@ -12,6 +12,7 @@ import {
   REQUEST_CONSUMER,
   REQUEST_SUBJECT,
   STREAMS,
+  reviewsStream,
 } from "./subjects.js";
 
 async function streamInfo(
@@ -32,27 +33,36 @@ async function streamInfo(
 }
 
 /**
- * Create `CASE_REQUESTS` and `CASE_RESULTS`, or reconcile their subjects and
- * limits if they exist. Fails loudly rather than guessing in two cases, both
- * of which JetStream cannot fix in place:
+ * Create `CASE_REQUESTS`, `CASE_RESULTS` and `CASE_REVIEWS` (#159), or
+ * reconcile their subjects and limits if they exist. Fails loudly rather
+ * than guessing in two cases, both of which JetStream cannot fix in place:
  *
  * - the pre-#142 `cases` stream still exists. Its `cases.>` filter overlaps
- *   both new streams, so JetStream would refuse to create them with an
+ *   every stream here, so JetStream would refuse to create them with an
  *   opaque "subjects overlap" error. It is **not** deleted automatically: it
  *   may still hold requests nobody has processed.
  * - a stream exists with a different retention policy — retention cannot be
  *   changed on an existing stream.
+ *
+ * `reviewTtlMs` is `CASE_REVIEWS`'s `max_age` — the deployment's review time
+ * limit (`REVIEW_TTL_MINUTES`), threaded in rather than read from `process.env`
+ * here, so this module stays free of environment access.
  */
-export async function ensureStreams(jsm: JetStreamManager): Promise<void> {
+export async function ensureStreams(
+  jsm: JetStreamManager,
+  reviewTtlMs: number
+): Promise<void> {
+  const allStreams = [...STREAMS, reviewsStream(reviewTtlMs)];
+
   if (await streamInfo(jsm, LEGACY_STREAM)) {
     throw new Error(
       `The pre-#142 JetStream stream "${LEGACY_STREAM}" still exists. Its "cases.>" filter overlaps ` +
-        `the new ${STREAMS.map((s) => s.name).join(" and ")} streams, and it cannot be migrated ` +
+        `the new ${allStreams.map((s) => s.name).join(" and ")} streams, and it cannot be migrated ` +
         `in place. Drain or inspect it, then delete it (e.g. \`nats stream rm ${LEGACY_STREAM}\`) and restart.`
     );
   }
 
-  for (const config of STREAMS) {
+  for (const config of allStreams) {
     const info = await streamInfo(jsm, config.name);
     if (!info) {
       console.log(`[NATS] Creating stream ${config.name}...`);

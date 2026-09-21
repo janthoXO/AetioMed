@@ -11,6 +11,7 @@ import { startProgressPublisher } from "./progressPublisher.js";
 import { startMetaService } from "./metaService.js";
 import { ensureStreams } from "./streams.js";
 import { createNatsJobDirectory } from "./jobDirectory.js";
+import { publishStop } from "./cases.publisher.js";
 import { REQUESTS_STREAM, REQUEST_CONSUMER } from "./subjects.js";
 import { ConfigSchema } from "./config.js";
 import type { GraphAppContext } from "../../core/graph/appContext.js";
@@ -53,11 +54,13 @@ export async function startNatsTransport(opts: {
   let stopResponders: (() => void) | undefined;
   let stopProgressPublisher: (() => void) | undefined;
   let stopMetaService: (() => Promise<void>) | undefined;
+  let stopDetachedOutcomes: (() => void) | undefined;
   let directory: JobDirectory | undefined;
 
   const close = async () => {
     stopResponders?.();
     stopProgressPublisher?.();
+    stopDetachedOutcomes?.();
     await stopMetaService?.();
     await closeNats();
   };
@@ -67,11 +70,37 @@ export async function startNatsTransport(opts: {
     await connectNats(config);
     const nc = getNatsConnection();
 
-    await ensureStreams(await jetstreamManager(nc));
-    stopResponders = startJobResponders({ nc, jobEvents, service });
+    await ensureStreams(await jetstreamManager(nc), config.reviewTtlMs);
+    stopResponders = startJobResponders({ nc, graph, jobEvents, service });
     stopProgressPublisher = startProgressPublisher({ nc, jobEvents });
     stopMetaService = await startMetaService({ nc, readModel });
     directory = createNatsJobDirectory(nc);
+
+    // Plan mode (#159): checkpointed NATS jobs from before a restart pick
+    // up where they left off, and each one's next stop is delivered exactly
+    // like a fresh segment's — through the same `publishStop`. Failures are
+    // logged, never thrown: one unresumable job must not abort the whole
+    // transport's startup.
+    for (const { jobId, result } of service.resume("nats")) {
+      result
+        .then((r) => publishStop(graph, r))
+        .catch((error) => {
+          console.error(`[NATS] Failed to resume jobId=${jobId}:`, error);
+        });
+    }
+    // A paused job cancelled or expired with nobody waiting on it (#159)
+    // still has a client that will ask `cases.result.<jobId>`/
+    // `cases.review.<jobId>` for an answer — publish it exactly as a live
+    // segment's stop would be.
+    stopDetachedOutcomes = service.onDetachedOutcome((result, transport) => {
+      if (transport !== "nats") return;
+      publishStop(graph, result).catch((error) => {
+        console.error(
+          `[NATS] Failed to publish detached outcome for jobId=${result.jobId}:`,
+          error
+        );
+      });
+    });
 
     const consumer = await getJetStreamClient().consumers.get(
       REQUESTS_STREAM.name,

@@ -197,6 +197,16 @@ function requestBody(overrides: Record<string, unknown> = {}): string {
 }
 
 /**
+ * A plan-mode request. `language: "English"` with `TRANSLATION_SANDWICH`
+ * unset in `fakeGraph`'s config (falsy) means `translatesOutline` is false
+ * (#159), so the review outline is exactly `planAndRenderFrom`'s planned
+ * outline: `["", "## Plan options", JSON.stringify(opts)]`.
+ */
+function planRequestBody(overrides: Record<string, unknown> = {}): string {
+  return requestBody({ mode: "plan", language: "English", ...overrides });
+}
+
+/**
  * Read from `reader` (accumulating across calls, via a per-reader buffer)
  * until `predicate(text)` is true, or reject after `timeoutMs`. Copied from
  * `labels.router.test.ts`.
@@ -687,6 +697,362 @@ describe("POST /api/cases (#143) — content negotiation, streaming, heartbeat",
 
     await readUntil(reader1, (t) => t.includes("event: result"));
     await readUntil(reader2, (t) => t.includes("event: result"));
+  });
+});
+
+type Review = {
+  jobId: string;
+  revision: number;
+  language: string;
+  outline: { fixed: boolean; text: string }[];
+  expiresAt: string;
+};
+
+describe("plan mode (#159) — segmented calls and the review routes", () => {
+  let server: Server | undefined;
+
+  afterEach(async () => {
+    if (server) {
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+      server = undefined;
+    }
+  });
+
+  it("a plan-mode POST stops at awaiting_review — 202 with the review, JSON path", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-1" }),
+    });
+
+    expect(res.status).toBe(202);
+    const body = (await res.json()) as {
+      jobId: string;
+      status: string;
+      language: string;
+      review: Review;
+    };
+    expect(body.status).toBe("awaiting_review");
+    expect(body.jobId).toBe("job-plan-1");
+    expect(body.review.jobId).toBe("job-plan-1");
+    expect(body.review.revision).toBe(1);
+    // planAndRenderFrom's planned outline (#159): three segments, the
+    // middle one fixed.
+    expect(body.review.outline).toHaveLength(3);
+    expect(body.review.outline[1]).toMatchObject({
+      fixed: true,
+      text: "## Plan options",
+    });
+  });
+
+  it("GET .../review returns the same review a paused job stopped with", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const created = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-2" }),
+    });
+    const createdBody = (await created.json()) as { review: Review };
+
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-2/review`
+    );
+    expect(res.status).toBe(200);
+    const review = (await res.json()) as Review;
+    expect(review).toEqual(createdBody.review);
+  });
+
+  it("unknown job review is a 404", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/cases/no-such-job/review`
+    );
+    expect(res.status).toBe(404);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("NOT_FOUND");
+  });
+
+  it("approving the review runs the next segment to done — 200 with the case, JSON path", async () => {
+    const { channel, service, graph, release } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const created = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-approve" }),
+    });
+    const { review } = (await created.json()) as { review: Review };
+
+    const decidePromise = fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-approve/review`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+        },
+        body: JSON.stringify({
+          revision: review.revision,
+          decision: { action: "approve" },
+        }),
+      }
+    );
+    // `approve` runs `renderCase`, which calls the gated `generateCase`.
+    await waitUntil(() => channel.state("job-plan-approve") === "active");
+    release("job-plan-approve");
+    const res = await decidePromise;
+
+    expect(res.status).toBe(200);
+    const parsed = CaseGenerationResponseSchema.parse(await res.json());
+    expect(parsed).toHaveProperty("jobId", "job-plan-approve");
+
+    const reviewAfter = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-approve/review`
+    );
+    expect(reviewAfter.status).toBe(404);
+  });
+
+  it("SSE create in plan mode: event: accepted precedes event: review, then the stream ends", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: planRequestBody({ jobId: "job-plan-sse" }),
+    });
+    const reader = res.body!.getReader();
+
+    const text = await readUntil(reader, (t) => t.includes("event: review"));
+    const idxAccepted = text.indexOf("event: accepted");
+    const idxReview = text.indexOf("event: review");
+    expect(idxAccepted).toBeGreaterThanOrEqual(0);
+    expect(idxReview).toBeGreaterThan(idxAccepted);
+
+    const data = extractEventData(text, "review") as {
+      jobId: string;
+      status: string;
+      review: Review;
+    };
+    expect(data.status).toBe("awaiting_review");
+    expect(data.review.jobId).toBe("job-plan-sse");
+
+    const { done } = await reader.read();
+    expect(done).toBe(true);
+  });
+
+  it("SSE decide: event: accepted precedes event: result", async () => {
+    const { channel, service, graph, release } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const created = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-sse-decide" }),
+    });
+    const { review } = (await created.json()) as { review: Review };
+
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-sse-decide/review`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+        },
+        body: JSON.stringify({
+          revision: review.revision,
+          decision: { action: "approve" },
+        }),
+      }
+    );
+    const reader = res.body!.getReader();
+    await readUntil(reader, (t) => t.includes("event: accepted"));
+    release("job-plan-sse-decide");
+
+    const text = await readUntil(reader, (t) => t.includes("event: result"));
+    const idxAccepted = text.indexOf("event: accepted");
+    const idxResult = text.indexOf("event: result");
+    expect(idxResult).toBeGreaterThan(idxAccepted);
+
+    const { done } = await reader.read();
+    expect(done).toBe(true);
+  });
+
+  it("a stale revision is refused with 409, before any stream opens", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-stale" }),
+    });
+
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-stale/review`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          revision: 999,
+          decision: { action: "approve" },
+        }),
+      }
+    );
+    expect(res.status).toBe(409);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("STALE_REVISION");
+  });
+
+  it("editing a fixed segment is refused with 422", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const created = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-fixed" }),
+    });
+    const { review } = (await created.json()) as { review: Review };
+    const tampered = review.outline.map((segment, i) =>
+      i === 1 ? { ...segment, text: "## Tampered" } : segment
+    );
+
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-fixed/review`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          revision: review.revision,
+          decision: { action: "edit", outline: tampered },
+        }),
+      }
+    );
+    expect(res.status).toBe(422);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("FIXED_SEGMENT_CHANGED");
+  });
+
+  it("a bad decision body is a 400 with zod issues in details", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-badbody" }),
+    });
+
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-badbody/review`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nonsense: true }),
+      }
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("INVALID_REQUEST_BODY");
+  });
+
+  it("DELETE cancels a paused job — 204, then GET .../review is a 404", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-delete" }),
+    });
+
+    const del = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-delete`,
+      { method: "DELETE" }
+    );
+    expect(del.status).toBe(204);
+
+    const reviewAfter = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-delete/review`
+    );
+    expect(reviewAfter.status).toBe(404);
+  });
+
+  it("a disconnect after the review arrived does not cancel the paused job", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const controller = new AbortController();
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: planRequestBody({ jobId: "job-plan-disconnect" }),
+      signal: controller.signal,
+    });
+    const reader = res.body!.getReader();
+
+    // The response has already ended at the review stop (`respondWithSegment`
+    // closes the stream there) — a disconnect now finds nothing running to
+    // cancel, which is the whole point (#159): no connection is open while a
+    // job is paused.
+    await readUntil(reader, (t) => t.includes("event: review"));
+    controller.abort();
+    await reader.cancel().catch(() => {});
+
+    const reviewAfter = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-disconnect/review`
+    );
+    expect(reviewAfter.status).toBe(200);
   });
 });
 

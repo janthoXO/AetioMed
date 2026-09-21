@@ -1,0 +1,23 @@
+%%{init: {'flowchart': {'curve': 'linear'}}}%%
+graph TD;
+	__start__([<p>__start__</p>]):::first
+	planning_phase_basis_resolve(basis_resolve)
+	planning_phase_outline_phase_case_outline_generate(case_outline_generate)
+	planning_phase_outline_phase_outline_evaluate(outline_evaluate)
+	planning_phase_outline_phase_outline_regenerate(outline_regenerate)
+	planning_phase_outline_phase___end__(<p>__end__</p>)
+	__end__([<p>__end__</p>]):::last
+	__start__ --> planning_phase_basis_resolve;
+	planning_phase_outline_phase___end__ --> __end__;
+	subgraph planning_phase
+	subgraph outline_phase
+	planning_phase_outline_phase_case_outline_generate --> planning_phase_outline_phase_outline_evaluate;
+	planning_phase_outline_phase_outline_evaluate -.-> planning_phase_outline_phase_outline_regenerate;
+	planning_phase_outline_phase_outline_evaluate -.-> planning_phase_outline_phase___end__;
+	planning_phase_outline_phase_outline_regenerate -.-> planning_phase_outline_phase_outline_evaluate;
+	end
+	planning_phase_basis_resolve --> planning_phase_outline_phase_case_outline_generate;
+	end
+	classDef default fill:#f2f0ff,line-height:1.2;
+	classDef first fill-opacity:0;
+	classDef last fill:#bfb6fc;

@@ -5,8 +5,9 @@ import { describe, expect, it, vi } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {
   ALL_GRAPH_FLAGS,
-  assembleCaseGraph,
+  assembleCaseGraphs,
   buildCaseGraph,
+  type CompiledCaseGraphs,
   graphTopologyKey,
   graphVariantKey,
   type AssemblyDeps,
@@ -29,7 +30,11 @@ import z from "zod";
 import type { ModalityProvider } from "@/core/graph/modality/ports.js";
 import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
 import { buildFieldGenerationGraph } from "./02case-generation/02presentation/generation/index.js";
-import { buildCaseGenerationGraph } from "./02case-generation/index.js";
+import {
+  buildCaseGenerationGraph,
+  buildPlanningPhaseGraph,
+} from "./02case-generation/index.js";
+import { buildPlanGraph } from "./02case-generation/01plan/index.js";
 import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
 import { createProcedureStrategy } from "./02case-generation/03procedure/strategy/index.js";
 import { taggedOutlineFixture } from "@/core/graph/outline/fixtures.js";
@@ -102,6 +107,14 @@ function buildDeps(
   };
 }
 
+/** Every node id across both top-level graphs (#159). */
+async function allNodeIds(graphs: CompiledCaseGraphs): Promise<string[]> {
+  return [
+    ...(await nodeIds(graphs.plan)),
+    ...(await nodeIds(graphs.case)),
+  ].sort();
+}
+
 async function nodeIds(graph: {
   getGraphAsync: (opts: { xray: boolean }) => Promise<{
     nodes: Record<string, unknown>;
@@ -121,14 +134,14 @@ const flags = (
 // `buildProcedureGraph`/`buildCaseTranslationFromEnglishGraph` each assert
 // their own `outputChannels` in their own test files.
 describe("phase-level graphs — output surface (issue 17 §1)", () => {
-  it("presentation_phase (buildFieldGenerationGraph) writes back `case` AND `outline`", async () => {
+  it("presentation_phase (buildFieldGenerationGraph) writes back only `case` — the outline is input (#159)", async () => {
     const deps = buildDeps();
     const graph = buildFieldGenerationGraph(
       deps.runtime,
       deps.modalityRegistries,
       deps.traceNode
     );
-    expect([...graph.outputChannels].sort()).toEqual(["case", "outline"]);
+    expect([...graph.outputChannels].sort()).toEqual(["case"]);
   });
 
   it("generation_phase (buildCaseGenerationGraph) writes back only `case`", async () => {
@@ -137,11 +150,24 @@ describe("phase-level graphs — output surface (issue 17 §1)", () => {
     const graph = buildCaseGenerationGraph(
       deps.runtime,
       strategy,
-      deps.medicalBasisRegistry,
       deps.modalityRegistries,
       deps.traceNode
     );
     expect([...graph.outputChannels].sort()).toEqual(["case"]);
+  });
+
+  it("planning_phase (buildPlanningPhaseGraph) writes back the outline, the verdict and the basis — never `case` (#159)", async () => {
+    const deps = buildDeps();
+    const graph = buildPlanningPhaseGraph(
+      deps.runtime,
+      deps.medicalBasisRegistry,
+      deps.traceNode
+    );
+    expect([...graph.outputChannels].sort()).toEqual([
+      "basisFragments",
+      "outlineAccepted",
+      "outlineSegments",
+    ]);
   });
 
   it("translation_to_english_phase (buildCaseTranslationToEnglishGraph) writes back `diagnosis` and `userInstructions`, not `case`", async () => {
@@ -155,31 +181,15 @@ describe("phase-level graphs — output surface (issue 17 §1)", () => {
       "userInstructions",
     ]);
   });
+});
 
-  it("presentation_phase still yields a non-empty `outline` on a real run — the one narrowing that would silently degrade procedure results", async () => {
-    // `outline` is the one field a naive `{ case }`-only output would drop
-    // (issue 17 §1) — `03procedure/index.ts`'s `result_step` needs it for
-    // `generateProcedureResults`. Only `patient` is requested so this run
-    // never touches `chiefComplaintGraph`/`anamnesisGraph`'s modality path.
-    // Call order: `case_outline_generate` (generator, raw text) →
-    // `outline_evaluate` (judge, structured JSON) → accepted → fan out to
-    // `patient_generate` (generator, structured JSON).
-    const generatorQueue = [
-      taggedOutlineFixture(),
-      JSON.stringify({
-        name: "Jane Doe",
-        age: 40,
-        height: 170,
-        weight: 65,
-        gender: "female",
-      }),
-    ];
-    const judgeQueue = [JSON.stringify({ accepted: true, reasons: [] })];
+describe("plan graph — outline and judge loop (#159)", () => {
+  function scriptedRuntime(generator: string[], judge: string[]): GraphRuntime {
     const bus = new EventBus();
-    const runtime: GraphRuntime = {
+    return {
       llm: {
         for(opts) {
-          const queue = opts.role === "judge" ? judgeQueue : generatorQueue;
+          const queue = opts.role === "judge" ? judge : generator;
           const response = queue.shift();
           if (response === undefined) {
             throw new Error(
@@ -198,43 +208,65 @@ describe("phase-level graphs — output surface (issue 17 §1)", () => {
       log: createLogger(bus),
       clock: () => new Date("2024-01-01T00:00:00.000Z"),
     };
+  }
 
-    const graph = buildFieldGenerationGraph(
-      runtime,
-      {
-        chiefComplaint: [fakeTextProvider()],
-        anamnesis: [fakeTextProvider()],
-        procedureResult: [],
-      },
-      createTraceNode(bus)
+  const input = {
+    diagnosis: { name: "Influenza" },
+    difficulty: "medium" as const,
+    basisFragments: [],
+  };
+
+  it("ends with the accepted outline as segments", async () => {
+    const runtime = scriptedRuntime(
+      [taggedOutlineFixture()],
+      [JSON.stringify({ accepted: true, reasons: [] })]
     );
+    const result = await buildPlanGraph(
+      runtime,
+      createTraceNode(new EventBus())
+    ).invoke(input);
 
-    const result = await graph.invoke({
-      diagnosis: { name: "Influenza" },
-      generationFlags: ["patient"],
-      difficulty: "medium",
-      case: {},
+    expect(result.outlineAccepted).toBe(true);
+    expect(result.outlineSegments.filter((s) => s.fixed)).toHaveLength(5);
+  });
+
+  it("ends not accepted, with the last outline, once the judge loop hits its cap", async () => {
+    const rejected = JSON.stringify({
+      accepted: false,
+      reasons: ["too obvious"],
+      suggestion: "add a distractor",
     });
+    const runtime = scriptedRuntime(
+      [
+        taggedOutlineFixture({ body: "first" }),
+        taggedOutlineFixture({ body: "second" }),
+        taggedOutlineFixture({ body: "third" }),
+      ],
+      [rejected, rejected]
+    );
+    const result = await buildPlanGraph(
+      runtime,
+      createTraceNode(new EventBus())
+    ).invoke(input);
 
-    expect(result.outline).toBeTruthy();
-    expect(result.outline!.length).toBeGreaterThan(0);
-    expect(result.case.patient).toBeDefined();
+    expect(result.outlineAccepted).toBe(false);
+    expect(result.outlineSegments[2]!.text).toBe("third");
   });
 });
 
-describe("assembleCaseGraph", () => {
+describe("assembleCaseGraphs", () => {
   it("is pure: the same (deps, flags) produce the same node set", async () => {
     const deps = buildDeps();
-    const a = await nodeIds(assembleCaseGraph(deps, flags(true, false)));
-    const b = await nodeIds(assembleCaseGraph(deps, flags(true, false)));
+    const a = await allNodeIds(assembleCaseGraphs(deps, flags(true, false)));
+    const b = await allNodeIds(assembleCaseGraphs(deps, flags(true, false)));
 
     expect(a).toEqual(b);
     expect(a.length).toBeGreaterThan(0);
   });
 
   it("omits the translation nodes entirely when the sandwich is off", async () => {
-    const ids = await nodeIds(
-      assembleCaseGraph(buildDeps(), flags(false, false))
+    const ids = await allNodeIds(
+      assembleCaseGraphs(buildDeps(), flags(false, false))
     );
 
     for (const node of TRANSLATION_NODES) {
@@ -243,8 +275,8 @@ describe("assembleCaseGraph", () => {
   });
 
   it("includes both translation nodes when the sandwich is on", async () => {
-    const ids = await nodeIds(
-      assembleCaseGraph(buildDeps(), flags(true, false))
+    const ids = await allNodeIds(
+      assembleCaseGraphs(buildDeps(), flags(true, false))
     );
 
     for (const node of TRANSLATION_NODES) {
@@ -256,7 +288,7 @@ describe("assembleCaseGraph", () => {
     // `generationFlags` is per-request, so the procedure phase must never be
     // compiled away — that is the other half of the compile-vs-branch rule.
     for (const f of ALL_GRAPH_FLAGS) {
-      const ids = await nodeIds(assembleCaseGraph(buildDeps(), f));
+      const ids = await allNodeIds(assembleCaseGraphs(buildDeps(), f));
       expect(
         ids.some((id) => id.includes("procedure_phase")),
         `procedure_phase missing from variant "${graphVariantKey(f)}"`
@@ -265,15 +297,15 @@ describe("assembleCaseGraph", () => {
   });
 
   it("compiles no basis_resolve node at all when the medical-basis registry is empty", async () => {
-    const ids = await nodeIds(
-      assembleCaseGraph(buildDeps([]), flags(false, false))
+    const ids = await allNodeIds(
+      assembleCaseGraphs(buildDeps([]), flags(false, false))
     );
     expect(ids.some((id) => id.includes("basis_resolve"))).toBe(false);
   });
 
   it("compiles a basis_resolve node when the medical-basis registry is non-empty", async () => {
-    const ids = await nodeIds(
-      assembleCaseGraph(
+    const ids = await allNodeIds(
+      assembleCaseGraphs(
         buildDeps([{ id: "fake-basis", fetch: async () => [] }]),
         flags(false, false)
       )
@@ -283,7 +315,7 @@ describe("assembleCaseGraph", () => {
 
   it("rejects an empty chief-complaint modality registry at assembly time (issue 21 §7)", () => {
     expect(() =>
-      assembleCaseGraph(
+      assembleCaseGraphs(
         buildDeps(undefined, {
           chiefComplaint: [],
           anamnesis: [fakeTextProvider()],
@@ -296,7 +328,7 @@ describe("assembleCaseGraph", () => {
 
   it("rejects an empty anamnesis modality registry at assembly time (issue 21 §7)", () => {
     expect(() =>
-      assembleCaseGraph(
+      assembleCaseGraphs(
         buildDeps(undefined, {
           chiefComplaint: [fakeTextProvider()],
           anamnesis: [],
@@ -309,7 +341,7 @@ describe("assembleCaseGraph", () => {
 
   it("rejects an empty procedure-result modality registry at assembly time (issue 21 §7)", () => {
     expect(() =>
-      assembleCaseGraph(
+      assembleCaseGraphs(
         buildDeps(undefined, {
           chiefComplaint: [fakeTextProvider()],
           anamnesis: [fakeTextProvider()],
@@ -327,10 +359,12 @@ describe("assembleCaseGraph", () => {
     // loop needs to grow back to four.
     const deps = buildDeps();
     for (const sandwich of [false, true]) {
-      const off = await nodeIds(
-        assembleCaseGraph(deps, flags(sandwich, false))
+      const off = await allNodeIds(
+        assembleCaseGraphs(deps, flags(sandwich, false))
       );
-      const on = await nodeIds(assembleCaseGraph(deps, flags(sandwich, true)));
+      const on = await allNodeIds(
+        assembleCaseGraphs(deps, flags(sandwich, true))
+      );
       expect(on).toEqual(off);
     }
   });
@@ -356,7 +390,7 @@ describe("language routing reads ALS, never graph state (issue 09 §2)", () => {
     bus.on("Node Started", (e) => started.push(e.node));
 
     const deps = { ...buildDeps(), traceNode: createTraceNode(bus) };
-    const graph = assembleCaseGraph(deps, flags(true, false));
+    const graph = assembleCaseGraphs(deps, flags(true, false)).plan;
 
     await runWithContext(
       async () => {
@@ -366,9 +400,8 @@ describe("language routing reads ALS, never graph state (issue 09 §2)", () => {
             userInstructions: undefined,
             generationFlags: ["patient"],
             difficulty: "medium",
-            case: {},
             callerSuppliedFreeText: opts.callerSuppliedFreeText ?? true,
-            // Excess key: `CaseStateSchema` has no `language` field, so
+            // Excess key: `PlanStateSchema` has no `language` field, so
             // LangGraph's input-channel filtering must drop this silently —
             // proving routing cannot be driven by state even if a caller
             // tried to.
@@ -422,7 +455,7 @@ describe("translate-in trigger reads provenance, not just language (issue 12 §3
     const started: string[] = [];
     bus.on("Node Started", (e) => started.push(e.node));
     const deps = { ...buildDeps(), traceNode: createTraceNode(bus) };
-    const graph = assembleCaseGraph(deps, flags(true, false));
+    const graph = assembleCaseGraphs(deps, flags(true, false)).plan;
 
     await runWithContext(
       async () => {
@@ -431,7 +464,6 @@ describe("translate-in trigger reads provenance, not just language (issue 12 §3
             diagnosis: { name: "Influenza" },
             generationFlags: ["patient"],
             difficulty: "medium",
-            case: {},
             callerSuppliedFreeText: true,
           });
         } catch {
@@ -459,10 +491,10 @@ describe("translate-in trigger reads provenance, not just language (issue 12 §3
     const saveTranslations = vi.spyOn(diagnosisCatalog, "saveTranslations");
     const deps = buildDeps();
     deps.runtime.catalogs.diagnosis = diagnosisCatalog;
-    const graph = assembleCaseGraph(
+    const graph = assembleCaseGraphs(
       { ...deps, traceNode: createTraceNode(bus) },
       flags(true, false)
-    );
+    ).plan;
 
     await runWithContext(
       async () => {
@@ -473,7 +505,6 @@ describe("translate-in trigger reads provenance, not just language (issue 12 §3
             diagnosis: { name: "Influenza", icd: "1E32" },
             generationFlags: ["patient"],
             difficulty: "medium",
-            case: {},
             callerSuppliedFreeText: false,
           });
         } catch {
@@ -522,7 +553,7 @@ describe("buildCaseGraph", () => {
 
   it("compiles all four variants at boot and returns a distinct one per combination", () => {
     const deps = buildDeps();
-    const { getCaseGraph } = buildCaseGraph(
+    const { getCaseGraphs } = buildCaseGraph(
       deps.runtime,
       new EventBus(),
       config,
@@ -531,13 +562,14 @@ describe("buildCaseGraph", () => {
       deps.modalityRegistries
     );
 
-    const graphs = ALL_GRAPH_FLAGS.map((f) => getCaseGraph(f));
-    expect(new Set(graphs).size).toBe(4);
+    const variants = ALL_GRAPH_FLAGS.map((f) => getCaseGraphs(f));
+    expect(new Set(variants.map((v) => v.plan)).size).toBe(4);
+    expect(new Set(variants.map((v) => v.case)).size).toBe(4);
   });
 
   it("returns the same instance for the same flags — the map is built once", () => {
     const deps = buildDeps();
-    const { getCaseGraph } = buildCaseGraph(
+    const { getCaseGraphs } = buildCaseGraph(
       deps.runtime,
       new EventBus(),
       config,
@@ -546,14 +578,14 @@ describe("buildCaseGraph", () => {
       deps.modalityRegistries
     );
 
-    expect(getCaseGraph(flags(true, false))).toBe(
-      getCaseGraph(flags(true, false))
+    expect(getCaseGraphs(flags(true, false))).toBe(
+      getCaseGraphs(flags(true, false))
     );
   });
 
-  it("binds generateCase to the variant the deployer's config selects", async () => {
+  it("binds planCase/renderCase to the variant the deployer's config selects", async () => {
     const deps = buildDeps();
-    const { caseGraph, getCaseGraph } = buildCaseGraph(
+    const { graphs, getCaseGraphs } = buildCaseGraph(
       deps.runtime,
       new EventBus(),
       ConfigSchema.parse({
@@ -567,11 +599,54 @@ describe("buildCaseGraph", () => {
       deps.modalityRegistries
     );
 
-    expect(caseGraph).toBe(getCaseGraph(flags(false, true)));
+    expect(graphs).toBe(getCaseGraphs(flags(false, true)));
+    const ids = await allNodeIds(graphs);
     for (const node of TRANSLATION_NODES) {
-      expect((await nodeIds(caseGraph)).some((id) => id.startsWith(node))).toBe(
-        false
-      );
+      expect(ids.some((id) => id.startsWith(node))).toBe(false);
     }
+  });
+});
+
+describe("generateCase — normal mode (#159)", () => {
+  it("fails with OUTLINE_NOT_ACCEPTED instead of rendering an outline the judge never accepted", async () => {
+    const rejected = JSON.stringify({ accepted: false, reasons: ["no"] });
+    const generator = [
+      taggedOutlineFixture(),
+      taggedOutlineFixture(),
+      taggedOutlineFixture(),
+    ];
+    const judge = [rejected, rejected];
+    const deps = buildDeps([]);
+    deps.runtime.llm = {
+      for(opts) {
+        const response = (opts.role === "judge" ? judge : generator).shift();
+        if (response === undefined) {
+          throw new Error(`Unexpected LLM call for role "${opts.role}"`);
+        }
+        return new FakeListChatModel({ responses: [response] });
+      },
+    };
+    const { generateCase } = buildCaseGraph(
+      deps.runtime,
+      new EventBus(),
+      ConfigSchema.parse({
+        LLM_PROVIDER: "ollama",
+        LLM_MODEL: "llama3.1",
+        TRANSLATION_SANDWICH: "false",
+      }),
+      deps.repos,
+      deps.medicalBasisRegistry,
+      deps.modalityRegistries
+    );
+
+    await expect(
+      generateCase({
+        diagnosis: { name: "Influenza" },
+        generationFlags: ["patient"],
+        callerSuppliedFreeText: true,
+      })
+    ).rejects.toMatchObject({ code: "OUTLINE_NOT_ACCEPTED" });
+    // Nothing past the plan graph ran: no field generator was called.
+    expect(generator).toHaveLength(0);
   });
 });

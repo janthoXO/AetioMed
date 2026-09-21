@@ -32,7 +32,7 @@ import type { Case } from "@/core/graph/models/Case.js";
 
 // Same shape as `caseGenerationService.test.ts`'s `fakeGraph`, plus
 // `MAX_CONTENT_PART_BYTES` (read by `encodeCase` on the success path) and a
-// `caseGraph` stub — `GET /api/graph` is not exercised here, so
+// `graphs` stub — `GET /api/graph` is not exercised here, so
 // `getGraphAsync` is never called.
 function fakeGraph(
   generateCase: GraphAppContext["generateCase"]
@@ -54,9 +54,10 @@ function fakeGraph(
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     generateCase,
-    caseGraph: {
-      getGraphAsync: async () => ({ nodes: {}, edges: [] }),
-    } as unknown as GraphAppContext["caseGraph"],
+    graphs: {
+      plan: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
+      case: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
+    } as unknown as GraphAppContext["graphs"],
   } as GraphAppContext;
 }
 

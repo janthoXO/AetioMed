@@ -41,7 +41,7 @@ export function createReadModel(
       return graph.config.allowedLlms || [];
     },
     graph() {
-      return buildGraphStructure(graph.caseGraph);
+      return buildGraphStructure(graph.graphs);
     },
   };
 }

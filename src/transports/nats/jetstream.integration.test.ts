@@ -61,7 +61,6 @@ import { getRequestContext } from "@/core/graph/utils/context.js";
 import { createReadModel } from "@/core/readModel.js";
 import { createRestApp } from "@/transports/rest/index.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
-import type { CompiledCaseGraph } from "@/core/graph/02graphs/caseGraph.js";
 import type { Case } from "@/core/graph/models/Case.js";
 
 const NATS_TEST_URL = process.env.NATS_TEST_URL;
@@ -384,15 +383,20 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     generateCase,
-    caseGraph: {
-      getGraphAsync: async () => ({
-        nodes: { __start__: {}, some_node: {}, __end__: {} },
-        edges: [
-          { source: "__start__", target: "some_node" },
-          { source: "some_node", target: "__end__" },
-        ],
-      }),
-    } as unknown as CompiledCaseGraph,
+    graphs: {
+      plan: {
+        getGraphAsync: async () => ({ nodes: {}, edges: [] }),
+      },
+      case: {
+        getGraphAsync: async () => ({
+          nodes: { __start__: {}, some_node: {}, __end__: {} },
+          edges: [
+            { source: "__start__", target: "some_node" },
+            { source: "some_node", target: "__end__" },
+          ],
+        }),
+      },
+    } as unknown as GraphAppContext["graphs"],
   } as GraphAppContext;
 }
 
@@ -732,9 +736,10 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     generateCase,
-    caseGraph: {
-      getGraphAsync: async () => ({ nodes: {}, edges: [] }),
-    } as unknown as GraphAppContext["caseGraph"],
+    graphs: {
+      plan: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
+      case: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
+    } as unknown as GraphAppContext["graphs"],
   } as GraphAppContext;
 }
 

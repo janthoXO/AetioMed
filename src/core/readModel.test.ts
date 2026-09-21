@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from "vitest";
 import { createReadModel } from "./readModel.js";
 import type { GraphAppContext } from "./graph/appContext.js";
 import type { GraphStructure } from "./graph/structure.js";
-import type { CompiledCaseGraph } from "./graph/02graphs/caseGraph.js";
 
 function fakeGraph(): GraphAppContext {
   return {
@@ -20,15 +19,23 @@ function fakeGraph(): GraphAppContext {
       },
     } as unknown as GraphAppContext["runtime"],
     generateCase: vi.fn(),
-    caseGraph: {
-      getGraphAsync: async () => ({
-        nodes: { __start__: {}, a: {}, __end__: {} },
-        edges: [
-          { source: "__start__", target: "a" },
-          { source: "a", target: "__end__" },
-        ],
-      }),
-    } as unknown as CompiledCaseGraph,
+    graphs: {
+      plan: {
+        getGraphAsync: async () => ({
+          nodes: { __start__: {}, __end__: {} },
+          edges: [{ source: "__start__", target: "__end__" }],
+        }),
+      },
+      case: {
+        getGraphAsync: async () => ({
+          nodes: { __start__: {}, a: {}, __end__: {} },
+          edges: [
+            { source: "__start__", target: "a" },
+            { source: "a", target: "__end__" },
+          ],
+        }),
+      },
+    } as unknown as GraphAppContext["graphs"],
   } as GraphAppContext;
 }
 

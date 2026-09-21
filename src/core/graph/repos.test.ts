@@ -31,6 +31,7 @@ describe("repo modules perform no I/O on import", () => {
       import("@/core/graph/catalog/labels/repo.ts"),
       import("@/core/graph/catalog/diagnosis/repo.ts"),
       import("@/core/graph/symptoms/repo.ts"),
+      import("@/core/jobs/repo.ts"),
       import("@/core/graph/repos.ts"),
     ]);
 

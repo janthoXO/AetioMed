@@ -107,31 +107,23 @@ export function buildPlanningPhaseGraph(
       .compile();
   }
 
-  return (
-    new StateGraph(PlanningPhaseStateSchema, {
-      context: RequestContextSchema,
-      output: PlanningPhaseOutputSchema,
-    })
-      .addNode(
+  return new StateGraph(PlanningPhaseStateSchema, {
+    context: RequestContextSchema,
+    output: PlanningPhaseOutputSchema,
+  })
+    .addNode(
+      "basis_resolve",
+      traceNode(
         "basis_resolve",
-        traceNode(
-          "basis_resolve",
-          makeResolveMedicalBasis(runtime, medicalBasisRegistry),
-          "Resolving medical basis"
-        )
+        makeResolveMedicalBasis(runtime, medicalBasisRegistry),
+        "Resolving medical basis"
       )
-      .addNode("outline_phase", outlinePhase)
-      // A revision (#159) reuses the basis the first run resolved.
-      .addConditionalEdges(
-        START,
-        (state: { outlineSegments: unknown[] }) =>
-          state.outlineSegments.length > 0 ? "outline_phase" : "basis_resolve",
-        ["basis_resolve", "outline_phase"]
-      )
-      .addEdge("basis_resolve", "outline_phase")
-      .addEdge("outline_phase", END)
-      .compile()
-  );
+    )
+    .addNode("outline_phase", outlinePhase)
+    .addEdge(START, "basis_resolve")
+    .addEdge("basis_resolve", "outline_phase")
+    .addEdge("outline_phase", END)
+    .compile();
 }
 
 /**

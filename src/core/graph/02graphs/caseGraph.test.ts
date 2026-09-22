@@ -230,32 +230,6 @@ describe("plan graph — outline and judge loop (#159)", () => {
     expect(result.outlineSegments.filter((s) => s.fixed)).toHaveLength(5);
   });
 
-  it("the revise entry regenerates from the previous outline and the reviewer's feedback (#159)", async () => {
-    const generator = [taggedOutlineFixture({ body: "revised" })];
-    const runtime = scriptedRuntime(generator, [
-      JSON.stringify({ accepted: true, reasons: [] }),
-    ]);
-    const bus = new EventBus();
-    const started: string[] = [];
-    bus.on("Node Started", (e) => started.push(e.node));
-
-    const previous = await buildPlanGraph(
-      scriptedRuntime(
-        [taggedOutlineFixture({ body: "first" })],
-        [JSON.stringify({ accepted: true, reasons: [] })]
-      ),
-      createTraceNode(new EventBus())
-    ).invoke(input);
-    const result = await buildPlanGraph(runtime, createTraceNode(bus)).invoke({
-      ...input,
-      outlineSegments: previous.outlineSegments,
-      outlineFeedback: ["add a distractor"],
-    });
-
-    expect(started).toEqual(["outline_regenerate", "outline_evaluate"]);
-    expect(result.outlineSegments[2]!.text).toBe("revised");
-  });
-
   it("ends not accepted, with the last outline, once the judge loop hits its cap", async () => {
     const rejected = JSON.stringify({
       accepted: false,

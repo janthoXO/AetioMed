@@ -53,27 +53,13 @@ export const PlanGraphStateSchema = CaseGenerationStateSchema.pick({
   outlineEvaluationIterationsRemaining: z
     .number()
     .default(OUTLINE_EVALUATION_MAX_ITERATIONS),
-  /**
-   * Feedback fed into the next revision: the judge's, or — on the revise
-   * entry — the reviewer's (#159).
-   */
+  /** The judge's feedback, fed into the next revision. */
   outlineFeedback: z.array(z.string()).default([]),
 });
 
 /** `"user-facing"` binds the outline prompts to the request language. */
 function audienceOf(state: PlanGraphState): PromptAudience {
   return state.mode === "plan" ? "user-facing" : "internal";
-}
-
-/**
- * The revise entry (#159): a reviewer asked for an AI revision, so the graph
- * starts at `outline_regenerate` with the previous outline and their
- * feedback, instead of generating from scratch.
- */
-function entryOf(state: PlanGraphState) {
-  return state.outlineSegments.length > 0 && state.outlineFeedback.length > 0
-    ? "outline_regenerate"
-    : "case_outline_generate";
 }
 
 type PlanGraphState = z.infer<typeof PlanGraphStateSchema>;
@@ -241,10 +227,7 @@ export function buildPlanGraph(
       ),
       { ends: ["outline_evaluate"] }
     )
-    .addConditionalEdges(START, entryOf, [
-      "case_outline_generate",
-      "outline_regenerate",
-    ])
+    .addEdge(START, "case_outline_generate")
     .addEdge("case_outline_generate", "outline_evaluate")
     .compile();
 }

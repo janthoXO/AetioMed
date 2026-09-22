@@ -38,6 +38,10 @@ body:json {
   //     "feedback": ["Make the patient older than 60."]
   //   }
   // }
+
+  // With ALLOW_LLMS, any decision may also switch the model for the rest of
+  // the job — the new config (API key included) replaces the stored one:
+  //   "llmConfig": { "provider": "openai", "model": "gpt-4o", "apiKey": "…" }
 }
 
 settings {

@@ -1,7 +1,7 @@
 import express from "express";
 import {
   makeCaseGenerationRequestSchema,
-  ReviewDecisionRequestSchema,
+  makeReviewDecisionRequestSchema,
 } from "@/api/index.js";
 import { CaseGenerationResponseSchema } from "@/api/index.js";
 import { encodeCase } from "@/api/contentWire.js";
@@ -43,6 +43,9 @@ export default function createCasesRouter(
   const heartbeatMs = opts.heartbeatMs ?? HEARTBEAT_MS;
   const router = express.Router();
   const CaseGenerationRequestSchema = makeCaseGenerationRequestSchema(
+    graph.config
+  );
+  const ReviewDecisionRequestSchema = makeReviewDecisionRequestSchema(
     graph.config
   );
 

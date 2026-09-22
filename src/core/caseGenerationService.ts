@@ -378,15 +378,14 @@ export function createCaseGenerationService(
 
     // The API key never enters the record's JSON — see `encryptedApiKey`.
     const { llmConfig, ...rest } = req;
-    const storedLlmConfig = llmConfig && { ...llmConfig };
-    if (storedLlmConfig) delete storedLlmConfig.apiKey;
+    const stored = storedLlmConfig(llmConfig).config;
 
     return {
       schema: JOB_DATA_SCHEMA,
       sandwich,
       request: {
         ...rest,
-        ...(storedLlmConfig && { llmConfig: storedLlmConfig }),
+        ...(stored && { llmConfig: stored }),
       },
       language,
       diagnosis: { name: diagnosisName, icd: req.icd },
@@ -396,6 +395,23 @@ export function createCaseGenerationService(
       }),
       callerSuppliedFreeText,
       reviewRounds: 0,
+    };
+  }
+
+  /**
+   * Split a per-request LLM config for the record: the key-less config goes
+   * into the JSON, the API key only ever encrypted into `encryptedApiKey`.
+   */
+  function storedLlmConfig(llmConfig: LLMConfig | undefined): {
+    config: Omit<LLMConfig, "apiKey"> | undefined;
+    encryptedApiKey: string | undefined;
+  } {
+    if (!llmConfig) return { config: undefined, encryptedApiKey: undefined };
+    const { apiKey, ...config } = llmConfig;
+    return {
+      config,
+      encryptedApiKey:
+        apiKey && opts.secretBox ? opts.secretBox.seal(apiKey) : undefined,
     };
   }
 
@@ -824,10 +840,7 @@ export function createCaseGenerationService(
         revision: 0,
         updatedAt: now(),
         data,
-        encryptedApiKey:
-          req.llmConfig?.apiKey && opts.secretBox
-            ? opts.secretBox.seal(req.llmConfig.apiKey)
-            : undefined,
+        encryptedApiKey: storedLlmConfig(req.llmConfig).encryptedApiKey,
       });
       return runSegment(jobId, {
         controller,
@@ -842,7 +855,7 @@ export function createCaseGenerationService(
 
   function decide(
     jobId: string,
-    { revision, decision }: ReviewDecisionRequest
+    { revision, decision, llmConfig }: ReviewDecisionRequest
   ): DecisionOutcome {
     const record = records.get(jobId);
     if (!record) {
@@ -908,6 +921,17 @@ export function createCaseGenerationService(
       delete reviewed.pendingFeedback;
       if (!reuse) delete reviewed.merged;
       next = { status: "edits_received", expiresAt: undefined, data: reviewed };
+    }
+
+    // A decision may bring its own LLM config: it replaces the stored one,
+    // API key included, for every later segment of this job.
+    if (llmConfig) {
+      const stored = storedLlmConfig(llmConfig);
+      next.data = {
+        ...(next.data as JobData),
+        request: { ...data.request, llmConfig: stored.config },
+      };
+      next.encryptedApiKey = stored.encryptedApiKey;
     }
 
     const written = records.update(jobId, next, {

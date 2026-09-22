@@ -16,13 +16,8 @@ import { openSse } from "../sse.js";
  * - finished job → `event: complete` with its outcome, then end.
  * - running job → `event: connected`, `event: label`…, `event: complete`.
  *
- * A plan-mode job (#159) also relays `event: awaiting_review` — the
- * channel's payload-free pause marker (`{jobId, revision, timestamp}`, no
- * outline) — and then keeps streaming: the job is paused, not finished, so
- * the stream stays open for whatever the next segment produces. This is
- * already just `WatchedEvent`'s `type`/`data` relayed generically, the same
- * as `label`; only the requester (`GET/POST /api/cases/:jobId/review`) ever
- * sees the outline itself.
+ * A plan-mode call (#159) ends with `event: complete` whose status is
+ * `planned`; only the requester ever sees the plan itself.
  *
  * An observer can watch a job but not collect it: the stream never carries
  * the case (#145, "watch, not collect").

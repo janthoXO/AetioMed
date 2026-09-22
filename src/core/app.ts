@@ -8,10 +8,7 @@ import {
 import {
   createCaseGenerationService,
   DEFAULT_MAX_CONCURRENT_GENERATIONS,
-  DEFAULT_MAX_REVIEW_ROUNDS,
-  DEFAULT_REVIEW_TTL_MS,
 } from "./caseGenerationService.js";
-import { parseJobEncryptionKey } from "./jobs/secretBox.js";
 import {
   createJobEventChannel,
   createLocalJobDirectory,
@@ -35,18 +32,6 @@ const AppEnvSchema = z
       .int()
       .min(1)
       .default(DEFAULT_MAX_CONCURRENT_GENERATIONS),
-    // Plan mode (#159): how long a paused job waits for its reviewer, and
-    // how many AI revisions a reviewer may request.
-    REVIEW_TTL_MINUTES: z.coerce
-      .number()
-      .int()
-      .min(1)
-      .default(DEFAULT_REVIEW_TTL_MS / 60_000),
-    MAX_REVIEW_ROUNDS: z.coerce
-      .number()
-      .int()
-      .min(0)
-      .default(DEFAULT_MAX_REVIEW_ROUNDS),
   })
   .transform((env) => ({
     features: env.FEATURES.split(",")
@@ -54,8 +39,6 @@ const AppEnvSchema = z
       .filter(Boolean),
     symptomCacheTtlDays: env.SYMPTOM_CACHE_TTL_DAYS,
     maxConcurrentGenerations: env.MAX_CONCURRENT_GENERATIONS,
-    reviewTtlMs: env.REVIEW_TTL_MINUTES * 60_000,
-    maxReviewRounds: env.MAX_REVIEW_ROUNDS,
   }));
 
 /**
@@ -81,13 +64,8 @@ export async function createApp(): Promise<{
     features: featureList,
     symptomCacheTtlDays,
     maxConcurrentGenerations,
-    reviewTtlMs,
-    maxReviewRounds,
   } = AppEnvSchema.parse(process.env);
   const features = new Set(featureList);
-  // Fails startup when `ALLOW_LLMS` is on without a valid key (#159):
-  // per-request API keys are checkpointed encrypted, never in plain text.
-  const secretBox = parseJobEncryptionKey(process.env, features);
   console.log(`[app] Feature flags: ${[...features].join(", ") || "none"}`);
   const graphConfig = GraphConfigSchema.parse(process.env);
   const bus = new EventBus();
@@ -113,10 +91,6 @@ export async function createApp(): Promise<{
 
   const service = createCaseGenerationService(graph, bus, jobEvents, {
     maxConcurrent: maxConcurrentGenerations,
-    jobRecords: graph.jobRecords,
-    secretBox,
-    reviewTtlMs,
-    maxReviewRounds,
   });
 
   // Shared read model (#144): both transports' read-only endpoints answer
@@ -133,7 +107,6 @@ export async function createApp(): Promise<{
         service,
         jobEvents,
         readModel,
-        reviewTtlMs,
       })
     : undefined;
 
@@ -155,9 +128,6 @@ export async function createApp(): Promise<{
   const closers: Closer[] = [];
   if (rest) closers.push({ name: "REST", close: rest.close });
   if (nats) closers.push({ name: "NATS", close: nats.close });
-
-  // The review-expiry sweep writes to the DB: stop it before the DB goes.
-  closers.push({ name: "Jobs", close: async () => service.close() });
 
   // OTel after NATS, before the DB: flush batched spans/logs once producers
   // have stopped emitting them, but before the process (and its DB) exits.

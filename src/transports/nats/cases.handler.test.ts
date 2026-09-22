@@ -1,13 +1,10 @@
-// Rewritten for #142: the old mock targeted `publishCaseGenerationResponse`,
-// which no longer exists — results now publish through `publishCaseResult`
-// (per-job subject, `cases.result.<jobId>`). Also covers the new `slot`
-// plumbing (`Release`, from `core/concurrency.ts`) and the `msg.working()`
-// heartbeat that keeps a long-running job's ack deadline alive.
-//
-// Rewritten again for #159 (plan mode): `getJetStreamClient` is mocked
-// instead of `./cases.publisher.js` itself, so `publishStop`'s real subject
-// routing (`cases.result.<jobId>` vs. `cases.review.<jobId>`) is exercised
-// rather than assumed.
+// Rewritten for #159 (stateless generation): the generator keeps nothing
+// between calls, so an unacked request *is* the recovery path — the handler
+// now acks only once the call's output is published (`msg.ack()` at the
+// very end), naks on a publish failure, and gives up after
+// `REQUEST_MAX_ATTEMPTS` deliveries by publishing a `RETRIES_EXHAUSTED`
+// result instead of calling the service again. A normal-mode plan is
+// published through `onPlan` as soon as it exists, best-effort.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { JsMsg } from "@nats-io/jetstream";
 import {
@@ -16,8 +13,9 @@ import {
 } from "./cases.handler.js";
 import {
   WORKING_INTERVAL_MS,
+  REQUEST_MAX_ATTEMPTS,
   resultSubject,
-  reviewSubject,
+  planSubject,
 } from "./subjects.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type {
@@ -33,13 +31,14 @@ vi.mock("./client.js", () => ({
 
 import { planAndRenderFrom } from "@/testing/graphFakes.js";
 
-function fakeMsg(payload: unknown): JsMsg {
+function fakeMsg(payload: unknown, deliveryCount = 1): JsMsg {
   return {
     json: () => payload,
     ack: vi.fn(),
     nak: vi.fn(),
     term: vi.fn(),
     working: vi.fn(),
+    info: { deliveryCount },
   } as unknown as JsMsg;
 }
 
@@ -68,7 +67,7 @@ function fakeService(
     generate,
     reserveSlot: vi.fn(),
     cancel: vi.fn(),
-  };
+  } as unknown as CaseGenerationService;
 }
 
 beforeEach(() => {
@@ -81,7 +80,7 @@ function publishedSubjects(): string[] {
 }
 
 describe("consumeCaseGenerateMessage (#142, #159)", () => {
-  it("forwards difficulty, and passes the slot plus transport/onCheckpoint through to service.generate's 2nd arg", async () => {
+  it("forwards difficulty, and passes the slot plus onPlan through to service.generate's 2nd arg", async () => {
     const generate = vi.fn(
       async (): Promise<CaseGenerationResult> => ({
         jobId: "job-1",
@@ -107,58 +106,68 @@ describe("consumeCaseGenerateMessage (#142, #159)", () => {
       diagnosis: "Influenza",
       difficulty: "hard",
     });
-    expect(opts).toMatchObject({ slot, transport: "nats" });
-    expect(typeof opts!.onCheckpoint).toBe("function");
+    expect(opts).toMatchObject({ slot });
+    expect(typeof opts!.onPlan).toBe("function");
     expect(slot).toHaveBeenCalled();
   });
 
-  it("acks at onCheckpoint, not at the end — and never acks twice", async () => {
-    let onCheckpoint: (() => void) | undefined;
+  it("acks only after the result is published, not before", async () => {
+    let resolveGenerate!: (result: CaseGenerationResult) => void;
     const generate = vi.fn(
-      (_req, opts) =>
+      () =>
         new Promise<CaseGenerationResult>((resolve) => {
-          onCheckpoint = opts!.onCheckpoint;
-          // Simulate the checkpoint firing mid-segment, well before the
-          // segment's own result resolves.
-          opts!.onCheckpoint?.();
-          setTimeout(
-            () => resolve({ jobId: "job-ck", status: "done", case: {} }),
-            0
-          );
+          resolveGenerate = resolve;
         })
     );
     const service = fakeService(generate);
     const msg = fakeMsg({ jobId: "job-ck", diagnosis: "Influenza" });
 
-    await consumeCaseGenerateMessage(msg, fakeGraph(), service);
+    const pending = consumeCaseGenerateMessage(msg, fakeGraph(), service);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(msg.ack).not.toHaveBeenCalled();
 
-    expect(onCheckpoint).toBeDefined();
-    // ack() from onCheckpoint, plus the handler's own ack() after the
-    // result — must collapse to exactly one real msg.ack() call.
+    resolveGenerate({ jobId: "job-ck", status: "done", case: {} });
+    await pending;
+
     expect(msg.ack).toHaveBeenCalledTimes(1);
   });
 
-  it("a plan-mode stop (awaiting_review) publishes the review to cases.review.<jobId>, not cases.result.<jobId>", async () => {
-    const generate = vi.fn(
-      async (): Promise<CaseGenerationResult> => ({
-        jobId: "job-review",
-        status: "awaiting_review",
-        review: {
-          jobId: "job-review",
-          revision: 1,
-          language: "English",
-          outline: [{ fixed: false, text: "Chest pain." }],
-          expiresAt: new Date().toISOString(),
-        },
-      })
-    );
+  it("a normal-mode plan is published through onPlan, best-effort, to cases.plan.<jobId>", async () => {
+    const generate = vi.fn(async (_req, opts) => {
+      opts!.onPlan!({
+        jobId: "job-plan",
+        mode: "normal",
+        language: "English",
+        plan: [{ fixed: false, text: "Chest pain." }],
+      });
+      return { jobId: "job-plan", status: "done", case: {} };
+    });
     const service = fakeService(generate);
-    const msg = fakeMsg({ jobId: "job-review", diagnosis: "Influenza" });
+    const msg = fakeMsg({ jobId: "job-plan", diagnosis: "Influenza" });
 
     await consumeCaseGenerateMessage(msg, fakeGraph(), service);
 
-    expect(publishedSubjects()).toEqual([reviewSubject("job-review")]);
-    expect(publishedSubjects()).not.toContain(resultSubject("job-review"));
+    expect(publishedSubjects()).toContain(planSubject("job-plan"));
+    expect(publishedSubjects()).toContain(resultSubject("job-plan"));
+  });
+
+  it("a plan-mode stop ('planned') publishes to cases.plan.<jobId>, not cases.result.<jobId>", async () => {
+    const generate = vi.fn(
+      async (): Promise<CaseGenerationResult> => ({
+        jobId: "job-planned",
+        status: "planned",
+        language: "English",
+        plan: [{ fixed: false, text: "Chest pain." }],
+      })
+    );
+    const service = fakeService(generate);
+    const msg = fakeMsg({ jobId: "job-planned", diagnosis: "Influenza" });
+
+    await consumeCaseGenerateMessage(msg, fakeGraph(), service);
+
+    expect(publishedSubjects()).toEqual([planSubject("job-planned")]);
+    expect(publishedSubjects()).not.toContain(resultSubject("job-planned"));
     expect(msg.ack).toHaveBeenCalledTimes(1);
   });
 
@@ -222,7 +231,7 @@ describe("consumeCaseGenerateMessage (#142, #159)", () => {
     expect(msg.ack).toHaveBeenCalledTimes(1);
   });
 
-  it("publish throwing before the checkpoint acked: naks the message", async () => {
+  it("publish failing: naks the message, never acks", async () => {
     publish.mockRejectedValueOnce(new Error("publish failed"));
     const generate = vi.fn(
       async (): Promise<CaseGenerationResult> => ({
@@ -240,25 +249,42 @@ describe("consumeCaseGenerateMessage (#142, #159)", () => {
     expect(msg.ack).not.toHaveBeenCalled();
   });
 
-  it("publish throwing after the checkpoint already acked: never naks an acked message", async () => {
-    publish.mockRejectedValueOnce(new Error("publish failed"));
-    const generate = vi.fn(
-      (_req, opts) =>
-        new Promise<CaseGenerationResult>((resolve) => {
-          opts!.onCheckpoint?.();
-          resolve({ jobId: "job-fail-after-ack", status: "done", case: {} });
-        })
-    );
+  it("past REQUEST_MAX_ATTEMPTS deliveries: publishes RETRIES_EXHAUSTED and acks, without calling the service", async () => {
+    const generate = vi.fn();
     const service = fakeService(generate);
-    const msg = fakeMsg({
-      jobId: "job-fail-after-ack",
-      diagnosis: "Influenza",
-    });
+    const msg = fakeMsg(
+      { jobId: "job-exhausted", diagnosis: "Influenza" },
+      REQUEST_MAX_ATTEMPTS + 1
+    );
 
     await consumeCaseGenerateMessage(msg, fakeGraph(), service);
 
+    expect(generate).not.toHaveBeenCalled();
+    expect(publishedSubjects()).toEqual([resultSubject("job-exhausted")]);
+    const [, body] = publish.mock.calls[0]!;
+    expect(JSON.parse(body as string)).toMatchObject({
+      error: { code: "RETRIES_EXHAUSTED" },
+    });
     expect(msg.ack).toHaveBeenCalledTimes(1);
-    expect(msg.nak).not.toHaveBeenCalled();
+  });
+
+  it("exactly REQUEST_MAX_ATTEMPTS deliveries still runs the service", async () => {
+    const generate = vi.fn(
+      async (): Promise<CaseGenerationResult> => ({
+        jobId: "job-last-try",
+        status: "done",
+        case: {},
+      })
+    );
+    const service = fakeService(generate);
+    const msg = fakeMsg(
+      { jobId: "job-last-try", diagnosis: "Influenza" },
+      REQUEST_MAX_ATTEMPTS
+    );
+
+    await consumeCaseGenerateMessage(msg, fakeGraph(), service);
+
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 
   it("releases the slot on every path: missing jobId, invalid body, duplicate, and success", async () => {
@@ -340,32 +366,6 @@ describe("consumeCaseGenerateMessage — msg.working() heartbeat (#142, #159)", 
     const callsAtResolve = vi.mocked(msg.working).mock.calls.length;
     await vi.advanceTimersByTimeAsync(WORKING_INTERVAL_MS * 2);
     expect(msg.working).toHaveBeenCalledTimes(callsAtResolve);
-  });
-
-  it("stops calling msg.working() once the checkpoint acks, even while generate is still pending", async () => {
-    let onCheckpoint: (() => void) | undefined;
-    let resolveGenerate!: (result: CaseGenerationResult) => void;
-    const generate = vi.fn(
-      (_req, opts) =>
-        new Promise<CaseGenerationResult>((resolve) => {
-          onCheckpoint = opts!.onCheckpoint;
-          resolveGenerate = resolve;
-        })
-    );
-    const service = fakeService(generate);
-    const msg = fakeMsg({ jobId: "job-ck-working", diagnosis: "Influenza" });
-
-    const pending = consumeCaseGenerateMessage(msg, fakeGraph(), service);
-    await vi.advanceTimersByTimeAsync(0);
-
-    onCheckpoint!();
-    expect(msg.ack).toHaveBeenCalledTimes(1);
-
-    await vi.advanceTimersByTimeAsync(WORKING_INTERVAL_MS * 3);
-    expect(msg.working).not.toHaveBeenCalled();
-
-    resolveGenerate({ jobId: "job-ck-working", status: "done", case: {} });
-    await pending;
   });
 });
 

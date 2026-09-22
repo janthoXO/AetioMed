@@ -7,20 +7,15 @@
 // implementation: the local one below, or the NATS one
 // (`transports/nats/jobDirectory.ts`) when NATS is enabled. So REST depends
 // on NATS only through composition, and NATS never depends on REST.
-import type {
-  JobAwaitingReviewEvent,
-  JobCompleteEvent,
-  JobEventChannel,
-} from "./channel.js";
+import type { JobCompleteEvent, JobEventChannel } from "./channel.js";
 import type { LabelEvent } from "./labels.js";
 
 /**
- * What an observer sees: labels, the payload-free pause marker (#159), then
- * the terminal marker — never the case, never the outline.
+ * What an observer sees: labels, then the terminal marker — never the case,
+ * never the plan.
  */
 export type WatchedEvent =
   | { type: "label"; data: LabelEvent }
-  | { type: "awaiting_review"; data: JobAwaitingReviewEvent }
   | { type: "complete"; data: JobCompleteEvent };
 
 /**
@@ -99,11 +94,7 @@ export function createLocalJobDirectory(
       let unsubscribe = () => {};
       const buffered = createBufferedWatch(() => unsubscribe());
       const subscription = channel.subscribe(jobId, (event) => {
-        if (
-          event.type === "label" ||
-          event.type === "awaiting_review" ||
-          event.type === "complete"
-        ) {
+        if (event.type === "label" || event.type === "complete") {
           buffered.push(event);
         }
       });

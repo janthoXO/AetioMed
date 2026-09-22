@@ -1,29 +1,15 @@
-import type {
-  NatsConnection,
-  Msg,
-  Subscription,
-} from "@nats-io/transport-node";
-import { JobIdSchema, makeReviewDecisionRequestSchema } from "@/api/index.js";
-import type { GraphAppContext } from "@/core/graph/appContext.js";
+import type { NatsConnection, Subscription } from "@nats-io/transport-node";
+import { JobIdSchema } from "@/api/index.js";
 import type { CaseGenerationService } from "@/core/caseGenerationService.js";
 import {
   TOMBSTONE_MS,
   type JobEventChannel,
   type JobPeek,
 } from "@/core/jobEvents/index.js";
-import { publishStop } from "./cases.publisher.js";
-import { cancelSubject, decisionSubject, statusSubject } from "./subjects.js";
+import { cancelSubject, statusSubject } from "./subjects.js";
 
-/**
- * What `cases.status.<jobId>` answers — never `unknown`: nobody answers
- * then. `awaiting_review` is added by #159: a paused job is still `active`
- * on the channel (it never closes), so `jobEvents.peek` alone cannot tell a
- * running segment from one waiting on a reviewer — `service.getReview`
- * answers that distinction instead.
- */
-export type JobStatusReply =
-  | Exclude<JobPeek, { state: "unknown" }>
-  | { state: "awaiting_review"; revision: number };
+/** What `cases.status.<jobId>` answers — never `unknown`: nobody answers then. */
+export type JobStatusReply = Exclude<JobPeek, { state: "unknown" }>;
 
 /**
  * Answer per-job requests for every job this process runs, whatever
@@ -36,87 +22,26 @@ export type JobStatusReply =
  * - `cases.cancel.<jobId>` → `{cancelled}`, while the job runs (#142).
  *   `{cancelled: false}` only happens when the job finished between the
  *   request and the abort.
- * - `cases.status.<jobId>` → `{state: "active"}` while it runs,
- *   `{state: "awaiting_review", revision}` while paused for a reviewer
- *   (#159), then `{state: "terminal", complete}` for the channel's
- *   tombstone window (#145). That is what lets an observer on another
- *   replica tell "finished" from "never existed".
- * - `cases.decision.<jobId>` → `{accepted}` (#159), answered by the same
- *   owning-replica rule: subscribed on `accepted`, unsubscribed on
- *   `complete`. A paused job never emits `complete` (the channel stays open
- *   across a review, #159), so this subscription — like `cancel`'s — is
- *   naturally still live for as long as the job can be decided on.
+ * - `cases.status.<jobId>` → `{state: "active"}` while it runs, then
+ *   `{state: "terminal", complete}` for the channel's tombstone window
+ *   (#145). That is what lets an observer on another replica tell
+ *   "finished" from "never existed". A `planned` job stops answering at
+ *   once (#159): its continuation, with the same jobId, may run on any
+ *   replica, and this one must not answer for it.
  *
  * Returns a function that stops answering.
  */
 export function startJobResponders(opts: {
   nc: NatsConnection;
-  graph: GraphAppContext;
   jobEvents: JobEventChannel;
   service: CaseGenerationService;
 }): () => void {
-  const { nc, graph, jobEvents, service } = opts;
+  const { nc, jobEvents, service } = opts;
   const cancels = new Map<string, Subscription>();
-  const decisions = new Map<string, Subscription>();
   const statuses = new Map<
     string,
     { subscription: Subscription; expire?: ReturnType<typeof setTimeout> }
   >();
-
-  /**
-   * `cases.decision.<jobId>` (#159): reply `{accepted:true}` immediately —
-   * before the next segment runs — then deliver its result through
-   * `publishStop`, exactly as the request worker delivers a first segment's
-   * stop. Invalid JSON/body never reaches `service.decide`; a refusal
-   * (stale revision, invalid outline, not paused) is answered synchronously
-   * and nothing is published — there is no new stop to deliver.
-   */
-  async function handleDecision(jobId: string, msg: Msg): Promise<void> {
-    let body: unknown;
-    try {
-      body = msg.json();
-    } catch {
-      msg.respond(
-        JSON.stringify({
-          accepted: false,
-          error: { code: "INVALID_REQUEST_BODY", message: "Invalid JSON body" },
-        })
-      );
-      return;
-    }
-
-    const parsed = makeReviewDecisionRequestSchema(graph.config).safeParse(
-      body
-    );
-    if (!parsed.success) {
-      msg.respond(
-        JSON.stringify({
-          accepted: false,
-          error: {
-            code: "INVALID_REQUEST_BODY",
-            message: "Invalid request body",
-            details: JSON.stringify(parsed.error.issues),
-          },
-        })
-      );
-      return;
-    }
-
-    const outcome = service.decide(jobId, parsed.data);
-    if (!outcome.accepted) {
-      msg.respond(
-        JSON.stringify({
-          accepted: false,
-          error: { code: outcome.error.code, message: outcome.error.message },
-        })
-      );
-      return;
-    }
-
-    msg.respond(JSON.stringify({ accepted: true }));
-    const result = await outcome.result;
-    await publishStop(graph, result);
-  }
 
   const stopStatus = (jobId: string) => {
     const entry = statuses.get(jobId);
@@ -151,37 +76,10 @@ export function startJobResponders(opts: {
           },
         })
       );
-      decisions.set(
-        jobId,
-        nc.subscribe(decisionSubject(jobId), {
-          callback: (error, msg) => {
-            if (error) return;
-            handleDecision(jobId, msg).catch((decisionError) => {
-              console.error(
-                `[NATS] Decision handling failed for jobId=${jobId}`,
-                decisionError
-              );
-            });
-          },
-        })
-      );
       statuses.set(jobId, {
         subscription: nc.subscribe(statusSubject(jobId), {
           callback: (error, msg) => {
             if (error) return;
-            // A paused job never closes its channel (#159), so `peek`
-            // alone would answer `{state: "active"}` for it too —
-            // `getReview` is what actually distinguishes the two.
-            const review = service.getReview(jobId);
-            if (review) {
-              msg.respond(
-                JSON.stringify({
-                  state: "awaiting_review",
-                  revision: review.revision,
-                } satisfies JobStatusReply)
-              );
-              return;
-            }
             const peek = jobEvents.peek(jobId);
             // Unknown here means the tombstone just expired: stay silent,
             // so the requester sees "no responders", exactly as for a job
@@ -194,8 +92,10 @@ export function startJobResponders(opts: {
     } else if (event.type === "complete") {
       cancels.get(jobId)?.unsubscribe();
       cancels.delete(jobId);
-      decisions.get(jobId)?.unsubscribe();
-      decisions.delete(jobId);
+      if (event.data.status === "planned") {
+        stopStatus(jobId);
+        return;
+      }
       const status = statuses.get(jobId);
       if (status) {
         status.expire = setTimeout(() => stopStatus(jobId), TOMBSTONE_MS);
@@ -208,8 +108,6 @@ export function startJobResponders(opts: {
     stopListening();
     for (const subscription of cancels.values()) subscription.unsubscribe();
     cancels.clear();
-    for (const subscription of decisions.values()) subscription.unsubscribe();
-    decisions.clear();
     for (const jobId of [...statuses.keys()]) stopStatus(jobId);
   };
 }

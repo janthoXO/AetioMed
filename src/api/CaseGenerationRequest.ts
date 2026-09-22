@@ -11,6 +11,10 @@ import type { Config } from "@/core/graph/config.js";
 import { LLMConfigSchema } from "@/core/graph/models/LLMConfig.js";
 import { JobIdSchema } from "./JobId.js";
 import { RunModeSchema } from "@/core/graph/models/RunMode.js";
+import {
+  isCanonicalShape,
+  OutlineSegmentsSchema,
+} from "@/core/graph/outline/segments.js";
 
 /**
  * The public request schema depends on the deployment's configured
@@ -60,9 +64,16 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
         "hallmark symptoms and ambiguous procedure results. Defaults to 'medium'."
     ),
     mode: RunModeSchema.default("normal").describe(
-      "'normal' generates the case end to end. 'plan' pauses once the case " +
-        "outline exists and returns it for review in the request language; " +
-        "the case is generated after the reviewer approves or edits it."
+      "'normal' generates the case end to end and hands over its (English) " +
+        "plan on the way. 'plan' stops once the plan exists and returns it " +
+        "in the request language; send the same request back with `plan` " +
+        "to generate the case from it."
+    ),
+    plan: OutlineSegmentsSchema.optional().describe(
+      "A plan from an earlier call with this request (#159), possibly " +
+        "edited: planning is skipped and the case is generated from it. In " +
+        "plan mode it is in the request language, in normal mode English — " +
+        "exactly as it was handed out. Fixed segments must be unchanged."
     ),
     llmConfig: LLMConfigSchema.optional().describe(
       "Optional per-request model selection for the LLM used in case " +
@@ -78,6 +89,11 @@ export function makeCaseGenerationRequestSchema(config: Config) {
     .refine((data) => data.icd || data.diagnosis, {
       message: "Either 'icd' or 'diagnosis' must be provided",
       path: ["icd"],
+    })
+    .refine((data) => !data.plan || isCanonicalShape(data.plan), {
+      message:
+        "A plan must alternate editable and fixed segments, starting and ending with an editable one",
+      path: ["plan"],
     })
     .refine((data) => !(data.llmConfig && config.llm), {
       message: "LLM config is not allowed when a global LLM is configured",

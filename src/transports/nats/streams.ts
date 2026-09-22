@@ -10,9 +10,9 @@ import {
   REQUESTS_STREAM,
   REQUEST_ACK_WAIT_MS,
   REQUEST_CONSUMER,
+  REQUEST_MAX_ATTEMPTS,
   REQUEST_SUBJECT,
   STREAMS,
-  reviewsStream,
 } from "./subjects.js";
 
 async function streamInfo(
@@ -33,7 +33,7 @@ async function streamInfo(
 }
 
 /**
- * Create `CASE_REQUESTS`, `CASE_RESULTS` and `CASE_REVIEWS` (#159), or
+ * Create `CASE_REQUESTS`, `CASE_RESULTS` and `CASE_PLANS` (#159), or
  * reconcile their subjects and limits if they exist. Fails loudly rather
  * than guessing in two cases, both of which JetStream cannot fix in place:
  *
@@ -43,26 +43,17 @@ async function streamInfo(
  *   may still hold requests nobody has processed.
  * - a stream exists with a different retention policy — retention cannot be
  *   changed on an existing stream.
- *
- * `reviewTtlMs` is `CASE_REVIEWS`'s `max_age` — the deployment's review time
- * limit (`REVIEW_TTL_MINUTES`), threaded in rather than read from `process.env`
- * here, so this module stays free of environment access.
  */
-export async function ensureStreams(
-  jsm: JetStreamManager,
-  reviewTtlMs: number
-): Promise<void> {
-  const allStreams = [...STREAMS, reviewsStream(reviewTtlMs)];
-
+export async function ensureStreams(jsm: JetStreamManager): Promise<void> {
   if (await streamInfo(jsm, LEGACY_STREAM)) {
     throw new Error(
       `The pre-#142 JetStream stream "${LEGACY_STREAM}" still exists. Its "cases.>" filter overlaps ` +
-        `the new ${allStreams.map((s) => s.name).join(" and ")} streams, and it cannot be migrated ` +
+        `the new ${STREAMS.map((s) => s.name).join(" and ")} streams, and it cannot be migrated ` +
         `in place. Drain or inspect it, then delete it (e.g. \`nats stream rm ${LEGACY_STREAM}\`) and restart.`
     );
   }
 
-  for (const config of allStreams) {
+  for (const config of STREAMS) {
     const info = await streamInfo(jsm, config.name);
     if (!info) {
       console.log(`[NATS] Creating stream ${config.name}...`);
@@ -85,10 +76,12 @@ export async function ensureStreams(
 
   // The worker's durable pull consumer, shared by every replica.
   const ackWait = REQUEST_ACK_WAIT_MS * 1_000_000;
+  const maxDeliver = REQUEST_MAX_ATTEMPTS + 1;
   try {
     await jsm.consumers.info(REQUESTS_STREAM.name, REQUEST_CONSUMER);
     await jsm.consumers.update(REQUESTS_STREAM.name, REQUEST_CONSUMER, {
       ack_wait: ackWait,
+      max_deliver: maxDeliver,
     });
   } catch (error) {
     if (
@@ -103,6 +96,7 @@ export async function ensureStreams(
       filter_subject: REQUEST_SUBJECT,
       ack_policy: AckPolicy.Explicit,
       ack_wait: ackWait,
+      max_deliver: maxDeliver,
     });
   }
 }

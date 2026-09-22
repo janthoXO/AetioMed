@@ -196,12 +196,12 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     expect(done).toBe(true);
   });
 
-  it("relays event: awaiting_review for a plan-mode job (#159), then keeps streaming", async () => {
+  it("a plan-mode call ends with event: complete whose status is 'planned', never the plan itself (#159)", async () => {
     // A gated `planCase`, not `planAndRenderFrom` (whose plan stage never
-    // awaits anything) — this test needs the pause to land *after* the
+    // awaits anything) — this test needs the stop to land *after* the
     // labels stream subscribes, or the buffered-watch race the harness
-    // above exists for real generation would let the pause happen before
-    // any listener attaches.
+    // above exists for real generation would let it happen before any
+    // listener attaches.
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));
     const graph = {
@@ -259,23 +259,20 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
 
     release();
     const result = await p;
-    expect(result.status).toBe("awaiting_review");
+    expect(result.status).toBe("planned");
 
     const text = await readUntil(reader, (text) =>
-      text.includes("event: awaiting_review")
+      text.includes("event: complete")
     );
-    // The channel's payload-free pause marker (#159): jobId/revision/
-    // timestamp only — an observer never sees the outline, which only the
-    // requester gets from `GET/POST /api/cases/:jobId/review`.
     expect(text).toContain('"jobId":"job-plan-labels"');
-    expect(text).toContain('"revision":1');
+    expect(text).toContain('"status":"planned"');
+    // An observer never sees the plan itself — only the requester gets it,
+    // as this call's own return value.
     expect(text).not.toContain("outline");
-    // Paused, not finished: the stream is still open — cancel it ourselves
-    // (nothing server-side will ever end it) so `afterEach`'s
-    // `server.close()` doesn't wait on a connection nobody is going to
-    // close.
-    expect(text).not.toContain("event: complete");
-    await reader.cancel().catch(() => {});
+    expect(text).not.toContain("Plan options");
+
+    const { done } = await reader.read();
+    expect(done).toBe(true);
   });
 
   it("delivers every event to two independent subscribers of the same job", async () => {

@@ -43,13 +43,7 @@ export function createNatsJobDirectory(nc: NatsConnection): JobDirectory {
       (async () => {
         for await (const msg of subscription) {
           const type = msg.subject.split(".").pop();
-          if (
-            type !== "label" &&
-            type !== "awaiting_review" &&
-            type !== "complete"
-          ) {
-            continue;
-          }
+          if (type !== "label" && type !== "complete") continue;
           buffered.push({ type, data: msg.json() } as WatchedEvent);
           if (type === "complete") subscription.unsubscribe();
         }
@@ -67,13 +61,7 @@ export function createNatsJobDirectory(nc: NatsConnection): JobDirectory {
         throw error;
       }
 
-      // A paused job (#159) is watched exactly like a running one: its
-      // channel never closes across a review, so the observer just keeps
-      // waiting on the same subscription for the next `awaiting_review` or
-      // `complete` event, with no special "paused" state of its own here.
-      if (reply.state === "active" || reply.state === "awaiting_review") {
-        return buffered.watch;
-      }
+      if (reply.state === "active") return buffered.watch;
       subscription.unsubscribe();
       return reply;
     },

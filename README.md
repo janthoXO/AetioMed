@@ -47,7 +47,7 @@ AetioMed runs with Ollama (fully local, self-hosted models), Google Gemini, or a
 - **Restricted Vocabularies**: When configured, procedure names and anamnesis categories are constrained to an approved, translatable list.
 - **Live Progress**: Every pipeline step reports when it starts and finishes, as a short label in the requester's language. A client can fetch the compiled pipeline once and light up its steps as they run, over REST or NATS.
 - **Two Integration Styles**: A synchronous REST API that streams the job back on the same request, and an asynchronous NATS interface whose requests and results survive restarts and dropped connections. Every feature is available on both.
-- **Plan Mode**: Optionally pause generation once the case outline exists, show it to a human reviewer in the request's own language, and let them approve it, edit it, or ask for an AI revision before the rest of the case is generated.
+- **Plan Mode**: Optionally stop once the case outline exists and hand it back in the request's own language; send it back, possibly edited, to generate the case from it.
 - **Cancellation and Fair Scheduling**: Any running or queued job can be cancelled from either transport, and one concurrency limit applies to all of them.
 - **Operator Observability**: OpenTelemetry traces with each step's timing and output, sent to any OTLP-compatible backend, or printed to the console for local development.
 - **Structured Data**: Outputs schema-validated JSON suitable for integration with other educational platforms. Content-bearing fields (`chiefComplaint`, each `anamnesis[].answer`, each `procedures[].result`) are ordered arrays of typed content parts, so a field can carry more than plain text without a schema change.
@@ -241,42 +241,39 @@ Every LLM-generated translation is persisted with `source: "generated"`, disting
 
 ## Plan Mode
 
-By default (`mode: "normal"`) a case generates end to end with no human in the loop. Setting
-`"mode": "plan"` in the request pauses generation once the outline exists and returns it for
-review, in the request's own language, before anything else is generated.
+By default (`mode: "normal"`) a call generates a case end to end and hands over its (English)
+plan on the way. Setting `"mode": "plan"` in the request stops the call once the outline exists
+and returns it instead, in the request's own language. The generator keeps nothing between
+calls: send the same request back with that outline as `plan` (possibly edited — only the
+editable segments, not the fixed section headings) to generate the case from it, skipping
+planning entirely.
 
 **REST** — `POST /api/cases` with `"mode": "plan"` stops instead of returning a finished case:
-`202` with a JSON body (or, over `Accept: text/event-stream`, an `event: review`) carrying the
-outline as an array of editable/fixed segments, a `revision` number, and an expiry. The reviewer
-answers with `POST /api/cases/:jobId/review`:
 
 ```bash
 curl -X POST http://localhost:3030/api/cases \
   -H 'Content-Type: application/json' \
-  -d '{"diagnosis": "Influenza", "mode": "plan", "language": "German"}'
-# → 202 {"jobId": "...", "status": "awaiting_review", "review": {"revision": 1, "outline": [...], ...}}
+  -d '{"jobId": "job-1", "diagnosis": "Influenza", "mode": "plan", "language": "German"}'
+# → 200 {"jobId": "job-1", "mode": "plan", "language": "German", "plan": [...]}
 
-curl -X POST http://localhost:3030/api/cases/<jobId>/review \
+curl -X POST http://localhost:3030/api/cases \
   -H 'Content-Type: application/json' \
-  -d '{"revision": 1, "decision": {"action": "approve"}}'
-# → 200, the finished case (or another 202 if the reviewer asked for a revision)
+  -d '{"jobId": "job-1", "diagnosis": "Influenza", "language": "German", "plan": [...]}'
+# → 200, the finished case
 ```
 
-A decision is one of `approve` (generate from the outline as shown), `edit` (submit the same
-segment array with only its editable text changed — the segment count and every fixed section
-must stay exactly as shown), or `revise` (ask the AI to regenerate the outline from written
-feedback; not re-judged automatically, and bounded by a configurable round limit). A paused job
-can also be read back with `GET /api/cases/:jobId/review`. With `ALLOW_LLMS`, a decision may also carry an
-`llmConfig`; it replaces the one the job was started with for the rest of the job.
+The same `jobId` is fine on both calls — reusing it after a plan-mode stop is the one case a
+jobId may be resent. Over `Accept: text/event-stream`, the plan arrives as `event: plan` — the
+same event a normal-mode stream gets partway through, on the way to its `event: result`, since
+its plan is handed over rather than paused on.
 
 **NATS** — the same round trip, asynchronous: a plan-mode `cases.request.generate` publishes its
-pause to `cases.review.<jobId>` instead of `cases.result.<jobId>`, and a decision is a
-request/reply on `cases.decision.<jobId>`, answered by the replica running the job. Both modes
-still finish on `cases.result.<jobId>`.
+plan to `cases.plan.<jobId>` instead of `cases.result.<jobId>`; a normal-mode request publishes
+to both, the plan first. Send the continuation with the same `jobId` and the plan as `plan` on
+`cases.request.generate` as usual.
 
-A paused job survives a restart and waits out a configurable time limit
-(`REVIEW_TTL_MINUTES`) before it is abandoned. See the [Developer Guide](README-DEV.md) for the
-full outline segment format and every status code.
+See the [Developer Guide](README-DEV.md) for the full outline segment format and every status
+code.
 
 ## Difficulty Levels
 

@@ -11,6 +11,10 @@ post {
 }
 
 body:json {
+  // Stops once the outline exists and hands it back in the request
+  // language, instead of generating the case. The generator keeps nothing
+  // of this call — send the outline back with "Generate Case (Continue
+  // Plan)" to generate from it.
   {
     "jobId": "{{jobId}}",
     "diagnosis": "diabetes",

@@ -22,6 +22,7 @@ import { createInMemoryJobRecordRepo } from "@/core/jobs/memoryRepo.js";
 import { createSecretBox } from "@/core/jobs/secretBox.js";
 import type { JobRecordRepo } from "@/core/jobs/repo.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
+import { getRequestContext } from "@/core/graph/utils/context.js";
 
 const OUTLINE: OutlineSegments = [
   { fixed: false, text: "" },
@@ -560,5 +561,75 @@ describe("per-request API keys at rest", () => {
     const record = records.get("k")!;
     expect(JSON.stringify(record.data)).not.toContain("sk-secret");
     expect(box.open(record.encryptedApiKey!)).toBe("sk-secret");
+  });
+
+  it("a decision's config replaces the stored one, API key included, for the next segment", async () => {
+    const box = createSecretBox(Buffer.alloc(32, 7).toString("base64"));
+    const fake = fakeGraph();
+    const seen: unknown[] = [];
+    const render = fake.graph.renderCase;
+    fake.graph.renderCase = async (input) => {
+      seen.push(getRequestContext()?.llmConfig);
+      return render(input);
+    };
+    const { service, records } = build(fake, { secretBox: box });
+    await paused(
+      service.generate(
+        request({
+          jobId: "o",
+          llmConfig: {
+            provider: "openai",
+            model: "gpt",
+            apiKey: "sk-old",
+            outputFormat: "json",
+          },
+        })
+      )
+    );
+
+    const newConfig = {
+      provider: "google",
+      model: "gemini",
+      apiKey: "sk-new",
+      outputFormat: "json",
+    } as const;
+    const decided = service.decide("o", {
+      revision: 1,
+      decision: { action: "approve" },
+      llmConfig: newConfig,
+    });
+    // Checkpoint 3 already holds the new config, before the segment runs.
+    const record = records.get("o")!;
+    expect(box.open(record.encryptedApiKey!)).toBe("sk-new");
+    expect(JSON.stringify(record.data)).not.toContain("sk-new");
+
+    await (decided as { result: Promise<CaseGenerationResult> }).result;
+    expect(seen).toEqual([newConfig]);
+  });
+
+  it("a decision's config without a key clears the stored key", async () => {
+    const box = createSecretBox(Buffer.alloc(32, 7).toString("base64"));
+    const { service, records } = build(fakeGraph(), { secretBox: box });
+    await paused(
+      service.generate(
+        request({
+          jobId: "c2",
+          llmConfig: {
+            provider: "openai",
+            model: "gpt",
+            apiKey: "sk-old",
+            outputFormat: "json",
+          },
+        })
+      )
+    );
+
+    service.decide("c2", {
+      revision: 1,
+      decision: { action: "revise", feedback: ["more"] },
+      llmConfig: { provider: "ollama", model: "llama", outputFormat: "json" },
+    });
+
+    expect(records.get("c2")!.encryptedApiKey).toBeUndefined();
   });
 });

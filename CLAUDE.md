@@ -124,7 +124,10 @@ waiting on any more (cancelled or expired by the review-TTL sweep); `close()` st
 A per-request `llmConfig.apiKey` is never written to a checkpoint in plain text — it is sealed
 with a `SecretBox` (`core/jobs/secretBox.ts`, AES-256-GCM, one random IV per seal) under
 `JOB_ENCRYPTION_KEY`, required whenever `ALLOW_LLMS` is set (`parseJobEncryptionKey` fails
-startup otherwise). `REVIEW_TTL_MINUTES` (default 1440) bounds how long a paused job waits for
+startup otherwise). The stored config is what lets a job continue without a new request (a
+restart finishing the outline translation, or resuming a normal-mode NATS job); a decision may
+also carry its own `llmConfig` (same rule as on create: not allowed with a global LLM), which
+replaces the stored one, API key included, for every later segment. `REVIEW_TTL_MINUTES` (default 1440) bounds how long a paused job waits for
 its reviewer before a background sweep expires it with `REVIEW_EXPIRED`; `MAX_REVIEW_ROUNDS`
 (default 3) bounds how many AI revisions a reviewer may request before having to approve or
 edit instead. A segment that stops at a review publishes `awaiting_review` on the job's

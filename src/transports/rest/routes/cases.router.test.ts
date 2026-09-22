@@ -998,6 +998,37 @@ describe("plan mode (#159) — segmented calls and the review routes", () => {
     expect(body.error.code).toBe("INVALID_REQUEST_BODY");
   });
 
+  it("a decision naming an llmConfig while a global LLM is configured is a 400 — same rule as create", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-llm" }),
+    });
+
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-llm/review`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          revision: 1,
+          decision: { action: "approve" },
+          llmConfig: { provider: "ollama", model: "llama3.1" },
+        }),
+      }
+    );
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { details: string } };
+    expect(body.error.details).toContain("global LLM");
+  });
+
   it("DELETE cancels a paused job — 204, then GET .../review is a 404", async () => {
     const { channel, service, graph } = createHarness();
     ({ server } = await startApp(graph, service, channel));

@@ -3,7 +3,7 @@ import type {
   Msg,
   Subscription,
 } from "@nats-io/transport-node";
-import { JobIdSchema, ReviewDecisionRequestSchema } from "@/api/index.js";
+import { JobIdSchema, makeReviewDecisionRequestSchema } from "@/api/index.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { CaseGenerationService } from "@/core/caseGenerationService.js";
 import {
@@ -85,7 +85,9 @@ export function startJobResponders(opts: {
       return;
     }
 
-    const parsed = ReviewDecisionRequestSchema.safeParse(body);
+    const parsed = makeReviewDecisionRequestSchema(graph.config).safeParse(
+      body
+    );
     if (!parsed.success) {
       msg.respond(
         JSON.stringify({

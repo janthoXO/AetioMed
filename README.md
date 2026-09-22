@@ -266,7 +266,8 @@ A decision is one of `approve` (generate from the outline as shown), `edit` (sub
 segment array with only its editable text changed — the segment count and every fixed section
 must stay exactly as shown), or `revise` (ask the AI to regenerate the outline from written
 feedback; not re-judged automatically, and bounded by a configurable round limit). A paused job
-can also be read back with `GET /api/cases/:jobId/review`.
+can also be read back with `GET /api/cases/:jobId/review`. With `ALLOW_LLMS`, a decision may also carry an
+`llmConfig`; it replaces the one the job was started with for the rest of the job.
 
 **NATS** — the same round trip, asynchronous: a plan-mode `cases.request.generate` publishes its
 pause to `cases.review.<jobId>` instead of `cases.result.<jobId>`, and a decision is a

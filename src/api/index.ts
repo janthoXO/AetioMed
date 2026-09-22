@@ -11,7 +11,7 @@ export { CaseGenerationResponseSchema } from "./CaseGenerationResponse.js";
 export { JobIdSchema } from "./JobId.js";
 
 export {
-  ReviewDecisionRequestSchema,
+  makeReviewDecisionRequestSchema,
   type ReviewDecisionRequest,
   type ReviewDecision,
 } from "./ReviewDecision.js";

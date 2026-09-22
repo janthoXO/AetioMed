@@ -1,7 +1,6 @@
 import type { Config } from "./config.js";
 import type { GraphRuntime } from "./runtime.js";
 import type { DbHandle } from "./persistence/db.js";
-import type { JobRecordRepo } from "../jobs/repo.js";
 import type { Case } from "./models/Case.js";
 import type { Diagnosis } from "./models/Diagnosis.js";
 import type { GenerationFlag } from "./models/GenerationFlags.js";
@@ -49,11 +48,6 @@ export interface GraphAppContext {
    * touch it and shouldn't.
    */
   db: DbHandle;
-  /**
-   * Job checkpoints (#159), in the same embedded database. The job service
-   * writes them between graph runs; transports never touch them.
-   */
-  jobRecords: JobRecordRepo;
   /**
    * Run the plan graph only: the outline and its judge loop, with the
    * working-language inputs the case graph needs (#159).

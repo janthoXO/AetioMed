@@ -56,11 +56,6 @@ services:
       # ─── Concurrency ─────────────────────────────────────────────────
       - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS:-4}
 
-      # ─── Plan mode (#159) ──────────────────────────────────────────────
-      - REVIEW_TTL_MINUTES=${REVIEW_TTL_MINUTES:-1440}
-      - MAX_REVIEW_ROUNDS=${MAX_REVIEW_ROUNDS:-3}
-      - JOB_ENCRYPTION_KEY
-
       # ─── OpenTelemetry ───────────────────────────────────────────────
       - OTEL_SDK_DISABLED
       - OTEL_EXPORTER_OTLP_ENDPOINT

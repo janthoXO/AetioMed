@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   checkSkeleton,
-  compareSubmission,
   isCanonicalShape,
   joinOutline,
-  mergeSegments,
-  normalizeSegmentText,
   OutlineFormatError,
   outlineSkeleton,
   OUTLINE_SECTIONS,
@@ -242,103 +239,6 @@ describe("checkSkeleton", () => {
     const segments = skeletonSegments([]).slice(0, -2);
     const result = checkSkeleton(segments, { anamnesisCategories: undefined });
     expect(result.ok).toBe(false);
-  });
-});
-
-describe("normalizeSegmentText", () => {
-  it("converts CRLF and lone CR to LF", () => {
-    expect(normalizeSegmentText("a\r\nb\rc")).toBe("a\nb\nc");
-  });
-
-  it("normalizes decomposed accents to NFC", () => {
-    const decomposed = "ü"; // "u" + combining diaeresis
-    const composed = "ü"; // "ü"
-    expect(normalizeSegmentText(decomposed)).toBe(composed);
-  });
-
-  it("strips trailing whitespace per line and trims the whole string", () => {
-    expect(normalizeSegmentText("  line one   \nline two\t\n  ")).toBe(
-      "line one\nline two"
-    );
-  });
-});
-
-describe("compareSubmission", () => {
-  const display: OutlineSegments = [
-    { fixed: false, text: "intro" },
-    { fixed: true, text: "## General" },
-    { fixed: false, text: "body" },
-  ];
-
-  it("reports SEGMENT_COUNT_MISMATCH when lengths differ", () => {
-    const submitted = display.slice(0, 1);
-    const result = compareSubmission(display, submitted);
-    expect(result).toMatchObject({
-      ok: false,
-      code: "SEGMENT_COUNT_MISMATCH",
-    });
-  });
-
-  it("reports FIXED_SEGMENT_CHANGED when a fixed heading's text changes", () => {
-    const submitted: OutlineSegments = [
-      display[0],
-      { fixed: true, text: "## Changed" },
-      display[2],
-    ];
-    const result = compareSubmission(display, submitted);
-    expect(result).toMatchObject({
-      ok: false,
-      code: "FIXED_SEGMENT_CHANGED",
-      index: 1,
-    });
-  });
-
-  it("does not count a whitespace-only edit as changed", () => {
-    const submitted: OutlineSegments = [
-      { fixed: false, text: "  intro  \n" },
-      display[1],
-      display[2],
-    ];
-    const result = compareSubmission(display, submitted);
-    expect(result).toEqual({ ok: true, changed: [] });
-  });
-
-  it("reports a real editable change by index", () => {
-    const submitted: OutlineSegments = [
-      { fixed: false, text: "rewritten intro" },
-      display[1],
-      display[2],
-    ];
-    const result = compareSubmission(display, submitted);
-    expect(result).toEqual({ ok: true, changed: [0] });
-  });
-});
-
-describe("mergeSegments", () => {
-  const original: OutlineSegments = [
-    { fixed: false, text: "old intro" },
-    { fixed: true, text: "## General" },
-    { fixed: false, text: "old body" },
-  ];
-
-  it("keeps fixed segments from original, ignoring a replacement aimed at one", () => {
-    const merged = mergeSegments(original, new Map([[1, "## Tampered"]]));
-    expect(merged[1]).toEqual({ fixed: true, text: "## General" });
-  });
-
-  it("applies replacements to editable segments by index", () => {
-    const replacements = new Map([[2, "translated body"]]);
-    const merged = mergeSegments(original, replacements);
-    expect(merged).toEqual([
-      { fixed: false, text: "old intro" },
-      { fixed: true, text: "## General" },
-      { fixed: false, text: "translated body" },
-    ]);
-  });
-
-  it("falls back to original text for editable segments with no replacement", () => {
-    const merged = mergeSegments(original, new Map());
-    expect(merged).toEqual(original);
   });
 });
 

@@ -163,7 +163,6 @@ export function initGraph(opts: {
     translateOutline,
     graphs,
     db: repos.db,
-    jobRecords: repos.jobRecords,
   };
 }
 

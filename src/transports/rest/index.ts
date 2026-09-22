@@ -97,21 +97,6 @@ export async function startRestServer(
   const { port } = RestEnvSchema.parse(process.env);
   const app = createRestApp(opts);
 
-  // Pick REST's checkpointed jobs back up before accepting new requests
-  // (#159): a paused job waits again (fetched with `GET .../review`, never
-  // pushed anywhere — REST has nobody left to deliver a result to across a
-  // restart), and a job past its first outline resumes or goes back to
-  // review. `.catch` rather than `await`ing each `result`: nobody is
-  // listening on this process for any of them, the same reason
-  // `onDetachedOutcome` exists for a paused job cancelled or expired.
-  const resumed = opts.service.resume("rest");
-  console.log(`[rest] Resumed ${resumed.length} job(s) after restart`);
-  for (const { jobId, result } of resumed) {
-    result.catch((error) => {
-      console.error(`[rest] Resumed job ${jobId} failed`, error);
-    });
-  }
-
   const server = await new Promise<Server>((resolve) => {
     const s = app.listen(port, () => {
       console.log(`\n🚀 AetioMed Server running on http://localhost:${port}\n`);

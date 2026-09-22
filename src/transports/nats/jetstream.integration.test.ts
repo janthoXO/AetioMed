@@ -25,15 +25,13 @@ import { ensureStreams } from "./streams.js";
 import {
   REQUESTS_STREAM,
   RESULTS_STREAM,
+  PLANS_STREAM,
   LEGACY_STREAM,
   REQUEST_CONSUMER,
   resultSubject,
   cancelSubject,
   progressSubject,
-  reviewSubject,
-  decisionSubject,
-  statusSubject,
-  reviewsStream,
+  planSubject,
   CATALOG_DIAGNOSIS_SUBJECT,
   CATALOG_PROCEDURES_SUBJECT,
   META_FEATURES_SUBJECT,
@@ -70,10 +68,6 @@ import { planAndRenderFrom } from "@/testing/graphFakes.js";
 import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
 const NATS_TEST_URL = process.env.NATS_TEST_URL;
-
-// Plan mode (#159): a short but non-trivial review TTL for `ensureStreams`'
-// CASE_REVIEWS max_age in these tests.
-const TEST_REVIEW_TTL_MS = 60 * 60 * 1000;
 
 function fakeGraph(generateCase: GenerateCaseFn = vi.fn()): GraphAppContext {
   return {
@@ -129,14 +123,12 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
         retention: "workqueue" as never,
       });
 
-      await expect(ensureStreams(jsm, TEST_REVIEW_TTL_MS)).rejects.toThrow(
-        /nats stream rm cases/
-      );
+      await expect(ensureStreams(jsm)).rejects.toThrow(/nats stream rm cases/);
 
       await jsm.streams.delete(LEGACY_STREAM);
 
-      await ensureStreams(jsm, TEST_REVIEW_TTL_MS);
-      await ensureStreams(jsm, TEST_REVIEW_TTL_MS); // idempotent
+      await ensureStreams(jsm);
+      await ensureStreams(jsm); // idempotent
     }
   );
 
@@ -144,7 +136,7 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
     "CASE_RESULTS uses limits retention and two independent consumers can each read the same result",
     { timeout: 15000 },
     async () => {
-      await ensureStreams(jsm, TEST_REVIEW_TTL_MS);
+      await ensureStreams(jsm);
       const js = getJetStreamClient();
 
       const info = await jsm.streams.info(RESULTS_STREAM.name);
@@ -183,7 +175,7 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
     "end-to-end: the worker bounds concurrency, cancel works over NATS, and a jobId-less request is terminated",
     { timeout: 15000 },
     async () => {
-      await ensureStreams(jsm, TEST_REVIEW_TTL_MS);
+      await ensureStreams(jsm);
       const js = getJetStreamClient();
       const nc = getNatsConnection();
 
@@ -218,7 +210,6 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
 
       const stopResponders = startJobResponders({
         nc,
-        graph,
         jobEvents: channel,
         service,
       });
@@ -283,7 +274,7 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
     "a request without a jobId is terminated: not left in CASE_REQUESTS, no result published",
     { timeout: 15000 },
     async () => {
-      await ensureStreams(jsm, TEST_REVIEW_TTL_MS);
+      await ensureStreams(jsm);
       const js = getJetStreamClient();
       const nc = getNatsConnection();
 
@@ -300,7 +291,6 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
 
       const stopResponders = startJobResponders({
         nc,
-        graph,
         jobEvents: channel,
         service,
       });
@@ -467,7 +457,7 @@ describe.skipIf(!NATS_TEST_URL)("NATS parity (#144)", () => {
     "a NATS-submitted job publishes accepted, started/completed labels and complete on cases.progress.<jobId>.>",
     { timeout: 15000 },
     async () => {
-      await ensureStreams(jsm, TEST_REVIEW_TTL_MS);
+      await ensureStreams(jsm);
       const js = getJetStreamClient();
       const nc = getNatsConnection();
 
@@ -481,7 +471,6 @@ describe.skipIf(!NATS_TEST_URL)("NATS parity (#144)", () => {
 
       const stopResponders = startJobResponders({
         nc,
-        graph,
         jobEvents: channel,
         service,
       });
@@ -653,7 +642,7 @@ describe.skipIf(!NATS_TEST_URL)("NATS parity (#144)", () => {
     "labels are core NATS, not JetStream: no stream captures cases.progress.*.label",
     { timeout: 15000 },
     async () => {
-      await ensureStreams(jsm, TEST_REVIEW_TTL_MS);
+      await ensureStreams(jsm);
       await expect(
         jsm.streams.find(progressSubject("job-n", "label"))
       ).rejects.toThrow();
@@ -771,7 +760,6 @@ function createReplica(nc: NatsConnection): {
   });
   const stopResponders = startJobResponders({
     nc,
-    graph,
     jobEvents: channel,
     service,
   });
@@ -827,7 +815,7 @@ describe.skipIf(!NATS_TEST_URL)("partial NATS backbone (#145)", () => {
     ]) {
       await jsm.streams.delete(name).catch(() => undefined);
     }
-    await ensureStreams(jsm, TEST_REVIEW_TTL_MS);
+    await ensureStreams(jsm);
 
     ncB = await connect({
       servers: NATS_TEST_URL!,
@@ -1116,10 +1104,12 @@ describe.skipIf(!NATS_TEST_URL)("partial NATS backbone (#145)", () => {
   });
 });
 
-// #159 — plan mode over NATS: ack at checkpoint 1, the review subject, the
-// decision responder, and the status reply's `awaiting_review` state. Kept
-// in this file for the same reason as the two `describe`s above: sharing
-// `CASE_REQUESTS`/`CASE_RESULTS`/`CASE_REVIEWS` by name with a sibling file
+// #159 — plan mode over NATS, stateless: a plan-mode request's plan lands on
+// `cases.plan.<jobId>`, and a second request carrying that plan (the same
+// jobId, since the generator is stateless and keeps nothing between calls)
+// produces the case on `cases.result.<jobId>`. Kept in this file for the
+// same reason as the two `describe`s above: sharing
+// `CASE_REQUESTS`/`CASE_RESULTS`/`CASE_PLANS` by name with a sibling file
 // would race a `beforeEach` that deletes and recreates them.
 describe.skipIf(!NATS_TEST_URL)("plan mode over NATS (#159)", () => {
   let jsm: JetStreamManager;
@@ -1135,7 +1125,7 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS (#159)", () => {
     for (const name of [
       REQUESTS_STREAM.name,
       RESULTS_STREAM.name,
-      reviewsStream(TEST_REVIEW_TTL_MS).name,
+      PLANS_STREAM.name,
       LEGACY_STREAM,
     ]) {
       await jsm.streams.delete(name).catch(() => undefined);
@@ -1170,10 +1160,10 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS (#159)", () => {
   }
 
   it(
-    "plan request → review on cases.review.<jobId> → decision → result on cases.result.<jobId>; a stale decision is refused; status replies awaiting_review",
+    "plan request → plan on cases.plan.<jobId>; the plan handed back → the case on cases.result.<jobId>, same jobId",
     { timeout: 20000 },
     async () => {
-      await ensureStreams(jsm, TEST_REVIEW_TTL_MS);
+      await ensureStreams(jsm);
       const js = getJetStreamClient();
       const nc = getNatsConnection();
 
@@ -1191,7 +1181,6 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS (#159)", () => {
 
       const stopResponders = startJobResponders({
         nc,
-        graph,
         jobEvents: channel,
         service,
       });
@@ -1218,52 +1207,35 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS (#159)", () => {
           })
         );
 
-        const review = await awaitStored(
-          reviewsStream(TEST_REVIEW_TTL_MS).name,
-          reviewSubject("job-plan-1")
+        const plan = await awaitStored(
+          PLANS_STREAM.name,
+          planSubject("job-plan-1")
         );
         // `planAndRenderFrom` (`src/testing/graphFakes.ts`) always plans
         // the same 3-segment outline: an editable segment 0, a fixed
         // marker, and the render options as JSON.
-        expect(review).toMatchObject({
+        expect(plan).toMatchObject({
           jobId: "job-plan-1",
-          revision: 1,
-          outline: [
+          mode: "plan",
+          plan: [
             { fixed: false, text: "" },
             { fixed: true, text: "## Plan options" },
             { fixed: false },
           ],
         });
 
-        // A stale decision (wrong revision) is refused synchronously —
-        // nothing new is published, and the review is still waiting.
-        const staleReply = await nc.request(
-          decisionSubject("job-plan-1"),
-          JSON.stringify({ revision: 99, decision: { action: "approve" } }),
-          { timeout: 2000 }
+        // The generator kept nothing: a second request, carrying the plan
+        // back, reuses the same jobId and produces the case.
+        await js.publish(
+          "cases.request.generate",
+          JSON.stringify({
+            jobId: "job-plan-1",
+            diagnosis: "Influenza",
+            mode: "plan",
+            language: "English",
+            plan: (plan as { plan: unknown }).plan,
+          })
         );
-        expect(
-          JSON.parse(new TextDecoder().decode(staleReply.data))
-        ).toMatchObject({ accepted: false, error: { code: "STALE_REVISION" } });
-
-        const statusReply = await nc.request(statusSubject("job-plan-1"), "", {
-          timeout: 2000,
-        });
-        expect(JSON.parse(new TextDecoder().decode(statusReply.data))).toEqual({
-          state: "awaiting_review",
-          revision: 1,
-        });
-
-        // Approve at the correct revision: replies accepted immediately,
-        // then the segment runs and its result lands on the result subject.
-        const decisionReply = await nc.request(
-          decisionSubject("job-plan-1"),
-          JSON.stringify({ revision: 1, decision: { action: "approve" } }),
-          { timeout: 2000 }
-        );
-        expect(
-          JSON.parse(new TextDecoder().decode(decisionReply.data))
-        ).toEqual({ accepted: true });
 
         const result = await awaitStored(
           RESULTS_STREAM.name,

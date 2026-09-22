@@ -1,17 +1,15 @@
 import express from "express";
-import {
-  makeCaseGenerationRequestSchema,
-  makeReviewDecisionRequestSchema,
-} from "@/api/index.js";
+import { makeCaseGenerationRequestSchema } from "@/api/index.js";
 import { CaseGenerationResponseSchema } from "@/api/index.js";
 import { encodeCase } from "@/api/contentWire.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type {
   CaseGenerationResult,
   CaseGenerationService,
+  PlanPayload,
 } from "@/core/caseGenerationService.js";
 import type { JobDirectory, JobEventChannel } from "@/core/jobEvents/index.js";
-import { openSse } from "../sse.js";
+import { openSse, type SseStream } from "../sse.js";
 
 /**
  * How often the POST stream writes a `: ping` comment. Holding the
@@ -33,6 +31,16 @@ function errorBody(result: CaseGenerationResult) {
   };
 }
 
+/** A plan-mode stop — the same payload as a normal-mode `event: plan`. */
+function planBody(result: CaseGenerationResult): PlanPayload {
+  return {
+    jobId: result.jobId,
+    mode: "plan",
+    language: result.language!,
+    plan: result.plan!,
+  };
+}
+
 export default function createCasesRouter(
   graph: GraphAppContext,
   service: CaseGenerationService,
@@ -45,9 +53,6 @@ export default function createCasesRouter(
   const CaseGenerationRequestSchema = makeCaseGenerationRequestSchema(
     graph.config
   );
-  const ReviewDecisionRequestSchema = makeReviewDecisionRequestSchema(
-    graph.config
-  );
 
   const successBody = (result: CaseGenerationResult) =>
     CaseGenerationResponseSchema.parse({
@@ -56,40 +61,55 @@ export default function createCasesRouter(
       language: result.language,
     });
 
-  /** The body of a 202/`event: review` stop — the same shape either way. */
-  const reviewBody = (result: CaseGenerationResult) => ({
-    jobId: result.jobId,
-    status: "awaiting_review" as const,
-    language: result.language,
-    review: result.review,
-  });
-
   /**
-   * Answer one **segment** — a create (`POST /`) or a decide
-   * (`POST /:jobId/review`) — on the request's own response, shared by both
-   * (#159). A segment ends at its first stop: `done`, `failed`, or
-   * `awaiting_review`, and every stop is answered here, on this one
-   * response — a paused job holds no connection of its own (see the module
-   * doc comment above `POST /`).
+   * `POST /api/cases` — the synchronous transport (#143). Opening the stream
+   * with the request itself removes the handshake race a 202-then-subscribe
+   * design has: every event between minting the jobId and the client
+   * subscribing would otherwise be lost, short of a replay buffer (deferred).
    *
    * - `Accept: application/json` (or no preference): blocks and returns the
-   *   stop — the case (200), the review (202), or the error.
+   *   case (200), a plan-mode plan (200, `{jobId, mode, language, plan}`),
+   *   or the error.
    * - `Accept: text/event-stream`: SSE on this response — `event: accepted
-   *   {jobId}` before any node runs, then `event: label`…, then `event:
-   *   result`/`event: review`/`event: error`, with a `: ping` comment every
-   *   {@link HEARTBEAT_MS}.
+   *   {jobId}` before any node runs, then `event: label`…, `event: plan` as
+   *   soon as the plan exists (#159), then `event: result`/`event: error` —
+   *   except in plan mode, whose stream ends with the plan. A `: ping`
+   *   comment is written every {@link HEARTBEAT_MS}.
    *
-   * A client disconnect cancels the job **only while this segment is still
-   * running** — `res.on("close")` fires up to the point this response ends,
-   * and a segment's stop always ends the response (there is no connection
-   * left open across a pause to cancel through).
+   * A body with a `plan` generates the case from it; the same jobId as the
+   * plan's own call is fine (#159). A client disconnect cancels the job.
    */
-  async function respondWithSegment(
-    req: express.Request,
-    res: express.Response,
-    jobId: string,
-    result: Promise<CaseGenerationResult>
-  ): Promise<void> {
+  router.post("/", async (req: express.Request, res: express.Response) => {
+    const bodyResult = CaseGenerationRequestSchema.safeParse(req.body);
+
+    if (!bodyResult.success) {
+      console.error("Invalid request body", req.body);
+      res.status(400).json({
+        error: {
+          code: "INVALID_REQUEST_BODY",
+          message: "Invalid request body",
+          details: JSON.stringify(bodyResult.error.issues),
+        },
+      });
+      return;
+    }
+
+    // Set once the response turns into a stream; the JSON path has
+    // nowhere to put a normal-mode plan, so it drops it.
+    const stream: { sse?: SseStream } = {};
+    const started = service.start(bodyResult.data, {
+      onPlan: (plan) => stream.sse?.event("plan", plan),
+    });
+    const { jobId } = started;
+
+    // A duplicate jobId is a plain 409 on both paths, answered before any
+    // stream opens: a retry must never start a second generation, nor
+    // silently attach to someone else's.
+    if (!started.accepted) {
+      res.status(409).json(errorBody(started.result));
+      return;
+    }
+
     res.on("close", () => {
       if (!res.writableFinished) service.cancel(jobId);
     });
@@ -99,12 +119,12 @@ export default function createCasesRouter(
       "text/event-stream";
 
     if (!wantsStream) {
-      const finished = await result;
+      const finished = await started.result;
       if (res.writableEnded) return;
       if (finished.status === "done") {
         res.status(200).json(successBody(finished));
-      } else if (finished.status === "awaiting_review") {
-        res.status(202).json(reviewBody(finished));
+      } else if (finished.status === "planned") {
+        res.status(200).json(planBody(finished));
       } else if (finished.error!.code === "GENERATION_CANCELLED") {
         res.status(finished.error!.statusCode ?? 499).end();
       } else {
@@ -114,21 +134,22 @@ export default function createCasesRouter(
     }
 
     const sse = openSse(res);
+    stream.sse = sse;
     sse.event("accepted", { jobId });
 
-    // Subscribed synchronously after the segment started, which opened (or
-    // already held open) the channel: nothing can have run yet.
+    // Subscribed synchronously after `start`, which opened the channel:
+    // nothing can have run yet.
     const subscription = jobEvents.subscribe(jobId, (event) => {
       if (event.type === "label") sse.event("label", event.data);
     });
     const heartbeat = setInterval(() => sse.comment("ping"), heartbeatMs);
 
     try {
-      const finished = await result;
+      const finished = await started.result;
       if (finished.status === "done") {
         sse.event("result", successBody(finished));
-      } else if (finished.status === "awaiting_review") {
-        sse.event("review", reviewBody(finished));
+      } else if (finished.status === "planned") {
+        sse.event("plan", planBody(finished));
       } else {
         sse.event("error", errorBody(finished));
       }
@@ -153,99 +174,6 @@ export default function createCasesRouter(
       if (subscription.state === "active") subscription.unsubscribe();
       sse.end();
     }
-  }
-
-  /**
-   * `POST /api/cases` — the synchronous transport (#143), now segmented
-   * (#159): a plan-mode job's first segment stops at `awaiting_review`
-   * instead of running to the end, and `POST /:jobId/review` below runs its
-   * next segment the same way. Opening the stream with the request itself
-   * removes the handshake race a 202-then-subscribe design has: every event
-   * between minting the jobId and the client subscribing would otherwise be
-   * lost, short of a replay buffer (deferred).
-   */
-  router.post("/", async (req: express.Request, res: express.Response) => {
-    const bodyResult = CaseGenerationRequestSchema.safeParse(req.body);
-
-    if (!bodyResult.success) {
-      console.error("Invalid request body", req.body);
-      res.status(400).json({
-        error: {
-          code: "INVALID_REQUEST_BODY",
-          message: "Invalid request body",
-          details: JSON.stringify(bodyResult.error.issues),
-        },
-      });
-      return;
-    }
-
-    const started = service.start(bodyResult.data, { transport: "rest" });
-    const { jobId } = started;
-
-    // A duplicate jobId is a plain 409 on both paths, answered before any
-    // stream opens: a retry must never start a second generation, nor
-    // silently attach to someone else's.
-    if (!started.accepted) {
-      res.status(409).json(errorBody(started.result));
-      return;
-    }
-
-    await respondWithSegment(req, res, jobId, started.result);
-  });
-
-  /**
-   * `GET /api/cases/:jobId/review` — the pending review of a paused job
-   * (#159), or `404` when there is none (never paused, already decided, or
-   * finished/expired). This is a plain read, not part of a segment: it
-   * never opens a stream and never advances the job.
-   */
-  router.get("/:jobId/review", (req, res) => {
-    const review = service.getReview(req.params.jobId);
-    if (!review) {
-      res.status(404).json({
-        error: {
-          code: "NOT_FOUND",
-          message: "No pending review for this jobId",
-        },
-      });
-      return;
-    }
-    res.status(200).json(review);
-  });
-
-  /**
-   * `POST /api/cases/:jobId/review` — a reviewer's decision on a paused job
-   * (#159). A bad body is a `400` (`INVALID_REQUEST_BODY`, zod issues in
-   * `details`); a refused decision (stale revision, not awaiting review,
-   * review rounds exhausted, changed fixed segment, wrong segment count,
-   * unknown job) is answered with `error.statusCode` and never opens a
-   * stream. An accepted decision runs the job's next segment and answers
-   * exactly like `POST /`, through {@link respondWithSegment} — including
-   * `event: accepted {jobId}` on the SSE path, since this call is what
-   * (re)starts the connection a paused job otherwise holds none of.
-   */
-  router.post("/:jobId/review", async (req, res) => {
-    const bodyResult = ReviewDecisionRequestSchema.safeParse(req.body);
-    if (!bodyResult.success) {
-      res.status(400).json({
-        error: {
-          code: "INVALID_REQUEST_BODY",
-          message: "Invalid request body",
-          details: JSON.stringify(bodyResult.error.issues),
-        },
-      });
-      return;
-    }
-
-    const outcome = service.decide(req.params.jobId, bodyResult.data);
-    if (!outcome.accepted) {
-      res.status(outcome.error.statusCode ?? 500).json({
-        error: { code: outcome.error.code, message: outcome.error.message },
-      });
-      return;
-    }
-
-    await respondWithSegment(req, res, outcome.jobId, outcome.result);
   });
 
   /**
@@ -254,9 +182,7 @@ export default function createCasesRouter(
    * NATS enabled this is a request to `cases.cancel.<jobId>`, answered only
    * by the owner, so the answer is synchronous and exact: 204 when it was
    * cancelled, 404 when no replica runs it (never started, or finished), 504
-   * when the owner could not be reached in time. Cancelling ends a paused
-   * job too (#159) — `service.cancel` already handles that; this route
-   * needed no change for plan mode.
+   * when the owner could not be reached in time.
    */
   router.delete("/:jobId", async (req, res) => {
     const { jobId } = req.params;

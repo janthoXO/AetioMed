@@ -3,8 +3,16 @@ import { makeCaseGenerationRequestSchema, JobIdSchema } from "@/api/index.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { CaseGenerationService } from "@/core/caseGenerationService.js";
 import type { Release } from "@/core/concurrency.js";
-import { publishCaseResult, publishStop } from "./cases.publisher.js";
-import { REQUEST_SUBJECT, WORKING_INTERVAL_MS } from "./subjects.js";
+import {
+  publishCaseResult,
+  publishPlan,
+  publishStop,
+} from "./cases.publisher.js";
+import {
+  REQUEST_MAX_ATTEMPTS,
+  REQUEST_SUBJECT,
+  WORKING_INTERVAL_MS,
+} from "./subjects.js";
 
 const DUPLICATE_CODES = new Set([
   "JOB_ALREADY_ACTIVE",
@@ -17,15 +25,13 @@ const DUPLICATE_CODES = new Set([
  * it — and released here too on every path that never reaches the service
  * (releasing twice is a no-op).
  *
- * **Ack at the first checkpoint, not at the end (#159).** Before the first
- * outline is saved, a crash simply redelivers this message — cheap, since
- * nothing durable exists yet. Once it exists, a crash resumes the job from
- * its checkpoint instead (`service.resume`), so holding the message
- * unacked past that point would only risk a second, redundant run on
- * redelivery. `msg.working()` therefore only needs to run up to that same
- * point — once acked, the ack deadline no longer matters. `acked` guards
- * against a double ack: the segment may stop at a review (acking early) and
- * the handler still reaches its own `ack()` at the end of this function.
+ * **Ack only once the call's output is published (#159).** The generator
+ * keeps nothing between calls, so an unacked request *is* the recovery
+ * path: a replica that dies mid-call stops heartbeating (`msg.working()`),
+ * the short ack wait runs out, and JetStream hands the request to another
+ * replica. A plan-mode continuation carries its plan, so only the second
+ * half reruns; anything else reruns from the start. Past
+ * {@link REQUEST_MAX_ATTEMPTS} deliveries the request is failed instead.
  */
 export async function consumeCaseGenerateMessage(
   msg: JsMsg,
@@ -33,18 +39,7 @@ export async function consumeCaseGenerateMessage(
   service: CaseGenerationService,
   slot?: Release
 ): Promise<void> {
-  let acked = false;
-  const ack = () => {
-    if (acked) return;
-    acked = true;
-    msg.ack();
-  };
-
-  // Extend the ack deadline only until the checkpoint acks — after that
-  // there is no deadline left to keep alive.
-  const working = setInterval(() => {
-    if (!acked) msg.working();
-  }, WORKING_INTERVAL_MS);
+  const working = setInterval(() => msg.working(), WORKING_INTERVAL_MS);
   working.unref?.();
 
   try {
@@ -67,6 +62,21 @@ export async function consumeCaseGenerateMessage(
     }
     const jobId = jobIdResult.data;
 
+    // The consumer's one extra delivery: every attempt before it crashed.
+    if (msg.info.deliveryCount > REQUEST_MAX_ATTEMPTS) {
+      console.error(
+        `[NATS] Giving up on jobId=${jobId} after ${REQUEST_MAX_ATTEMPTS} attempts`
+      );
+      await publishCaseResult(jobId, {
+        error: {
+          code: "RETRIES_EXHAUSTED",
+          message: `Generation did not finish in ${REQUEST_MAX_ATTEMPTS} attempts`,
+        },
+      });
+      msg.ack();
+      return;
+    }
+
     const request = makeCaseGenerationRequestSchema(graph.config).safeParse(
       raw
     );
@@ -78,14 +88,25 @@ export async function consumeCaseGenerateMessage(
           details: JSON.stringify(request.error.issues),
         },
       });
-      ack();
+      msg.ack();
       return;
     }
 
     console.log(`[NATS] Generating case (jobId=${jobId})`);
     const result = await service.generate(
       { ...request.data, jobId },
-      { ...(slot && { slot }), transport: "nats", onCheckpoint: ack }
+      {
+        ...(slot && { slot }),
+        // A normal-mode plan on the way: best effort, the case follows.
+        onPlan: (plan) => {
+          publishPlan(plan).catch((error) => {
+            console.error(
+              `[NATS] Failed to publish the plan for jobId=${jobId}:`,
+              error
+            );
+          });
+        },
+      }
     );
 
     if (result.status === "failed" && DUPLICATE_CODES.has(result.error!.code)) {
@@ -96,13 +117,12 @@ export async function consumeCaseGenerateMessage(
     } else {
       await publishStop(graph, result);
     }
-    ack();
+    msg.ack();
   } catch (error) {
     // Protocol-level failures only (the publish itself failing): retry.
-    // Domain failures are results, published above. Never nak once acked —
-    // the checkpoint already made a crash-and-resume the recovery path.
+    // Domain failures are results, published above.
     console.error("[NATS] Error processing message:", error);
-    if (!acked) msg.nak();
+    msg.nak();
   } finally {
     clearInterval(working);
     slot?.();

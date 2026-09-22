@@ -1,22 +1,15 @@
-// Unit coverage for the plan-mode additions to `startJobResponders` (#159):
-// the `cases.decision.<jobId>` responder and the `awaiting_review` status
-// reply. No server: a fake `nc` whose `subscribe` just records the
-// callback per subject, driven directly — the same style as
-// `progressPublisher.test.ts`.
-import { beforeEach, describe, expect, it, vi } from "vitest";
+// Unit coverage for `startJobResponders` (#159, stateless generation): the
+// decision responder and the `awaiting_review` status reply are gone along
+// with plan-mode checkpoints — a `planned` complete drops the status
+// responder immediately instead of holding it open for the tombstone
+// window, since the job's continuation may run on any replica. No server: a
+// fake `nc` whose `subscribe` just records the callback per subject, driven
+// directly — the same style as `progressPublisher.test.ts`.
+import { describe, expect, it } from "vitest";
 import { createJobEventChannel } from "@/core/jobEvents/index.js";
 import { startJobResponders } from "./jobResponders.js";
-import { decisionSubject, statusSubject } from "./subjects.js";
-import type {
-  CaseGenerationResult,
-  CaseGenerationService,
-} from "@/core/caseGenerationService.js";
-import type { GraphAppContext } from "@/core/graph/appContext.js";
-
-vi.mock("./cases.publisher.js", () => ({
-  publishStop: vi.fn().mockResolvedValue(undefined),
-}));
-import { publishStop } from "./cases.publisher.js";
+import { statusSubject } from "./subjects.js";
+import type { CaseGenerationService } from "@/core/caseGenerationService.js";
 
 type Callback = (
   error: unknown,
@@ -26,210 +19,96 @@ type Callback = (
 function fakeNats() {
   const subs = new Map<string, Callback>();
   return {
-    subscribe: vi.fn((subject: string, opts: { callback: Callback }) => {
+    subscribe: (subject: string, opts: { callback: Callback }) => {
       subs.set(subject, opts.callback);
-      return { unsubscribe: vi.fn() };
-    }),
+      return { unsubscribe: () => {} };
+    },
     subs,
   };
 }
 
-function fakeMsg(payload: unknown | (() => unknown)) {
-  return {
-    json: typeof payload === "function" ? payload : () => payload,
-    respond: vi.fn(),
-  };
+function fakeMsg() {
+  const respond = (data: string) => calls.push(data);
+  const calls: string[] = [];
+  return { json: () => undefined, respond, calls };
 }
 
-function fakeService(
-  overrides: Partial<CaseGenerationService> = {}
-): CaseGenerationService {
-  return {
-    getReview: vi.fn(() => undefined),
-    cancel: vi.fn(),
-    decide: vi.fn(),
-    ...overrides,
-  } as unknown as CaseGenerationService;
+function fakeService(): CaseGenerationService {
+  return { cancel: () => false } as unknown as CaseGenerationService;
 }
 
-const graph = {} as GraphAppContext;
-
-beforeEach(() => {
-  vi.mocked(publishStop).mockClear();
-});
-
-describe("cases.decision.<jobId> responder (#159)", () => {
-  it("accepted: replies {accepted:true} immediately, then publishes the segment's stop", async () => {
+describe("cases.status.<jobId> responder (#159)", () => {
+  it("replies {state: 'active'} while the job runs", () => {
     const nc = fakeNats();
     const channel = createJobEventChannel();
-    let resolveResult!: (r: CaseGenerationResult) => void;
-    const service = fakeService({
-      decide: vi.fn(() => ({
-        accepted: true,
-        jobId: "job-1",
-        result: new Promise<CaseGenerationResult>((resolve) => {
-          resolveResult = resolve;
-        }),
-      })),
-    });
+    const service = fakeService();
 
-    startJobResponders({ nc: nc as never, graph, jobEvents: channel, service });
+    startJobResponders({ nc: nc as never, jobEvents: channel, service });
     channel.open("job-1");
 
-    const callback = nc.subs.get(decisionSubject("job-1"))!;
-    const msg = fakeMsg({ revision: 1, decision: { action: "approve" } });
+    const callback = nc.subs.get(statusSubject("job-1"))!;
+    const msg = fakeMsg();
     callback(null, msg);
 
-    expect(msg.respond).toHaveBeenCalledExactlyOnceWith(
-      JSON.stringify({ accepted: true })
-    );
-
-    const result: CaseGenerationResult = {
-      jobId: "job-1",
-      status: "done",
-      case: {},
-    };
-    resolveResult(result);
-    await vi.waitFor(() => expect(publishStop).toHaveBeenCalledTimes(1));
-    expect(publishStop).toHaveBeenCalledWith(graph, result);
+    expect(msg.calls).toEqual([JSON.stringify({ state: "active" })]);
   });
 
-  it("refused: replies {accepted:false, error} and publishes nothing", () => {
+  it("replies {state: 'terminal', complete} for a done job, within the tombstone window", () => {
     const nc = fakeNats();
     const channel = createJobEventChannel();
-    const service = fakeService({
-      decide: vi.fn(() => ({
-        accepted: false,
-        jobId: "job-2",
-        error: { code: "STALE_REVISION", message: "stale", statusCode: 409 },
-      })),
-    });
+    const service = fakeService();
 
-    startJobResponders({ nc: nc as never, graph, jobEvents: channel, service });
+    startJobResponders({ nc: nc as never, jobEvents: channel, service });
     channel.open("job-2");
+    channel.close("job-2", { status: "done" });
 
-    const callback = nc.subs.get(decisionSubject("job-2"))!;
-    const msg = fakeMsg({ revision: 1, decision: { action: "approve" } });
+    const callback = nc.subs.get(statusSubject("job-2"))!;
+    const msg = fakeMsg();
     callback(null, msg);
 
-    expect(msg.respond).toHaveBeenCalledExactlyOnceWith(
-      JSON.stringify({
-        accepted: false,
-        error: { code: "STALE_REVISION", message: "stale" },
-      })
-    );
-    expect(publishStop).not.toHaveBeenCalled();
-    expect(service.decide).toHaveBeenCalledWith("job-2", {
-      revision: 1,
-      decision: { action: "approve" },
+    expect(JSON.parse(msg.calls[0]!)).toMatchObject({
+      state: "terminal",
+      complete: { jobId: "job-2", status: "done" },
     });
   });
 
-  it("invalid JSON body: replies INVALID_REQUEST_BODY, never calls service.decide", () => {
+  it("drops the status responder immediately on a 'planned' complete — no tombstone window", () => {
     const nc = fakeNats();
     const channel = createJobEventChannel();
     const service = fakeService();
 
-    startJobResponders({ nc: nc as never, graph, jobEvents: channel, service });
+    startJobResponders({ nc: nc as never, jobEvents: channel, service });
     channel.open("job-3");
+    expect(nc.subs.has(statusSubject("job-3"))).toBe(true);
 
-    const callback = nc.subs.get(decisionSubject("job-3"))!;
-    const msg = fakeMsg(() => {
-      throw new Error("not json");
-    });
+    channel.close("job-3", { status: "planned" });
+
+    // The continuation may run on any replica, so this replica must not
+    // keep answering for it — re-opening the same jobId (its continuation)
+    // gets a fresh responder, proof the old one was torn down rather than
+    // merely surviving into the tombstone window.
+    channel.open("job-3");
+    const callback = nc.subs.get(statusSubject("job-3"))!;
+    const msg = fakeMsg();
     callback(null, msg);
-
-    expect(msg.respond).toHaveBeenCalledExactlyOnceWith(
-      JSON.stringify({
-        accepted: false,
-        error: {
-          code: "INVALID_REQUEST_BODY",
-          message: "Invalid JSON body",
-        },
-      })
-    );
-    expect(service.decide).not.toHaveBeenCalled();
-  });
-
-  it("body failing ReviewDecisionRequestSchema: replies INVALID_REQUEST_BODY with details, never calls service.decide", () => {
-    const nc = fakeNats();
-    const channel = createJobEventChannel();
-    const service = fakeService();
-
-    startJobResponders({ nc: nc as never, graph, jobEvents: channel, service });
-    channel.open("job-4");
-
-    const callback = nc.subs.get(decisionSubject("job-4"))!;
-    const msg = fakeMsg({ revision: 1 }); // missing `decision`
-    callback(null, msg);
-
-    expect(msg.respond).toHaveBeenCalledTimes(1);
-    const reply = JSON.parse(msg.respond.mock.calls[0]![0] as string);
-    expect(reply.accepted).toBe(false);
-    expect(reply.error.code).toBe("INVALID_REQUEST_BODY");
-    expect(service.decide).not.toHaveBeenCalled();
-  });
-
-  it("unsubscribes on the job's complete event, exactly like cancel's subscription", () => {
-    const nc = fakeNats();
-    const channel = createJobEventChannel();
-    const service = fakeService();
-
-    startJobResponders({ nc: nc as never, graph, jobEvents: channel, service });
-    channel.open("job-5");
-    expect(nc.subs.has(decisionSubject("job-5"))).toBe(true);
-
-    channel.close("job-5", { status: "done" });
-    // The subscription object's unsubscribe was called — re-subscribing
-    // under the same jobId (a fresh `accepted`) proves the map moved on.
-    channel.open("job-5");
-    expect(nc.subscribe).toHaveBeenCalledWith(
-      decisionSubject("job-5"),
-      expect.anything()
-    );
+    expect(msg.calls).toEqual([JSON.stringify({ state: "active" })]);
   });
 });
 
-describe("cases.status.<jobId> — awaiting_review reply (#159)", () => {
-  it("replies {state: 'awaiting_review', revision} when service.getReview returns a review, even though the channel is still active", () => {
-    const nc = fakeNats();
-    const channel = createJobEventChannel();
-    const service = fakeService({
-      getReview: vi.fn(() => ({
-        jobId: "job-6",
-        revision: 3,
-        language: "English",
-        outline: [{ fixed: false, text: "" }],
-        expiresAt: new Date().toISOString(),
-      })),
-    });
-
-    startJobResponders({ nc: nc as never, graph, jobEvents: channel, service });
-    channel.open("job-6");
-
-    const callback = nc.subs.get(statusSubject("job-6"))!;
-    const msg = fakeMsg(undefined);
-    callback(null, msg);
-
-    expect(msg.respond).toHaveBeenCalledExactlyOnceWith(
-      JSON.stringify({ state: "awaiting_review", revision: 3 })
-    );
-  });
-
-  it("falls back to the channel's peek() when there is no pending review", () => {
+describe("cases.cancel.<jobId> responder", () => {
+  it("subscribes while the job is accepted and unsubscribes on complete", () => {
     const nc = fakeNats();
     const channel = createJobEventChannel();
     const service = fakeService();
 
-    startJobResponders({ nc: nc as never, graph, jobEvents: channel, service });
-    channel.open("job-7");
+    const stop = startJobResponders({
+      nc: nc as never,
+      jobEvents: channel,
+      service,
+    });
+    channel.open("job-4");
+    expect(nc.subs.size).toBeGreaterThan(0);
 
-    const callback = nc.subs.get(statusSubject("job-7"))!;
-    const msg = fakeMsg(undefined);
-    callback(null, msg);
-
-    expect(msg.respond).toHaveBeenCalledExactlyOnceWith(
-      JSON.stringify({ state: "active" })
-    );
+    stop();
   });
 });

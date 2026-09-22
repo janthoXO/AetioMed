@@ -199,6 +199,56 @@ export function checkSkeleton(
 }
 
 /**
+ * Whether `segments` has the canonical alternating shape — the one thing a
+ * handed-back plan must prove before its skeleton is even checked (#159).
+ */
+export function isCanonicalShape(segments: OutlineSegments): boolean {
+  return (
+    segments.length % 2 === 1 &&
+    segments.every((segment, i) => segment.fixed === (i % 2 === 1))
+  );
+}
+
+/**
+ * Puts the server's own English headings back into a plan translated in
+ * from the request language, by position (#159). A translated heading need
+ * not round-trip to the exact English string {@link checkSkeleton} expects,
+ * but every heading's English is known — except, with a freeform catalogue,
+ * the LLM-named anamnesis categories, which keep their translation. A plan
+ * with the wrong number of fixed segments is returned as is, for
+ * `checkSkeleton` to reject.
+ */
+export function restoreSkeletonHeadings(
+  segments: OutlineSegments,
+  opts: { anamnesisCategories?: string[] | undefined }
+): OutlineSegments {
+  const fixedCount = segments.filter((s) => s.fixed).length;
+  const categories = opts.anamnesisCategories;
+  if (
+    categories
+      ? fixedCount !== OUTLINE_SECTIONS.length + categories.length
+      : fixedCount < OUTLINE_SECTIONS.length
+  ) {
+    return segments;
+  }
+
+  let k = 0;
+  return segments.map((segment) => {
+    if (!segment.fixed) return segment;
+    const i = k++;
+    const text =
+      i < 4
+        ? OUTLINE_SECTIONS[i]!
+        : i === fixedCount - 1
+          ? OUTLINE_SECTIONS[4]
+          : categories
+            ? `### ${categories[i - 4]}`
+            : segment.text;
+    return { fixed: true, text };
+  });
+}
+
+/**
  * Unicode-normalizes and canonicalizes whitespace so a reviewer's editor
  * (CRLF line endings, trailing spaces, decomposed accents) never registers
  * as a semantic edit.

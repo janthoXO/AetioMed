@@ -71,8 +71,11 @@ const PlanStateSchema = CaseGenerationStateSchema.pick({
    */
   callerSuppliedFreeText: z.boolean(),
   mode: RunModeSchema.default("normal"),
+  /**
+   * A plan handed in with the request (#159): when set, the plan graph only
+   * translates the request in and skips planning — see {@link planOrSkip}.
+   */
   outlineSegments: OutlineSegmentsSchema.default([]),
-  outlineFeedback: z.array(z.string()).default([]),
   outlineAccepted: z.boolean().default(false),
 });
 
@@ -133,6 +136,16 @@ function requestNeedsTranslationIn(state: {
   return language && language !== "English" && state.callerSuppliedFreeText
     ? "translate"
     : "skip";
+}
+
+/**
+ * After translate-in: plan, or — with a plan handed in (#159) — stop, the
+ * request's working-language values being all the case graph still needs.
+ */
+function planOrSkip(state: {
+  outlineSegments: OutlineSegments;
+}): "planning_phase" | typeof END {
+  return state.outlineSegments.length > 0 ? END : "planning_phase";
 }
 
 /** The repos the case graph's phases need. */
@@ -288,7 +301,7 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
         output: PlanOutputSchema,
       })
         .addNode("planning_phase", planningPhase)
-        .addEdge(START, "planning_phase")
+        .addConditionalEdges(START, planOrSkip, ["planning_phase", END])
         .addEdge("planning_phase", END)
         .compile(),
       case: new StateGraph(CaseStateSchema, {
@@ -320,11 +333,18 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
         )
       )
       .addNode("planning_phase", planningPhase)
-      .addConditionalEdges(START, requestNeedsTranslationIn, {
-        translate: "translation_to_english_phase",
-        skip: "planning_phase",
-      })
-      .addEdge("translation_to_english_phase", "planning_phase")
+      .addConditionalEdges(
+        START,
+        (state) =>
+          requestNeedsTranslationIn(state) === "translate"
+            ? "translation_to_english_phase"
+            : planOrSkip(state),
+        ["translation_to_english_phase", "planning_phase", END]
+      )
+      .addConditionalEdges("translation_to_english_phase", planOrSkip, [
+        "planning_phase",
+        END,
+      ])
       .addEdge("planning_phase", END)
       .compile(),
     case: new StateGraph(CaseStateSchema, {
@@ -459,11 +479,7 @@ export function buildCaseGraph(
         difficulty: opts.difficulty,
         callerSuppliedFreeText: opts.callerSuppliedFreeText,
         mode: opts.mode ?? "normal",
-        ...(opts.revise && {
-          outlineSegments: opts.revise.outlineSegments,
-          outlineFeedback: opts.revise.feedback,
-          basisFragments: opts.revise.basisFragments,
-        }),
+        ...(opts.outline && { outlineSegments: opts.outline }),
       },
       invokeOptions()
     );
@@ -533,19 +549,12 @@ export type PlanCaseInput = {
   callerSuppliedFreeText: boolean;
   mode?: RunMode | undefined;
   /**
-   * Revise a previous outline with the reviewer's feedback (#159) instead of
-   * generating one. Every value is in the working language: the service
-   * translates the feedback in first when the sandwich is on, and passes
-   * the working-language `diagnosis` and no free text, so translate-in is
-   * skipped and the saved basis is reused.
+   * The plan handed in with the request, in English (#159): planning is
+   * skipped and only translate-in runs, so the result's `outlineSegments`
+   * is this plan and its `diagnosis`/`userInstructions` are in the working
+   * language.
    */
-  revise?:
-    | {
-        outlineSegments: OutlineSegments;
-        feedback: string[];
-        basisFragments: BasisFragment[];
-      }
-    | undefined;
+  outline?: OutlineSegments | undefined;
 };
 
 export type PlanResult = {

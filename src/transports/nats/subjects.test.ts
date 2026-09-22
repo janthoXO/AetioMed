@@ -6,20 +6,18 @@ import {
   resultSubject,
   progressSubject,
   cancelSubject,
-  reviewSubject,
-  decisionSubject,
-  reviewsStream,
+  planSubject,
+  PLANS_STREAM,
   REQUESTS_STREAM,
   RESULTS_STREAM,
   RESULT_MAX_AGE_MS,
+  STREAMS,
   CATALOG_DIAGNOSIS_SUBJECT,
   CATALOG_PROCEDURES_SUBJECT,
   META_FEATURES_SUBJECT,
   META_ALLOWED_LLMS_SUBJECT,
   META_GRAPH_SUBJECT,
 } from "./subjects.js";
-
-const REVIEWS_STREAM = reviewsStream(24 * 60 * 60 * 1000);
 
 describe("subjectMatches", () => {
   it("matches a single-token wildcard (*)", () => {
@@ -48,16 +46,15 @@ describe("subjectMatches", () => {
   });
 });
 
-describe("no stream captures another channel's subjects (#142)", () => {
+describe("no stream captures another channel's subjects (#142, #159)", () => {
   const sampleSubjects: Record<string, string> = {
     request: REQUEST_SUBJECT,
     result: resultSubject("j1"),
+    plan: planSubject("j1"),
     progressLabel: progressSubject("j1", "label"),
     progressAccepted: progressSubject("j1", "accepted"),
     progressComplete: progressSubject("j1", "complete"),
     cancel: cancelSubject("j1"),
-    review: reviewSubject("j1"),
-    decision: decisionSubject("j1"),
     catalogDiagnosis: CATALOG_DIAGNOSIS_SUBJECT,
     catalogProcedures: CATALOG_PROCEDURES_SUBJECT,
     metaFeatures: META_FEATURES_SUBJECT,
@@ -65,10 +62,8 @@ describe("no stream captures another channel's subjects (#142)", () => {
     metaGraph: META_GRAPH_SUBJECT,
   };
 
-  const ALL_STREAMS = [REQUESTS_STREAM, RESULTS_STREAM, REVIEWS_STREAM];
-
   function matchingStreams(subject: string): string[] {
-    return ALL_STREAMS.filter((stream) =>
+    return STREAMS.filter((stream) =>
       stream.subjects.some((filter) => subjectMatches(filter, subject))
     ).map((stream) => stream.name);
   }
@@ -91,17 +86,17 @@ describe("no stream captures another channel's subjects (#142)", () => {
     }
   });
 
-  it("CASE_REVIEWS matches only the review subject (#159)", () => {
+  it("CASE_PLANS matches only the plan subject (#159)", () => {
     for (const [label, subject] of Object.entries(sampleSubjects)) {
-      const matches = REVIEWS_STREAM.subjects.some((filter) =>
+      const matches = PLANS_STREAM.subjects.some((filter) =>
         subjectMatches(filter, subject)
       );
-      expect([label, matches]).toEqual([label, label === "review"]);
+      expect([label, matches]).toEqual([label, label === "plan"]);
     }
   });
 
-  it("cases.decision.<jobId> is captured by no stream at all (#159)", () => {
-    expect(matchingStreams(decisionSubject("j1"))).toEqual([]);
+  it("cases.plan.<jobId> is captured by CASE_PLANS only", () => {
+    expect(matchingStreams(planSubject("j1"))).toEqual([PLANS_STREAM.name]);
   });
 
   it("no two streams' filters overlap each other", () => {
@@ -109,8 +104,8 @@ describe("no stream captures another channel's subjects (#142)", () => {
       expect(matchingStreams(subject).length).toBeLessThanOrEqual(1);
     }
     // And directly: no stream's filter subjects match another's.
-    for (const stream of ALL_STREAMS) {
-      for (const other of ALL_STREAMS) {
+    for (const stream of STREAMS) {
+      for (const other of STREAMS) {
         if (stream === other) continue;
         for (const filter of stream.subjects) {
           for (const otherFilter of other.subjects) {
@@ -133,9 +128,9 @@ describe("stream retention configuration", () => {
     expect(REQUESTS_STREAM.retention).toBe(RetentionPolicy.Workqueue);
   });
 
-  it("reviewsStream(reviewTtlMs) uses limits retention with max_age set from the given TTL (#159)", () => {
-    expect(REVIEWS_STREAM.retention).toBe(RetentionPolicy.Limits);
-    expect(REVIEWS_STREAM.subjects).toEqual(["cases.review.*"]);
-    expect(reviewsStream(90_000).max_age).toBe(90_000 * 1_000_000);
+  it("PLANS_STREAM uses limits retention, same max_age as results (#159)", () => {
+    expect(PLANS_STREAM.retention).toBe(RetentionPolicy.Limits);
+    expect(PLANS_STREAM.subjects).toEqual(["cases.plan.*"]);
+    expect(PLANS_STREAM.max_age).toBe(RESULTS_STREAM.max_age);
   });
 });

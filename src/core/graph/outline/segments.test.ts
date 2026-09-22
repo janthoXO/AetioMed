@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   checkSkeleton,
   compareSubmission,
+  isCanonicalShape,
   joinOutline,
   mergeSegments,
   normalizeSegmentText,
@@ -10,6 +11,7 @@ import {
   OUTLINE_SECTIONS,
   parseTaggedOutline,
   renderTaggedOutline,
+  restoreSkeletonHeadings,
   type OutlineSegments,
 } from "./segments.js";
 
@@ -337,5 +339,111 @@ describe("mergeSegments", () => {
   it("falls back to original text for editable segments with no replacement", () => {
     const merged = mergeSegments(original, new Map());
     expect(merged).toEqual(original);
+  });
+});
+
+describe("isCanonicalShape", () => {
+  it("accepts an odd-length array alternating editable/fixed, starting and ending editable", () => {
+    expect(
+      isCanonicalShape([
+        { fixed: false, text: "" },
+        { fixed: true, text: "## General" },
+        { fixed: false, text: "body" },
+      ])
+    ).toBe(true);
+  });
+
+  it("rejects an even length", () => {
+    expect(
+      isCanonicalShape([
+        { fixed: false, text: "" },
+        { fixed: true, text: "## General" },
+      ])
+    ).toBe(false);
+  });
+
+  it("rejects two fixed segments in a row", () => {
+    expect(
+      isCanonicalShape([
+        { fixed: true, text: "## General" },
+        { fixed: true, text: "## Patient" },
+        { fixed: false, text: "" },
+      ])
+    ).toBe(false);
+  });
+
+  it("rejects a single fixed segment (must start editable)", () => {
+    expect(isCanonicalShape([{ fixed: true, text: "## General" }])).toBe(false);
+  });
+
+  it("accepts a single editable segment", () => {
+    expect(isCanonicalShape([{ fixed: false, text: "anything" }])).toBe(true);
+  });
+});
+
+describe("restoreSkeletonHeadings", () => {
+  const categories = ["History", "Medication"];
+
+  function catalogueOutline(headings: string[]): OutlineSegments {
+    const segments: OutlineSegments = [{ fixed: false, text: "" }];
+    for (const heading of headings) {
+      segments.push({ fixed: true, text: heading });
+      segments.push({ fixed: false, text: "body" });
+    }
+    return segments;
+  }
+
+  it("restores every heading by position when the catalogue is configured", () => {
+    const translated = catalogueOutline([
+      "## Allgemein",
+      "## Patient-DE",
+      "## Beschwerde",
+      "## Anamnese",
+      "### Geschichte",
+      "### Medikamente",
+      "## Prozeduren",
+    ]);
+
+    const restored = restoreSkeletonHeadings(translated, {
+      anamnesisCategories: categories,
+    });
+
+    const check = checkSkeleton(restored, { anamnesisCategories: categories });
+    expect(check).toEqual({ ok: true });
+    expect(restored.filter((s) => s.fixed).map((s) => s.text)).toEqual([
+      ...OUTLINE_SECTIONS.slice(0, 4),
+      "### History",
+      "### Medication",
+      OUTLINE_SECTIONS[4],
+    ]);
+  });
+
+  it("keeps the translated ### category text for a freeform catalogue, restoring only the five sections", () => {
+    const translated = catalogueOutline([
+      "## Allgemein",
+      "## Patient-DE",
+      "## Beschwerde",
+      "## Anamnese",
+      "### Übersetzte Kategorie",
+      "## Prozeduren",
+    ]);
+
+    const restored = restoreSkeletonHeadings(translated, {
+      anamnesisCategories: undefined,
+    });
+
+    expect(restored.filter((s) => s.fixed).map((s) => s.text)).toEqual([
+      ...OUTLINE_SECTIONS.slice(0, 4),
+      "### Übersetzte Kategorie",
+      OUTLINE_SECTIONS[4],
+    ]);
+  });
+
+  it("returns the outline unchanged when the fixed count is wrong", () => {
+    const wrong = catalogueOutline(["## Allgemein", "## Prozeduren"]);
+    const restored = restoreSkeletonHeadings(wrong, {
+      anamnesisCategories: categories,
+    });
+    expect(restored).toEqual(wrong);
   });
 });

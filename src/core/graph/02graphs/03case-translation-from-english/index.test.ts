@@ -1,14 +1,7 @@
-// Issue 12 §1: the three-node design (translate_defined / translate_rest /
-// translate_merge) is the point of the issue — these tests exercise the
-// compiled graph (and `translateMerge` directly), not just the tools
-// underneath, to prove the structural claims: the two passes write disjoint
-// channels, `translate_merge` is the only writer of `case`, and reversing
-// which pass finishes first produces an identical result because there is
-// no order to be sensitive to.
+// Three-node design (translate_defined / translate_rest / translate_merge): tests drive compiled graph and `translateMerge`.
+// Proves passes write disjoint channels, `translate_merge` is only writer of `case`, completion order irrelevant.
 //
-// Issue 21 §8: the rest pass's map now carries `.alt`/`.text` keys per part
-// (see `tools.ts`'s `caseTextMap`) — the LLM responses scripted below are
-// keyed accordingly.
+// Rest pass map carries `.alt`/`.text` keys per part (`tools.ts`'s `caseTextMap`); scripted LLM responses keyed accordingly.
 import { describe, expect, it } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {
@@ -27,9 +20,7 @@ import { runWithContext } from "@/core/graph/utils/context.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { EventBus } from "@/core/event-bus.js";
 
-/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
- * inlined at every real call site now; kept here only to keep these
- * fixtures readable. */
+/** Local fixture builder; keeps fixtures readable. */
 function fixtureTextPart(alt: string): ContentPart {
   return { type: "text/plain", value: encodeText(alt), alt };
 }
@@ -118,14 +109,9 @@ async function invoke(
   );
 }
 
-describe("byte fidelity across the parallel fan-out (issue 21)", () => {
-  // LangGraph's `Send` round-trips its payload through JSON, which turns a
-  // `ContentPart.value` `Uint8Array` into a plain index-keyed object —
-  // `instanceof Uint8Array` becomes false and every downstream reader (the
-  // wire codec, the size ceiling, any non-text extractor) sees garbage. This
-  // phase used to dispatch its two passes with `Send(node, state)`, carrying
-  // the whole case — bytes and all — for no gain over a plain edge. This test
-  // fails if anyone reintroduces that.
+describe("byte fidelity across the parallel fan-out", () => {
+  // `Send` round-trips payload through JSON: `ContentPart.value` `Uint8Array` becomes index-keyed object.
+  // Phase must use plain edges; fails if `Send` returns.
   it("passes a non-text part's bytes through byte-identically, still a real Uint8Array", async () => {
     const bytes = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
     // Only `.alt` is scripted: a non-text part contributes no `.text` key to
@@ -148,7 +134,7 @@ describe("byte fidelity across the parallel fan-out (issue 21)", () => {
   });
 });
 
-describe("buildCaseTranslationFromEnglishGraph — output surface (issue 17 §1)", () => {
+describe("buildCaseTranslationFromEnglishGraph — output surface", () => {
   it("writes back only `case`, not definedTranslations/restTranslations", () => {
     const repos = fakeRepos({});
     const graph = buildCaseTranslationFromEnglishGraph(
@@ -160,18 +146,14 @@ describe("buildCaseTranslationFromEnglishGraph — output surface (issue 17 §1)
   });
 });
 
-describe("buildCaseTranslationFromEnglishGraph — the bug fix (issue 12)", () => {
+describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
   it("procedures[].name comes out as EXACTLY the catalogue's cached term, never a rest-pass paraphrase", async () => {
     const repos = fakeRepos({
       procedureNames: { "Chest X-ray": "Röntgen-Thorax" },
       categories: { History: "Anamnese" },
     });
-    // The rest pass's LLM is scripted to translate everything it's handed —
-    // but it structurally cannot see procedure names or categories, since
-    // `caseTextMap` never includes them. Under the old single translate_case
-    // node, this LLM output — a full `Case` — would have overwritten the
-    // cache-correct name/category wholesale via the shallow-merge `case`
-    // reducer (issue 12 §0).
+    // Rest pass LLM translates all it is handed, but cannot see procedure names/categories (`caseTextMap` omits them).
+    // Must not overwrite cache-correct name/category.
     const runtime = fakeRuntime({
       "chiefComplaint.0.alt": "Toux depuis trois jours.",
       "chiefComplaint.0.text": "Toux depuis trois jours.",
@@ -273,7 +255,7 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix (issue 12)", () =
     expect(Object.keys(rest!.result as object)).toEqual(["restTranslations"]);
   });
 
-  it("a multi-part field survives translation with its part count and order intact (issue 13)", async () => {
+  it("a multi-part field survives translation with its part count and order intact", async () => {
     // Cache the one category so `translate_defined` needs no LLM call of
     // its own — this test's fake LLM is scripted for the rest pass only.
     const repos = fakeRepos({ categories: { History: "Anamnese" } });
@@ -302,7 +284,7 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix (issue 12)", () =
   });
 });
 
-describe("translateMerge — order-independence by construction (issue 12 §1)", () => {
+describe("translateMerge — order-independence by construction", () => {
   it("is insensitive to which of the two channels was 'computed' first: applying them in either order to build state yields an identical merged case", () => {
     const theCase = baseCase();
     const definedTranslations = {
@@ -363,7 +345,7 @@ describe("translateMerge — order-independence by construction (issue 12 §1)",
   });
 });
 
-describe("the old whole-case translate tool is gone (issue 12 §2)", () => {
+describe("the old whole-case translate tool is gone", () => {
   it("this module exports no whole-case-in-one-LLM-call translator", async () => {
     const mod = await import("./tools.js");
     const removedExportName = ["translate", "Case"].join("");

@@ -46,7 +46,7 @@ describe("subjectMatches", () => {
   });
 });
 
-describe("no stream captures another channel's subjects (#142, #159)", () => {
+describe("no stream captures another channel's subjects", () => {
   const sampleSubjects: Record<string, string> = {
     request: REQUEST_SUBJECT,
     result: resultSubject("j1"),
@@ -86,7 +86,7 @@ describe("no stream captures another channel's subjects (#142, #159)", () => {
     }
   });
 
-  it("CASE_PLANS matches only the plan subject (#159)", () => {
+  it("CASE_PLANS matches only the plan subject", () => {
     for (const [label, subject] of Object.entries(sampleSubjects)) {
       const matches = PLANS_STREAM.subjects.some((filter) =>
         subjectMatches(filter, subject)
@@ -103,7 +103,7 @@ describe("no stream captures another channel's subjects (#142, #159)", () => {
     for (const subject of Object.values(sampleSubjects)) {
       expect(matchingStreams(subject).length).toBeLessThanOrEqual(1);
     }
-    // And directly: no stream's filter subjects match another's.
+    // No stream's filter matches another's subjects.
     for (const stream of STREAMS) {
       for (const other of STREAMS) {
         if (stream === other) continue;
@@ -128,7 +128,7 @@ describe("stream retention configuration", () => {
     expect(REQUESTS_STREAM.retention).toBe(RetentionPolicy.Workqueue);
   });
 
-  it("PLANS_STREAM uses limits retention, same max_age as results (#159)", () => {
+  it("PLANS_STREAM uses limits retention, same max_age as results", () => {
     expect(PLANS_STREAM.retention).toBe(RetentionPolicy.Limits);
     expect(PLANS_STREAM.subjects).toEqual(["cases.plan.*"]);
     expect(PLANS_STREAM.max_age).toBe(RESULTS_STREAM.max_age);

@@ -1,9 +1,5 @@
-// Shared by `observability/tracePayload.ts` (the OTLP-bound payload cap,
-// #141) and `nodeWrapper.ts` (the OTel span's output-size attribute) —
-// both need "this node's result, with bytes projected to text" and must
-// agree on what that means, so it lives here once rather than twice. Pure:
-// only depends on `ContentPart`'s `textOf`, no env, no I/O — safe under
-// `src/core/graph/`'s "no process.env" rule.
+// Shared by `observability/tracePayload.ts` and `nodeWrapper.ts`: node result
+// with bytes projected to text. Pure: no env, no I/O.
 import {
   textOf,
   textOfPart,
@@ -28,16 +24,10 @@ function isContentPartArray(value: unknown): value is ContentPart[] {
 }
 
 /**
- * Recursively replace anything byte-shaped with its text projection, never
- * bytes: `ContentPart[]` becomes `textOf(parts)`, exactly as prompts do
- * (issue 11 §4); a lone `ContentPart` becomes `textOfPart(value)` — the same
- * MIME-dispatched projection, so a trace shows exactly what a prompt would
- * see rather than a planner-authored label (issue 21 §8); a bare
- * `Uint8Array` (there is no legitimate way for one to reach a node's return
- * value outside a `ContentPart`, but this is a safety net, not a trusted
- * invariant) becomes a size marker. Everything else is walked structurally
- * so a nested `chiefComplaint`/`anamnesis`/`procedures` field inside an
- * arbitrary node result is caught regardless of where it sits.
+ * Recursively replace byte-shaped values with text projection: `ContentPart[]`
+ * -> `textOf(parts)`; lone `ContentPart` -> `textOfPart` (what a prompt would
+ * see, not the planner's label); bare `Uint8Array` -> size marker (safety
+ * net). Everything else walked structurally, so nested content fields are caught.
  */
 export function sanitizeForTrace(value: unknown): unknown {
   if (isContentPartArray(value)) return textOf(value);

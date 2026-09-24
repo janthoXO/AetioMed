@@ -15,12 +15,9 @@ export interface CatalogueSpec {
   baseKeys: string[];
   translations: Record<string, Record<string, string> | undefined>;
   /**
-   * Whether a translation key absent from `baseKeys` is a startup error.
-   *
-   * True for every catalogue whose translations exist only to render
-   * catalogue values into a target language — there, an unknown key is a
-   * typo and nothing will ever look it up. See `diagnosis` below for the one
-   * catalogue where that does not hold.
+   * Whether a translation key absent from `baseKeys` is a startup error. True
+   * where translations only render catalogue values (unknown key = typo); false
+   * for `diagnosis`, see below.
    */
   enforceUnknownKeys: boolean;
 }
@@ -57,31 +54,18 @@ function loadCatalogueSpecs(repos: Repos): CatalogueSpec[] {
       file: repos.diagnosis.translationsFile,
       baseKeys: everyDiagnosisKey(repos),
       translations: readDeclaredTranslations(repos.diagnosis.translationsFile),
-      // The one catalogue exempt from the unknown-key rule, deliberately.
-      //
-      // The other three stores exist only to render a catalogue value into a
-      // target language, so a key outside the catalogue is dead weight at
-      // best and a typo at worst. The diagnosis store is also an *input*
-      // index: `getDiagnosisTranslationToEnglish`
-      // (02graphs/01case-translation-to-english/tools.ts) normalises a
-      // user-supplied diagnosis name into English before generation. A key
-      // absent from the curated `diagnosis.yml` is therefore useful, not
-      // wrong — it lets a clinician enter a term the catalogue does not
-      // itself offer.
-      //
-      // That is not a hypothetical: `diagnosis.yml` is a curated subset while
-      // `diagnosisTranslations.yml` is the full ICD-11 extraction, and the
-      // two are produced by different scripts with different scope. Enforcing
-      // the rule here flags ~1500 legitimate ICD-11 terms.
+      // Exempt from the unknown-key rule: diagnosis store is also an input index.
+      // `getDiagnosisTranslationToEnglish` (02graphs/01case-translation-to-english/tools.ts)
+      // normalises user-supplied names to English, so keys outside the curated
+      // `diagnosis.yml` are legitimate. `diagnosis.yml` is a curated subset,
+      // `diagnosisTranslations.yml` the full ICD-11 extraction; enforcing would flag ~1500 terms.
       enforceUnknownKeys: false,
     },
     {
       catalogue: "labels",
       file: repos.labels.translationsFile,
-      // `getKnownLabels()` is populated by `traceNode` as `buildCaseGraph()`
-      // constructs the graph modules. See the comment on the call site of
-      // `validateCatalogsOrExit()` in `graph/index.ts` for why this is safe
-      // to read here.
+      // `getKnownLabels()` is populated by `traceNode` while `buildCaseGraph()` runs;
+      // see `validateCatalogsOrExit()` call site in `graph/index.ts`.
       baseKeys: getKnownLabels(),
       translations: readDeclaredTranslations(repos.labels.translationsFile),
       enforceUnknownKeys: true,
@@ -119,9 +103,7 @@ function printSummary(specs: CatalogueSpec[]): void {
     const count = `${entryCount}`.padStart(6);
     console.log(`[catalog] ${name} ${count} entries · ${perLanguage}`);
 
-    // An exempt catalogue's extra keys are invisible to the line above, which
-    // only counts catalogue entries. Report them so the exemption stays
-    // honest — silently carrying 1500 unreachable keys would be a misconfig.
+    // Exempt catalogue's extra keys aren't counted above; report them so unreachable keys stay visible.
     if (!spec.enforceUnknownKeys) {
       const base = new Set(spec.baseKeys);
       const extra = new Set<string>();
@@ -147,15 +129,9 @@ type MissingLanguageProblem = {
 };
 
 /**
- * For every configured non-English language, every catalogue is expected to
- * carry at least one translation entry for it (issue 09 §1) — an
- * empty/absent language key in a catalogue's translation file means that
- * language was never actually wired up for it, deployer config
- * notwithstanding. Diagnosis is *not* exempt from this completeness check —
- * only from the unknown-key check above (see `loadCatalogueSpecs`'s comment
- * on `enforceUnknownKeys`): a diagnosis translation file with zero entries
- * for a configured language is exactly as much a misconfiguration as an
- * empty `procedures.yml` translation for it.
+ * Every catalogue needs at least one translation entry per configured
+ * non-English language; empty/absent means the language was never wired up.
+ * Diagnosis is not exempt here, only from the unknown-key check.
  */
 export function findMissingLanguages(
   specs: CatalogueSpec[],
@@ -224,12 +200,9 @@ export function warnUnconfiguredLanguages(
 }
 
 /**
- * Warn (never fail) for every configured language the language-detection
- * mapping table (`languageDetection/mapping.ts`) does not recognise (issue
- * 10 §4) — extends this same catalogue-validation summary rather than
- * adding a second reporter. Such a language simply never wins step 2 of the
- * auto-detect ladder; it stays fully usable when passed explicitly, so this
- * is informational only.
+ * Warn (never fail) for each configured language missing from the
+ * language-detection mapping (`languageDetection/mapping.ts`). It never wins
+ * auto-detect but stays usable when passed explicitly.
  */
 function warnUndetectableLanguages(languages: string[]): void {
   for (const language of unmappableLanguages(languages)) {
@@ -242,14 +215,10 @@ function warnUndetectableLanguages(languages: string[]): void {
 }
 
 /**
- * Validate the enforcing catalogues' translation files against their base
- * catalogue, and every catalogue's translation coverage against the
- * deployment's configured `languages` (issue 09 §1), printing a startup
- * summary line per catalogue first. If any translation file declares a key
- * absent from its base catalogue, or any catalogue is missing translation
- * entries entirely for a configured language, every offending item (across
- * every catalogue) is printed and the process exits non-zero once — a
- * deployer fixing typos should not have to restart four times.
+ * Validate enforcing catalogues' translation files against their base
+ * catalogue and every catalogue's coverage of configured `languages`; prints a
+ * summary line per catalogue first. Prints every offending item across all
+ * catalogues, then exits non-zero once.
  */
 export function validateCatalogsOrExit(
   repos: Repos,

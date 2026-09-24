@@ -1,9 +1,6 @@
-// Pure tests over the issue 09 §1 additions to startupValidation.ts —
-// `findMissingLanguages`/`formatMissingLanguages`/`warnUnconfiguredLanguages`
-// operate on plain `CatalogueSpec[]` data (see `validation.test.ts` for the
-// same pattern applied to the pre-existing unknown-key checks), plus one
-// end-to-end test of `validateCatalogsOrExit` itself with a mocked repo
-// layer and `predefinedList.js`.
+// Pure tests over `findMissingLanguages`/`formatMissingLanguages`/
+// `warnUnconfiguredLanguages` on plain `CatalogueSpec[]`, plus one end-to-end
+// `validateCatalogsOrExit` test with mocked repo layer and `predefinedList.js`.
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
 const declared = new Map<string, Record<string, Record<string, string>>>();
@@ -251,7 +248,7 @@ describe("validateCatalogsOrExit — end to end", () => {
     exitSpy.mockRestore();
   });
 
-  it("warns, but does not exit, for a configured language the detector's mapping table does not know (issue 10 §4)", () => {
+  it("warns, but does not exit, for a configured language the detector's mapping table does not know", () => {
     for (const file of [
       "procedures.yml",
       "anamnesisCategoriesTranslations.yml",

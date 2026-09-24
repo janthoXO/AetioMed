@@ -12,25 +12,14 @@ export type {
 } from "./ports.js";
 
 /**
- * Assembly-time selection between the two `ProcedureStrategy` adapters —
- * called from `assembleCaseGraph` (`02graphs/caseGraph.ts`) once per
- * compiled variant, and threaded down as a constructed `ProcedureStrategy`.
- * It takes the flag itself rather than `Config` so that nothing on the
- * assembly path sees deployment config: that is what makes "no graph node
- * reads `PROCEDURE_PRESELECTION` at runtime" true by construction rather
- * than by inspection, and what lets a test inject a fake strategy directly
- * into `buildProcedureGraph`.
+ * Assembly-time strategy selection, once per compiled variant. Takes the
+ * flag, not `Config`, so no node reads `PROCEDURE_PRESELECTION` at runtime.
  *
- * `CategoryScopedPick` is returned only when `PROCEDURE_PRESELECTION` is set
- * **and** the approved procedure list actually has real categories — this
- * second condition (today's `useSmallModelSplit`) is not optional: a flat
- * (uncategorized) catalogue has nothing to scope on, and the scoped path
- * against zero categories degenerates.
+ * `CategoryScopedPick` only when flag set **and** list has real categories;
+ * a flat catalogue has nothing to scope on.
  *
- * `providers` is the `procedureResult` modality registry (issue 21 §7):
- * both strategies' `bridge()` plans results via `planProcedureResults`, so
- * both need it — see `caseGraph.ts`'s call site, which passes
- * `modalityRegistries.procedureResult`.
+ * `providers` = `procedureResult` modality registry; both `bridge()`s plan
+ * results with it.
  */
 export function createProcedureStrategy(
   runtime: GraphRuntime,

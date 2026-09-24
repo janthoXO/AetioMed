@@ -1,6 +1,4 @@
-// Issue 15 §1.3/§3/§6 — trace payloads get a size cap, not a node's full
-// output, and bytes must never reach a trace event: `ContentPart[]` fields
-// are projected through `textOf`, exactly as prompts do (issue 11 §4).
+// Trace payloads capped; bytes never reach a trace: `ContentPart[]` projected through `textOf`.
 import { describe, expect, it } from "vitest";
 import {
   encodeText,
@@ -8,9 +6,7 @@ import {
 } from "@/core/graph/models/ContentPart.js";
 import { buildTracePayload, sanitizeForTrace } from "./tracePayload.js";
 
-/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
- * inlined at every real call site now; kept here only to keep these
- * fixtures readable. */
+/** Fixture builder: part whose `alt` equals its decoded `value`. */
 function fixtureTextPart(alt: string): ContentPart {
   return { type: "text/plain", value: encodeText(alt), alt };
 }
@@ -55,7 +51,7 @@ describe("sanitizeForTrace — no ContentPart bytes ever reach a trace", () => {
   });
 });
 
-describe("buildTracePayload — size cap, not full output (issue 15 §1.3)", () => {
+describe("buildTracePayload — size cap, not full output", () => {
   it("returns the value untouched (truncated: false) when under the cap", () => {
     const payload = buildTracePayload({ small: "value" }, 1000);
     expect(payload).toEqual({ truncated: false, value: { small: "value" } });
@@ -80,8 +76,7 @@ describe("buildTracePayload — size cap, not full output (issue 15 §1.3)", () 
     const part = { type: "image/png", alt: "short caption", value: hugeBinary };
     const payload = buildTracePayload({ image: [part] }, 1000);
 
-    // Sanitized to `textOf([part])` === "short caption" — tiny, well under
-    // the cap, regardless of the original 10MB of pixel bytes.
+    // Sanitized to `textOf([part])` === "short caption": tiny, regardless of 10MB bytes.
     expect(payload).toEqual({
       truncated: false,
       value: { image: "short caption" },

@@ -29,7 +29,7 @@ function makeCountingTextProvider(): {
   return { provider, calls };
 }
 
-describe("renderPlan — batching (issue 21 §6)", () => {
+describe("renderPlan — batching", () => {
   it("makes exactly ONE render call per provider, carrying every unit's requests for that provider", async () => {
     const { provider, calls } = makeCountingTextProvider();
     const plan: ModalityPlan = {
@@ -58,7 +58,7 @@ describe("renderPlan — batching (issue 21 §6)", () => {
   });
 });
 
-describe("renderPlan — planned order, not completion order (issue 21 §6)", () => {
+describe("renderPlan — planned order, not completion order", () => {
   it("scatters results back in PLANNED order — the first-planned request resolves last", async () => {
     const slow: ModalityProvider<unknown> = {
       id: "slow",

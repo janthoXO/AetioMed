@@ -20,8 +20,7 @@ export async function generatePatient(
   userInstructions?: string, // provided by the user | undefined
   context?: RequestContext
 ): Promise<Patient> {
-  // User-facing (issue 09 §3): the patient file is read by the student
-  // (e.g. the patient's own name).
+  // User-facing: student reads patient file (e.g. name).
   const systemPrompt = buildSystemPrompt(
     runtime,
     "user-facing",

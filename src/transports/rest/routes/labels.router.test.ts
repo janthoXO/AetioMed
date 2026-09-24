@@ -1,9 +1,7 @@
-// #139/#140 — end-to-end over real HTTP: `createLabelsRouter` mounted on a real
-// Express app, driven with global `fetch` and a raw SSE body reader (no
-// `supertest`), wired the same way the composition root wires it: a real
-// `EventBus` + `createJobEventChannel()`, `wireLabels`
-// producing onto it, and `CaseGenerationService` opening/closing each job's
-// channel around a fake graph.
+// End-to-end over real HTTP: `createLabelsRouter` on a real Express app,
+// driven by global `fetch` and a raw SSE reader (no `supertest`). Wired like
+// the composition root: real `EventBus` + `createJobEventChannel()`,
+// `wireLabels`, and `CaseGenerationService` around a fake graph.
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -25,8 +23,7 @@ import type { Case } from "@/core/graph/models/Case.js";
 import { planAndRenderFrom } from "@/testing/graphFakes.js";
 import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
-// Same shape as `caseGenerationService.test.ts`'s `fakeGraph` — a minimal
-// stand-in for the composition root's real `GraphAppContext`.
+// Same shape as `fakeGraph` in `caseGenerationService.test.ts`; minimal `GraphAppContext` stand-in.
 function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
   return {
     config: {
@@ -47,10 +44,7 @@ function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
   } as GraphAppContext;
 }
 
-/**
- * Read from `reader` (accumulating across calls, via a per-reader buffer)
- * until `predicate(text)` is true, or reject after `timeoutMs`.
- */
+/** Read from `reader` (per-reader buffer accumulates) until `predicate(text)`; reject after `timeoutMs`. */
 const buffers = new WeakMap<ReadableStreamDefaultReader<Uint8Array>, string>();
 
 async function readUntil(
@@ -95,8 +89,7 @@ async function readUntil(
   return text;
 }
 
-/** Build a fresh bus/channel/service wired the production way, plus a gated
- * generation that runs one traced node before returning a minimal case. */
+/** Fresh bus/channel/service wired like production, plus gated generation running one traced node. */
 function createHarness() {
   const bus = new EventBus();
   const channel: JobEventChannel = createJobEventChannel();
@@ -148,7 +141,7 @@ async function startServer(
   return { server, port };
 }
 
-describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
+describe("labels.router — end-to-end over real HTTP", () => {
   let server: Server | undefined;
 
   afterEach(async () => {
@@ -163,8 +156,7 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     ({ server } = await startServer(directory));
     const port = (server!.address() as AddressInfo).port;
 
-    // The channel is opened synchronously by `service.generate`, before its
-    // first await, so the stream can be opened right after issuing the call.
+    // `service.generate` opens the channel before its first await.
     const p = service.generate({
       diagnosis: "Influenza",
       generationFlags: ["patient"],
@@ -186,7 +178,7 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     );
 
     expect(text).toContain("event: label");
-    // Node output left the SSE channel in #140; it goes to OTel.
+    // No node output on SSE.
     expect(text).not.toContain("event: trace");
     expect(text).not.toContain('"ok":true');
     expect(text).toContain('"status":"started"');
@@ -196,12 +188,9 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     expect(done).toBe(true);
   });
 
-  it("a plan-mode call ends with event: complete whose status is 'planned', never the plan itself (#159)", async () => {
-    // A gated `planCase`, not `planAndRenderFrom` (whose plan stage never
-    // awaits anything) — this test needs the stop to land *after* the
-    // labels stream subscribes, or the buffered-watch race the harness
-    // above exists for real generation would let it happen before any
-    // listener attaches.
+  it("a plan-mode call ends with event: complete whose status is 'planned', never the plan itself", async () => {
+    // Gated `planCase`: stop must land after the labels stream subscribes,
+    // else it fires before any listener attaches.
     let release: () => void = () => {};
     const gate = new Promise<void>((resolve) => (release = resolve));
     const graph = {
@@ -266,8 +255,7 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     );
     expect(text).toContain('"jobId":"job-plan-labels"');
     expect(text).toContain('"status":"planned"');
-    // An observer never sees the plan itself — only the requester gets it,
-    // as this call's own return value.
+    // Observer never sees the plan; only requester gets it as return value.
     expect(text).not.toContain("outline");
     expect(text).not.toContain("Plan options");
 
@@ -317,7 +305,7 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     expect(text2).toContain("event: complete");
   });
 
-  it("an unknown job answers 404 JSON, never an SSE stream (#145)", async () => {
+  it("an unknown job answers 404 JSON, never an SSE stream", async () => {
     const channel = createJobEventChannel();
     const directory = createLocalJobDirectory(channel, () => false);
     ({ server } = await startServer(directory));
@@ -351,8 +339,7 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
       text.includes("event: complete")
     );
     expect(text).toContain('"status":"done"');
-    // Watch, not collect (#145): the terminal marker never carries
-    // the case.
+    // Watch, not collect: terminal marker never carries the case.
     expect(text).not.toContain("patient");
     expect(text).not.toContain('"case"');
 

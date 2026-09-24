@@ -1,12 +1,7 @@
-// Watching and cancelling a job *by id*, wherever it runs (#145). The label
-// stream (`GET /api/cases/:jobId/labels`) and `DELETE /api/cases/:jobId` go
-// through this port rather than the channel or the service directly: with
-// one process the answer is local, but with several replicas the job may be
-// running on another one, and the in-process channel would answer "unknown"
-// — a silent wrong answer. The composition root (`app.ts`) picks the
-// implementation: the local one below, or the NATS one
-// (`transports/nats/jobDirectory.ts`) when NATS is enabled. So REST depends
-// on NATS only through composition, and NATS never depends on REST.
+// Watch/cancel a job by id, wherever it runs. Label stream and DELETE go
+// through this port: with several replicas the in-process channel would
+// wrongly answer "unknown". `app.ts` picks local or NATS
+// (`transports/nats/jobDirectory.ts`) implementation.
 import type { JobCompleteEvent, JobEventChannel } from "./channel.js";
 import type { LabelEvent } from "./labels.js";
 
@@ -19,10 +14,9 @@ export type WatchedEvent =
   | { type: "complete"; data: JobCompleteEvent };
 
 /**
- * An active job is handed back *before* any of its events are delivered:
- * the caller decides its response (a 404 vs. an SSE stream) first, then
- * calls `listen`, which replays whatever arrived in between and then
- * delivers live until the job's `complete`. Returns a stop function.
+ * Handed back *before* events are delivered: caller decides response, then
+ * `listen` replays buffered events and goes live until `complete`. Returns
+ * stop function.
  */
 export type ActiveWatch = {
   state: "active";
@@ -38,11 +32,9 @@ export type CancelResult = "cancelled" | "finished" | "unknown";
 
 export interface JobDirectory {
   /**
-   * Start watching `jobId`. Subscribes before it answers, so no event is
-   * lost between learning the state and listening. A terminal job answers
-   * with its `complete` event instead of a subscription; a job nobody knows
-   * answers `unknown`. Rejects only when the answer could not be obtained
-   * (e.g. the backbone timed out) — that is not the same as `unknown`.
+   * Watch `jobId`. Subscribes before answering; no event lost. Terminal job
+   * returns its `complete` event; unknown job `unknown`. Rejects only when no
+   * answer obtainable (e.g. timeout); not the same as `unknown`.
    */
   watch(jobId: string): Promise<WatchResult>;
   /** Cancel `jobId` wherever it runs. Rejects when no answer could be obtained. */
@@ -78,9 +70,8 @@ export function createBufferedWatch(stop: () => void): {
 }
 
 /**
- * The single-process directory: the job must be running in this process.
- * With `NATS` disabled this is the only option, and a single replica is a
- * documented deployment constraint (#145).
+ * Single-process directory: job must run in this process. Only option with
+ * `NATS` disabled (single replica).
  */
 export function createLocalJobDirectory(
   channel: JobEventChannel,
@@ -88,9 +79,8 @@ export function createLocalJobDirectory(
 ): JobDirectory {
   return {
     async watch(jobId) {
-      // The buffer exists before the subscription, so an event published
-      // during `subscribe` itself has somewhere to go. Its stop function is
-      // bound once the subscription exists.
+      // Buffer exists before subscription so events published during
+      // `subscribe` have somewhere to go. Stop bound once subscribed.
       let unsubscribe = () => {};
       const buffered = createBufferedWatch(() => unsubscribe());
       const subscription = channel.subscribe(jobId, (event) => {

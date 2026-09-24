@@ -1,14 +1,7 @@
-// Issue 15 §5/§6, extended by #141 — "With the SDK disabled, no OTel
-// machinery is constructed" means NOT CONSTRUCTED, not constructed-and-inert.
-// Proved here with `vi.mock` spies on the heavy OTel packages (the same
-// style `repos.test.ts` uses `fs` spies for "was the heavy thing touched")
-// — `otel.ts`'s `ensureInitialized` only reaches these packages via a
-// dynamic `import()` gated on {@link selectExporterMode}, so if the
-// constructors are never called, the import branch was never taken at all.
-//
-// #141 adds the logs-signal packages (`sdk-logs`, `exporter-logs-otlp-http`)
-// alongside the existing trace ones, and the pure `selectExporterMode`
-// table that decides between them without any new env var.
+// Disabled SDK = NOT CONSTRUCTED, not inert. Proved with `vi.mock` spies on heavy OTel
+// packages: `ensureInitialized` reaches them only via dynamic `import()` gated on
+// {@link selectExporterMode}, so uncalled constructors mean branch never taken.
+// Also covers pure `selectExporterMode` table.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const NodeTracerProviderCtor = vi.fn().mockImplementation(function () {
@@ -74,7 +67,7 @@ afterEach(() => {
   resetEnv();
 });
 
-describe("selectExporterMode (#141) — pure exporter selection table", () => {
+describe("selectExporterMode — pure exporter selection table", () => {
   it("OTEL_SDK_DISABLED=true always wins, even with an endpoint set", async () => {
     const { selectExporterMode } = await import("./otel.js");
     expect(
@@ -129,7 +122,7 @@ describe("selectExporterMode (#141) — pure exporter selection table", () => {
   });
 });
 
-describe("OTel machinery construction (#141)", () => {
+describe("OTel machinery construction", () => {
   it("disabled (even with an endpoint set): no SDK constructor called, tracer still safe to use", async () => {
     process.env.OTEL_SDK_DISABLED = "true";
     process.env.OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4318";

@@ -6,14 +6,9 @@ import type { Tool } from "@/core/graph/utils/tool.js";
 
 // ─── Shared input types ───────────────────────────────────────────────────────
 
-// Mirrors the `Presentation` type (03aigateway/procedures.aigateway.ts) as a
-// Zod schema — used here for tool-input validation, and reused by
-// `03procedure/index.ts` as the blinded solver's child-graph state schema
-// (both need the exact same shape). This is a **text projection**, not the
-// domain `ChiefComplaint`/`Anamnesis` shape: `presentationOf`
-// (`03procedure/index.ts`) builds it from the domain `Case` via `textOf`
-// (issue 11 §4) — bytes must never reach a prompt, so this schema's fields
-// are `string`, never `ContentPart[]`.
+// Zod mirror of `Presentation` (03aigateway/procedures.aigateway.ts); also
+// the blinded solver's child-graph state schema. Text projection, not domain
+// shape: `presentationOf` builds it via `textOf`; bytes never reach a prompt.
 export const PresentationSchema = z.object({
   patient: PatientSchema.optional(),
   chiefComplaint: z.string().optional(),
@@ -43,15 +38,9 @@ export const matchDiagnosisTool: Tool<
 
 // ─── Export ───────────────────────────────────────────────────────────────────
 
-// The last remaining `Tool` here (issue 21 §7): `planProcedureResults` needs
-// a field's `ModalityProvider[]`, which is a runtime port, not zod-validatable
-// data — the same reason the presentation fields' planner gateways
-// (`planChiefComplaint`, `planAnamnesis`) are called directly from their
-// graph nodes rather than wrapped as `Tool`s. `03procedure/index.ts` calls
-// `planProcedureResults` directly for the same reason; every other procedure
-// tool has already been folded into the `ProcedureStrategy` adapters
-// (`strategy/directPick.ts`, `strategy/categoryScopedPick.ts`), which call
-// the aigateway functions directly too. See issue 07's spec §4.
+// `planProcedureResults` needs `ModalityProvider[]` (runtime port, not
+// zod-validatable), so it is called directly, not as a `Tool`. Strategy
+// adapters also call the aigateway directly.
 export const procedureTools = {
   matchDiagnosis: matchDiagnosisTool,
 } as const;

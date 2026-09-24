@@ -2,10 +2,7 @@
 export type Release = () => void;
 
 export interface Limiter {
-  /**
-   * Wait for a free slot, FIFO. Rejects with an `AbortError` if `signal`
-   * aborts while waiting — a job cancelled while queued never takes a slot.
-   */
+  /** Wait for free slot, FIFO. Rejects `AbortError` if `signal` aborts while queued. */
   acquire(signal?: AbortSignal): Promise<Release>;
   readonly active: number;
   readonly waiting: number;
@@ -17,11 +14,7 @@ function abortError(): Error {
   return error;
 }
 
-/**
- * A FIFO counting semaphore. One instance bounds generations across every
- * transport (`MAX_CONCURRENT_GENERATIONS`, #142), so throughput does not
- * depend on which door a request came in through.
- */
+/** FIFO counting semaphore. One instance bounds generations across all transports (`MAX_CONCURRENT_GENERATIONS`). */
 export function createLimiter(max: number): Limiter {
   if (!Number.isInteger(max) || max < 1) {
     throw new Error(`Limiter max must be a positive integer, got ${max}`);
@@ -50,8 +43,7 @@ export function createLimiter(max: number): Limiter {
       }
       return new Promise<Release>((resolve, reject) => {
         const waiter = {
-          // The slot passes straight from the releaser to this waiter, so
-          // `active` never dips and nobody can jump the queue in between.
+          // Slot passes straight to waiter: `active` never dips, no queue jumping.
           grant: () => {
             signal?.removeEventListener("abort", onAbort);
             resolve(release());

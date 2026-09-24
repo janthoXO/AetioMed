@@ -15,10 +15,8 @@ const KEYED_FORMAT_INSTRUCTION = `Return ONLY a JSON object mapping each provide
 Include every provided term as a key. Do not add, remove, merge, rename, or reorder the keys. Return ONLY the JSON object, no additional text.`;
 
 /**
- * Translate a batch of terms via the LLM, returning a keyed record
- * `{ inputTerm: translation }`. Correspondence is by key, not by position, so a
- * dropped or reordered term is detected (the term is missing as a key) and the
- * attempt is retried with the missing terms fed back into the prompt.
+ * Translates terms via LLM into `{ inputTerm: translation }`. Keyed, not
+ * positional: missing term detected, retried with missing terms fed back.
  */
 export async function translateTermsKeyed(
   runtime: GraphRuntime,
@@ -36,12 +34,8 @@ export async function translateTermsKeyed(
 
   if (terms.length === 0) return {};
 
-  // Deliberately `buildPrompt`, not `buildSystemPrompt` (issue 09 §3): this
-  // is shared translator-role machinery (`translate_*_from_english`) whose
-  // target language is already explicit in `contextLines` below, passed by
-  // the caller rather than read off the ambient request language — the
-  // generic directive would be redundant here, not wrong, but this stays
-  // out of the "every generation gateway" conversion on purpose.
+  // `buildPrompt`, not `buildSystemPrompt`: translator machinery; target
+  // language explicit in `contextLines`, not ambient.
   const systemPrompt = buildPrompt(
     section("Role", taskDescription),
     section("Output format", KEYED_FORMAT_INSTRUCTION)
@@ -109,13 +103,9 @@ const KEYED_RECORD_FORMAT_INSTRUCTION = `Return ONLY a JSON object with exactly 
 Do not add, remove, merge, rename, or reorder the keys. Return ONLY the JSON object, no additional text.`;
 
 /**
- * Translate a keyed map of arbitrary text values via the LLM in one call,
- * returning a same-keyed record `{ key: translation }`. Unlike
- * {@link translateTermsKeyed}, the key need not be (and, for issue 12's
- * rest pass and translate-in userInstructions, must not be) the text being
- * translated — the key is a stable identifier (a path or a field name), so
- * correspondence is asserted by key membership, not by echoing the source
- * text back as a key.
+ * Translates keyed map of text values in one call into `{ key: translation }`.
+ * Unlike {@link translateTermsKeyed}, key is a stable identifier (path/field
+ * name), not the source text; correspondence by key membership.
  */
 export async function translateRecordKeyed(
   runtime: GraphRuntime,

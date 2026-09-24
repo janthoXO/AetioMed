@@ -25,13 +25,10 @@ const DIFFICULTY_EXPECTATION: Record<Difficulty, string> = {
 };
 
 /**
- * Judge a case blueprint in a single call on both quality dimensions:
- * 1. Obviousness — does it reveal the diagnosis more directly than the
- *    requested difficulty permits?
- * 2. Clinical consistency — diagnosis secrecy, coherence between the planned
- *    fields, and realism of the planned facts.
- * Runs immediately after outline generation, before any field content is
- * written, so a flawed blueprint can be revised early.
+ * Judges outline in one call on two dimensions:
+ * 1. Obviousness: reveals diagnosis more directly than difficulty permits?
+ * 2. Clinical consistency: diagnosis secrecy, coherence between fields, realism.
+ * Runs before any field content is written.
  */
 export async function evaluateOutline(
   runtime: GraphRuntime,
@@ -40,14 +37,10 @@ export async function evaluateOutline(
   difficulty: Difficulty,
   userInstructions?: string,
   context?: RequestContext,
-  /**
-   * The plan judge reads the outline in whatever language it was written:
-   * English everywhere except plan mode with the sandwich off (#159), where
-   * the outline and its judge are bound to the request language.
-   */
+  /** Language outline was written in: English except plan mode, sandwich off (request language). */
   audience: PromptAudience = "internal"
 ): Promise<OutlineEvaluation> {
-  // Internal artifact by default (issue 09 §3).
+  // Internal by default.
   const systemPrompt = buildSystemPrompt(
     runtime,
     audience,

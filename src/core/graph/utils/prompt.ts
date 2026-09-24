@@ -3,33 +3,25 @@ import z from "zod";
 import { getRequestContext } from "./context.js";
 import type { GraphRuntime } from "../runtime.js";
 
-/**
- * Concatenates the provided prompt sections with blank lines between them and
- * removes any empty or undefined sections.
- */
+/** Joins sections with blank lines, dropping empty/undefined ones. */
 export function buildPrompt(...parts: (string | undefined)[]): string {
   return parts.filter((s): s is string => !!s).join("\n\n");
 }
 
 /**
- * Which of the two audiences (issue 09 §3) a system prompt is written for:
- * - `"internal"` — the plan, the plan judge, the blinded solver,
- *   `matchDiagnosis`, the symptom/basis provider. Stays English in every
- *   mode; that is what keeps the generation core language-agnostic.
- * - `"user-facing"` — chief complaint, anamnesis answers, patient, procedure
- *   result text. Gets the language directive below when a foreign language
- *   is bound and the translation sandwich is off.
+ * Prompt audience:
+ * - `"internal"`: plan, plan judge, blinded solver, `matchDiagnosis`,
+ *   symptom/basis provider. Always English.
+ * - `"user-facing"`: chief complaint, anamnesis, patient, procedure results.
+ *   Gets language directive when a foreign language is bound.
  */
 export type PromptAudience = "internal" | "user-facing";
 
 /**
- * Appended as the final line of the system message, never the user message
- * — constant per language, so it stays inside the stable prefix and does
- * not disturb prompt caching. The second sentence is load-bearing: under
- * structured output, a model told to "answer in German" will translate JSON
- * keys and enum members too; `relevance` is
- * `obligatory | optional | contraindicated`, and the grammar rejects a
- * translated value, but the retry costs a call.
+ * Final line of the system message, never the user message: constant per
+ * language, keeps prompt-cache prefix stable. Second sentence load-bearing:
+ * models told to "answer in German" also translate JSON keys/enum members;
+ * grammar rejects that but retry costs a call.
  */
 function languageDirective(language: string): string {
   return `Output language: ${language}.
@@ -39,20 +31,13 @@ reproduce them exactly, untranslated.`;
 }
 
 /**
- * `buildPrompt`, but for system prompts specifically: appends the language
- * directive (§3 above) as the final section, for `audience: "user-facing"`
- * calls only, and only when a foreign language is actually bound.
+ * `buildPrompt` for system prompts: appends language directive as final
+ * section, only for `"user-facing"` and only when a foreign language is bound.
  *
- * The language comes off `runtime.languageOverride` when the bound runtime
- * sets one, else off the request's ambient `getRequestContext()?.language`
- * (`AsyncLocalStorage`) — never off LangGraph's own runtime context, and
- * never off graph state (issue 09 §2). This function does not need to know
- * separately whether the translation sandwich is on: `assembleCaseGraph`
- * (`02graphs/caseGraph.ts`) binds the generation phase to a runtime with
- * `languageOverride: "English"` whenever the sandwich is compiled in (see
- * `GraphRuntime`'s doc comment), so "a foreign language is bound" already
- * means "sandwich off and a non-English request" by the time any gateway
- * call reaches here.
+ * Language from `runtime.languageOverride`, else ALS
+ * `getRequestContext()?.language`; never LangGraph context or graph state.
+ * Sandwich-on generation runs with override `"English"`, so a foreign
+ * language here means sandwich off.
  */
 export function buildSystemPrompt(
   runtime: GraphRuntime,
@@ -67,10 +52,7 @@ export function buildSystemPrompt(
   return buildPrompt(...parts, directive);
 }
 
-/**
- * Renders a markdown-headed prompt section, or undefined when the body is
- * empty so it composes with `buildPrompt`'s filtering.
- */
+/** Markdown-headed section; undefined for empty body (composes with `buildPrompt`). */
 export function section(
   header: string,
   body: string | undefined
@@ -78,19 +60,12 @@ export function section(
   return body ? `## ${header}\n${body}` : undefined;
 }
 
-/**
- * Renders a data payload as human-readable YAML for inclusion in a prompt,
- * instead of brace-noisy `JSON.stringify` output.
- */
+/** Data payload as YAML for prompts. `unknown` input: callers must not pass bytes. */
 export function renderForPrompt(value: unknown): string {
   return stringifyYaml(value, { lineWidth: 0 }).trimEnd();
 }
 
-/**
- * Renders the (already filtered) user-instructions record as `key: value`
- * lines for inclusion in a prompt. Returns undefined when there is nothing
- * to render.
- */
+/** User instructions as `key: value` lines; undefined when empty. */
 export function renderUserInstructions(
   userInstructions: Partial<Record<string, string>> | undefined
 ): string | undefined {
@@ -103,10 +78,8 @@ export function renderUserInstructions(
 // ─── Schema rendering ─────────────────────────────────────────────────────────
 
 /**
- * Literal unions longer than this are collapsed to `string` with a comment,
- * so per-request restricted vocabularies (procedure names, anamnesis
- * categories) don't get dumped into the schema block — the grammar constraint
- * from `withStructuredOutput` still enforces them.
+ * Literal unions longer than this collapse to `string`; big vocabularies
+ * stay out of the schema block, `withStructuredOutput` grammar still enforces them.
  */
 const MAX_LITERAL_UNION = 8;
 
@@ -124,16 +97,14 @@ type JsonSchema = {
 };
 
 /**
- * Renders a Zod schema as a commented pseudo-schema for prompts, e.g.:
+ * Zod schema as commented pseudo-schema for prompts, e.g.:
  *
  *   {
  *     "name": string, // Name of the medical procedure
  *     "relevance": "obligatory" | "optional" | "contraindicated"
  *   }
  *
- * Field descriptions come from `.describe()` on the Zod schema, so the prompt
- * text and the grammar constraint passed to `withStructuredOutput` stay in
- * sync by construction.
+ * Descriptions come from `.describe()`, so prompt and grammar stay in sync.
  */
 export function renderSchemaForPrompt(schema: z.ZodType): string {
   const jsonSchema = z.toJSONSchema(schema, {
@@ -219,11 +190,7 @@ const MAX_ERROR_LENGTH = 500;
 
 type ZodIssueLike = { path?: (string | number)[]; message: string };
 
-/**
- * Condenses an LLM structured-output failure into a few short, actionable
- * lines for the retry prompt, instead of feeding the model a wall of
- * JSON-path noise from a raw Zod issues dump.
- */
+/** Condenses LLM structured-output failure into short lines for the retry prompt. */
 export function summarizeValidationError(
   error: Error,
   maxLength: number = MAX_ERROR_LENGTH
@@ -244,12 +211,10 @@ export function summarizeValidationError(
 }
 
 function extractZodIssues(error: Error): ZodIssueLike[] | undefined {
-  // A ZodError (or an error wrapping one) carries the issues directly.
   const direct = (error as { issues?: unknown }).issues;
   if (isIssueArray(direct)) return direct;
 
-  // Otherwise the message may embed the JSON-stringified issues array
-  // (e.g. LangChain's OutputParserException wrapping a ZodError message).
+  // Message may embed JSON-stringified issues (e.g. OutputParserException).
   const start = error.message.indexOf("[");
   const end = error.message.lastIndexOf("]");
   if (start === -1 || end <= start) return undefined;
@@ -257,7 +222,7 @@ function extractZodIssues(error: Error): ZodIssueLike[] | undefined {
     const parsed: unknown = JSON.parse(error.message.slice(start, end + 1));
     if (isIssueArray(parsed)) return parsed;
   } catch {
-    // message is not a JSON issues dump — fall through to plain truncation
+    // not a JSON issues dump
   }
   return undefined;
 }

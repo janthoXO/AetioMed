@@ -1,10 +1,7 @@
-// Unit coverage for `startJobResponders` (#159, stateless generation): the
-// decision responder and the `awaiting_review` status reply are gone along
-// with plan-mode checkpoints — a `planned` complete drops the status
-// responder immediately instead of holding it open for the tombstone
-// window, since the job's continuation may run on any replica. No server: a
-// fake `nc` whose `subscribe` just records the callback per subject, driven
-// directly — the same style as `progressPublisher.test.ts`.
+// Unit coverage for `startJobResponders`: a `planned` complete drops the
+// status responder at once (continuation may run on any replica). No server:
+// fake `nc` whose `subscribe` records the callback per subject; same style
+// as `progressPublisher.test.ts`.
 import { describe, expect, it } from "vitest";
 import { createJobEventChannel } from "@/core/jobEvents/index.js";
 import { startJobResponders } from "./jobResponders.js";
@@ -37,7 +34,7 @@ function fakeService(): CaseGenerationService {
   return { cancel: () => false } as unknown as CaseGenerationService;
 }
 
-describe("cases.status.<jobId> responder (#159)", () => {
+describe("cases.status.<jobId> responder", () => {
   it("replies {state: 'active'} while the job runs", () => {
     const nc = fakeNats();
     const channel = createJobEventChannel();
@@ -83,10 +80,8 @@ describe("cases.status.<jobId> responder (#159)", () => {
 
     channel.close("job-3", { status: "planned" });
 
-    // The continuation may run on any replica, so this replica must not
-    // keep answering for it — re-opening the same jobId (its continuation)
-    // gets a fresh responder, proof the old one was torn down rather than
-    // merely surviving into the tombstone window.
+    // Continuation may run on any replica: reopening same jobId gets a fresh
+    // responder, proving the old one was torn down, not left in tombstone window.
     channel.open("job-3");
     const callback = nc.subs.get(statusSubject("job-3"))!;
     const msg = fakeMsg();

@@ -23,35 +23,16 @@ const AnamnesisGraphStateSchema = CaseGenerationStateSchema.pick({
   case: true,
 }).extend({
   outline: z.string(),
-  // Category name -> its ORDERED planned render requests (issue 21 §1):
-  // replaces the old `contentUnits`/`modalityPlan` pair now that planning
-  // happens BEFORE any prose is generated, not after — the planner itself
-  // is what enumerates categories (`03aigateway/anamnesis.aigateway.ts`'s
-  // `planAnamnesis`), not a separate generation pass.
+  // Category name -> ORDERED planned render requests. Planner enumerates categories (`planAnamnesis`).
   plan: z.record(z.string(), z.array(PlannedPartSchema)).default({}),
 });
 
 type AnamnesisGraphState = z.infer<typeof AnamnesisGraphStateSchema>;
 
-// This graph is `addNode`'d into `buildFieldGenerationGraph` alongside
-// `chiefComplaintGraph`, fanned out in parallel by `Send` from
-// `outline_evaluate` (issue 17 §0/§1) — see `chiefComplaint/index.ts`'s
-// matching comment for why an explicit `output` is required here too.
-// `.pick()` off this graph's own state schema, never a hand-written
-// duplicate, so the picked `case` channel keeps the identical reducer
-// registration.
+// Mounted in `buildFieldGenerationGraph`, `Send`-fanned in parallel with `chiefComplaintGraph`; explicit `output` required (see `chiefComplaint/index.ts`). `.pick()` off own state schema.
 const AnamnesisOutputSchema = AnamnesisGraphStateSchema.pick({ case: true });
 
-/**
- * Reorders a plan's category keys to match the catalogue's category order
- * rather than whatever order the LLM happened to emit them in — the
- * categories `planAnamnesis` enumerates in its schema
- * (`runtime.catalogs.anamnesis.list()`) are the source of truth for order,
- * downstream prompts depend on it staying stable, and an LLM's array order
- * is not a contract. Any category the catalogue does not know about (should
- * not happen — the schema constrains to exactly the catalogue's categories)
- * is appended in its original position rather than dropped.
- */
+/** Reorders plan's category keys to catalogue order; LLM array order is no contract. Unknown categories kept at original position, not dropped. */
 function orderByCatalogue(keys: string[], catalogueOrder: string[]): string[] {
   const rank = new Map(catalogueOrder.map((category, i) => [category, i]));
   return [...keys].sort((a, b) => {
@@ -110,16 +91,7 @@ function makeRenderParts(
   };
 }
 
-/**
- * `anamnesisGraph`: same two-node shape as `chiefComplaint/index.ts`
- * (`plan_content` → `render_parts`), except the plan has ONE content unit
- * PER CATEGORY, so `render_parts` reassembles the per-category answers into
- * `Anamnesis` in CATALOGUE order — see `orderByCatalogue` above for why
- * that reassembly trusts the catalogue's order rather than the LLM's array
- * order. See `chiefComplaint/index.ts`'s doc comment for why there is no
- * registry-size branching and for the pre-translate-out known limitation
- * (issue 13 §6) that applies identically here.
- */
+/** `plan_content` → `render_parts` like `chiefComplaint/index.ts`, one content unit PER CATEGORY; `render_parts` reassembles in CATALOGUE order (`orderByCatalogue`). Registry-size and translate-out caveats: see `chiefComplaint/index.ts`. */
 export function buildAnamnesisGraph(
   runtime: GraphRuntime,
   providers: ModalityProvider<unknown>[],

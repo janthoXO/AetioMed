@@ -1,14 +1,6 @@
-// Issue 12: the old whole-case, single-LLM-call translate tool is gone —
-// grepping this repo for its removed camelCase export name returns nothing.
-// This suite covers what replaced it: the pure path/apply helpers the "rest"
-// pass is built from
-// (`caseTextMap`/`applyCaseTextTranslations`), the catalogue-backed
-// `translate*FromEnglish` tools (unchanged underneath, still cache-first),
-// and `translateRestValues`'s prompt safety.
-//
-// Issue 21 §8 extends the map to two keys per part (`.alt`/`.text`) now that
-// `alt` and a text part's decoded `value` are independent strings rather
-// than one being derived from the other — see `tools.ts`'s doc comments.
+// Covers pure path/apply helpers of the "rest" pass (`caseTextMap`/`applyCaseTextTranslations`),
+// catalogue-backed `translate*FromEnglish` tools (cache-first), and `translateRestValues`'s prompt safety.
+// Map has two keys per part (`.alt`/`.text`); see `tools.ts`.
 import { describe, expect, it, vi } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {
@@ -30,12 +22,7 @@ import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import { looksLikeByteDump } from "@/core/graph/utils/promptSafety.test.js";
 import { renderForPrompt } from "@/core/graph/utils/prompt.js";
 
-/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
- * inlined at every real call site now; kept here only to keep these
- * fixtures readable. Produces a part whose `alt` equals its decoded
- * `value`, which is what makes the `.alt`/`.text` map entries below equal
- * for every text part in these fixtures — see `caseTextMap`'s doc comment
- * for why that duplication is expected, not a bug. */
+/** Local fixture builder. `alt` equals decoded `value`, so `.alt`/`.text` entries match for text parts; see `caseTextMap`. */
 function fixtureTextPart(alt: string): ContentPart {
   return { type: "text/plain", value: encodeText(alt), alt };
 }
@@ -69,7 +56,7 @@ function throwingRuntime(): GraphRuntime {
   } as unknown as GraphRuntime;
 }
 
-describe("caseTextMap / applyCaseTextTranslations — the rest pass's path keying (issue 12 §2, issue 21 §8)", () => {
+describe("caseTextMap / applyCaseTextTranslations — the rest pass's path keying", () => {
   const mixedCase: Case = {
     chiefComplaint: [fixtureTextPart("Cough for three days.")],
     anamnesis: [
@@ -116,7 +103,7 @@ describe("caseTextMap / applyCaseTextTranslations — the rest pass's path keyin
     expect(Object.keys(map).some((k) => k.includes("Chest X-ray"))).toBe(false);
   });
 
-  it("a multi-part field survives with its part count and order intact (issue 13)", () => {
+  it("a multi-part field survives with its part count and order intact", () => {
     const translated = applyCaseTextTranslations(mixedCase, {
       "anamnesis.0.answer.0.alt": "Premier (étiquette).",
       "anamnesis.0.answer.0.text": "Premier.",
@@ -148,8 +135,7 @@ describe("caseTextMap / applyCaseTextTranslations — the rest pass's path keyin
     expect(new TextDecoder().decode(part.value)).toBe(
       "Toux depuis trois jours."
     );
-    // The two entries need not agree — that is the whole point of carrying
-    // them as separate keys (issue 21 §5's eventual planner-authored alt).
+    // Entries need not agree; that is why they are separate keys.
     expect(part.alt).not.toBe(new TextDecoder().decode(part.value));
   });
 
@@ -183,7 +169,7 @@ describe("caseTextMap / applyCaseTextTranslations — the rest pass's path keyin
   });
 });
 
-describe("translateRestValues — no bytes reach the prompt (issue 12 §2/§4)", () => {
+describe("translateRestValues — no bytes reach the prompt", () => {
   it("negative control: looksLikeByteDump fires on the raw domain shape, so the assertion below is not vacuous", () => {
     // Exactly what handing `renderForPrompt` the raw ContentPart would look
     // like — mirrors `promptSafety.test.ts`'s own negative control.
@@ -251,7 +237,7 @@ describe("translateRestValues — no bytes reach the prompt (issue 12 §2/§4)",
   });
 });
 
-describe("translateProcedureNamesFromEnglish — cache-first, unchanged (issue 12 §1)", () => {
+describe("translateProcedureNamesFromEnglish — cache-first, unchanged", () => {
   it("makes zero LLM calls when every name is already cached, and returns the exact cached term", async () => {
     const repo: ProceduresRepo = {
       translationsFile: "",
@@ -267,13 +253,8 @@ describe("translateProcedureNamesFromEnglish — cache-first, unchanged (issue 1
       throwingRuntime()
     );
 
-    // Exactly the catalogue's target-language term — not a paraphrase. This
-    // is the bug issue 12 fixes: under the old single translate_values node,
-    // this cached term was subsequently overwritten by whatever the
-    // free-text LLM call echoed back for `procedures`, via the `case`
-    // state's shallow-merge reducer (see `index.ts`'s `translate_merge`,
-    // which now applies this map directly onto `case` and is the only node
-    // that writes it).
+    // Exactly catalogue's target-language term; must not be overwritten by free-text LLM output
+    // (`translate_merge` applies this map onto `case`, only writer).
     expect(result).toEqual({ "Chest X-ray": "Röntgen-Thorax" });
     expect(repo.saveProcedureNameTranslation).not.toHaveBeenCalled();
   });
@@ -305,7 +286,7 @@ describe("translateProcedureNamesFromEnglish — cache-first, unchanged (issue 1
   });
 });
 
-describe("translateAnamnesisCategoriesFromEnglish — cache-first, unchanged (issue 12 §1)", () => {
+describe("translateAnamnesisCategoriesFromEnglish — cache-first, unchanged", () => {
   it("makes zero LLM calls when every category is already cached", async () => {
     const repo: AnamnesisRepo = {
       translationsFile: "",

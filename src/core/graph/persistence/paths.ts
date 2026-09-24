@@ -1,18 +1,9 @@
 import path from "node:path";
 
 /**
- * `CATALOG_DIR` and `CACHE_DIR` resolution. Both used to be read directly
- * from the process environment at this module's own scope; now the
- * composition root (`app.ts`) reads them once — via
- * `resolveCatalogDir`/`resolveCacheDir`, explicitly passed the environment —
- * and passes the resolved absolute paths into the repo constructors (see
- * `repos.ts`). That is what lets importing a repo module perform no I/O:
- * nothing here runs until a constructor is called with an already-resolved
- * path.
- *
- * Env variable names, defaults and resolution behaviour are unchanged from
- * before this move: `CATALOG_DIR` defaults to `"data"`, `CACHE_DIR` to
- * `"data/cache"`, both resolved against `process.cwd()`.
+ * `CATALOG_DIR` (default `"data"`) and `CACHE_DIR` (default `"data/cache"`)
+ * resolution, both against `process.cwd()`. Environment is passed in by the
+ * composition root; nothing runs at import.
  */
 
 /** Deployer-owned, read-only catalogue inputs (YAML/JSON config files). */

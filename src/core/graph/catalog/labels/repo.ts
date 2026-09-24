@@ -7,18 +7,12 @@ import { catalogFile } from "../../persistence/paths.js";
 export interface LabelsRepo {
   /** Absolute path of the translations YAML, for the startup catalogue validator. */
   readonly translationsFile: string;
-  /**
-   * Synchronous lookup of a label's translation. Used on the trace hot path,
-   * which relies on the cache having been warmed for the language beforehand.
-   */
+  /** Sync lookup; trace hot path, cache must be warmed for the language first. */
   getLabelTranslation(
     label: string,
     language: ForeignLanguage
   ): string | undefined;
-  /**
-   * Translate every requested label that is not already cached, in a single
-   * batch (deduped across concurrent requests). Results are saved in-memory.
-   */
+  /** Translate uncached labels in one batch (deduped across concurrent requests); saved in memory. */
   ensureLabelsTranslated(
     labels: string[],
     language: ForeignLanguage,
@@ -32,11 +26,9 @@ export interface LabelsRepo {
 }
 
 /**
- * Syncs `labelTranslations.yml` (under `catalogDir`) into `dbHandle`'s
- * embedded database, then exposes trace-node label lookups. Pre-mapped
- * labels are preloaded from the YAML; any label not covered there is
- * translated on demand by the AI warm-up and cached (never written back to
- * the config).
+ * Syncs `labelTranslations.yml` into `dbHandle`, exposes trace-node label
+ * lookups. Labels missing from YAML are translated on demand by the AI warm-up
+ * and cached, never written back to config.
  */
 export function createLabelsRepo(
   dbHandle: DbHandle,

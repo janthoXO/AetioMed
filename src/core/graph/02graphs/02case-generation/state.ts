@@ -27,24 +27,11 @@ export const CaseGenerationStateSchema = z.object({
     },
   }),
 
-  /**
-   * Fragments resolved from the medical-basis registry (see
-   * `medicalBasis/`), concatenated in registry order. Empty when the
-   * registry is empty — the `basis_resolve` node is then not compiled into
-   * the graph at all (see `02case-generation/index.ts`) and this default
-   * stands.
-   */
+  /** Medical-basis fragments in registry order. Empty when registry empty (no `basis_resolve` node). */
   basisFragments: BasisFragmentSchema.array().default([]),
 
-  /**
-   * The case blueprint generated at the start of the presentation phase.
-   * Threaded to field generation and procedure-result generation, but
-   * never to the blinded procedure solver.
-   */
+  /** Case blueprint. Threaded to field and procedure-result generation, never to blinded solver. */
   outline: z.string().optional(),
 });
 
-/**
- * Type alias for the state shape
- */
 export type CaseGenerationState = z.infer<typeof CaseGenerationStateSchema>;

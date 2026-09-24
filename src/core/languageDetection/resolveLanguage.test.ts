@@ -1,8 +1,5 @@
-// Issue 10 — the laddered language resolver. Each rung is tested in
-// isolation, with a spy `LanguageDetector` standing in for `tinyld` so the
-// exact string(s) it is called with can be asserted (issue 10 §2's binding
-// requirement: the diagnosis name must never reach it — though this module
-// never even sees a diagnosis name, which is itself part of the proof).
+// Laddered language resolver. Each rung tested in isolation; spy `LanguageDetector`
+// stands in for `tinyld` to assert exact strings it sees.
 import { describe, expect, it, vi } from "vitest";
 import { resolveLanguage } from "./resolveLanguage.js";
 import type { LanguageDetector } from "./port.js";
@@ -14,9 +11,8 @@ function fakeDetector(
   return { detect: vi.fn().mockReturnValue(result) };
 }
 
-// `runtime.llm.for(...)` is only ever reached by the LLM fallback (step 3).
-// Tests that must prove it is *not* reached pass this and assert `forSpy`
-// was never called.
+// `runtime.llm.for(...)` only reached by LLM fallback (step 3). Tests proving
+// it is not reached pass this and assert `forSpy` never called.
 function fakeRuntime(forSpy = vi.fn()): GraphRuntime {
   return { llm: { for: forSpy } } as unknown as GraphRuntime;
 }
@@ -112,9 +108,7 @@ describe("resolveLanguage — step 2: the offline detector", () => {
       runtime: fakeRuntime(),
     });
 
-    // Exact string(s) the detector saw: the two `userInstructions` field
-    // values, joined — never "Diabetes mellitus" or any other diagnosis
-    // name, which this function's signature does not even accept.
+    // Detector saw only the `userInstructions` values, joined; never a diagnosis name.
     expect(detector.detect).toHaveBeenCalledTimes(1);
     expect(detector.detect).toHaveBeenCalledWith(
       `${LONG_GERMAN_TEXT} Weitere Hinweise zur Anamnese, bitte ausführlich.`
@@ -155,9 +149,7 @@ describe("resolveLanguage — step 2: the offline detector", () => {
   });
 
   it("still works when passed explicitly, and never wins step 2, for a configured language the mapping table does not know", async () => {
-    // "Klingon" is not in mapping.ts's table at all, so even a confident
-    // detector hit (however implausible) cannot make it win step 2 — but it
-    // is fully usable at step 1.
+    // "Klingon" absent from mapping.ts: cannot win step 2, usable at step 1.
     const detector = fakeDetector({ iso: "de", confidence: 1 });
 
     const viaDetection = await resolveLanguage({

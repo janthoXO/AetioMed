@@ -23,24 +23,15 @@ import type { ReadModel } from "../../core/readModel.js";
 
 export interface NatsTransportHandle {
   close(): Promise<void>;
-  /**
-   * Finds jobs across every replica (#145) — set only once the connection
-   * and the streams are up. REST uses it for its label stream and `DELETE`
-   * when both transports are enabled.
-   */
+  /** Finds jobs across replicas; set only once connection and streams are up. */
   directory?: JobDirectory;
 }
 
 /**
  * Start the NATS transport: connect, reconcile the JetStream streams, answer
  * per-job cancel requests, and consume `cases.request.generate`.
- * Constructed explicitly by the composition root (`app.ts`) when the `NATS`
- * flag is set — no loader.
- *
- * Returns a closer rather than registering its own signal handlers (issue
- * 18): shutdown is one sequence owned by the composition root
- * (`src/shutdown.ts`), not scattered per-transport, which is what let a
- * transport's shutdown race a persistence module's and lose.
+ * Returns a closer; shutdown sequence owned by composition root
+ * (`src/shutdown.ts`), no signal handlers here.
  */
 export async function startNatsTransport(opts: {
   graph: GraphAppContext;

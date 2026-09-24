@@ -3,24 +3,15 @@ import type { JobDirectory } from "@/core/jobEvents/index.js";
 import { openSse } from "../sse.js";
 
 /**
- * `GET /api/cases/:jobId/labels` — watch any job's progress, whatever
- * submitted it and whichever replica runs it (#145). Always on (#140):
- * labels are a product feature of the streaming API, not telemetry.
+ * `GET /api/cases/:jobId/labels` — watch any job's progress on any replica
+ * via {@link JobDirectory} (in-process or NATS, chosen by composition root).
  *
- * Goes through the {@link JobDirectory} port: in-process with one replica,
- * over NATS when NATS is enabled — the composition root decides, so this
- * module never imports the NATS transport.
- *
- * - unknown job → `404`, before any stream opens. This used to answer
- *   `event: complete`, so "wrong replica" and "finished" looked the same.
- * - finished job → `event: complete` with its outcome, then end.
+ * - unknown job → `404`, before any stream opens.
+ * - finished job → `event: complete` with outcome, then end.
  * - running job → `event: connected`, `event: label`…, `event: complete`.
  *
- * A plan-mode call (#159) ends with `event: complete` whose status is
- * `planned`; only the requester ever sees the plan itself.
- *
- * An observer can watch a job but not collect it: the stream never carries
- * the case (#145, "watch, not collect").
+ * Plan-mode call ends with `event: complete` status `planned`; only the
+ * requester sees the plan. Stream never carries the case: watch, not collect.
  */
 export default function createLabelsRouter(
   directory: JobDirectory

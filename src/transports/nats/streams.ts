@@ -33,21 +33,17 @@ async function streamInfo(
 }
 
 /**
- * Create `CASE_REQUESTS`, `CASE_RESULTS` and `CASE_PLANS` (#159), or
- * reconcile their subjects and limits if they exist. Fails loudly rather
- * than guessing in two cases, both of which JetStream cannot fix in place:
+ * Create `CASE_REQUESTS`, `CASE_RESULTS`, `CASE_PLANS`, or reconcile
+ * subjects and limits. Throws on two cases JetStream cannot fix in place:
  *
- * - the pre-#142 `cases` stream still exists. Its `cases.>` filter overlaps
- *   every stream here, so JetStream would refuse to create them with an
- *   opaque "subjects overlap" error. It is **not** deleted automatically: it
- *   may still hold requests nobody has processed.
- * - a stream exists with a different retention policy — retention cannot be
- *   changed on an existing stream.
+ * - legacy `cases` stream exists. Its `cases.>` filter overlaps every stream
+ *   here. Not auto-deleted: may hold unprocessed requests.
+ * - stream exists with different retention; retention is immutable.
  */
 export async function ensureStreams(jsm: JetStreamManager): Promise<void> {
   if (await streamInfo(jsm, LEGACY_STREAM)) {
     throw new Error(
-      `The pre-#142 JetStream stream "${LEGACY_STREAM}" still exists. Its "cases.>" filter overlaps ` +
+      `The legacy JetStream stream "${LEGACY_STREAM}" still exists. Its "cases.>" filter overlaps ` +
         `the new ${STREAMS.map((s) => s.name).join(" and ")} streams, and it cannot be migrated ` +
         `in place. Drain or inspect it, then delete it (e.g. \`nats stream rm ${LEGACY_STREAM}\`) and restart.`
     );

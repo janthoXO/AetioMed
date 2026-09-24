@@ -6,13 +6,7 @@ import type { Tool } from "@/core/graph/utils/tool.js";
 
 // ─── Patient ─────────────────────────────────────────────────────────────────
 //
-// `patient` is the only field in this file (issue 21 §5): `chiefComplaint`
-// and `anamnesis` used to be generated here too, via
-// `generateChiefComplaintFromOutline`/`generateAnamnesisFromOutline`, but
-// both are now planned and rendered entirely inside their own field
-// subgraphs (`02presentation/generation/chiefComplaint/`,
-// `.../anamnesis/`), which call their aigateway planner/renderer functions
-// directly rather than through a `Tool` wrapper here.
+// `patient` only field here; chiefComplaint/anamnesis planned and rendered in their own subgraphs.
 
 const GeneratePatientFromOutlineInputSchema = z.object({
   diagnosis: DiagnosisSchema,

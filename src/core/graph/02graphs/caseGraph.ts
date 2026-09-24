@@ -148,7 +148,7 @@ export function graphVariantKey(flags: GraphFlags): string {
 }
 
 /**
- * Key identifying compiled *topology*, not variant. `PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter; procedure graph stays three nodes, so it is not in key. Only translation sandwich is. `exportGraphs.ts` names diagrams by it; `caseGraph.test.ts` asserts the premise.
+ * Key identifying compiled *topology*, not variant. `PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter; procedure graph stays four nodes, so it is not in key. Only translation sandwich is. `exportGraphs.ts` names diagrams by it; `caseGraph.test.ts` asserts the premise.
  */
 export function graphTopologyKey(
   flags: GraphFlags

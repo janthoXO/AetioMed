@@ -32,7 +32,7 @@ function isSynthetic(nodeId: string): boolean {
 
 /**
  * Structure of the compiled graphs via `getGraphAsync({ xray: true })`, same
- * call as `02graphs/exportGraphs.ts`. Union of plan and case graphs (mount
+ * call as `scripts/exportGraphs.ts`. Union of plan and case graphs (mount
  * names never collide), in execution order. No edge between them: the job
  * service runs one after the other.
  */

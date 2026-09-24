@@ -16,6 +16,7 @@ import {
   validateCatalogsOrExit,
   type CatalogueSpec,
 } from "@/core/graph/catalog/startupValidation.js";
+import { nodeKey } from "@/core/graph/models/ProcedureTree.js";
 import type { Repos } from "@/core/graph/repos.js";
 
 describe("findMissingLanguages", () => {
@@ -157,12 +158,21 @@ describe("warnUnconfiguredLanguages", () => {
   });
 });
 
-function fakeRepos(): Repos {
+function fakeRepos(
+  procedureTree: {
+    categories: {
+      name: string;
+      categories: never[];
+      procedures: { name: string }[];
+    }[];
+    procedures: { name: string }[];
+  } = { categories: [], procedures: [{ name: "Blood Test" }] }
+): Repos {
   return {
     db: {} as unknown as Repos["db"],
     procedures: {
       translationsFile: "procedures.yml",
-      getEffectiveProcedureList: () => ["Blood Test"],
+      getProcedureTree: () => procedureTree,
     } as unknown as Repos["procedures"],
     anamnesis: {
       translationsFile: "anamnesisCategoriesTranslations.yml",
@@ -225,7 +235,9 @@ describe("validateCatalogsOrExit — end to end", () => {
     }
     // Give each catalogue's own base key a translation so the unknown-key
     // check also passes (irrelevant to this test, but keeps it honest).
-    declared.set("procedures.yml", { German: { "Blood Test": "Bluttest" } });
+    declared.set("procedures.yml", {
+      German: { [nodeKey(["Blood Test"])]: "Bluttest" },
+    });
     declared.set("anamnesisCategoriesTranslations.yml", {
       German: { Symptoms: "Symptome" },
     });
@@ -257,7 +269,9 @@ describe("validateCatalogsOrExit — end to end", () => {
     ]) {
       declared.set(file, { Klingon: { x: "y" } });
     }
-    declared.set("procedures.yml", { Klingon: { "Blood Test": "tlhIngan" } });
+    declared.set("procedures.yml", {
+      Klingon: { [nodeKey(["Blood Test"])]: "tlhIngan" },
+    });
     declared.set("anamnesisCategoriesTranslations.yml", {
       Klingon: { Symptoms: "tlhIngan" },
     });
@@ -275,6 +289,99 @@ describe("validateCatalogsOrExit — end to end", () => {
 
     expect(exitSpy).not.toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Klingon"));
+
+    exitSpy.mockRestore();
+  });
+
+  const nestedTree = {
+    categories: [
+      {
+        name: "Cardiology",
+        categories: [],
+        procedures: [{ name: "Resting ECG" }],
+      },
+    ],
+    procedures: [],
+  };
+
+  it("exits non-zero when a translation path is not in the English tree, naming it readably", () => {
+    declared.set("procedures.yml", {
+      German: { [nodeKey(["Cardiology", "Resting EKG"])]: "Ruhe-EKG" },
+    });
+    declared.set("anamnesisCategoriesTranslations.yml", {
+      German: { Symptoms: "Symptome" },
+    });
+    declared.set("diagnosisTranslations.yml", {
+      German: { Influenza: "Grippe" },
+    });
+    declared.set("labelTranslations.yml", { German: { unused: "unused" } });
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+    const errorSpy = vi.spyOn(console, "error");
+
+    validateCatalogsOrExit(fakeRepos(nestedTree), ["English", "German"]);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const errorOutput = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(errorOutput).toContain("Cardiology › Resting EKG");
+    expect(errorOutput).toContain("Cardiology › Resting ECG"); // Levenshtein suggestion
+
+    exitSpy.mockRestore();
+  });
+
+  it("does not exit for a valid nested translation", () => {
+    declared.set("procedures.yml", {
+      German: {
+        [nodeKey(["Cardiology"])]: "Kardiologie",
+        [nodeKey(["Cardiology", "Resting ECG"])]: "Ruhe-EKG",
+      },
+    });
+    declared.set("anamnesisCategoriesTranslations.yml", {
+      German: { Symptoms: "Symptome" },
+    });
+    declared.set("diagnosisTranslations.yml", {
+      German: { Influenza: "Grippe" },
+    });
+    declared.set("labelTranslations.yml", { German: { unused: "unused" } });
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    validateCatalogsOrExit(fakeRepos(nestedTree), ["English", "German"]);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    exitSpy.mockRestore();
+  });
+
+  it("exits non-zero when the catalogue has duplicate sibling names", () => {
+    const duplicateTree = {
+      categories: [
+        { name: "Echo", categories: [], procedures: [{ name: "x" }] },
+      ],
+      procedures: [{ name: "Echo" }],
+    };
+    declared.set("procedures.yml", { German: {} });
+    declared.set("anamnesisCategoriesTranslations.yml", {
+      German: { Symptoms: "Symptome" },
+    });
+    declared.set("diagnosisTranslations.yml", {
+      German: { Influenza: "Grippe" },
+    });
+    declared.set("labelTranslations.yml", { German: { unused: "unused" } });
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+    const errorSpy = vi.spyOn(console, "error");
+
+    validateCatalogsOrExit(fakeRepos(duplicateTree), ["English", "German"]);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const errorOutput = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(errorOutput).toContain("Echo");
 
     exitSpy.mockRestore();
   });

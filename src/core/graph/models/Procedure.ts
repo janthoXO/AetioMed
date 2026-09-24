@@ -1,6 +1,7 @@
 import z from "zod";
 import { ContentPartsSchema } from "./ContentPart.js";
 import { PlannedPartSchema } from "../modality/ports.js";
+import { ProcedureRefSchema } from "./ProcedureTree.js";
 
 export const ProcedureNameSchema = z
   .string()
@@ -21,23 +22,15 @@ export const ProcedureSchema = z.object({
 
 export type Procedure = z.infer<typeof ProcedureSchema>;
 
-export function buildProcedureSchema(procedureNames?: ProcedureName[]) {
-  if (procedureNames?.length) {
-    return ProcedureSchema.extend({
-      name: z.literal(procedureNames).describe("Name of the medical procedure"),
-    });
-  }
-
-  return ProcedureSchema;
-}
-
 /**
- * Procedure with relevance and result, both decided non-blinded.
+ * `Case.procedures` leaf: relevance and result, both decided non-blinded.
  * `relevance` is judged against the TRUE diagnosis, so the blinded step
  * cannot produce it (see `procedures.aigateway.ts`). `result` is content
- * parts; see `ContentPart.ts`.
+ * parts; see `ContentPart.ts`. `order` is the 0-based position in which it was
+ * ordered: the tree groups by category, `order` keeps the workup sequence.
  */
 export const ProcedureResultSchema = ProcedureSchema.extend({
+  order: z.number().int().min(0).describe("0-based position in the workup"),
   relevance: ProcedureRelevanceSchema.describe(
     "Relevance of the procedure to the diagnosis"
   ),
@@ -46,25 +39,6 @@ export const ProcedureResultSchema = ProcedureSchema.extend({
   ),
 });
 export type ProcedureResult = z.infer<typeof ProcedureResultSchema>;
-
-/** LLM-facing `ProcedureResultSchema`: `result` plain `z.string()`, never bytes. Callers wrap into a `ContentPart`. */
-export const ProcedureResultTextSchema = ProcedureSchema.extend({
-  relevance: ProcedureRelevanceSchema.describe(
-    "Relevance of the procedure to the diagnosis"
-  ),
-  result: z.string().describe("Result of the procedure, if applicable"),
-});
-
-export function buildProcedureResultTextSchema(
-  procedureNames?: ProcedureName[]
-) {
-  if (procedureNames?.length) {
-    return ProcedureResultTextSchema.extend({
-      name: z.literal(procedureNames).describe("Name of the medical procedure"),
-    });
-  }
-  return ProcedureResultTextSchema;
-}
 
 /**
  * Procedure decided by the solver loop but not yet rendered: non-blinded
@@ -76,8 +50,7 @@ export function buildProcedureResultTextSchema(
  * it is the self-contained clinical finding, since the blinded solver reasons
  * over `alt` alone. See `planProcedureResults` in `procedures.aigateway.ts`.
  */
-export const PlannedProcedureSchema = z.object({
-  name: ProcedureNameSchema,
+export const PlannedProcedureSchema = ProcedureRefSchema.extend({
   relevance: ProcedureRelevanceSchema.describe(
     "Relevance of the procedure to the TRUE diagnosis"
   ),

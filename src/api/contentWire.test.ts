@@ -148,13 +148,68 @@ describe("Case wire encoding", () => {
           ],
         },
       ],
-      procedures: [
-        {
-          name: "Chest X-ray",
-          relevance: "obligatory",
-          result: [fixtureTextPart("Infiltrate in right lower lobe.")],
-        },
-      ],
+      procedures: {
+        procedures: [],
+        categories: [
+          {
+            name: "Cardiology",
+            categories: [],
+            procedures: [
+              {
+                name: "Chest X-ray",
+                order: 0,
+                relevance: "obligatory",
+                result: [fixtureTextPart("Infiltrate in right lower lobe.")],
+              },
+            ],
+          },
+        ],
+      },
+    };
+
+    const wire = encodeCase(generatedCase, LIMIT);
+    expect(decodeCase(wire)).toEqual(generatedCase);
+  });
+
+  it("round-trips nested procedures (categories and root-level procedures together)", () => {
+    const generatedCase: Case = {
+      procedures: {
+        procedures: [
+          {
+            name: "Blood pressure",
+            order: 2,
+            relevance: "optional",
+            result: [fixtureTextPart("120/80 mmHg.")],
+          },
+        ],
+        categories: [
+          {
+            name: "Cardiology",
+            categories: [
+              {
+                name: "Echo",
+                categories: [],
+                procedures: [
+                  {
+                    name: "Transthoracic",
+                    order: 0,
+                    relevance: "obligatory",
+                    result: [imagePart],
+                  },
+                ],
+              },
+            ],
+            procedures: [
+              {
+                name: "Resting ECG",
+                order: 1,
+                relevance: "obligatory",
+                result: [fixtureTextPart("Normal sinus rhythm.")],
+              },
+            ],
+          },
+        ],
+      },
     };
 
     const wire = encodeCase(generatedCase, LIMIT);

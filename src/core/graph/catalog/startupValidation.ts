@@ -3,6 +3,12 @@ import type { Repos } from "../repos.js";
 import { getKnownLabels } from "../utils/nodeWrapper.js";
 import { unmappableLanguages } from "@/core/languageDetection/mapping.js";
 import {
+  duplicateSiblings,
+  nodeKey,
+  nodePaths,
+} from "../models/ProcedureTree.js";
+import { flattenProcedureTranslations } from "./procedures/translations.js";
+import {
   findUnknownKeys,
   formatProblems,
   type CatalogProblem,
@@ -38,8 +44,16 @@ function loadCatalogueSpecs(repos: Repos): CatalogueSpec[] {
     {
       catalogue: "procedures",
       file: repos.procedures.translationsFile,
-      baseKeys: repos.procedures.getEffectiveProcedureList() ?? [],
-      translations: readDeclaredTranslations(repos.procedures.translationsFile),
+      baseKeys: nodePaths(
+        repos.procedures.getProcedureTree() ?? {
+          categories: [],
+          procedures: [],
+        }
+      ).map(nodeKey),
+      translations: readDeclaredTranslations(
+        repos.procedures.translationsFile,
+        flattenProcedureTranslations
+      ),
       enforceUnknownKeys: true,
     },
     {
@@ -215,6 +229,36 @@ function warnUndetectableLanguages(languages: string[]): void {
 }
 
 /**
+ * Procedures' translation/base keys are `nodeKey(path)` — `JSON.stringify` of a
+ * segment array — which is unreadable in an error message. Render it back as
+ * a `Cardiology › Resting ECG` style path; falls back to the raw string if it
+ * doesn't parse (should not happen for a key this module produced itself).
+ */
+function readableNodeKey(key: string): string {
+  try {
+    const path = JSON.parse(key) as unknown;
+    if (Array.isArray(path) && path.every((s) => typeof s === "string")) {
+      return path.join(" › ");
+    }
+  } catch {
+    // fall through
+  }
+  return key;
+}
+
+/** Duplicate sibling names in the procedure catalogue, one problem per path. */
+function findDuplicateProcedureSiblings(repos: Repos): CatalogProblem[] {
+  const tree = repos.procedures.getProcedureTree();
+  if (!tree) return [];
+  return duplicateSiblings(tree).map((path) => ({
+    catalogue: "procedures",
+    file: repos.procedures.catalogueFile,
+    language: "(all)",
+    key: `duplicate sibling name: "${path.join(" › ")}"`,
+  }));
+}
+
+/**
  * Validate enforcing catalogues' translation files against their base
  * catalogue and every catalogue's coverage of configured `languages`; prints a
  * summary line per catalogue first. Prints every offending item across all
@@ -239,7 +283,19 @@ export function validateCatalogsOrExit(
         baseKeys: spec.baseKeys,
         translations: spec.translations,
       })
-    );
+    )
+    .map((problem) =>
+      problem.catalogue === "procedures"
+        ? {
+            ...problem,
+            key: readableNodeKey(problem.key),
+            ...(problem.suggestion !== undefined
+              ? { suggestion: readableNodeKey(problem.suggestion) }
+              : {}),
+          }
+        : problem
+    )
+    .concat(findDuplicateProcedureSiblings(repos));
 
   const missingLanguageProblems = findMissingLanguages(specs, languages);
 

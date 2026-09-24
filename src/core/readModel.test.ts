@@ -14,7 +14,12 @@ function fakeGraph(): GraphAppContext {
     runtime: {
       catalogs: {
         diagnosis: { all: () => [{ icd: "1A00", name: "Cholera" }] },
-        procedures: { list: () => ["Chest X-ray", "CBC"] },
+        procedures: {
+          tree: () => ({
+            categories: [],
+            procedures: [{ name: "Chest X-ray" }, { name: "CBC" }],
+          }),
+        },
       },
     } as unknown as GraphAppContext["runtime"],
     ...planAndRenderFrom(vi.fn()),
@@ -44,17 +49,17 @@ describe("createReadModel", () => {
     expect(readModel.diagnoses()).toEqual([{ icd: "1A00", name: "Cholera" }]);
   });
 
-  it("procedures() maps the procedure catalog's list to {name} objects", () => {
+  it("procedures() delegates to the procedure catalog's tree", () => {
     const readModel = createReadModel(fakeGraph(), new Set());
-    expect(readModel.procedures()).toEqual([
-      { name: "Chest X-ray" },
-      { name: "CBC" },
-    ]);
+    expect(readModel.procedures()).toEqual({
+      categories: [],
+      procedures: [{ name: "Chest X-ray" }, { name: "CBC" }],
+    });
   });
 
-  it("procedures() passes through undefined when the catalog has no predefined list", () => {
+  it("procedures() passes through undefined when the catalog is freeform", () => {
     const graph = fakeGraph();
-    (graph.runtime.catalogs.procedures as { list: () => undefined }).list =
+    (graph.runtime.catalogs.procedures as { tree: () => undefined }).tree =
       () => undefined;
     const readModel = createReadModel(graph, new Set());
     expect(readModel.procedures()).toBeUndefined();

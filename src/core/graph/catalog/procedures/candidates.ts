@@ -1,201 +1,161 @@
 import z from "zod";
-import { renderForPrompt, section } from "../../utils/prompt.js";
+import { section } from "../../utils/prompt.js";
+import { ProcedureSchema, type Procedure } from "../../models/Procedure.js";
 import {
-  buildProcedureSchema,
-  ProcedureSchema,
-  type Procedure,
-  type ProcedureName,
-} from "../../models/Procedure.js";
-import {
-  UNCATEGORIZED_CATEGORY,
-  type ProcedureCandidates,
-  type ProcedurePickMode,
-} from "../ports.js";
+  filterTree,
+  leafCount,
+  refKey,
+  type ProcedureRef,
+} from "../../models/ProcedureTree.js";
+import type { ProcedureCandidates, ProcedureCatalogTree } from "../ports.js";
 
 /**
- * Remove already-ordered procedures from a grouped candidate map, comparing
- * against the previously ordered FULL names (category prefix reunited).
- * Categories that end up empty are dropped entirely — they have nothing left
- * to offer a pick or an expansion.
+ * Candidate procedures for one pick: a catalogue tree, or `undefined` for
+ * freeform (no catalogue; the model invents names, refs come back at the root).
  */
-function excludeOrderedFromGrouped(
-  grouped: Map<string, ProcedureName[]>,
-  ordered: ProcedureName[]
-): Map<string, ProcedureName[]> {
-  if (ordered.length === 0) return grouped;
-  const orderedSet = new Set(ordered);
-  const filtered = new Map<string, ProcedureName[]>();
-  for (const [category, names] of grouped) {
-    const remaining = names.filter(
-      (name) =>
-        !orderedSet.has(
-          category === UNCATEGORIZED_CATEGORY ? name : `${category}: ${name}`
-        )
+export class ProcedureCandidatesImpl implements ProcedureCandidates {
+  constructor(private readonly tree: ProcedureCatalogTree | undefined) {}
+
+  /**
+   * Already-ordered procedures leave the set, so a duplicate order is
+   * impossible by construction; emptied categories disappear. Freeform passes
+   * through (a prompt rule covers it).
+   */
+  exclude(ordered: ProcedureRef[]): ProcedureCandidates {
+    if (!this.tree) return this;
+    const orderedKeys = new Set(ordered.map(refKey));
+    return new ProcedureCandidatesImpl(
+      filterTree(
+        this.tree,
+        (path, leaf) => !orderedKeys.has(refKey({ path, name: leaf.name }))
+      )
     );
-    if (remaining.length) filtered.set(category, remaining);
   }
-  return filtered;
+
+  isEmpty(): boolean {
+    return this.tree !== undefined && leafCount(this.tree) === 0;
+  }
+
+  /** Pick grammar, passed to `withStructuredOutput`. Mirrors the tree: categories keyed by exact name. */
+  grammar(): z.ZodTypeAny {
+    if (!this.tree) {
+      return z
+        .array(ProcedureSchema)
+        .describe("one or more mutually independent procedures to order now");
+    }
+    return treePickGrammar(this.tree).describe(
+      "procedures to order now, placed under their exact categories"
+    );
+  }
+
+  /** Name-agnostic counterpart of {@link grammar} for the prompt's "Output format"; keeps the prompt short and stable. */
+  promptSchema(): z.ZodTypeAny {
+    if (!this.tree) {
+      return z
+        .array(ProcedureSchema)
+        .describe("one or more mutually independent procedures to order now");
+    }
+    return z
+      .object({
+        procedures: z
+          .array(z.string())
+          .optional()
+          .describe("exact names of procedures at this level"),
+        categories: z
+          .record(
+            z.string(),
+            z.object({}).describe("same shape as this object, one level down")
+          )
+          .optional()
+          .describe("sub-selections keyed by exact category name"),
+      })
+      .describe("procedures to order now, placed under their exact categories");
+  }
+
+  render(): string | undefined {
+    if (!this.tree) return undefined;
+    return section(
+      "Approved procedure catalogue (RESTRICTED WORKUP)",
+      `You MUST ONLY select procedures from this catalogue, using their exact names, placed under their exact category names (nest sub-categories the same way). Do not invent or recommend any procedures not listed:
+${renderTree(this.tree)}`
+    );
+  }
+
+  assemble(pick: unknown): ProcedureRef[] {
+    if (!this.tree) {
+      return ((pick as Procedure[] | undefined) ?? []).map((p) => ({
+        path: [],
+        name: p.name,
+      }));
+    }
+    const refs: ProcedureRef[] = [];
+    assembleTree(this.tree, pick, [], refs);
+    // A repeated name in the model's array is one order.
+    const seen = new Set<string>();
+    return refs.filter((ref) => {
+      const key = refKey(ref);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }
 }
 
-export class ProcedureCandidatesImpl implements ProcedureCandidates {
-  constructor(
-    readonly mode: ProcedurePickMode,
-    private readonly canonicalList: ProcedureName[] | undefined
-  ) {}
-
-  /**
-   * Remove already-ordered procedures from a pick mode's candidates, so a
-   * duplicate order is impossible by construction (the grammar never offers
-   * them) and the candidate context shrinks as the workup progresses.
-   * Freeform mode passes through unchanged — a prompt rule covers it instead.
-   */
-  exclude(ordered: ProcedureName[]): ProcedureCandidates {
-    switch (this.mode.kind) {
-      case "freeform":
-        return this;
-      case "flat": {
-        const orderedSet = new Set(ordered);
-        return new ProcedureCandidatesImpl(
-          {
-            kind: "flat",
-            names: this.mode.names.filter((name) => !orderedSet.has(name)),
-          },
-          this.canonicalList
-        );
-      }
-      case "grouped":
-        return new ProcedureCandidatesImpl(
-          {
-            kind: "grouped",
-            grouped: excludeOrderedFromGrouped(this.mode.grouped, ordered),
-          },
-          this.canonicalList
-        );
-    }
+function treePickGrammar(tree: ProcedureCatalogTree): z.ZodObject {
+  const shape: Record<string, z.ZodTypeAny> = {};
+  if (tree.procedures.length > 0) {
+    shape.procedures = z
+      .array(z.literal(tree.procedures.map((p) => p.name)))
+      .optional()
+      .describe("exact names of procedures at this level");
   }
-
-  /** Whether this candidate set still has any candidates left to offer. */
-  isEmpty(): boolean {
-    switch (this.mode.kind) {
-      case "freeform":
-        return false;
-      case "flat":
-        return this.mode.names.length === 0;
-      case "grouped":
-        return this.mode.grouped.size === 0;
-    }
+  if (tree.categories.length > 0) {
+    shape.categories = z
+      .object(
+        Object.fromEntries(
+          tree.categories.map((c) => [c.name, treePickGrammar(c).optional()])
+        )
+      )
+      .optional()
+      .describe("sub-selections keyed by exact category name");
   }
+  return z.object(shape);
+}
 
-  /**
-   * The grammar-constrained schema for a pick step's "procedures" field, per
-   * mode — this is what's passed to `withStructuredOutput`.
-   */
-  grammar(): z.ZodTypeAny {
-    switch (this.mode.kind) {
-      case "freeform":
-        return z
-          .array(buildProcedureSchema())
-          .describe("one or more mutually independent procedures to order now");
-      case "flat":
-        return z
-          .array(z.literal(this.mode.names))
-          .describe("exact names of the procedures to order now");
-      case "grouped": {
-        const shape: Record<string, z.ZodTypeAny> = {};
-        for (const [category, names] of this.mode.grouped) {
-          shape[category] = z
-            .array(z.literal(names))
-            .optional()
-            .describe(
-              `procedure names (without category prefix) to order from "${category}"`
-            );
-        }
-        return z
-          .object(shape)
-          .describe("procedures to order now, grouped by category key");
-      }
-    }
+/** Indented outline: procedures as `- name`, categories as `name:` with their contents below. */
+function renderTree(tree: ProcedureCatalogTree, indent = ""): string {
+  return [
+    ...tree.procedures.map((p) => `${indent}- ${p.name}`),
+    ...tree.categories.map(
+      (c) => `${indent}${c.name}:\n${renderTree(c, `${indent}  `)}`
+    ),
+  ].join("\n");
+}
+
+type TreePick = {
+  procedures?: string[];
+  categories?: Record<string, TreePick | undefined>;
+};
+
+/** Walks the pick alongside the tree; names not in the tree are dropped. */
+function assembleTree(
+  tree: ProcedureCatalogTree,
+  pick: unknown,
+  path: string[],
+  out: ProcedureRef[]
+) {
+  if (!pick || typeof pick !== "object") return;
+  const { procedures, categories } = pick as TreePick;
+  const names = new Set(tree.procedures.map((p) => p.name));
+  for (const name of procedures ?? []) {
+    if (names.has(name)) out.push({ path, name });
   }
-
-  /**
-   * Generic, name-agnostic counterpart to {@link grammar} used ONLY for the
-   * system prompt's "Output format" example — kept free of the actual
-   * (potentially large) approved-name literals so the system prompt stays
-   * short and stable; the real constraint is applied via the grammar schema
-   * instead.
-   */
-  promptSchema(): z.ZodTypeAny {
-    switch (this.mode.kind) {
-      case "freeform":
-        return z
-          .array(ProcedureSchema)
-          .describe("one or more mutually independent procedures to order now");
-      case "flat":
-        return z
-          .array(z.string())
-          .describe("exact procedure names to order now");
-      case "grouped":
-        return z
-          .record(z.string(), z.array(z.string()))
-          .describe(
-            "procedure names (without category prefix), keyed by category"
-          );
-    }
-  }
-
-  /** Renders the "Approved procedure list" prompt section for this mode. */
-  render(): string | undefined {
-    switch (this.mode.kind) {
-      case "freeform":
-        return undefined;
-      case "flat":
-        return section(
-          "Approved procedure list (RESTRICTED WORKUP)",
-          `You MUST ONLY select procedures from the following list, using their exact names. Do not invent or recommend any procedures not explicitly listed below:
-${this.mode.names.map((n) => `- ${n}`).join("\n")}`
-        );
-      case "grouped":
-        return section(
-          "Approved procedure list, grouped by category (RESTRICTED WORKUP)",
-          `You MUST ONLY select procedures from the categories below, using their exact names WITHOUT the category prefix — place each name under its correct category key in your response. Do not invent or recommend any procedures not explicitly listed below:
-${renderForPrompt(Object.fromEntries(this.mode.grouped))}`
-        );
-    }
-  }
-
-  /**
-   * Assemble a raw "procedures" LLM response back into `Procedure[]`. Grouped/
-   * flat names are reunited with their category prefix (if any) and validated
-   * against the catalogue's full canonical list — any assembled name not
-   * found there is dropped (belt-and-braces; the grammar constraint should
-   * already prevent this).
-   */
-  assemble(pick: unknown): Procedure[] {
-    const canonical = this.canonicalList
-      ? new Set(this.canonicalList)
-      : undefined;
-    const keep = (full: string) => !canonical || canonical.has(full);
-
-    if (this.mode.kind === "freeform") {
-      return (pick as Procedure[] | undefined) ?? [];
-    }
-
-    if (this.mode.kind === "flat") {
-      return ((pick as ProcedureName[] | undefined) ?? [])
-        .filter(keep)
-        .map((name) => ({ name }));
-    }
-
-    const grouped = (pick as Record<string, ProcedureName[] | undefined>) ?? {};
-    const result: Procedure[] = [];
-    for (const [category, names] of Object.entries(grouped)) {
-      if (!names) continue;
-      for (const name of names) {
-        const full =
-          category === UNCATEGORIZED_CATEGORY ? name : `${category}: ${name}`;
-        if (keep(full)) result.push({ name: full });
-      }
-    }
-    return result;
+  for (const category of tree.categories) {
+    assembleTree(
+      category,
+      categories?.[category.name],
+      [...path, category.name],
+      out
+    );
   }
 }

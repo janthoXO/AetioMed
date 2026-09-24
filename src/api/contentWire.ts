@@ -9,6 +9,11 @@ import {
 } from "@/core/graph/models/ContentPart.js";
 import { PatientSchema } from "@/core/graph/models/Patient.js";
 import { ProcedureRelevanceSchema } from "@/core/graph/models/Procedure.js";
+import {
+  procedureTreeSchema,
+  mapTree,
+  refLabel,
+} from "@/core/graph/models/ProcedureTree.js";
 import { CaseSchema, type Case } from "@/core/graph/models/Case.js";
 
 function isTextMime(type: string): boolean {
@@ -91,15 +96,14 @@ export const CaseWireSchema = z.object({
   anamnesis: z
     .array(z.object({ category: z.string(), answer: ContentPartsWireSchema }))
     .optional(),
-  procedures: z
-    .array(
-      z.object({
-        name: z.string(),
-        relevance: ProcedureRelevanceSchema,
-        result: ContentPartsWireSchema,
-      })
-    )
-    .optional(),
+  procedures: procedureTreeSchema(
+    z.object({
+      name: z.string(),
+      order: z.number().int().min(0),
+      relevance: ProcedureRelevanceSchema,
+      result: ContentPartsWireSchema,
+    })
+  ).optional(),
 });
 
 export type CaseWire = z.infer<typeof CaseWireSchema>;
@@ -122,13 +126,20 @@ export function encodeCase(c: Case, maxBytes: number): CaseWire {
       })),
     }),
     ...(c.procedures !== undefined && {
-      procedures: c.procedures.map((p) => ({
-        name: p.name,
-        relevance: p.relevance,
-        result: p.result.map((part) =>
-          encodeContentPart(part, `procedures[${p.name}].result`, maxBytes)
-        ),
-      })),
+      procedures: mapTree(c.procedures, {
+        leaf: (path, leaf) => ({
+          name: leaf.name,
+          order: leaf.order,
+          relevance: leaf.relevance,
+          result: leaf.result.map((part) =>
+            encodeContentPart(
+              part,
+              `procedures[${refLabel({ path, name: leaf.name })}].result`,
+              maxBytes
+            )
+          ),
+        }),
+      }),
     }),
   };
 }
@@ -147,11 +158,14 @@ export function decodeCase(wire: CaseWire): Case {
       })),
     }),
     ...(wire.procedures !== undefined && {
-      procedures: wire.procedures.map((p) => ({
-        name: p.name,
-        relevance: p.relevance,
-        result: p.result.map(decodeContentPart),
-      })),
+      procedures: mapTree(wire.procedures, {
+        leaf: (_path, leaf) => ({
+          name: leaf.name,
+          order: leaf.order,
+          relevance: leaf.relevance,
+          result: leaf.result.map(decodeContentPart),
+        }),
+      }),
     }),
   });
 }

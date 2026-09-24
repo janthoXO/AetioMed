@@ -13,14 +13,14 @@ import type { Diagnosis } from "../models/Diagnosis.js";
 import {
   ProcedureRelevanceSchema,
   type PlannedProcedure,
-  type Procedure,
   type ProcedureRelevance,
 } from "../models/Procedure.js";
+import { refLabel, type ProcedureRef } from "../models/ProcedureTree.js";
 import type { Patient } from "../models/Patient.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "../utils/context.js";
 import type { ForeignLanguage } from "../models/Language.js";
-import { translateTermsKeyed } from "./translate.helper.js";
+import { translateRecordKeyed } from "./translate.helper.js";
 import type { GraphRuntime } from "../runtime.js";
 import {
   buildCompositionSchema,
@@ -46,7 +46,7 @@ export type Presentation = {
 export type BlindedProcedureStepResult =
   | {
       action: "procedure";
-      procedures?: Procedure[] | undefined;
+      procedures?: ProcedureRef[] | undefined;
       reasoning?: string | undefined;
     }
   | {
@@ -63,6 +63,7 @@ export type BlindedProcedureStepResult =
  * Nothing rendered yet, so `alt` (see `planProcedureResults`) is all there is.
  */
 export type PreviousProcedureFinding = {
+  path: string[];
   name: string;
   relevance: ProcedureRelevance;
   result: string;
@@ -83,7 +84,7 @@ function previousProceduresSection(
     "Procedures ordered so far (with results)",
     previousProcedures.length > 0
       ? previousProcedures
-          .map((p, i) => `${i + 1}. ${p.name} -> ${p.result}`)
+          .map((p, i) => `${i + 1}. ${refLabel(p)} -> ${p.result}`)
           .join("\n")
       : "No procedures have been ordered yet."
   );
@@ -147,7 +148,7 @@ export async function generateBlindedProcedureStep(
 ): Promise<BlindedProcedureStepResult> {
   const candidates = runtime.catalogs.procedures
     .candidates()
-    .exclude(previousProcedures.map((p) => p.name));
+    .exclude(previousProcedures);
 
   if (candidates.isEmpty()) {
     // All approved procedures ordered; empty pick means "bridge".
@@ -309,14 +310,14 @@ export async function planProcedureResults(
   runtime: GraphRuntime,
   presentation: Presentation,
   diagnosis: Diagnosis,
-  procedureSteps: Procedure[],
+  procedureSteps: ProcedureRef[],
   providers: ModalityProvider<unknown>[],
   outline?: string,
   userInstructions?: string,
   context?: RequestContext
 ): Promise<PlannedProcedure[]> {
-  const procedureNames = procedureSteps.map((p) => p.name);
-  const schema = buildProcedureResultPlanSchema(providers, procedureNames);
+  const procedureLabels = procedureSteps.map(refLabel);
+  const schema = buildProcedureResultPlanSchema(providers, procedureLabels);
 
   // User-facing: planned `alt`/instruction become user-visible content.
   const systemPrompt = buildSystemPrompt(
@@ -331,7 +332,7 @@ These procedures were chosen by a separate, BLINDED solver who does not know the
 
     section(
       "Rules",
-      `- Provide exactly one plan entry per procedure in the batch, keyed by its exact name.
+      `- Provide exactly one plan entry per procedure in the batch, keyed by its exact label.
 - Each plan's "alt" MUST be a self-contained statement of the clinical finding, not a bare label — a later step renders bytes from "alt" alone, without seeing anything else you produced. Write "Chest X-ray: consolidation of the left lower lobe with air bronchograms", not "chest x-ray image".
 - Each finding must be clinically consistent with the true diagnosis. Use specific, realistic medical findings (e.g., exact lab values, imaging descriptions). Keep each finding concise (1–3 sentences).
 - Prefer a single request against the "text" provider per procedure, unless another available provider would clearly add value.
@@ -368,7 +369,7 @@ ${outline}`
 
     section(
       "Procedures ordered together in this batch",
-      procedureSteps.map((p, i) => `${i + 1}. ${p.name}`).join("\n")
+      procedureLabels.map((label, i) => `${i + 1}. ${label}`).join("\n")
     ),
 
     `Plan clinically realistic results for these procedures.`
@@ -422,10 +423,11 @@ ${outline}`
       }
     );
 
-    // Schema requires exactly one plan per procedure name.
+    // Schema requires exactly one plan per procedure label.
     return procedureSteps.map((step) => {
-      const match = plans[step.name]!;
+      const match = plans[refLabel(step)]!;
       return {
+        path: step.path,
         name: step.name,
         relevance: match.relevance,
         parts: match.requests,
@@ -464,10 +466,10 @@ export async function pickBridgeProcedures(
   previousProcedures: PreviousProcedureFinding[],
   userInstructions?: string,
   context?: RequestContext
-): Promise<Procedure[]> {
+): Promise<ProcedureRef[]> {
   const candidates = runtime.catalogs.procedures
     .candidates()
-    .exclude(previousProcedures.map((p) => p.name));
+    .exclude(previousProcedures);
 
   if (candidates.isEmpty()) {
     console.warn(
@@ -761,17 +763,24 @@ ${renderSchemaForPrompt(MatchSchema)}`
   }
 }
 
+/**
+ * Translates a batch of catalogue node names (categories or procedures),
+ * missing from the translation store, from English to `language`.
+ * `byNodeKey` is `nodeKey(path) -> the node's own English name`; the key's
+ * JSON path gives the model context (its position in the catalogue), only
+ * the value is translated.
+ */
 export async function generateProceduresFromEnglish(
   runtime: GraphRuntime,
-  procedureNames: string[],
+  byNodeKey: Record<string, string>,
   language: ForeignLanguage,
   context?: RequestContext
 ): Promise<Record<string, string>> {
-  return translateTermsKeyed(runtime, {
+  return translateRecordKeyed(runtime, {
     logTag: "GenerateProceduresFromEnglish",
-    taskDescription: `Translate the provided procedures from English to a target language.`,
+    taskDescription: `Translate the provided items from English to a target language. Each key is the item's path in a medical procedure catalogue (a JSON array of category/procedure names from the root, ending in the item's own name) — it is context only. Translate ONLY the value, the item's own English name, into ${language}.`,
     contextLines: [`Target language: ${language}`],
-    terms: procedureNames,
+    values: byNodeKey,
     context,
   });
 }

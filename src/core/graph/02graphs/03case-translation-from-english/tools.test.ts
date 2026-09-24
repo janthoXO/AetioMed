@@ -1,12 +1,13 @@
-// Covers pure path/apply helpers of the "rest" pass (`caseTextMap`/`applyCaseTextTranslations`),
-// catalogue-backed `translate*FromEnglish` tools (cache-first), and `translateRestValues`'s prompt safety.
-// Map has two keys per part (`.alt`/`.text`); see `tools.ts`.
+// Covers pure path/apply helpers of the "rest" pass (`caseTextMap`/`applyCaseTextTranslations`/
+// `translateProcedureTree`), catalogue-backed `translate*FromEnglish` tools (cache-first), and
+// `translateRestValues`'s prompt safety. Map has two keys per part (`.alt`/`.text`); see `tools.ts`.
 import { describe, expect, it, vi } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {
   caseTextMap,
   applyCaseTextTranslations,
-  createTranslateProcedureNamesFromEnglish,
+  translateProcedureTree,
+  createTranslateProcedureNodesFromEnglish,
   createTranslateAnamnesisCategoriesFromEnglish,
   translateRestValues,
 } from "./tools.js";
@@ -15,6 +16,7 @@ import {
   textOf,
   type ContentPart,
 } from "@/core/graph/models/ContentPart.js";
+import { nodeKey } from "@/core/graph/models/ProcedureTree.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
@@ -56,31 +58,41 @@ function throwingRuntime(): GraphRuntime {
   } as unknown as GraphRuntime;
 }
 
-describe("caseTextMap / applyCaseTextTranslations — the rest pass's path keying", () => {
-  const mixedCase: Case = {
-    chiefComplaint: [fixtureTextPart("Cough for three days.")],
-    anamnesis: [
+const mixedCase: Case = {
+  chiefComplaint: [fixtureTextPart("Cough for three days.")],
+  anamnesis: [
+    {
+      category: "History",
+      answer: [fixtureTextPart("First."), fixtureTextPart("Second.")],
+    },
+  ],
+  procedures: {
+    procedures: [],
+    categories: [
       {
-        category: "History",
-        answer: [fixtureTextPart("First."), fixtureTextPart("Second.")],
-      },
-    ],
-    procedures: [
-      {
-        name: "Chest X-ray",
-        relevance: "obligatory",
-        result: [
-          fixtureTextPart("Infiltrate noted."),
+        name: "Cardiology",
+        categories: [],
+        procedures: [
           {
-            type: "image/png",
-            alt: "PA chest radiograph, right lower lobe consolidation.",
-            value: new Uint8Array(200).fill(137),
+            name: "Chest X-ray",
+            order: 0,
+            relevance: "obligatory",
+            result: [
+              fixtureTextPart("Infiltrate noted."),
+              {
+                type: "image/png",
+                alt: "PA chest radiograph, right lower lobe consolidation.",
+                value: new Uint8Array(200).fill(137),
+              },
+            ],
           },
         ],
       },
     ],
-  };
+  },
+};
 
+describe("caseTextMap — path/order keying, including procedures", () => {
   it("keys every part's alt, and additionally a text part's decoded value, by stable position — never by name", () => {
     const map = caseTextMap(mixedCase);
 
@@ -102,7 +114,9 @@ describe("caseTextMap / applyCaseTextTranslations — the rest pass's path keyin
     // and keying on it here would couple the two disjoint passes.
     expect(Object.keys(map).some((k) => k.includes("Chest X-ray"))).toBe(false);
   });
+});
 
+describe("applyCaseTextTranslations — chiefComplaint/anamnesis only", () => {
   it("a multi-part field survives with its part count and order intact", () => {
     const translated = applyCaseTextTranslations(mixedCase, {
       "anamnesis.0.answer.0.alt": "Premier (étiquette).",
@@ -139,33 +153,55 @@ describe("caseTextMap / applyCaseTextTranslations — the rest pass's path keyin
     expect(part.alt).not.toBe(new TextDecoder().decode(part.value));
   });
 
-  it("a non-text part's value is byte-identical after translation, while only its alt is translated", () => {
-    const originalValue = mixedCase.procedures![0]!.result[1]!.value;
-    const translated = applyCaseTextTranslations(mixedCase, {
-      "procedures.0.result.1.alt": "Radiographie PA du thorax.",
-    });
-
-    const part = translated.procedures![0]!.result[1]!;
-    expect(part.alt).toBe("Radiographie PA du thorax.");
-    expect(part.value).toBe(originalValue); // same Uint8Array instance
-    expect(part.type).toBe("image/png");
-  });
-
   it("a missing key falls back to the original alt/value, untouched", () => {
     const translated = applyCaseTextTranslations(mixedCase, {});
     expect(translated.chiefComplaint).toEqual(mixedCase.chiefComplaint);
-    expect(translated.procedures).toEqual(mixedCase.procedures);
   });
 
-  it("leaves procedures[].name and anamnesis[].category untouched — disjoint from the defined pass by construction", () => {
-    const translated = applyCaseTextTranslations(mixedCase, {
-      "procedures.0.result.0.alt": "Infiltrat noté.",
-      "procedures.0.result.0.text": "Infiltrat noté.",
-    });
-    // Passed through as-is; `translate_merge` is what overlays
-    // `definedTranslations` onto these two fields, not this function.
-    expect(translated.procedures?.[0]?.name).toBe("Chest X-ray");
+  it("leaves anamnesis[].category untouched — disjoint from the defined pass by construction", () => {
+    const translated = applyCaseTextTranslations(mixedCase, {});
     expect(translated.anamnesis?.[0]?.category).toBe("History");
+  });
+});
+
+describe("translateProcedureTree — node names and result parts in one walk", () => {
+  it("translates category and leaf names from the defined map, and result parts from the rest map", () => {
+    const translated = translateProcedureTree(
+      mixedCase.procedures!,
+      {
+        [nodeKey(["Cardiology"])]: "Kardiologie",
+        [nodeKey(["Cardiology", "Chest X-ray"])]: "Röntgen-Thorax",
+      },
+      {
+        "procedures.0.result.0.alt": "Infiltrat notiert.",
+        "procedures.0.result.0.text": "Infiltrat notiert.",
+        "procedures.0.result.1.alt": "Röntgenbild Thorax.",
+      }
+    );
+
+    expect(translated.categories[0]!.name).toBe("Kardiologie");
+    const leaf = translated.categories[0]!.procedures[0]!;
+    expect(leaf.name).toBe("Röntgen-Thorax");
+    expect(leaf.order).toBe(0);
+    expect(leaf.relevance).toBe("obligatory");
+    expect(leaf.result[0]!.alt).toBe("Infiltrat notiert.");
+    expect(new TextDecoder().decode(leaf.result[0]!.value)).toBe(
+      "Infiltrat notiert."
+    );
+    // Non-text part: value byte-identical, only alt translated.
+    expect(leaf.result[1]!.alt).toBe("Röntgenbild Thorax.");
+    expect(leaf.result[1]!.value).toBe(
+      mixedCase.procedures!.categories[0]!.procedures[0]!.result[1]!.value
+    );
+  });
+
+  it("a miss in either map falls back to the original English value", () => {
+    const translated = translateProcedureTree(mixedCase.procedures!, {}, {});
+    expect(translated.categories[0]!.name).toBe("Cardiology");
+    expect(translated.categories[0]!.procedures[0]!.name).toBe("Chest X-ray");
+    expect(translated.categories[0]!.procedures[0]!.result).toEqual(
+      mixedCase.procedures!.categories[0]!.procedures[0]!.result
+    );
   });
 });
 
@@ -187,22 +223,32 @@ describe("translateRestValues — no bytes reach the prompt", () => {
 
   it("logs a prompt built only from alt text, never from `value` bytes", async () => {
     const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
-    const mixedCase: Case = {
-      procedures: [
-        {
-          name: "Chest X-ray",
-          relevance: "obligatory",
-          result: [
-            {
-              type: "image/png",
-              alt: "PA chest radiograph, right lower lobe consolidation.",
-              value: new Uint8Array(500).fill(137),
-            },
-          ],
-        },
-      ],
+    const oneProcedureCase: Case = {
+      procedures: {
+        procedures: [],
+        categories: [
+          {
+            name: "Cardiology",
+            categories: [],
+            procedures: [
+              {
+                name: "Chest X-ray",
+                order: 0,
+                relevance: "obligatory",
+                result: [
+                  {
+                    type: "image/png",
+                    alt: "PA chest radiograph, right lower lobe consolidation.",
+                    value: new Uint8Array(500).fill(137),
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
     };
-    const values = caseTextMap(mixedCase);
+    const values = caseTextMap(oneProcedureCase);
     const runtime = fakeRuntime([
       JSON.stringify({
         "procedures.0.result.0.alt": "Radiographie PA du thorax.",
@@ -237,52 +283,79 @@ describe("translateRestValues — no bytes reach the prompt", () => {
   });
 });
 
-describe("translateProcedureNamesFromEnglish — cache-first, unchanged", () => {
-  it("makes zero LLM calls when every name is already cached, and returns the exact cached term", async () => {
+describe("translateProcedureNodesFromEnglish — cache-first, unchanged", () => {
+  it("makes zero LLM calls when every node is already cached, and returns the exact cached term", async () => {
     const repo: ProceduresRepo = {
+      catalogueFile: "",
       translationsFile: "",
-      getProcedureNameTranslationFromEnglish: (name) =>
-        name === "Chest X-ray" ? "Röntgen-Thorax" : undefined,
-      saveProcedureNameTranslation: vi.fn(),
-      getEffectiveProcedureList: () => undefined,
+      getProcedureTranslation: (key) =>
+        key === nodeKey(["Cardiology", "Chest X-ray"])
+          ? "Röntgen-Thorax"
+          : undefined,
+      saveProcedureTranslations: vi.fn(),
+      getProcedureTree: () => undefined,
     };
-    const tool = createTranslateProcedureNamesFromEnglish(repo);
+    const tool = createTranslateProcedureNodesFromEnglish(repo);
 
     const result = await tool.invoke(
-      { procedureNames: ["Chest X-ray"], language: "German" },
+      {
+        procedureNodes: [
+          {
+            key: nodeKey(["Cardiology", "Chest X-ray"]),
+            name: "Chest X-ray",
+          },
+        ],
+        language: "German",
+      },
       throwingRuntime()
     );
 
     // Exactly catalogue's target-language term; must not be overwritten by free-text LLM output
     // (`translate_merge` applies this map onto `case`, only writer).
-    expect(result).toEqual({ "Chest X-ray": "Röntgen-Thorax" });
-    expect(repo.saveProcedureNameTranslation).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      [nodeKey(["Cardiology", "Chest X-ray"])]: "Röntgen-Thorax",
+    });
+    expect(repo.saveProcedureTranslations).not.toHaveBeenCalled();
   });
 
-  it("calls the LLM and caches only the missing names", async () => {
+  it("calls the LLM once for the missing nodes and caches only those", async () => {
     const saved: Record<string, string>[] = [];
     const repo: ProceduresRepo = {
+      catalogueFile: "",
       translationsFile: "",
-      getProcedureNameTranslationFromEnglish: (name) =>
-        name === "CBC" ? "Blutbild" : undefined,
-      saveProcedureNameTranslation: (map) => saved.push(map),
-      getEffectiveProcedureList: () => undefined,
+      getProcedureTranslation: (key) =>
+        key === nodeKey(["Cardiology"]) ? "Kardiologie" : undefined,
+      saveProcedureTranslations: (map) => saved.push(map),
+      getProcedureTree: () => undefined,
     };
-    const tool = createTranslateProcedureNamesFromEnglish(repo);
+    const tool = createTranslateProcedureNodesFromEnglish(repo);
     const runtime = fakeRuntime([
-      JSON.stringify({ "Chest X-ray": "Röntgen-Thorax" }),
+      JSON.stringify({
+        [nodeKey(["Cardiology", "Chest X-ray"])]: "Röntgen-Thorax",
+      }),
     ]);
 
     const result = await tool.invoke(
-      { procedureNames: ["CBC", "Chest X-ray"], language: "German" },
+      {
+        procedureNodes: [
+          { key: nodeKey(["Cardiology"]), name: "Cardiology" },
+          {
+            key: nodeKey(["Cardiology", "Chest X-ray"]),
+            name: "Chest X-ray",
+          },
+        ],
+        language: "German",
+      },
       runtime
     );
 
     expect(result).toEqual({
-      CBC: "Blutbild",
-      "Chest X-ray": "Röntgen-Thorax",
+      [nodeKey(["Cardiology"])]: "Kardiologie",
+      [nodeKey(["Cardiology", "Chest X-ray"])]: "Röntgen-Thorax",
     });
-    expect(saved).toEqual([{ "Chest X-ray": "Röntgen-Thorax" }]);
+    expect(saved).toEqual([
+      { [nodeKey(["Cardiology", "Chest X-ray"])]: "Röntgen-Thorax" },
+    ]);
   });
 });
 

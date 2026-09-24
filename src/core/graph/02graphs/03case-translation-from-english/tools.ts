@@ -7,8 +7,7 @@ import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import { AnamnesisCategorySchema } from "@/core/graph/models/Anamnesis.js";
 import type { AnamnesisCategory } from "@/core/graph/models/Anamnesis.js";
-import { ProcedureNameSchema } from "@/core/graph/models/Procedure.js";
-import type { ProcedureName } from "@/core/graph/models/Procedure.js";
+import { leaves, mapTree, nodeKey } from "@/core/graph/models/ProcedureTree.js";
 import {
   encodeText,
   textOfPart,
@@ -67,49 +66,59 @@ export function createTranslateAnamnesisCategoriesFromEnglish(
   };
 }
 
-// ─── translate_procedure_names_from_english ───────────────────────────────────
+// ─── translate_procedure_nodes_from_english ────────────────────────────────────
 
-const TranslateProcedureNamesFromEnglishInputSchema = z.object({
-  procedureNames: z.array(ProcedureNameSchema),
+/** One catalogue node (category or procedure) to translate: its key and own English name. */
+const ProcedureNodeSchema = z.object({
+  key: z.string(),
+  name: z.string(),
+});
+
+const TranslateProcedureNodesFromEnglishInputSchema = z.object({
+  procedureNodes: z.array(ProcedureNodeSchema),
   language: z.string(),
 });
 
-export function createTranslateProcedureNamesFromEnglish(
+/** Translation lookups are keyed by `nodeKey(path)`, shared by categories and procedures. */
+export function createTranslateProcedureNodesFromEnglish(
   proceduresRepo: ProceduresRepo
 ): Tool<
-  z.infer<typeof TranslateProcedureNamesFromEnglishInputSchema>,
-  Record<ProcedureName, ProcedureName>
+  z.infer<typeof TranslateProcedureNodesFromEnglishInputSchema>,
+  Record<string, string>
 > {
   return {
-    name: "translate_procedure_names_from_english",
+    name: "translate_procedure_nodes_from_english",
     description:
-      "Translate procedure names from English to the target language, using a cache.",
-    inputSchema: TranslateProcedureNamesFromEnglishInputSchema,
-    invoke: async ({ procedureNames, language }, runtime, context) => {
-      const translations: Record<ProcedureName, ProcedureName> = {};
-      const missing: ProcedureName[] = [];
+      "Translate procedure catalogue node names (categories and procedures) from English to the target language, using a cache.",
+    inputSchema: TranslateProcedureNodesFromEnglishInputSchema,
+    invoke: async ({ procedureNodes, language }, runtime, context) => {
+      const translations: Record<string, string> = {};
+      const missing: { key: string; name: string }[] = [];
 
-      for (const name of procedureNames) {
-        const cached = proceduresRepo.getProcedureNameTranslationFromEnglish(
-          name,
+      for (const node of procedureNodes) {
+        const cached = proceduresRepo.getProcedureTranslation(
+          node.key,
           language
         );
-        if (cached) {
-          translations[name] = cached;
+        if (cached !== undefined) {
+          translations[node.key] = cached;
         } else {
-          missing.push(name);
+          missing.push(node);
         }
       }
 
       if (missing.length > 0) {
+        const byNodeKey = Object.fromEntries(
+          missing.map((n) => [n.key, n.name])
+        );
         const generated = await generateProceduresFromEnglish(
           runtime,
-          missing,
+          byNodeKey,
           language,
           context
         );
         Object.assign(translations, generated);
-        proceduresRepo.saveProcedureNameTranslation(generated, language);
+        proceduresRepo.saveProcedureTranslations(generated, language);
       }
 
       return translations;
@@ -119,7 +128,14 @@ export function createTranslateProcedureNamesFromEnglish(
 
 // ─── translate_rest_values ────────────────────────────────────────────────────
 
-/** Every `ContentPart[]` field on `Case` with its path prefix (see {@link caseTextMap}/{@link applyCaseTextTranslations}). Index by position, not name: names are translated by the defined pass; keying on them would couple the passes. */
+/**
+ * Every `ContentPart[]` field on `Case` with its path prefix (see
+ * {@link caseTextMap}/{@link applyCaseTextTranslations}/{@link translateProcedureTree}).
+ * `chiefComplaint`/`anamnesis` index by position: names are translated by the
+ * defined pass, keying on them would couple the passes. `procedures` keys by
+ * `order` (leaf's stable position in the workup), not a DFS index — the tree
+ * groups by category, `order` is what stays unique and stable.
+ */
 function contentPartFields(
   c: Case
 ): { prefix: string; parts: ContentPart[] }[] {
@@ -131,11 +147,37 @@ function contentPartFields(
   c.anamnesis?.forEach((a, i) => {
     fields.push({ prefix: `anamnesis.${i}.answer`, parts: a.answer });
   });
-  c.procedures?.forEach((p, i) => {
-    fields.push({ prefix: `procedures.${i}.result`, parts: p.result });
-  });
+  if (c.procedures) {
+    for (const { leaf } of leaves(c.procedures)) {
+      fields.push({
+        prefix: `procedures.${leaf.order}.result`,
+        parts: leaf.result,
+      });
+    }
+  }
 
   return fields;
+}
+
+/** `.alt` translated always; `text/plain` also gets `.text` -> `value` via `encodeText`. Missing key falls back to original. */
+function translateParts(
+  prefix: string,
+  parts: ContentPart[],
+  translations: Record<string, string>
+): ContentPart[] {
+  return parts.map((part, i) => {
+    const translatedAlt = translations[`${prefix}.${i}.alt`] ?? part.alt;
+    if (part.type !== "text/plain") {
+      return { ...part, alt: translatedAlt };
+    }
+    const translatedText =
+      translations[`${prefix}.${i}.text`] ?? textOfPart(part);
+    return {
+      type: "text/plain",
+      value: encodeText(translatedText),
+      alt: translatedAlt,
+    };
+  });
 }
 
 /**
@@ -161,45 +203,57 @@ export function caseTextMap(c: Case): Record<string, string> {
 /**
  * Apply translated `caseTextMap` onto content-part fields. `text/plain` part: `.text` -> `value` (via `encodeText`), `.alt` -> `alt`, independently. Other MIME: `value` byte-identical, only `alt` translated. Missing key falls back to original. Part count and order preserved.
  *
- * Returns only `ContentPart[]` fields; `patient`, `procedures[].name`/`relevance`, `anamnesis[].category` untouched (caller applies `definedTranslations`, passes rest through).
+ * Returns only `chiefComplaint`/`anamnesis`; `patient` and `anamnesis[].category`
+ * untouched here (caller applies `definedTranslations`). `procedures` is
+ * handled separately by {@link translateProcedureTree}, which translates
+ * both node names and result parts in one tree walk.
  */
 export function applyCaseTextTranslations(
   c: Case,
   translations: Record<string, string>
-): Pick<Case, "chiefComplaint" | "anamnesis" | "procedures"> {
-  function translateParts(prefix: string, parts: ContentPart[]): ContentPart[] {
-    return parts.map((part, i) => {
-      const translatedAlt = translations[`${prefix}.${i}.alt`] ?? part.alt;
-      if (part.type !== "text/plain") {
-        return { ...part, alt: translatedAlt };
-      }
-      const translatedText =
-        translations[`${prefix}.${i}.text`] ?? textOfPart(part);
-      return {
-        type: "text/plain",
-        value: encodeText(translatedText),
-        alt: translatedAlt,
-      };
-    });
-  }
-
+): Pick<Case, "chiefComplaint" | "anamnesis"> {
   return {
     ...(c.chiefComplaint && {
-      chiefComplaint: translateParts("chiefComplaint", c.chiefComplaint),
+      chiefComplaint: translateParts(
+        "chiefComplaint",
+        c.chiefComplaint,
+        translations
+      ),
     }),
     ...(c.anamnesis && {
       anamnesis: c.anamnesis.map((a, i) => ({
         ...a,
-        answer: translateParts(`anamnesis.${i}.answer`, a.answer),
-      })),
-    }),
-    ...(c.procedures && {
-      procedures: c.procedures.map((p, i) => ({
-        ...p,
-        result: translateParts(`procedures.${i}.result`, p.result),
+        answer: translateParts(`anamnesis.${i}.answer`, a.answer, translations),
       })),
     }),
   };
+}
+
+/**
+ * Rebuilds `case.procedures` with translated node names (categories and
+ * procedures, from the defined pass, keyed by `nodeKey`) and translated
+ * result parts (from the rest pass, keyed by `procedures.<order>.result`,
+ * see {@link caseTextMap}) in one tree walk. A miss in either map falls back
+ * to the original (English) value.
+ */
+export function translateProcedureTree(
+  procedures: NonNullable<Case["procedures"]>,
+  procedureNodeTranslations: Record<string, string>,
+  restTranslations: Record<string, string>
+): NonNullable<Case["procedures"]> {
+  return mapTree(procedures, {
+    category: (path, name) => procedureNodeTranslations[nodeKey(path)] ?? name,
+    leaf: (path, leaf) => ({
+      ...leaf,
+      name:
+        procedureNodeTranslations[nodeKey([...path, leaf.name])] ?? leaf.name,
+      result: translateParts(
+        `procedures.${leaf.order}.result`,
+        leaf.result,
+        restTranslations
+      ),
+    }),
+  });
 }
 
 const TranslateRestValuesInputSchema = z.object({
@@ -234,8 +288,8 @@ export function createTranslationFromEnglishTools(repos: {
   return {
     translateAnamnesisCategoriesFromEnglish:
       createTranslateAnamnesisCategoriesFromEnglish(repos.anamnesis),
-    translateProcedureNamesFromEnglish:
-      createTranslateProcedureNamesFromEnglish(repos.procedures),
+    translateProcedureNodesFromEnglish:
+      createTranslateProcedureNodesFromEnglish(repos.procedures),
     translateRestValues,
   } as const;
 }

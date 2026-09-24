@@ -2,10 +2,11 @@
 // accessors, so both answer identically. Transports only serialize.
 import type { GraphAppContext } from "./graph/appContext.js";
 import { buildGraphStructure, type GraphStructure } from "./graph/structure.js";
+import type { ProcedureCatalogTree } from "./graph/catalog/ports.js";
 
 export interface ReadModel {
   diagnoses(): unknown;
-  procedures(): { name: string }[] | undefined;
+  procedures(): ProcedureCatalogTree | undefined;
   features(): string[];
   allowedLlms(): unknown;
   graph(): Promise<GraphStructure>;
@@ -21,9 +22,7 @@ export function createReadModel(
       return graph.runtime.catalogs.diagnosis.all();
     },
     procedures() {
-      return graph.runtime.catalogs.procedures
-        .list()
-        ?.map((p) => ({ name: p }));
+      return graph.runtime.catalogs.procedures.tree();
     },
     features() {
       return [...features];

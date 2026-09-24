@@ -44,7 +44,7 @@ AetioMed runs with Ollama (fully local, self-hosted models), Google Gemini, or a
 - **Difficulty Control**: `easy` / `medium` / `hard` shape how directly the case points at the diagnosis, both in the presentation and in the workup results.
 - **Selectable Fields**: Generate any subset of patient, chief complaint, anamnesis, and procedures.
 - **Multi-Language**: The supported set is configured per deployment. With the translation sandwich on, generation always happens in English internally and is translated on the way out; with it off, generation runs directly in the target language.
-- **Restricted Vocabularies**: When configured, procedure names and anamnesis categories are constrained to an approved, translatable list.
+- **Restricted Vocabularies**: When configured, procedures are constrained to an approved, translatable catalogue — a tree of categories (of any depth) and procedures — and anamnesis categories to an approved list.
 - **Live Progress**: Every pipeline step reports when it starts and finishes, as a short label in the requester's language. A client can fetch the compiled pipeline once and light up its steps as they run, over REST or NATS.
 - **Two Integration Styles**: A synchronous REST API that streams the job back on the same request, and an asynchronous NATS interface whose requests and results survive restarts and dropped connections. Every feature is available on both.
 - **Plan Mode**: Optionally stop once the case outline exists and hand it back in the request's own language; send it back, possibly edited, to generate the case from it.
@@ -220,7 +220,7 @@ The loop works like this:
 
 4. **Bridge.** If the solver exhausts its budget without arriving at the diagnosis, a final non-blinded step generates the remaining confirmatory procedures that complete the pathway, so every case ends with a workup that actually supports its diagnosis.
 
-Two properties are enforced structurally rather than by asking the model nicely: already-ordered procedures are removed from the candidate list before each pick, so duplicate orders are impossible; and when an approved procedure list is configured, the model is constrained to exact names from it.
+Two properties are enforced structurally rather than by asking the model nicely: already-ordered procedures are removed from the candidate list before each pick, so duplicate orders are impossible; and when an approved procedure catalogue is configured, the model is constrained to exact names from it, placed under their exact category. `Case.procedures` mirrors the catalogue's category tree, with each ordered procedure carrying its 0-based workup position (`order`) so the sequence in which it was ordered survives the regrouping by category.
 
 ### Translation
 

@@ -260,6 +260,22 @@ two OTel spans for one logical step.
 
 ### Catalog Layer
 
+**The procedure catalogue is a tree, not a flat list.** `procedures.yml` parses into a
+`ProcedureTree<{ name }>` (`models/ProcedureTree.ts`) — a uniform recursive shape,
+`{ categories: ({ name } & ProcedureTree)[], procedures: Leaf[] }`, categories nested to any
+depth, root and every category sharing the same shape. A procedure's identity is a `ProcedureRef`
+(`{ path, name }` — category names from the root, then its own name), compared/deduped/excluded
+only by `refKey(ref)` (`JSON.stringify([...path, name])`, built, never parsed) — a
+`"Category: Name"` string is never built or split anywhere in the pipeline any more. Prompts show
+`refLabel(ref)` (`Cardiology › Resting ECG`). `duplicateSiblings(tree)` (sibling names — category
+and procedure names share one namespace at each level) must be empty; caught at startup, see
+below. `ProceduresRepo.getProcedureTree()` replaces the old flat `getEffectiveProcedureList()`;
+`ProcedureCatalog.tree()`/`.candidates()` replace `list()`/`categories()`/`scope()`.
+`ProcedureCandidates` (`catalog/procedures/candidates.ts`) builds a nested pick grammar mirroring
+the tree (categories keyed by exact name, `.optional()` at every level) and `assemble()` walks a
+model's pick back into `ProcedureRef[]`, dropping anything outside the tree. Freeform (no
+catalogue) is unchanged: the model invents names, refs come back with `path: []`.
+
 `src/core/graph/catalog/` owns the catalogue concept behind ports (`ProcedureCatalog`,
 `AnamnesisCatalog`, `LabelCatalog`, `DiagnosisCatalog` in `ports.ts`). Each domain is its own
 vertical slice — `catalog/<domain>/` (`procedures/`, `anamnesis/`, `labels/`, `diagnosis/`) —
@@ -273,7 +289,8 @@ slice's `index.ts`. `catalog/index.ts` composes all four `Yaml*` adapters into t
 not just the port adapter — because the from-English translation graph
 (`02graphs/03case-translation-from-english/`) and `scripts/exportGraphs.ts` still bypass the
 `ProcedureCatalog`/`AnamnesisCatalog` port to reach translation accessors
-(`getProcedureNameTranslationFromEnglish`/`saveProcedureNameTranslation`,
+(`getProcedureTranslation`/`saveProcedureTranslations`, keyed by `nodeKey(path)` — shared by
+categories and procedures since sibling uniqueness makes the key space unambiguous —
 `getAnamnesisCategoryTranslationFromEnglish`/`saveAnamnesisCategoryTranslations`) that the
 port doesn't expose. `labels/` and `diagnosis/` export their repo too, but only so the
 composition root can construct it — no other module reaches past their port. Issue #89
@@ -465,9 +482,11 @@ The underlying adapter supports three providers: `ollama`, `google`, `openai` (t
 
 ### Content Parts
 
-`chiefComplaint`, `anamnesis[].answer` and `procedures[].result` are `ContentPart[]`
-(`src/core/graph/models/ContentPart.ts`), not plain strings — the shape that lets a future
-non-LLM provider (e.g. an image model reached over MCP) contribute to a field:
+`chiefComplaint`, `anamnesis[].answer` and each procedure leaf's `result` (`case.procedures` is a
+`ProcedureTree` — see "Catalogue Layer" below and `models/ProcedureTree.ts` — whose leaves are
+`ProcedureResultSchema`) are `ContentPart[]` (`src/core/graph/models/ContentPart.ts`), not plain
+strings — the shape that lets a future non-LLM provider (e.g. an image model reached over MCP)
+contribute to a field:
 
 ```ts
 type ContentPart = {
@@ -552,6 +571,21 @@ rather than the whole case (patient object, procedure names, enums and all), the
 payload stays small — see issue 12's PR for a representative measurement. This is also
 what unblocks issue 13: per-part translation survives a multi-part field, where the old
 whole-case text projection would have collapsed it.
+
+**`translate_defined`'s procedure half is node-keyed, not name-keyed (procedure tree, #PR2).**
+It collects `nodeKey(path)` for every node — category and leaf — in `case.procedures`
+(`nodePaths(tree).map(nodeKey)`), looks each up via `ProceduresRepo.getProcedureTranslation`, and
+sends only the misses to `generateProceduresFromEnglish` (`translateRecordKeyed` under the hood:
+keys are node keys, whose JSON path gives the model context; values are the node's own English
+segment name — only the value is translated). Results land in
+`definedTranslations.procedureNodes: Record<nodeKey, translatedName>`. `translate_rest`'s
+`caseTextMap` walks `leaves(case.procedures)` and keys each leaf's result parts by
+`procedures.<order>.result.<i>.{alt,text}` — `order`, not a DFS index, since the tree regroups by
+category but a leaf's workup position must stay the stable key. `translate_merge` rebuilds
+`case.procedures` in one `mapTree` pass — `category: (path, name) => procedureNodes[nodeKey(path)]
+?? name`, `leaf: (path, leaf) => ({ ...leaf, name: procedureNodes[nodeKey([...path, leaf.name])]
+?? leaf.name, result: <translated parts by order> })` — so category renaming, leaf renaming and
+result translation all happen in the same walk.
 
 ### Modality Planning and Rendering
 
@@ -913,7 +947,10 @@ in delivery guarantees:
 `CATALOG_DIR` (default `data/`) contains the files synced into the SQLite cache at startup
 (only re-parsed when changed). Paths below are relative to it:
 
-- `procedures.yml` / `proceduresTranslations.yml` — predefined procedure names (when set, LLM must select from this list only)
+- `procedures.yml` / `proceduresTranslations.yml` — approved procedure catalogue, a tree of
+  categories (any depth) and procedures (when set, LLM must select from this tree only, placed
+  under its exact category); translations mirror the same tree, each node keyed by its English
+  `key` alongside its translated `name`
 - `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions (static config, no longer a request field)
 - `labelTranslations.yml` — trace-node label translations

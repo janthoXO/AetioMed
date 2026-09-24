@@ -14,9 +14,13 @@ import {
 import {
   PlannedProcedureSchema,
   ProcedureRelevanceSchema,
-  ProcedureSchema,
   type PlannedProcedure,
 } from "@/core/graph/models/Procedure.js";
+import {
+  ProcedureRefSchema,
+  buildTree,
+  refLabel,
+} from "@/core/graph/models/ProcedureTree.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import { textOf } from "@/core/graph/models/ContentPart.js";
 import { procedureTools, PresentationSchema } from "./tools.js";
@@ -53,7 +57,7 @@ const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
    * The batch of mutually-independent procedures chosen by the blinded step,
    * scheduled together and awaiting their planned result.
    */
-  pendingProcedures: z.array(ProcedureSchema).default([]),
+  pendingProcedures: z.array(ProcedureRefSchema).default([]),
   /**
    * Procedures decided so far, planned not rendered. Writers: `result_step`,
    * `bridge`. `render_results` reads, then writes `case.procedures` (empty
@@ -84,6 +88,7 @@ const BlindedSolverStateSchema = z.object({
   previousProcedures: z
     .array(
       z.object({
+        path: z.array(z.string()),
         name: z.string(),
         relevance: ProcedureRelevanceSchema,
         result: z.string(),
@@ -149,6 +154,7 @@ function projectPreviousProcedures(
   plannedProcedures: PlannedProcedure[]
 ): PreviousProcedureFinding[] {
   return plannedProcedures.map((p) => ({
+    path: p.path,
     name: p.name,
     relevance: p.relevance,
     result: p.parts.map((part) => part.alt).join("\n\n"),
@@ -351,7 +357,7 @@ function makeResultStep(
       lgRuntime?.context
     ).catch((error) => {
       runtime.log.error(
-        `[ProcedureGraph] Error planning results for batch [${pending.map((p) => p.name).join(", ")}]: ${error}`
+        `[ProcedureGraph] Error planning results for batch [${pending.map(refLabel).join(", ")}]: ${error}`
       );
       throw error;
     });
@@ -442,14 +448,20 @@ function makeRenderResults(
       runtime.log
     );
 
-    const procedures = state.plannedProcedures.map((p, i) => ({
-      name: p.name,
-      relevance: p.relevance,
-      result: rendered[String(i)]!,
-    }));
+    const procedures = buildTree(
+      state.plannedProcedures.map((p, i) => ({
+        path: p.path,
+        leaf: {
+          name: p.name,
+          order: i,
+          relevance: p.relevance,
+          result: rendered[String(i)]!,
+        },
+      }))
+    );
 
     runtime.log.info(
-      `[ProcedureGraph] Rendered ${procedures.length} procedure result(s).`
+      `[ProcedureGraph] Rendered ${state.plannedProcedures.length} procedure result(s).`
     );
 
     return new Command({

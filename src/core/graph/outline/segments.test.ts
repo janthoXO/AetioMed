@@ -135,13 +135,13 @@ describe("joinOutline", () => {
 });
 
 describe("outlineSkeleton / OUTLINE_SECTIONS", () => {
-  it("exposes the five fixed section headings", () => {
-    expect(OUTLINE_SECTIONS).toEqual([
-      "## General",
-      "## Patient",
-      "## Chief complaint",
-      "## Anamnesis",
-      "## Procedures",
+  it("exposes the five fixed section headings, keyed, in outline order", () => {
+    expect(Object.entries(OUTLINE_SECTIONS)).toEqual([
+      ["general", "## General"],
+      ["patient", "## Patient"],
+      ["chiefComplaint", "## Chief complaint"],
+      ["anamnesis", "## Anamnesis"],
+      ["procedures", "## Procedures"],
     ]);
   });
 
@@ -311,10 +311,7 @@ describe("restoreSkeletonHeadings", () => {
     const check = checkSkeleton(restored, { anamnesisCategories: categories });
     expect(check).toEqual({ ok: true });
     expect(restored.filter((s) => s.fixed).map((s) => s.text)).toEqual([
-      ...OUTLINE_SECTIONS.slice(0, 4),
-      "### History",
-      "### Medication",
-      OUTLINE_SECTIONS[4],
+      ...outlineSkeleton({ anamnesisCategories: ["History", "Medication"] }),
     ]);
   });
 
@@ -333,9 +330,7 @@ describe("restoreSkeletonHeadings", () => {
     });
 
     expect(restored.filter((s) => s.fixed).map((s) => s.text)).toEqual([
-      ...OUTLINE_SECTIONS.slice(0, 4),
-      "### Übersetzte Kategorie",
-      OUTLINE_SECTIONS[4],
+      ...outlineSkeleton({ anamnesisCategories: ["Übersetzte Kategorie"] }),
     ]);
   });
 

@@ -161,6 +161,45 @@ describe("job event channel — peek (#145)", () => {
   });
 });
 
+describe("job event channel — reopening a jobId (#159)", () => {
+  it("a jobId whose last outcome was 'planned' can be opened again", () => {
+    const channel = createJobEventChannel();
+    channel.open("job");
+    channel.close("job", { status: "planned" });
+
+    expect(channel.open("job")).toBe(true);
+    expect(channel.state("job")).toBe("active");
+  });
+
+  it("a jobId whose last outcome was 'cancelled' can be opened again", () => {
+    const channel = createJobEventChannel();
+    channel.open("job");
+    channel.close("job", { status: "cancelled" });
+
+    expect(channel.open("job")).toBe(true);
+    expect(channel.state("job")).toBe("active");
+  });
+
+  it("a jobId whose last outcome was 'done' cannot be reopened", () => {
+    const channel = createJobEventChannel();
+    channel.open("job");
+    channel.close("job", { status: "done" });
+
+    expect(channel.open("job")).toBe(false);
+  });
+
+  it("a jobId whose last outcome was 'failed' cannot be reopened", () => {
+    const channel = createJobEventChannel();
+    channel.open("job");
+    channel.close("job", {
+      status: "failed",
+      error: { code: "GENERATION_FAILED", message: "boom" },
+    });
+
+    expect(channel.open("job")).toBe(false);
+  });
+});
+
 describe("job event channel — deterministic teardown (issue 15 §2)", () => {
   it("releases a terminal job the moment its last subscriber leaves", () => {
     const channel = createJobEventChannel();

@@ -25,7 +25,9 @@ export type JobStatusReply = Exclude<JobPeek, { state: "unknown" }>;
  * - `cases.status.<jobId>` → `{state: "active"}` while it runs, then
  *   `{state: "terminal", complete}` for the channel's tombstone window
  *   (#145). That is what lets an observer on another replica tell
- *   "finished" from "never existed".
+ *   "finished" from "never existed". A `planned` job stops answering at
+ *   once (#159): its continuation, with the same jobId, may run on any
+ *   replica, and this one must not answer for it.
  *
  * Returns a function that stops answering.
  */
@@ -90,6 +92,10 @@ export function startJobResponders(opts: {
     } else if (event.type === "complete") {
       cancels.get(jobId)?.unsubscribe();
       cancels.delete(jobId);
+      if (event.data.status === "planned") {
+        stopStatus(jobId);
+        return;
+      }
       const status = statuses.get(jobId);
       if (status) {
         status.expire = setTimeout(() => stopStatus(jobId), TOMBSTONE_MS);

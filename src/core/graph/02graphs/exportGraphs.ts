@@ -123,7 +123,7 @@ const modalityRegistries: ModalityRegistries = {
   procedureResult: createProcedureResultProviders(minimalRuntime),
 };
 
-const { getCaseGraph } = buildCaseGraph(
+const { getCaseGraphs } = buildCaseGraph(
   minimalRuntime,
   new EventBus(),
   minimalConfig,
@@ -145,8 +145,11 @@ await fs.mkdir("docs/graphs", { recursive: true });
 // fails, this loop is what needs to grow back to four.
 for (const translationSandwich of [false, true]) {
   const flags = { translationSandwich, procedurePreselection: false };
-  const graph = getCaseGraph(flags);
+  const graphs = getCaseGraphs(flags);
   const name = graphTopologyKey(flags);
 
-  await exportGraphPng(graph, `case-graph.${name}`);
+  // Two graphs per topology since #159: the plan graph ends with an outline,
+  // the case graph starts from one.
+  await exportGraphPng(graphs.plan, `plan-graph.${name}`);
+  await exportGraphPng(graphs.case, `case-graph.${name}`);
 }

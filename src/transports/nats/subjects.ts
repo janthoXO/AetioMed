@@ -33,6 +33,15 @@ export const cancelSubject = (jobId: string) => `cases.cancel.${jobId}`;
 export const progressWildcard = (jobId: string) => `cases.progress.${jobId}.>`;
 
 /**
+ * JetStream, limits: a job's plan (#159), on its own subject so a client
+ * filters to its own job, with replay — the same "durable per-job subject"
+ * shape as `resultSubject`, for the same reason. Published in both modes: a
+ * plan-mode call ends with it, a normal-mode call hands it over on the way
+ * to its result.
+ */
+export const planSubject = (jobId: string) => `cases.plan.${jobId}`;
+
+/**
  * Core NATS request/reply → `{ state: "active" } | { state: "terminal",
  * complete }`, answered by the owning replica while the job runs and for the
  * tombstone window after it (#145). "No responders" means no replica knows
@@ -72,7 +81,16 @@ export const RESULTS_STREAM = {
   duplicate_window: nanos(2 * 60 * 1000),
 } as const;
 
-export const STREAMS = [REQUESTS_STREAM, RESULTS_STREAM] as const;
+export const PLANS_STREAM = {
+  name: "CASE_PLANS",
+  subjects: ["cases.plan.*"],
+  retention: RetentionPolicy.Limits,
+  storage: StorageType.File,
+  max_age: nanos(RESULT_MAX_AGE_MS),
+  duplicate_window: nanos(2 * 60 * 1000),
+} as const;
+
+export const STREAMS = [REQUESTS_STREAM, RESULTS_STREAM, PLANS_STREAM] as const;
 
 /** The pre-#142 stream. Its `cases.>` filter overlaps both new streams. */
 export const LEGACY_STREAM = "cases";
@@ -86,6 +104,15 @@ export const REQUEST_CONSUMER = "case-request-worker";
  */
 export const REQUEST_ACK_WAIT_MS = 60 * 1000;
 export const WORKING_INTERVAL_MS = 20 * 1000;
+
+/**
+ * How many times a request is run before it is given up (#159). A request
+ * is acked only once its output is published, so every delivery past the
+ * first is a crash (or a missed heartbeat) retried. The consumer delivers
+ * once more than this, so the extra delivery can publish the failure
+ * instead of the request silently vanishing.
+ */
+export const REQUEST_MAX_ATTEMPTS = 3;
 
 /**
  * Whether a NATS subject filter (`*` = one token, `>` = one or more trailing

@@ -60,7 +60,9 @@ everything explicitly, in order:
    environment as an argument; nothing under `src/core/graph/` reads `process.env`)
 3. `initGraph()` builds the repos (`repos.ts`'s `createRepos`), the `GraphRuntime`, and the
    compiled graph, then validates the catalogues
-4. `createCaseGenerationService(graph, bus)`
+4. `createCaseGenerationService(graph, bus, jobEvents, opts)` — `opts` is just the shared
+   generation limiter's size (`maxConcurrent`, `MAX_CONCURRENT_GENERATIONS`); the service is
+   stateless between calls (#159), so there is nothing else to wire in here
 5. starts the transports whose flags are set — **NATS before REST** (issue #145): REST's job
    directory (below) may ride on NATS's connection, so NATS must already be up by the time
    `startRestServer` is called. Shutdown order is unaffected — REST still closes **first**,
@@ -100,10 +102,28 @@ reasons from the patient presentation, and would otherwise be handed an empty on
 plan and its judge loop had already been paid for. So the three presentation fields are
 generated **internally** and projected back out of the response, and the caller gets exactly
 the fields they asked for. The cheaper-looking alternative — reusing the plan outline as the
-solver's presentation — is unsafe: `state.outline` is free-text markdown that by construction
-contains a "Workup / Procedure Results Strategy" section, so slicing a presentation out of it
-by heading is a parse whose failure mode is silently leaking that strategy into the _blinded_
-solver. See `expandFlagsForSolver`'s doc comment.
+solver's presentation — is unsafe: the outline is a tag-delimited markdown skeleton (see
+"Outline segments" below, #159) whose fixed procedures section, by construction, describes how
+results should be shaped to reach the diagnosis, so slicing a presentation out of it by heading
+is a parse whose failure mode is silently leaking that section into the _blinded_ solver. See
+`expandFlagsForSolver`'s doc comment.
+
+**The generator is stateless between calls (#159).** A call carries everything it needs — the
+request, and optionally a `plan` — and nothing survives it: no job record, no checkpoint, no
+stored API key. `start(req, opts?)` runs the plan graph and, unless the request already carries
+a `plan`, stops there in plan mode (`status: "planned"`, the outline handed back in the request
+language) or continues straight into the case graph in normal mode (`status: "done"`); a request
+that does carry a `plan` skips planning entirely and generates the case from it — the same
+jobId as the plan's own call is fine, since the channel allows exactly this one reuse (see
+`core/jobEvents/channel.ts`'s `open()` below). `opts.onPlan` is called with a normal-mode job's
+plan (`PlanPayload`) as soon as it exists, while the case is still being generated, so a
+transport can hand it over on the way without waiting for the result; a plan-mode job's plan is
+its result instead, never delivered through `onPlan`. `CaseGenerationResult.status` is one of
+`"done" | "planned" | "failed"` — `"planned"` is where a plan-mode call without a plan stops.
+Recovering a crashed call is the transport's job, not the service's: NATS redelivers an unacked
+request (see the NATS Layer section below), and a REST client just resends. Every per-request
+`llmConfig` (API key included) lives only on that call's `AsyncLocalStorage`-bound context —
+nothing is ever written to disk for it to survive with.
 
 **`src/core/jobEvents/`** (#139) is the core-owned per-job event channel:
 `createJobEventChannel()` builds one instance, constructed once in `app.ts` and handed to
@@ -219,7 +239,11 @@ always on, following labels' gate: it returns the deployment's actually-compiled
 nodes (with English `labelKey`) and edges from `getGraphAsync({ xray: true })`, the same call
 `02graphs/exportGraphs.ts` uses for mermaid diagrams. Label keys, not localized strings: the
 structure is language-independent and cacheable; a client wanting localization already has it
-on the label channel, per job.
+on the label channel, per job. Since #159 the pipeline is two top-level graphs (plan, case), so
+`buildGraphStructure` returns their **union**, in execution order — plan, then the sandwich's
+middle translation graphs (`outlineOut`/`reviewIn`, when compiled in), then case — with no edge
+between them: the job service, not a graph, runs one after the other, so there is nothing to
+draw there.
 
 **Two defects fixed alongside issue 15, both still true today:** `traceNode` (`nodeWrapper.ts`)
 wraps the node call in `try`/`catch` — a throwing node used to emit "Node Started" and nothing
@@ -269,49 +293,134 @@ as the graph is built.
 
 ### Case Generation Pipeline (LangGraph)
 
-All AI generation uses LangGraph. Graphs live in `src/core/graph/02graphs/`. The top-level
-graph is assembled from the deployer's flags by `assembleCaseGraph(deps, flags)`
-(`caseGraph.ts`) and sequences up to three subgraphs:
+All AI generation uses LangGraph. Graphs live in `src/core/graph/02graphs/`. Since #159 the
+pipeline is **two top-level graphs, not one** — `assembleCaseGraphs(deps, flags)` (`caseGraph.ts`,
+now plural) builds a **plan graph** that ends with an outline and a **case graph** that starts
+from one. The seam between them is where a plan-mode call stops and hands the outline back —
+`CaseGenerationService` never runs the case graph in that call; normal mode runs straight from
+one into the other in the same call. With `TRANSLATION_SANDWICH` on:
 
-1. **`01case-translation-to-english/`** — translates `diagnosis.name` and, alongside it, every
-   `userInstructions` value, to English. Two disjoint-channel `Send` nodes
-   (`translate_diagnosis`/`translate_user_instructions`) run in parallel from `START`, each
-   writing only its own top-level field — no merge is needed.
-2. **`02case-generation/`** — the core generation pipeline (see below)
-3. **`03case-translation-from-english/`** — three nodes, not a chain (issue 12): `translate_defined`
-   and `translate_rest` run in parallel from `START`, each writing only its own state channel
-   (`definedTranslations`/`restTranslations`, never `case`); `translate_merge` is the **only**
-   node that writes `case`, applying both maps to it. See "Content Parts" below for why this
-   replaced a whole-case, single-LLM-call translator.
+- **plan graph**: `01case-translation-to-english/` (mounted at `START`, conditional — see
+  below) → `planning_phase` (mounts `01plan/`'s outline ⇄ judge loop; see below)
+- **case graph**: `generation_phase` (mounts the field fan-out and procedures; see below) →
+  `03case-translation-from-english/` (conditional on the response actually needing translation)
 
-`generateCase(opts)` invokes the top-level graph, taking one options object —
-`{ diagnosis, generationFlags, userInstructions?, language?, difficulty?, callerSuppliedFreeText }`
-(`GenerateCaseFn`, `appContext.ts`) — rather than positional scalars, since a sixth parameter
-(`callerSuppliedFreeText`, issue 12 §3) would have made the positional form unreadable at the
-call site. `language` is **not** threaded into graph state or LangGraph's own runtime context —
-by the time this runs, `runWithContext` (called by `CaseGenerationService`) has already bound it
-on `AsyncLocalStorage`, which is what the translation-routing edges and every generation gateway
-actually read. `callerSuppliedFreeText` **is** threaded into graph state (`CaseStateSchema`) —
-see the Language section below for why the two differ.
+`01case-translation-to-english/` translates `diagnosis.name` and, alongside it, every
+`userInstructions` value, to English — two disjoint-channel `Send` nodes
+(`translate_diagnosis`/`translate_user_instructions`) run in parallel from `START`, each writing
+only its own top-level field, no merge needed. `03case-translation-from-english/` is three
+nodes, not a chain (issue 12): `translate_defined` and `translate_rest` run in parallel from
+`START`, each writing only its own state channel (`definedTranslations`/`restTranslations`,
+never `case`); `translate_merge` is the **only** node that writes `case`, applying both maps to
+it. See "Content Parts" below for why this replaced a whole-case, single-LLM-call translator.
 
-The **`caseGenerationGraph`** (`02case-generation/index.ts`) runs up to three phases — the first is compiled in only when the medical-basis registry is non-empty:
+With `TRANSLATION_SANDWICH` off, both translation phases are absent (see the assembly rule
+below), and — with it on — two more single-node graphs, `outlineOut`/`reviewIn`
+(`buildOutlineTranslationGraph`, `02graphs/outline-translation/`), are compiled alongside the
+plan and case graphs but mounted in neither: they are invoked directly by
+`CaseGenerationService`, through `graph.translateOutline(values, direction)`, and only for a
+plan-mode call in a non-English language — never by normal mode, and never with the sandwich off
+(plan mode then generates and shows the outline directly in the request language). `outlineOut`
+translates a fresh outline out to the requester when a plan-mode call stops without a plan;
+`reviewIn` translates a plan handed back in a later call back to English before it is checked
+and generated from (see "Outline segments" below for the per-segment cache that skips
+re-translating an untouched segment). They stay two separate compiled graphs, not two nodes of
+one, because they never run in the same call — see "Composition Root" above for the stateless
+call shape.
 
-- **`basis_resolve`** — runs first, and only when the medical-basis registry (`src/core/graph/medicalBasis/`) is non-empty: an absent registry means an absent node, not a node that runs and does nothing. The registry is a plain list built once in the composition root (`graph/index.ts`'s `createMedicalBasisRegistry`), **not** a third compile-time flag — its _size_ decides whether `basis_resolve` is compiled in, the same rule `caseGraph.ts` applies to `TRANSLATION_SANDWICH`/`PROCEDURE_PRESELECTION`. Every registered `MedicalBasisProvider` (`medicalBasis/ports.ts`) is run concurrently and their `BasisFragment`s are concatenated in **registry order** (not completion order) — there is no LLM call spent deciding which source to use; a throwing provider is logged and skipped, a hanging one is bounded by the request's abort signal. `medicalBasis/render.ts` renders the concatenated fragments into one "Medical basis" section of the plan's **user** message only (never the system message), each fragment fenced and tagged with its `sourceId`/`label`/`retrievedAt`(/`licence`) — the fence delimiters are escaped if they appear inside a fragment's own content, so a fragment can never close its own fence early. `medicalBasis/providers/umlsSymptoms.ts` is the only provider today: it reproduces the former `01symptom/` node verbatim — a static UMLS symptom floor (per ICD code) unioned with cache-aside LLM-generated additions (skips the LLM on a fresh cache hit) — as a single "Typical symptoms" fragment.
-- **`02presentation/`** — `generation/` generates a detailed case outline (the complete factual record of the case), then a combined outline evaluate ⇄ revise `Command` loop (max 2 iterations) judging obviousness AND clinical consistency in one LLM call; once accepted, fans out via `Send` to `patient_generate` / `chief_complaint_generate` / `anamnesis_generate` (gated per `generationFlags`), joining at `case_fan_in`. There is no post-fan-out consistency check. `chief_complaint_generate` and `anamnesis_generate` are **compiled subgraphs** (`chiefComplaint/index.ts`, `anamnesis/index.ts`), not function nodes — see "Modality Planning and Rendering" below for their internal `plan_content → render_parts` shape. `patient_generate` stays a plain function node: `patient` is not a `ContentPart[]` field (it stayed a structured `Patient` object through issue 11), so there is nothing for a modality provider to render — the `Send` payload (`{ diagnosis, outline, userInstructions }`) is identical across all three targets either way, whether the target is a function or a compiled subgraph.
-- **Subgraph output schemas (issue 17).** A compiled subgraph mounted with `addNode` writes back its **entire state schema** by default, not just the channels its nodes actually touched. `chief_complaint_generate` and `anamnesis_generate` are `Send`-fanned out in parallel from `outline_evaluate` above, so both writing back the whole state made their shared `diagnosis`/`userInstructions`/`outline` `LastValue` channels each receive two values in one superstep — `INVALID_CONCURRENT_GRAPH_UPDATE` on every default request. The rule: **a compiled subgraph's state schema is its input surface; its `output` schema is its write surface, and the write surface must be declared explicitly** — every `addNode`'d or `.invoke()`d subgraph in `02graphs/` gets an `output` built with `.pick()` off that graph's own state schema (never a hand-written duplicate, so the picked channel keeps the identical reducer registration). `chiefComplaintGraph`/`anamnesisGraph` output `{ case }`; `presentation_phase` (`buildFieldGenerationGraph`) deliberately outputs `{ case, outline }` — `outline` is not obvious to drop, but `03procedure/`'s `result_step` needs it for `generateProcedureResults`; `procedure_phase`/`generation_phase`/`translation_from_english_phase` output `{ case }`; `translation_to_english_phase` outputs `{ diagnosis, userInstructions }`, since translating those two is its entire job; the blinded solver's child graph (`.invoke()`d, not mounted) outputs `{ move }`. `case_fan_in` used to be `passthrough` (echoing the whole incoming state as its "update"); a join point produces no update, so it is now a node returning `{}`.
+`planCase(opts)` and `renderCase(opts)` are the two entry points `CaseGenerationService` calls —
+`planCase` invokes the plan graph and returns `{ diagnosis, userInstructions, basisFragments,
+outlineSegments, outlineAccepted }` (all in the working language: English after translate-in);
+`renderCase` invokes the case graph from a prompt-ready outline string (`joinOutline`, see
+"Outline segments" below) and returns the finished `Case`. The service throws
+`OutlineNotAcceptedError` in normal mode when the judge loop never accepted the outline — a
+**behaviour change** (#159): this used to render anyway. `language` is **not** threaded into
+graph state or LangGraph's own runtime context — by the time either entry point runs,
+`runWithContext` (called by `CaseGenerationService`) has already bound it on
+`AsyncLocalStorage`, which is what the translation-routing edges and every generation gateway
+actually read. `callerSuppliedFreeText` **is** threaded into the plan graph's state — see the
+Language section below for why the two differ.
+
+**`planning_phase`** (`buildPlanningPhaseGraph`, `02case-generation/index.ts`) runs up to two
+steps — the first compiled in only when the medical-basis registry is non-empty:
+
+- **`basis_resolve`** — runs first, and only when the medical-basis registry (`src/core/graph/medicalBasis/`) is non-empty: an absent registry means an absent node, not a node that runs and does nothing. The registry is a plain list built once in the composition root (`graph/index.ts`'s `createMedicalBasisRegistry`), **not** a third compile-time flag — its _size_ decides whether `basis_resolve` is compiled in, the same rule `caseGraph.ts` applies to `TRANSLATION_SANDWICH`/`PROCEDURE_PRESELECTION`. Every registered `MedicalBasisProvider` (`medicalBasis/ports.ts`) is run concurrently and their `BasisFragment`s are concatenated in **registry order** (not completion order) — there is no LLM call spent deciding which source to use; a throwing provider is logged and skipped, a hanging one is bounded by the request's abort signal. `medicalBasis/render.ts` renders the concatenated fragments into one "Medical basis" section of the plan's **user** message only (never the system message), each fragment fenced and tagged with its `sourceId`/`label`/`retrievedAt`(/`licence`) — the fence delimiters are escaped if they appear inside a fragment's own content, so a fragment can never close its own fence early. `medicalBasis/providers/umlsSymptoms.ts` is the only provider today: it reproduces the former `01symptom/` node verbatim — a static UMLS symptom floor (per ICD code) unioned with cache-aside LLM-generated additions (skips the LLM on a fresh cache hit) — as a single "Typical symptoms" fragment. On a revise entry (below) this step is skipped and the saved `basisFragments` are reused.
+- **`outline_phase`** (mounts `01plan/`'s `buildPlanGraph`) — generates the tag-delimited outline (see "Outline segments" below), then a combined evaluate ⇄ revise `Command` loop (max 2 iterations, `outline_evaluate`/`outline_regenerate`) judging obviousness AND clinical consistency in one LLM call. On the iteration cap, the loop ends with `outlineAccepted: false` rather than looping forever — what that means is the caller's call: normal mode throws `OutlineNotAcceptedError` (a behaviour change, #159 — it used to render anyway), plan mode shows the outline to the reviewer regardless, with no marker, and lets them judge consistency themselves. A **revise entry** (`entryOf`, #159) starts the graph at `outline_regenerate` instead of `case_outline_generate` whenever `outlineSegments`/`outlineFeedback` are both non-empty on invoke — this is how a reviewer's "request revision" decision re-runs the loop from their feedback instead of generating from scratch. `audienceOf(state)` binds the outline and its judge prompts to `"user-facing"` (the request language) only in plan mode; normal mode keeps them `"internal"` (English) — independent of the sandwich, which controls the case-generation runtime's `languageOverride`, not this phase's audience.
+
+**`generation_phase`** (`buildCaseGenerationGraph`, `02case-generation/index.ts`) takes an
+outline as **input** (no outline generation happens here any more — that moved to
+`planning_phase` above) and runs up to two phases:
+
+- **`presentation_phase`** — `02presentation/generation/` fans the outline straight out via `Send` to `patient_generate` / `chief_complaint_generate` / `anamnesis_generate` (gated per `generationFlags`), joining at `case_fan_in`. There is no post-fan-out consistency check — that judgment already happened on the outline, in `planning_phase`, before any field exists. `chief_complaint_generate` and `anamnesis_generate` are **compiled subgraphs** (`chiefComplaint/index.ts`, `anamnesis/index.ts`), not function nodes — see "Modality Planning and Rendering" below for their internal `plan_content → render_parts` shape. `patient_generate` stays a plain function node: `patient` is not a `ContentPart[]` field (it stayed a structured `Patient` object through issue 11), so there is nothing for a modality provider to render — the `Send` payload (`{ diagnosis, outline, userInstructions }`) is identical across all three targets either way, whether the target is a function or a compiled subgraph.
+- **Subgraph output schemas (issue 17).** A compiled subgraph mounted with `addNode` writes back its **entire state schema** by default, not just the channels its nodes actually touched. `chief_complaint_generate` and `anamnesis_generate` are `Send`-fanned out in parallel above, so both writing back the whole state made their shared `diagnosis`/`userInstructions`/`outline` `LastValue` channels each receive two values in one superstep — `INVALID_CONCURRENT_GRAPH_UPDATE` on every default request. The rule: **a compiled subgraph's state schema is its input surface; its `output` schema is its write surface, and the write surface must be declared explicitly** — every `addNode`'d or `.invoke()`d subgraph in `02graphs/` gets an `output` built with `.pick()` off that graph's own state schema (never a hand-written duplicate, so the picked channel keeps the identical reducer registration). `chiefComplaintGraph`/`anamnesisGraph` output `{ case }`; `presentation_phase` (`buildFieldGenerationGraph`) outputs `{ case }` only now (#159 — it used to also output `outline`, when `03procedure/`'s `result_step` still read it out of `generation_phase`'s own state; the outline reaches `renderCase` as a plain string input instead); `outline_phase` (`buildPlanGraph`) outputs `{ outlineSegments, outlineAccepted }`, and `planning_phase` around it outputs `{ outlineSegments, outlineAccepted, basisFragments }`; `procedure_phase`/`generation_phase`/`translation_from_english_phase` output `{ case }`; `translation_to_english_phase` outputs `{ diagnosis, userInstructions }`, since translating those two is its entire job; the blinded solver's child graph (`.invoke()`d, not mounted) outputs `{ move }`. `case_fan_in` used to be `passthrough` (echoing the whole incoming state as its "update"); a join point produces no update, so it is now a node returning `{}`.
 - **`03procedure/`** — only when the `procedures` flag is set. A **blinded solver** loop (max 6 iterations) with 4 nodes: `blinded_step` orders procedures without knowing the true diagnosis, `result_step` _plans_ their results non-blinded (issue 21 — nothing renders inside the loop; see "Modality Planning and Rendering" below), and the terminal `render_results` renders every procedure's parts in one grouped pass and is the only node that writes `case.procedures`; when the solver commits to a diagnosis, an LLM judge checks the match (loop continues with `ruledOutDiagnoses` on mismatch). On exhaustion, a `bridge` node generates confirmatory procedures for the true diagnosis. The approved procedure list is presented (and picked) grouped by category (`{ "Category": ["Name", …] }`, with uncategorized procedures under a synthetic `"General"` bucket) rather than as one flat list — this applies to both the blinded pick and the (non-blinded) bridge pick, the latter grouping full `{name, relevance, result}` objects per category. Procedure selection is a `ProcedureStrategy` port (`03procedure/strategy/`: `ports.ts`, `directPick.ts`, `categoryScopedPick.ts`, `index.ts`'s `createProcedureStrategy`) rather than a branch of a global config read inside the node — `blinded_step` and `bridge` call `strategy.nextStep()` / `strategy.bridge()` and never read `PROCEDURE_PRESELECTION` themselves; the strategy is selected once at graph-assembly time and threaded down as a constructed object. `DirectPick` is one LLM call against the full candidate list per step (the default). `CategoryScopedPick` — selected only when `PROCEDURE_PRESELECTION` is set **and** the approved list has real categories (a flat catalogue has nothing to scope on) — splits that single call into two sequential calls (a category-only pick, over-inclusive, followed by a procedure/results-only pick scoped to those categories plus `"General"`); the graph shape stays fixed at 4 nodes regardless of which strategy runs. The blinded scoped pick may answer with an `expand` action requesting additional categories: a bounded loop in `CategoryScopedPick.nextStep` unions them into a local scope set and retries (max 2 expansions per `blinded_step`; the expand grammar only admits categories not yet in scope, and past the cap the branch is removed from the schema entirely — the visited set lives in code, never the model). The bridge's scoped pick instead retries deterministically once with all categories if it returns empty. The blinded step's own compiled child graph (built once per strategy, invoked — not added as a node — from inside `blinded_step`) has a state schema that structurally omits `diagnosis`: the `BlindedView` type already makes passing it a compile error, and the child graph is a runtime backstop on top of that (LangGraph filters input against a graph's state schema before it reaches a channel). `matchDiagnosis` stays in the parent node, outside the blinded path, since it's an oracle call. Additional guards: already-ordered procedures are excluded from every candidate list/grammar (duplicate orders are impossible by construction), category-pick prompts show per-category counts plus sample names, and blinded prompts include the remaining iteration budget as convergence pressure.
+
+### Outline segments
+
+Since #159 the outline is never diffed against a remembered copy — the generator keeps no
+memory of a plan between calls, so there is nothing to diff against. It is a **positional
+segment array** (`OutlineSegments`, `graph/outline/segments.ts`) instead: the LLM emits
+markdown with its fixed (server-owned) headings wrapped in `<fixed>…</fixed>` tags, and
+`parseTaggedOutline`/`renderTaggedOutline` convert between that and the canonical shape —
+`segments.length` is always odd, even indices (0, 2, …) are editable (`fixed: false`, possibly
+empty string), odd indices are fixed (`fixed: true`). The skeleton (`outlineSkeleton`/
+`checkSkeleton`) is server-owned and always has the same five top-level sections — `## General`,
+`## Patient`, `## Chief complaint`, `## Anamnesis`, `## Procedures` — plus, between Anamnesis and
+Procedures, one `### <category>` heading per configured anamnesis catalogue category (or
+LLM-named ones, in order, when the catalogue is freeform).
+
+**A plan handed back into a later call is validated, not diffed.** `checkSkeleton` is the one
+check a plan must pass — both freshly generated (the retry signal for an LLM that emits a
+malformed or incomplete skeleton) and handed back in (`INVALID_PLAN`, a 400, if it fails): the
+generator never saw this plan before, so there is nothing to compare it against, only its own
+shape to validate. Before that check, `restoreSkeletonHeadings` puts the server's own English
+headings back into a plan translated in from the request language, by position — a translated
+heading need not round-trip to the exact English string `checkSkeleton` expects, so this is what
+lets the check still pass. `isCanonicalShape` (checked at the request-schema boundary, before any
+of this) is the one thing a handed-back plan must prove even earlier: that it still alternates
+editable and fixed segments correctly. `joinOutline` — the prompt-ready text every downstream
+generator reads — always escapes any `<fixed>`/`</fixed>` typed inside an editable segment, so a
+handed-back plan can never re-create outline structure that only the server is allowed to own.
+
+**Only in plan mode, and only with the sandwich on, does a plan cross the language boundary at
+all** (`translatesPlan` in `caseGenerationService.ts`): a plan-mode call without a plan
+translates its fresh English outline out to the request language before returning it
+(`translatePlanOut`); a plan-mode call carrying a plan translates it back to English
+(`translatePlanIn`) before validating and generating from it. Normal mode never translates a
+plan — it is always English, in and out. **A per-replica cache keyed on `(language, translated
+text)`** (`planCache`, TTL `PLAN_CACHE_TTL_MS` = 24h) is what lets an untouched segment come back
+as its original English rather than being re-translated: `translatePlanOut` records
+`translated → english` for every segment it produces, and `translatePlanIn` only calls the
+translator for the segments that miss. This is process-local, in memory — a restart or another
+replica just translates again (ponytail: share it, e.g. NATS KV, if that ever shows in cost).
+
+**The sandwich-off cosmetic gap.** With `TRANSLATION_SANDWICH` off, plan mode generates the
+outline directly in the request language (`audienceOf`'s `"user-facing"` binds the outline
+prompts to it) — but the five fixed section headings above are still the literal English
+strings `checkSkeleton` expects, since the skeleton is shared code, not a per-language template.
+A non-English plan-mode caller with the sandwich off therefore sees English headings over
+localized body text; fixing that is a skeleton-localization change, not a bug in this validation
+logic.
 
 **Tool pattern:** each subgraph directory has a `tools.ts` exporting `Tool<TInput, TOutput>` objects (`src/core/graph/utils/tool.ts`). Graph nodes are thin — prompt building, LLM calls, retries, and structured-output parsing live in the aigateway behind the tools. Nodes are wrapped with `traceNode()` (`utils/nodeWrapper.ts`) to emit "Node Started/Completed" bus events with translated labels.
 
-**Assembly** (`caseGraph.ts`) follows one rule, and the next person to touch it will get it
-backwards: **compile on what the deployer chose; branch on what the caller asked for.**
-`TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are compiled
-away — an _absent flag means an absent node_, not a node that is skipped. With
+**Assembly** (`caseGraph.ts`'s `assembleCaseGraphs`) follows one rule, and the next person to
+touch it will get it backwards: **compile on what the deployer chose; branch on what the caller
+asked for.** `TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are
+compiled away — an _absent flag means an absent node_, not a node that is skipped. With
 `TRANSLATION_SANDWICH=false` the two translation phases and their two conditional edges do not
-exist. `generationFlags`, `difficulty` and `language` are per-request and stay runtime
-branches — which is why, with the sandwich _on_, the two conditional edges remain (whether this
-deployment can translate is the deployer's choice; whether this request needs to is the
-caller's). They are two **different** predicates, not one reused twice (issue 12 §3):
+exist, and neither does the sandwich's middle layer (#159): `assembleCaseGraphs` returns
+`outlineOut: undefined, reviewIn: undefined`, and plan mode generates and shows the outline
+directly in the request language instead (see "Outline segments" above). `generationFlags`,
+`difficulty` and `language` are per-request and stay runtime branches — which is why, with the
+sandwich _on_, the two conditional edges remain (whether this deployment can translate is the
+deployer's choice; whether this request needs to is the caller's). Whether a _particular_
+plan-mode request enters the compiled-in middle layer is itself a runtime branch, made outside
+the graph: `CaseGenerationService.translatesOutline(data)` (`sandwich && language !==
+"English"`) decides per job, in the job's status machine, not as a conditional edge — there is
+no seam inside either top-level graph where that decision belongs, since the middle layer is
+invoked between them, never mounted in either. They are two **different** predicates, not one
+reused twice (issue 12 §3):
 `requestNeedsTranslationOut()` (after generation) reads only `getRequestContext()?.language` off
 ALS — generation always runs in English under the sandwich, so the response is translated back
 regardless of how the request arrived. `requestNeedsTranslationIn(state)` (before generation)
@@ -320,7 +429,7 @@ English name from the catalogue, so translating it "to English" anyway used to p
 translation store with identity entries (`German: { "Diabetes": "Diabetes" }`) — a real bug, not
 a hypothetical one. `callerSuppliedFreeText` is true when the request supplied a diagnosis
 **name** (rather than only an `icd`) or any `userInstructions`; only `CaseGenerationService`
-knows this; it computes the flag before ICD→name resolution and passes it into `generateCase`'s
+knows this; it computes the flag before ICD→name resolution and passes it into `planCase`'s
 options object. Unlike `language`, `callerSuppliedFreeText` **is** a `CaseStateSchema` field —
 it is per-request routing input the caller supplied, not a property of the bound ports (see the
 Language section below for that distinction). The conditional edge on the `procedures`
@@ -328,10 +437,12 @@ generation flag stays a conditional edge in every variant, for the same "deploye
 caller branches" reason.
 
 `buildCaseGraph` compiles **all four** flag combinations eagerly at boot into a map keyed by
-`graphVariantKey`, and binds `generateCase` to the one the config selects. Only one is ever
-served; the other three prove every variant compiles at boot rather than at config-change
-time, and give `exportGraphs.ts` and the tests a single source of assembly truth rather than a
-parallel code path that can drift. Compilation is pure wiring with no I/O, so four is cheap.
+`graphVariantKey` — each value now the `{ plan, case, outlineOut, reviewIn }` bundle
+`assembleCaseGraphs` returns — and binds `planCase`/`renderCase`/`translateOutline`
+to the one the config selects. Only one is ever served; the other three prove every variant
+compiles at boot rather than at config-change time, and give `exportGraphs.ts` and the tests a
+single source of assembly truth rather than a parallel code path that can drift. Compilation is
+pure wiring with no I/O, so four is cheap.
 
 `pnpm graph:export` writes **two** topologies to `docs/graphs/`, not four:
 `PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter and leaves the procedure graph at
@@ -564,6 +675,9 @@ language-independent**; only the translation accessors take a language.
 
 `src/core/graph/symptoms/repo.ts` — static UMLS floor from `diagnosis_symptoms.json` + LLM-symptom cache with TTL (`SYMPTOM_CACHE_TTL_DAYS`)
 
+There is no job repo (#159): the generator is stateless between calls, so nothing about a job
+is ever written to the embedded database — see "Composition Root" above.
+
 ### Numbered Directory Convention
 
 `src/core/graph/` uses numbered prefixes to indicate layer order:
@@ -598,7 +712,7 @@ below), never by reaching into `GraphAppContext` directly:
 - `GET /api/health` (not part of the read model — a liveness probe, not a domain read)
 - `GET /api/features`, `GET /api/allowedLlms` — inline handlers calling
   `readModel.features()`/`readModel.allowedLlms()`
-- `routes/cases.router.ts` — `POST /api/cases` (content negotiation, see below),
+- `routes/cases.router.ts` — `POST /api/cases` (content negotiation — see below) and
   `DELETE /api/cases/:jobId` (cancel, through the `JobDirectory` — see below)
 - `routes/diagnosis.router.ts` — `GET /api/diagnosis`, calling `readModel.diagnoses()`
 - `routes/procedures.router.ts` — `GET /api/procedures`, calling `readModel.procedures()`
@@ -622,26 +736,34 @@ detaching via the returned `stop` on `req.on("close")`. `DELETE /api/cases/:jobI
 are both `404` (`NOT_FOUND`, with the message distinguishing "already finished" from "no active
 generation" — a client that wants to tell those apart reads the message, not the status code).
 
-**`POST /api/cases` is REST's synchronous transport, opened as a stream (#143).** Content negotiation on the one route, not a second endpoint: `Accept:
-application/json` (or no preference) blocks and returns the case exactly as before; `Accept:
-text/event-stream` opens SSE on the POST's own response — `event: accepted {jobId}` written
-**before any node runs**, then `event: label`… as generation proceeds, then `event: result
-{case…}` or `event: error {error}`. Opening the stream with the request itself removes the
-handshake race a 202-then-subscribe design has: every event between minting the jobId and the
-client subscribing would otherwise be lost, short of a replay buffer (deferred). A `: ping`
-comment is written every `HEARTBEAT_MS` (15s; `heartbeatMs` in `RestAppOptions` overrides it
-for tests) independently of label activity — a single node (outline generation on a local
-model, one solver iteration) can stay silent for minutes, long enough for a proxy to treat the
-connection as idle; liveness and telemetry are two concerns that happen to coincide, not one
-mechanism. `jobId` is a **body field**, validated against `src/api/JobId.ts`'s `JobIdSchema`
-since it is also a NATS subject token (`cases.result.<jobId>`) even when the request arrives
-over REST — the `?jobId=` query param is gone. A duplicate jobId (still running, or finished
-within the channel's tombstone window) is a 409 `JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED` on
-either Accept path, answered before any stream opens and without starting a second generation
-— `CaseGenerationService.start()` (see "Case Generation Pipeline" above) is what makes the
-duplicate check synchronous with respect to the caller. On either path, a client disconnect
-cancels the job (`res.on("close")`) — the accepted trade of a connection-scoped transport
-(HTTP cannot tell "the user cancelled" from "the network dropped"), not an oversight.
+**`POST /api/cases` is REST's synchronous transport, opened as a stream (#143), and answers one
+_call_ — a plan-mode call without a plan stops at its plan, everything else runs to a case or an
+error, all in this one request.** Content negotiation, not a second endpoint per mode: `Accept:
+application/json` (or no preference) blocks and returns the outcome — the case (`200`), a
+plan-mode plan (`200`, `{jobId, mode, language, plan}`), or the error; `Accept:
+text/event-stream` opens SSE on the response — `event: accepted {jobId}` written **before any
+node runs**, then `event: label`…, `event: plan` as soon as a plan exists (#159 — a normal-mode
+call's plan on the way to its case, or a plan-mode call's terminal event), then
+`event: result {case…}` / `event: error {error}` — except a plan-mode stream, which ends with
+`event: plan`. Opening the stream with the request itself removes the handshake race a
+202-then-subscribe design has: every event between minting the jobId and the client subscribing
+would otherwise be lost, short of a replay buffer (deferred). A `: ping` comment is written every
+`HEARTBEAT_MS` (15s; `heartbeatMs` in `RestAppOptions` overrides it for tests) independently of
+label activity — a single node (outline generation on a local model, one solver iteration) can
+stay silent for minutes, long enough for a proxy to treat the connection as idle; liveness and
+telemetry are two concerns that happen to coincide, not one mechanism. `jobId` is a **body
+field**, validated against `src/api/JobId.ts`'s `JobIdSchema` since it is also a NATS subject
+token (`cases.result.<jobId>`) even when the request arrives over REST — the `?jobId=` query
+param is gone. **A body with a `plan` generates the case from it**, skipping planning entirely;
+the same jobId as the plan's own call is fine (#159) — the per-job channel allows exactly this
+one reuse after a `planned` outcome (see `core/jobEvents/channel.ts`'s `open()` above). A
+duplicate jobId otherwise (still running, or finished within the channel's tombstone window) is
+a 409 `JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED` on either Accept path, answered before any
+stream opens and without starting a second generation — `CaseGenerationService.start()` (see
+"Case Generation Pipeline" above) is what makes the duplicate check synchronous with respect to
+the caller. On either path, a client disconnect cancels the job (`res.on("close")` calling
+`service.cancel(jobId)`) — there is no in-between-segments state to hold a paused job in any
+more, so a disconnect always has a running call to cancel.
 
 ### NATS Layer
 
@@ -652,7 +774,7 @@ feature — a JetStream stream's retention applies to everything its subject fil
 workqueue retention were single-delivery and stealable — the first ack destroyed them for every
 other consumer).
 
-Four channels, two JetStream streams (`src/transports/nats/subjects.ts`, `streams.ts`):
+Three JetStream streams (`src/transports/nats/subjects.ts`, `streams.ts`):
 
 - **`CASE_REQUESTS`** (workqueue) — subjects `cases.request.*`. A submitted job
   (`cases.request.generate`) is taken by exactly one worker via the durable pull consumer
@@ -661,6 +783,11 @@ Four channels, two JetStream streams (`src/transports/nats/subjects.ts`, `stream
   published on its own subject, `cases.result.<jobId>` (`resultSubject`), so any number of
   independent consumers can each read it, with replay — this is what makes "NATS provides the
   persistence" actually true; workqueue's first ack would have destroyed it for everyone else.
+- **`CASE_PLANS`** (limits, `max_age` ~1h, #159) — subjects `cases.plan.*`. A job's plan is
+  published on its own subject, `cases.plan.<jobId>` (`planSubject`), the same "durable per-job
+  subject" shape as `resultSubject` and for the same reason — published in both modes: a
+  plan-mode call ends with it, a normal-mode call hands it over on the way to its result. `msgID`
+  is keyed on the job alone (`plan-<jobId>`): a job has at most one plan.
 - **`cases.cancel.<jobId>`** (`cancelSubject`) — core NATS request/reply, not JetStream. Answered
   only by the replica that owns the job: `jobResponders.ts`'s `startJobResponders` subscribes to a
   job's cancel subject when the per-job event channel reports it `accepted` and unsubscribes on
@@ -678,16 +805,19 @@ Four channels, two JetStream streams (`src/transports/nats/subjects.ts`, `stream
   "unknown" again rather than "ask again in a second". This is exactly what lets a remote
   observer's `JobDirectory.watch()` tell "finished" (`{state: "terminal"}`) from "never existed
   here" (`{state: "unknown"}`) across replicas, the same distinction `channel.peek()` makes
-  in-process.
+  in-process. A `planned` job stops answering at once (#159), same as `cancel` above: its
+  continuation, with the same jobId, may run on any replica, so this one must not answer for it
+  once it is over.
 - `cases.progress.<jobId>.<accepted|label|complete>` (core NATS, ephemeral fan-out, #144) — see
   "Progress publisher" below.
 
-`streams.ts`'s `ensureStreams(jsm)` creates or reconciles both streams and the durable consumer
-at startup. It fails loudly, not silently, in the two cases JetStream cannot fix in place: the
-**pre-#142 `cases` stream still exists** (its `cases.>` filter overlaps both new streams, and
-retention cannot be changed on an existing stream) — the error message names the stream and
-tells the operator to run `nats stream rm cases`, and existing deployments must do this manually
-before upgrading; or a stream exists with a different retention policy than configured.
+`streams.ts`'s `ensureStreams(jsm)` creates or reconciles all three streams and the durable
+consumer at startup. It fails loudly, not silently, in the two cases JetStream cannot fix in
+place: the **pre-#142 `cases` stream still exists** (its `cases.>` filter overlaps every stream
+here, and retention cannot be changed on an existing stream) — the error message names the
+stream and tells the operator to run `nats stream rm cases`, and existing deployments must do
+this manually before upgrading; or a stream exists with a different retention policy than
+configured.
 
 `cases.handler.ts`'s `runRequestWorker` pulls one request at a time, and **only once a
 generation slot is free** — `service.reserveSlot()` is awaited before the next
@@ -697,18 +827,37 @@ replica rather than being pulled and queued in memory. While a generation runs,
 deadline (`REQUEST_ACK_WAIT_MS`, short) from expiring mid-generation — a crashed replica's job is
 still redelivered quickly, but a merely slow one isn't punished for it.
 
+**Ack only once the call's output is published (#159).** The generator keeps nothing between
+calls, so an unacked request _is_ the recovery path: a replica that dies mid-call stops
+heartbeating (`msg.working()`), the short ack wait (`REQUEST_ACK_WAIT_MS`) runs out, and
+JetStream hands the request to another replica — which reruns it from the start, or, for a
+plan-mode continuation carrying its `plan`, reruns only the second half. `consumeCaseGenerateMessage`
+(`cases.handler.ts`) calls `service.generate()`, publishes its outcome with `publishStop`, and
+only then calls `msg.ack()` — there is no earlier ack point, since there is no checkpoint to be
+durable at. The consumer's `max_deliver` is `REQUEST_MAX_ATTEMPTS + 1` (`streams.ts`): every
+delivery up to `REQUEST_MAX_ATTEMPTS` is a plain retry, and the one past it is caught by
+`msg.info.deliveryCount > REQUEST_MAX_ATTEMPTS` in the handler, which publishes
+`RETRIES_EXHAUSTED` to `cases.result.<jobId>` instead of trying again. `publishStop(graph,
+result)` (`cases.publisher.ts`) is the one function every caller of a call's result goes
+through — the request worker and REST's equivalent path — so "what a stop publishes" is decided
+once: `planned` goes to `cases.plan.<jobId>`, `done`/`failed` go to `cases.result.<jobId>`. A
+duplicate delivery whose jobId is already running or finished on this replica
+(`JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED`) is logged and acked without publishing anything —
+answering it would overwrite the real job's own result.
+
 **NATS parity (#144).** The stated requirement is
 that a client speaking only NATS, or only REST, has every **feature** — asymmetry is allowed only
 in delivery guarantees:
 
-| REST                        | NATS                                                 |
-| --------------------------- | ---------------------------------------------------- |
-| SSE `event: label` on a job | `cases.progress.<jobId>.<accepted\|label\|complete>` |
-| `GET /api/diagnosis`        | `catalog.diagnosis`                                  |
-| `GET /api/procedures`       | `catalog.procedures`                                 |
-| `GET /api/features`         | `meta.features`                                      |
-| `GET /api/allowedLlms`      | `meta.allowedLlms`                                   |
-| `GET /api/graph`            | `meta.graph`                                         |
+| REST                               | NATS                                                 |
+| ---------------------------------- | ---------------------------------------------------- |
+| SSE `event: label` on a job        | `cases.progress.<jobId>.<accepted\|label\|complete>` |
+| `GET /api/diagnosis`               | `catalog.diagnosis`                                  |
+| `GET /api/procedures`              | `catalog.procedures`                                 |
+| `GET /api/features`                | `meta.features`                                      |
+| `GET /api/allowedLlms`             | `meta.allowedLlms`                                   |
+| `GET /api/graph`                   | `meta.graph`                                         |
+| `event: plan` (stop or on the way) | `cases.plan.<jobId>` (#159)                          |
 
 - **Progress publisher** (`progressPublisher.ts`'s `startProgressPublisher`) is a second adapter
   onto the core-owned per-job channel (`src/core/jobEvents/`) — the first being the REST SSE
@@ -806,6 +955,11 @@ a caller hand in a slot it already holds instead of acquiring its own — the NA
 can run yet is never even dequeued into memory, while REST's `POST /api/cases` just lets
 `generate` acquire its own slot inline. Either way the service releases the slot exactly once
 when the job ends, including when a slot handed in turns out to address a duplicate `jobId` (a 409) that never runs.
+
+`CaseGenerationService` calls `limiter.acquire(signal)` only — there is no priority distinction
+between a fresh call and a plan-mode continuation carrying its `plan`; both queue FIFO like any
+other request (#159 removed the priority lanes an earlier, checkpointed design needed to let a
+resumed job jump the queue — there is nothing left to resume).
 
 ### Language
 

@@ -14,7 +14,7 @@ import {
 import { createReadModel } from "@/core/readModel.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { CaseGenerationService } from "@/core/caseGenerationService.js";
-import type { CompiledCaseGraph } from "@/core/graph/02graphs/caseGraph.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
 
 // Same shape as `caseGenerationService.test.ts`'s `fakeGraph`.
 function fakeGraph(): GraphAppContext {
@@ -33,17 +33,25 @@ function fakeGraph(): GraphAppContext {
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase: vi.fn(),
-    caseGraph: {
-      getGraphAsync: async () => ({
-        nodes: { __start__: {}, a: {}, b: {}, __end__: {} },
-        edges: [
-          { source: "__start__", target: "a" },
-          { source: "a", target: "b" },
-          { source: "b", target: "__end__" },
-        ],
-      }),
-    } as unknown as CompiledCaseGraph,
+    ...planAndRenderFrom(vi.fn()),
+    graphs: {
+      plan: {
+        getGraphAsync: async () => ({
+          nodes: { __start__: {}, __end__: {} },
+          edges: [{ source: "__start__", target: "__end__" }],
+        }),
+      },
+      case: {
+        getGraphAsync: async () => ({
+          nodes: { __start__: {}, a: {}, b: {}, __end__: {} },
+          edges: [
+            { source: "__start__", target: "a" },
+            { source: "a", target: "b" },
+            { source: "b", target: "__end__" },
+          ],
+        }),
+      },
+    } as unknown as GraphAppContext["graphs"],
   } as GraphAppContext;
 }
 

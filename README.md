@@ -20,10 +20,11 @@
    - [Presentation](#presentation)
    - [Procedures](#procedures)
    - [Translation](#translation)
-8. [Difficulty Levels](#difficulty-levels)
-9. [Design Notes](#design-notes)
-10. [FAQ](#faq)
-11. [Developer Guide](README-DEV.md)
+8. [Plan Mode](#plan-mode)
+9. [Difficulty Levels](#difficulty-levels)
+10. [Design Notes](#design-notes)
+11. [FAQ](#faq)
+12. [Developer Guide](README-DEV.md)
 
 ## What is AetioMed?
 
@@ -46,6 +47,7 @@ AetioMed runs with Ollama (fully local, self-hosted models), Google Gemini, or a
 - **Restricted Vocabularies**: When configured, procedure names and anamnesis categories are constrained to an approved, translatable list.
 - **Live Progress**: Every pipeline step reports when it starts and finishes, as a short label in the requester's language. A client can fetch the compiled pipeline once and light up its steps as they run, over REST or NATS.
 - **Two Integration Styles**: A synchronous REST API that streams the job back on the same request, and an asynchronous NATS interface whose requests and results survive restarts and dropped connections. Every feature is available on both.
+- **Plan Mode**: Optionally stop once the case outline exists and hand it back in the request's own language; send it back, possibly edited, to generate the case from it.
 - **Cancellation and Fair Scheduling**: Any running or queued job can be cancelled from either transport, and one concurrency limit applies to all of them.
 - **Operator Observability**: OpenTelemetry traces with each step's timing and output, sent to any OTLP-compatible backend, or printed to the console for local development.
 - **Structured Data**: Outputs schema-validated JSON suitable for integration with other educational platforms. Content-bearing fields (`chiefComplaint`, each `anamnesis[].answer`, each `procedures[].result`) are ordered arrays of typed content parts, so a field can carry more than plain text without a schema change.
@@ -236,6 +238,42 @@ Translations are cache-aside. Known terms come from YAML translation files; anyt
 Progress labels are localized too, falling back to English for any step without a translation.
 
 Every LLM-generated translation is persisted with `source: "generated"`, distinguishing it from a clinician-reviewed YAML row (`source: "curated"`), so generated terms can be reviewed and promoted into the curated YAML files. Determinism holds **per deployment**, not across deployments — a fresh install can generate a different German term for the same English source than an existing one did, since nothing forces two independent LLM calls to agree. If cross-deployment stability is ever needed, the answer is curated YAML, not better locking.
+
+## Plan Mode
+
+By default (`mode: "normal"`) a call generates a case end to end and hands over its (English)
+plan on the way. Setting `"mode": "plan"` in the request stops the call once the outline exists
+and returns it instead, in the request's own language. The generator keeps nothing between
+calls: send the same request back with that outline as `plan` (possibly edited — only the
+editable segments, not the fixed section headings) to generate the case from it, skipping
+planning entirely.
+
+**REST** — `POST /api/cases` with `"mode": "plan"` stops instead of returning a finished case:
+
+```bash
+curl -X POST http://localhost:3030/api/cases \
+  -H 'Content-Type: application/json' \
+  -d '{"jobId": "job-1", "diagnosis": "Influenza", "mode": "plan", "language": "German"}'
+# → 200 {"jobId": "job-1", "mode": "plan", "language": "German", "plan": [...]}
+
+curl -X POST http://localhost:3030/api/cases \
+  -H 'Content-Type: application/json' \
+  -d '{"jobId": "job-1", "diagnosis": "Influenza", "language": "German", "plan": [...]}'
+# → 200, the finished case
+```
+
+The same `jobId` is fine on both calls — reusing it after a plan-mode stop is the one case a
+jobId may be resent. Over `Accept: text/event-stream`, the plan arrives as `event: plan` — the
+same event a normal-mode stream gets partway through, on the way to its `event: result`, since
+its plan is handed over rather than paused on.
+
+**NATS** — the same round trip, asynchronous: a plan-mode `cases.request.generate` publishes its
+plan to `cases.plan.<jobId>` instead of `cases.result.<jobId>`; a normal-mode request publishes
+to both, the plan first. Send the continuation with the same `jobId` and the plan as `plan` on
+`cases.request.generate` as usual.
+
+See the [Developer Guide](README-DEV.md) for the full outline segment format and every status
+code.
 
 ## Difficulty Levels
 

@@ -1,5 +1,4 @@
 import {
-  Command,
   END,
   Send,
   START,
@@ -13,7 +12,6 @@ import {
   type RequestContext,
 } from "@/core/graph/utils/context.js";
 import type { PickNested } from "@/core/graph/utils/pickNested.js";
-import { fieldGenerationBlueprintTools } from "./tools.js";
 import { generationTools } from "../../tools.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { renderUserInstructions } from "@/core/graph/utils/prompt.js";
@@ -22,66 +20,25 @@ import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
 import { buildChiefComplaintGraph } from "./chiefComplaint/index.js";
 import { buildAnamnesisGraph } from "./anamnesis/index.js";
 
-const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
-
+// The outline arrives as input (#159): it is produced by the plan graph
+// (`../../01plan/`) and handed to the case graph, so this graph only fans
+// it out to the field generators.
 const GenerationGraphStateSchema = CaseGenerationStateSchema.extend({
   outline: z.string(),
-  /** Iterations remaining before the current outline is accepted as-is. */
-  outlineEvaluationIterationsRemaining: z
-    .number()
-    .default(OUTLINE_EVALUATION_MAX_ITERATIONS),
-  /** Feedback from the last outline evaluation, fed into the revision. */
-  outlineFeedback: z.array(z.string()).default([]),
 });
 
 type GenerationGraphState = z.infer<typeof GenerationGraphStateSchema>;
 
 // This graph is `addNode`'d into `buildCaseGenerationGraph` as
 // `presentation_phase` (issue 17 §1). `.pick()` off this graph's own state
-// schema, not a hand-written duplicate, so the picked channels keep their
-// identical reducer registration. `outline` is kept here deliberately, not
-// narrowed to `{ case }`: `ProcedureGraphStateSchema` picks `outline` too and
-// `result_step` passes it to `generateProcedureResults`, so dropping it here
-// would silently degrade every procedure result.
+// schema, not a hand-written duplicate, so the picked channel keeps its
+// identical reducer registration. `outline` is input only now — the parent
+// already holds it for the procedure phase.
 const GenerationOutputSchema = GenerationGraphStateSchema.pick({
   case: true,
-  outline: true,
 });
 
-// ─── blueprint node ───────────────────────────────────────────────────────────
-
-function makeGenerateCaseOutline(runtime: GraphRuntime) {
-  return async function generateCaseOutline(
-    state: GenerationGraphState,
-    lgRuntime?: Runtime<RequestContext>
-  ): Promise<Pick<GenerationGraphState, "outline">> {
-    const outline = await fieldGenerationBlueprintTools.generateCaseOutline
-      .invoke(
-        {
-          diagnosis: state.diagnosis,
-          generationFlags: state.generationFlags,
-          basisFragments: state.basisFragments,
-          difficulty: state.difficulty,
-          userInstructions: renderUserInstructions(state.userInstructions),
-        },
-        runtime,
-        lgRuntime?.context
-      )
-      .catch((error) => {
-        runtime.log.error(
-          `[GenerationGraph] Error generating case outline: ${error}`
-        );
-        throw error;
-      });
-
-    runtime.log.info(
-      `[GenerationGraph] Case outline generated:\n\`\`\` ${outline}\`\`\``
-    );
-    return { outline };
-  };
-}
-
-// ─── outline evaluate (obviousness + consistency) / regenerate loop ──────────
+// ─── fan-out ──────────────────────────────────────────────────────────────────
 
 function filterUserInstructions(
   userInstructions: GenerationGraphState["userInstructions"],
@@ -94,8 +51,13 @@ function filterUserInstructions(
     : undefined;
 }
 
-/** Builds the fan-out Sends to the field generators once the outline is accepted. */
-function buildFieldGenerationSends(state: GenerationGraphState): Send[] {
+/** Builds the fan-out Sends to the field generators from the handed-in outline. */
+function buildFieldGenerationSends(
+  state: Pick<
+    GenerationGraphState,
+    "generationFlags" | "diagnosis" | "outline" | "userInstructions"
+  >
+): Send[] {
   const sends: Send[] = [];
 
   if (state.generationFlags.includes("patient")) {
@@ -136,96 +98,6 @@ function buildFieldGenerationSends(state: GenerationGraphState): Send[] {
   }
 
   return sends;
-}
-
-function makeOutlineEvaluate(runtime: GraphRuntime) {
-  return async function outlineEvaluate(
-    state: GenerationGraphState,
-    lgRuntime?: Runtime<RequestContext>
-  ): Promise<Command> {
-    if (state.outlineEvaluationIterationsRemaining <= 0) {
-      runtime.log.info(
-        `[GenerationGraph] Outline evaluation iteration cap reached — proceeding with current outline.`
-      );
-      return new Command({ goto: buildFieldGenerationSends(state) });
-    }
-
-    const evaluation = await fieldGenerationBlueprintTools.evaluateOutline
-      .invoke(
-        {
-          diagnosis: state.diagnosis,
-          outline: state.outline,
-          difficulty: state.difficulty,
-          userInstructions: renderUserInstructions(state.userInstructions),
-        },
-        runtime,
-        lgRuntime?.context
-      )
-      .catch((error) => {
-        runtime.log.error(
-          `[GenerationGraph] Error evaluating outline: ${error}`
-        );
-        throw error;
-      });
-
-    runtime.log.info(
-      `[GenerationGraph] Outline evaluation (${state.outlineEvaluationIterationsRemaining} iter left):\n\`\`\`json\n${JSON.stringify(evaluation, null, 2)}\n\`\`\``
-    );
-
-    if (evaluation.accepted) {
-      return new Command({ goto: buildFieldGenerationSends(state) });
-    }
-
-    const feedback = evaluation.suggestion
-      ? [...evaluation.reasons, evaluation.suggestion]
-      : evaluation.reasons;
-
-    return new Command({
-      update: { outlineFeedback: feedback },
-      goto: "outline_regenerate",
-    });
-  };
-}
-
-function makeOutlineRegenerate(runtime: GraphRuntime) {
-  return async function outlineRegenerate(
-    state: GenerationGraphState,
-    lgRuntime?: Runtime<RequestContext>
-  ): Promise<Command> {
-    const outline = await fieldGenerationBlueprintTools.generateCaseOutline
-      .invoke(
-        {
-          diagnosis: state.diagnosis,
-          generationFlags: state.generationFlags,
-          basisFragments: state.basisFragments,
-          difficulty: state.difficulty,
-          userInstructions: renderUserInstructions(state.userInstructions),
-          feedback: state.outlineFeedback,
-          previousOutline: state.outline,
-        },
-        runtime,
-        lgRuntime?.context
-      )
-      .catch((error) => {
-        runtime.log.error(
-          `[GenerationGraph] Error regenerating case outline: ${error}`
-        );
-        throw error;
-      });
-
-    runtime.log.info(
-      `[GenerationGraph] Case outline regenerated:\n\`\`\` ${outline}\`\`\``
-    );
-
-    return new Command({
-      update: {
-        outline,
-        outlineEvaluationIterationsRemaining:
-          state.outlineEvaluationIterationsRemaining - 1,
-      },
-      goto: "outline_evaluate",
-    });
-  };
 }
 
 // ─── fan-out field nodes ──────────────────────────────────────────────────────
@@ -312,39 +184,6 @@ export function buildFieldGenerationGraph(
       output: GenerationOutputSchema,
     })
       .addNode(
-        "case_outline_generate",
-        traceNode(
-          "case_outline_generate",
-          makeGenerateCaseOutline(runtime),
-          "Generating case outline"
-        )
-      )
-      .addNode(
-        "outline_evaluate",
-        traceNode(
-          "outline_evaluate",
-          makeOutlineEvaluate(runtime),
-          "Evaluating case outline"
-        ),
-        {
-          ends: [
-            "outline_regenerate",
-            "patient_generate",
-            "chief_complaint_generate",
-            "anamnesis_generate",
-          ],
-        }
-      )
-      .addNode(
-        "outline_regenerate",
-        traceNode(
-          "outline_regenerate",
-          makeOutlineRegenerate(runtime),
-          "Regenerating case outline"
-        ),
-        { ends: ["outline_evaluate"] }
-      )
-      .addNode(
         "patient_generate",
         traceNode(
           "patient_generate",
@@ -378,8 +217,11 @@ export function buildFieldGenerationGraph(
         traceNode("case_fan_in", caseFanIn, "Assembling case fields")
       )
 
-      .addEdge(START, "case_outline_generate")
-      .addEdge("case_outline_generate", "outline_evaluate")
+      .addConditionalEdges(START, buildFieldGenerationSends, [
+        "patient_generate",
+        "chief_complaint_generate",
+        "anamnesis_generate",
+      ])
       .addEdge("patient_generate", "case_fan_in")
       .addEdge("chief_complaint_generate", "case_fan_in")
       .addEdge("anamnesis_generate", "case_fan_in")

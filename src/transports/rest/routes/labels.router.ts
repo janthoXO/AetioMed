@@ -16,6 +16,9 @@ import { openSse } from "../sse.js";
  * - finished job → `event: complete` with its outcome, then end.
  * - running job → `event: connected`, `event: label`…, `event: complete`.
  *
+ * A plan-mode call (#159) ends with `event: complete` whose status is
+ * `planned`; only the requester ever sees the plan itself.
+ *
  * An observer can watch a job but not collect it: the stream never carries
  * the case (#145, "watch, not collect").
  */

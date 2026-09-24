@@ -30,8 +30,14 @@ export type JobEvent = {
 
 export type JobAcceptedEvent = { jobId: string; timestamp: string };
 
+/**
+ * `planned`: a plan-mode call stopped at its plan (#159). The job is over
+ * here — the case comes from a later call that carries the plan, which may
+ * reuse this jobId (see {@link JobEventChannel.open}).
+ */
 export type JobOutcome =
   | { status: "done" }
+  | { status: "planned" }
   | { status: "cancelled" }
   | { status: "failed"; error: { code: string; message: string } };
 
@@ -63,7 +69,11 @@ export interface JobEventChannel {
    * Reserve `jobId` and open its channel. Returns `false` if the id is
    * already in use: still running, or finished within the last
    * {@link TOMBSTONE_MS}. A jobId is an idempotency key, so a retry of a
-   * finished job must not start a second generation either.
+   * finished job must not start a second generation either — except after a
+   * `planned` stop, whose continuation carries the same jobId (#159), and
+   * after `cancelled`, which is also how a REST call ends when its
+   * connection drops — the client's resend of that call must be able to run
+   * (#159). Such a job is forgotten and the id opened afresh.
    */
   open(jobId: string): boolean;
   /** Deliver an event to the job's subscribers. Dropped if the job is not active. */
@@ -166,6 +176,13 @@ export function createJobEventChannel(): JobEventChannel {
 
   return {
     open(jobId) {
+      const prior =
+        jobs.get(jobId)?.complete ?? tombstones.get(jobId)?.complete;
+      if (prior?.status === "planned" || prior?.status === "cancelled") {
+        teardown(jobId);
+        clearTimeout(tombstones.get(jobId)?.evict);
+        tombstones.delete(jobId);
+      }
       if (jobs.has(jobId) || tombstones.has(jobId)) return false;
       const state: JobState = { listeners: new Set() };
       jobs.set(jobId, state);

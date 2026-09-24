@@ -124,8 +124,9 @@ src/
 ├── api/                      shared request/response Zod schemas, JobId rule, wire codec
 ├── core/
 │   ├── app.ts                the composition root — builds and starts everything
-│   ├── caseGenerationService.ts  the seam both transports call
-│   ├── concurrency.ts        the FIFO limiter behind MAX_CONCURRENT_GENERATIONS
+│   ├── caseGenerationService.ts  the seam both transports call, and the job segment/checkpoint machine
+│   ├── concurrency.ts        the FIFO limiter behind MAX_CONCURRENT_GENERATIONS (+ a resumed-work priority lane)
+│   ├── jobs/                 the job_record checkpoint repo, and SecretBox (per-request API key encryption)
 │   ├── jobEvents/            the per-job event channel, progress labels, the JobDirectory port
 │   ├── readModel.ts          catalogue/meta/graph reads, served identically by both transports
 │   ├── event-bus.ts          typed pub/sub between the graph and its observers
@@ -135,7 +136,12 @@ src/
 │       ├── repos.ts          composes every repo into one bundle
 │       ├── config.ts         graph env schema
 │       ├── structure.ts      the actually-compiled topology behind GET /api/graph
+│       ├── outline/          the outline's segment model — parse/render/validate
 │       ├── 02graphs/         LangGraph graphs, numbered by pipeline phase
+│       │   ├── caseGraph.ts  assembles the plan graph and the case graph
+│       │   ├── outline-translation/  translates a plan out to the requester and back in
+│       │   └── 02case-generation/
+│       │       └── 01plan/   the outline generate ⇄ judge loop (mounted into the plan graph)
 │       ├── 03aigateway/      prompt building, LLM calls, retries, output parsing
 │       ├── catalog/          one vertical slice per catalogue domain (repo + port adapters)
 │       ├── persistence/      shared SQLite infrastructure
@@ -149,9 +155,10 @@ src/
 │   ├── rest/                 Express app (createRestApp), SSE framing, routers
 │   └── nats/                 streams + worker, per-job responders, progress publisher,
 │                             meta service, and the NATS JobDirectory adapter
-└── observability/
-    ├── otel.ts               the OTel adapter — exporter selection, spans, log records
-    └── tracePayload.ts       the size cap on a node's output in a log record
+├── observability/
+│   ├── otel.ts               the OTel adapter — exporter selection, spans, log records
+│   └── tracePayload.ts       the size cap on a node's output in a log record
+└── testing/                  shared test fakes (graphFakes.ts) used across the suite
 ```
 
 The numbered prefixes under `core/graph/` encode pipeline order: graphs call tools, tools call the aigateway. `persistence/`, `catalog/`, `symptoms/`, `medicalBasis/` and `modality/` are deliberately unnumbered — they are not pipeline steps.
@@ -198,7 +205,7 @@ Ownership over NATS is **subscription interest**: the replica running a job subs
 
 > **Compile on what the deployer chose; branch on what the caller asked for.**
 
-`TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are compiled away — an absent flag means an **absent node**, not a skipped one. `generationFlags`, `difficulty` and `language` are per-request and stay runtime branches. All four flag combinations are compiled eagerly at boot; `generateCase` is bound to the one the config selects.
+`TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are compiled away — an absent flag means an **absent node**, not a skipped one. `generationFlags`, `difficulty` and `language` are per-request and stay runtime branches. All four flag combinations are compiled eagerly at boot; `planCase`/`renderCase` are bound to the one the config selects.
 
 ### Tool Pattern
 
@@ -261,17 +268,17 @@ The generated database lives under `CACHE_DIR` (default `data/cache/`), delibera
 
 Requires the `REST` feature flag.
 
-| Method   | Path                       | Purpose                                                                                  |
-| -------- | -------------------------- | ---------------------------------------------------------------------------------------- |
-| `GET`    | `/api/health`              | Health check                                                                             |
-| `GET`    | `/api/features`            | Active feature flags                                                                     |
-| `GET`    | `/api/allowedLlms`         | Allowlisted LLMs (when `ALLOW_LLMS` is set)                                              |
-| `GET`    | `/api/diagnosis`           | List predefined diagnoses                                                                |
-| `GET`    | `/api/procedures`          | List predefined procedures                                                               |
-| `GET`    | `/api/graph`               | Compiled graph topology — nodes, edges, English label keys — for this deployment's flags |
-| `POST`   | `/api/cases`               | Generate a case — streamed as SSE, or blocking JSON (see below)                          |
-| `GET`    | `/api/cases/:jobId/labels` | Watch any job's progress as SSE — `404` for an unknown job                               |
-| `DELETE` | `/api/cases/:jobId`        | Cancel any job — `204` cancelled, `404` finished or unknown, `504` owner unreachable     |
+| Method   | Path                       | Purpose                                                                                                                                   |
+| -------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/health`              | Health check                                                                                                                              |
+| `GET`    | `/api/features`            | Active feature flags                                                                                                                      |
+| `GET`    | `/api/allowedLlms`         | Allowlisted LLMs (when `ALLOW_LLMS` is set)                                                                                               |
+| `GET`    | `/api/diagnosis`           | List predefined diagnoses                                                                                                                 |
+| `GET`    | `/api/procedures`          | List predefined procedures                                                                                                                |
+| `GET`    | `/api/graph`               | Compiled graph topology — nodes, edges, English label keys — for this deployment's flags                                                  |
+| `POST`   | `/api/cases`               | Generate a case — streamed as SSE, or blocking JSON (see below); plan mode stops at the plan, and a `plan` in the body generates from one |
+| `GET`    | `/api/cases/:jobId/labels` | Watch any job's progress as SSE — `404` for an unknown job                                                                                |
+| `DELETE` | `/api/cases/:jobId`        | Cancel any job — `204` cancelled, `404` finished or unknown, `504` owner unreachable                                                      |
 
 A request body needs either `icd` or `diagnosis`; `generationFlags` defaults to all four fields and must name at least one; `difficulty` defaults to `medium`. `jobId` is optional — the server mints a UUID when it is omitted — and must match `[A-Za-z0-9_-]{1,128}`, because it is also a NATS subject token. The response echoes the resolved `language`, and content-bearing fields are wire-encoded (see Content Parts).
 
@@ -308,6 +315,13 @@ data: {"patient": {…}, "jobId":"3fa2…","language":"English"}
 
 `event: accepted` is written before any node runs, so the client never learns its jobId too late to follow it. A `: ping` comment is written every 15 seconds regardless of label activity, so a proxy never closes a connection that merely looks idle during a long node. On failure the stream ends with `event: error` instead of `event: result`. A duplicate `jobId` is a `409` on either path, answered before any stream opens.
 
+**Plan mode** (`"mode": "plan"`) stops the call once the outline exists and hands it back as
+`event: plan` instead of `event: result` (a normal-mode stream gets `event: plan` too, partway
+through, on the way to its `event: result` — the generator hands the plan over rather than
+pausing on it). Send the same request back with that outline (possibly edited) as `plan` to
+generate the case from it, reusing the same `jobId` — the one case a `jobId` may be resent for.
+See [Plan Mode](README.md#plan-mode) in the main README for the outline segment format.
+
 **Disconnecting cancels the job**, on both paths. REST keeps no result store, so there is nothing to come back to; a client that must survive a dropped connection should use NATS.
 
 ### Watching and cancelling
@@ -327,15 +341,16 @@ An observer can **watch** a job but not **collect** it: `complete` carries the o
 
 Requires the `NATS` feature flag. Subjects are split on **durability**, not on feature: a JetStream stream's retention applies to everything its filter captures, so each retention policy gets its own stream (`transports/nats/subjects.ts`).
 
-| Subject                                            | Kind                                 | Purpose                                                                                    |
-| -------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `cases.request.generate`                           | JetStream `CASE_REQUESTS`, workqueue | Submit a job — the same body as `POST /api/cases`, with `jobId` **required**               |
-| `cases.result.<jobId>`                             | JetStream `CASE_RESULTS`, limits, 1h | The job's case or error — replayable, by any number of readers                             |
-| `cases.progress.<jobId>.{accepted,label,complete}` | core NATS, fan-out                   | The job's progress events — the same payloads as the SSE stream                            |
-| `cases.cancel.<jobId>`                             | core NATS, request/reply             | Cancel → `{cancelled}`; "no responders" for an unknown or finished job                     |
-| `cases.status.<jobId>`                             | core NATS, request/reply             | `{state: "active"}` or `{state: "terminal", complete}`; "no responders" for an unknown job |
-| `catalog.diagnosis`, `catalog.procedures`          | request/reply, service `aetiomed`    | The same payloads as `GET /api/diagnosis` and `/api/procedures`                            |
-| `meta.features`, `meta.allowedLlms`, `meta.graph`  | request/reply, service `aetiomed`    | The same payloads as `GET /api/features`, `/api/allowedLlms` and `/api/graph`              |
+| Subject                                            | Kind                                 | Purpose                                                                                                                          |
+| -------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `cases.request.generate`                           | JetStream `CASE_REQUESTS`, workqueue | Submit a job — the same body as `POST /api/cases`, with `jobId` **required**; a `plan` field generates from it                   |
+| `cases.result.<jobId>`                             | JetStream `CASE_RESULTS`, limits, 1h | The job's case or error — replayable, by any number of readers                                                                   |
+| `cases.plan.<jobId>`                               | JetStream `CASE_PLANS`, limits, 1h   | The job's plan — a plan-mode stop, or a normal-mode job's plan on the way to its result; replayable, like `cases.result.<jobId>` |
+| `cases.progress.<jobId>.{accepted,label,complete}` | core NATS, fan-out                   | The job's progress events — the same payloads as the SSE stream                                                                  |
+| `cases.cancel.<jobId>`                             | core NATS, request/reply             | Cancel → `{cancelled}`; "no responders" for an unknown or finished job                                                           |
+| `cases.status.<jobId>`                             | core NATS, request/reply             | `{state: "active"}` or `{state: "terminal", complete}`; "no responders" for an unknown job, or a `planned` job past its stop     |
+| `catalog.diagnosis`, `catalog.procedures`          | request/reply, service `aetiomed`    | The same payloads as `GET /api/diagnosis` and `/api/procedures`                                                                  |
+| `meta.features`, `meta.allowedLlms`, `meta.graph`  | request/reply, service `aetiomed`    | The same payloads as `GET /api/features`, `/api/allowedLlms` and `/api/graph`                                                    |
 
 **Why the jobId is required.** It is the address of the result: a client subscribes to `cases.result.<jobId>` before or after submitting, and a server-minted id would be unfindable. A request without a valid one is terminated, not processed.
 
@@ -345,7 +360,7 @@ Requires the `NATS` feature flag. Subjects are split on **durability**, not on f
 
 **The reads** run as a NATS micro-service (`@nats-io/services`, `metaService.ts`), so a NATS-only client can discover them through `$SRV.PING|INFO|STATS.aetiomed`.
 
-**Upgrading from before the stream split.** The old `cases` stream (`cases.>`, workqueue) overlaps both new streams and cannot be migrated in place. Startup refuses to run while it exists. Delete it by hand — `nats stream rm cases` — after checking it holds no unprocessed requests.
+**Upgrading from before the stream split.** The old `cases` stream (`cases.>`, workqueue) overlaps every stream above and cannot be migrated in place. Startup refuses to run while it exists. Delete it by hand — `nats stream rm cases` — after checking it holds no unprocessed requests.
 
 ## Observability
 

@@ -28,6 +28,7 @@ import {
   describeProviders,
 } from "../modality/composition.js";
 import type { ModalityProvider, PlannedPart } from "../modality/ports.js";
+import type { LevelItem, ProcedureCandidates } from "../catalog/ports.js";
 import { OUTLINE_SECTIONS } from "../outline/segments.js";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
@@ -90,6 +91,29 @@ function previousProceduresSection(
   );
 }
 
+function ruledOutSection(ruledOutDiagnoses: string[]) {
+  return ruledOutDiagnoses.length > 0
+    ? section(
+        "Ruled-out diagnoses",
+        `The following diagnoses have already been ruled out — do NOT propose any of these again:
+${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
+      )
+    : undefined;
+}
+
+const BLINDED_ROLE = `You are an attending physician working up a patient in a clinical training simulator.
+You do NOT know the final diagnosis - reason purely from the patient's presentation and the results of procedures ordered so far.
+You work under real-world time and cost constraints: every procedure costs time and money, so run a focused, high-yield workup — not an exhaustive one.
+Your goal: reach a confident working diagnosis with as few procedures as possible.`;
+
+const DIAGNOSE_RULE = `- "diagnose": Commit to a diagnosis as soon as one clearly best explains the presentation and the evidence so far (roughly 90% confidence). You do NOT need certainty, and you do NOT need to rule out every alternative — a real physician stops testing once the leading diagnosis is well supported and no dangerous alternative remains plausible. When in doubt between ordering another marginal procedure and diagnosing, prefer to diagnose.`;
+
+const DiagnoseActionSchema = z.object({
+  action: z.literal("diagnose"),
+  diagnosisName: z.string().describe("the diagnosis you commit to"),
+  reasoning: z.string().optional().describe("brief clinical reasoning"),
+});
+
 function diagnosisLabel(diagnosis: Diagnosis) {
   return `${diagnosis.name}${diagnosis.icd ? ` (${diagnosis.icd})` : ""}`;
 }
@@ -114,19 +138,18 @@ function workupBudgetSection(iterationsRemaining: number | undefined) {
 
 // ─── 1. generateBlindedProcedureStep ─────────────────────────────────────────
 
-function buildStepSchema(procedureFieldSchema: z.ZodTypeAny) {
-  return z.discriminatedUnion("action", [
-    z.object({
-      action: z.literal("procedure"),
-      procedures: procedureFieldSchema,
-      reasoning: z.string().optional().describe("brief clinical reasoning"),
-    }),
-    z.object({
-      action: z.literal("diagnose"),
-      diagnosisName: z.string().describe("the diagnosis you commit to"),
-      reasoning: z.string().optional().describe("brief clinical reasoning"),
-    }),
-  ]);
+function buildStepSchema(
+  procedureFieldSchema: z.ZodTypeAny,
+  allowDiagnose: boolean
+) {
+  const order = z.object({
+    action: z.literal("procedure"),
+    procedures: procedureFieldSchema,
+    reasoning: z.string().optional().describe("brief clinical reasoning"),
+  });
+  return allowDiagnose
+    ? z.discriminatedUnion("action", [order, DiagnoseActionSchema])
+    : z.discriminatedUnion("action", [order]);
 }
 
 /**
@@ -135,21 +158,22 @@ function buildStepSchema(procedureFieldSchema: z.ZodTypeAny) {
  * the true diagnosis. It returns either:
  *   • action "procedure" — the next procedure(s) to order (name only — the
  *     solver never assigns relevance, since it doesn't know the diagnosis), or
- *   • action "diagnose"  — a diagnosis it commits to based on available evidence.
+ *   • action "diagnose"  — a diagnosis it commits to based on available evidence,
+ *     unless `allowDiagnose` is false (a level selection earlier in this step
+ *     already offered it).
+ * `candidates`: what is left to order, possibly narrowed level by level.
  */
 export async function generateBlindedProcedureStep(
   runtime: GraphRuntime,
+  candidates: ProcedureCandidates,
   presentation: Presentation,
   previousProcedures: PreviousProcedureFinding[],
   ruledOutDiagnoses: string[],
   userInstructions?: string,
   iterationsRemaining?: number,
-  context?: RequestContext
+  context?: RequestContext,
+  allowDiagnose = true
 ): Promise<BlindedProcedureStepResult> {
-  const candidates = runtime.catalogs.procedures
-    .candidates()
-    .exclude(previousProcedures);
-
   if (candidates.isEmpty()) {
     // All approved procedures ordered; empty pick means "bridge".
     console.warn(
@@ -162,19 +186,13 @@ export async function generateBlindedProcedureStep(
   const systemPrompt = buildSystemPrompt(
     runtime,
     "internal",
-    section(
-      "Role",
-      `You are an attending physician working up a patient in a clinical training simulator.
-You do NOT know the final diagnosis - reason purely from the patient's presentation and the results of procedures ordered so far.
-You work under real-world time and cost constraints: every procedure costs time and money, so run a focused, high-yield workup — not an exhaustive one.
-Your goal: reach a confident working diagnosis with as few procedures as possible.`
-    ),
+    section("Role", BLINDED_ROLE),
 
     section(
       "Rules",
       `Choose ONE action:
 - "procedure": Order the next batch of clinically indicated procedures based on the available evidence. Order ONLY high-yield procedures that will meaningfully change your leading diagnosis — skip tests that merely add marginal confirmation or chase unlikely alternatives. You may schedule MULTIPLE procedures together in the same batch, but ONLY if they are mutually independent — none of them interferes with, contraindicates, or depends on the result of another in the batch. If a procedure's indication depends on the result of another procedure you'd also want to order now, leave it for a later iteration instead of batching it.
-- "diagnose": Commit to a diagnosis as soon as one clearly best explains the presentation and the evidence so far (roughly 90% confidence). You do NOT need certainty, and you do NOT need to rule out every alternative — a real physician stops testing once the leading diagnosis is well supported and no dangerous alternative remains plausible. When in doubt between ordering another marginal procedure and diagnosing, prefer to diagnose.
+${allowDiagnose ? DIAGNOSE_RULE : ""}
 
 When an approved procedure list is provided, every procedure name MUST be an exact name from that list.
 Do NOT re-order any procedure that already appears in the workup so far.`
@@ -183,7 +201,7 @@ Do NOT re-order any procedure that already appears in the workup so far.`
     section(
       "Output format",
       `Return ONLY a valid JSON object matching one of these shapes:
-${renderSchemaForPrompt(buildStepSchema(candidates.promptSchema()))}`
+${renderSchemaForPrompt(buildStepSchema(candidates.promptSchema(), allowDiagnose))}`
     )
   );
 
@@ -196,13 +214,7 @@ ${renderSchemaForPrompt(buildStepSchema(candidates.promptSchema()))}`
 
     previousProceduresSection(previousProcedures),
 
-    ruledOutDiagnoses.length > 0
-      ? section(
-          "Ruled-out diagnoses",
-          `The following diagnoses have already been ruled out — do NOT propose any of these again:
-${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
-        )
-      : undefined,
+    ruledOutSection(ruledOutDiagnoses),
 
     workupBudgetSection(iterationsRemaining),
 
@@ -214,7 +226,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
   );
 
   try {
-    const StepSchema = buildStepSchema(candidates.grammar());
+    const StepSchema = buildStepSchema(candidates.grammar(), allowDiagnose);
 
     const rawResult = await retry(
       async (attempt, previousError) => {
@@ -268,6 +280,181 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
     console.error("[GenerateBlindedProcedureStep] Error:", error);
     throw error;
   }
+}
+
+// ─── selectProcedureLevel ─────────────────────────────────────────────────────
+
+export type LevelSelection =
+  | { action: "select"; items: LevelItem[]; reasoning?: string | undefined }
+  | {
+      action: "diagnose";
+      diagnosisName: string;
+      reasoning?: string | undefined;
+    };
+
+/**
+ * What one level selection sees. `blinded` never carries the diagnosis (same
+ * guard as `BlindedView`); `bridge` knows it and never diagnoses.
+ */
+export type LevelSelectionView =
+  | {
+      mode: "blinded";
+      presentation: Presentation;
+      previousProcedures: PreviousProcedureFinding[];
+      ruledOutDiagnoses: string[];
+      userInstructions?: string | undefined;
+      iterationsRemaining: number;
+      allowDiagnose: boolean;
+    }
+  | {
+      mode: "bridge";
+      presentation: Presentation;
+      diagnosis: Diagnosis;
+      previousProcedures: PreviousProcedureFinding[];
+      userInstructions?: string | undefined;
+    };
+
+function levelItemLabel(item: LevelItem): string {
+  return item.kind === "category" ? item.path.join(" › ") : refLabel(item.ref);
+}
+
+function renderLevelItem(item: LevelItem): string {
+  if (item.kind === "procedure") return `- ${refLabel(item.ref)}`;
+  const more = item.size > item.sample.length ? ", …" : "";
+  return `- ${levelItemLabel(item)} (category, ${item.size} procedures, e.g. ${item.sample.join(", ")}${more})`;
+}
+
+/**
+ * One level of narrowing a catalogue too large to pick from at once: the
+ * model chooses whole categories and/or single procedures from `items`; the
+ * caller opens the chosen categories one level deeper or lets the model pick
+ * from them. Blinded mode may diagnose instead (first level only).
+ */
+export async function selectProcedureLevel(
+  runtime: GraphRuntime,
+  view: LevelSelectionView,
+  items: LevelItem[],
+  context?: RequestContext
+): Promise<LevelSelection> {
+  const byLabel = new Map(items.map((item) => [levelItemLabel(item), item]));
+  const allowDiagnose = view.mode === "blinded" && view.allowDiagnose;
+
+  const select = z.object({
+    action: z.literal("select"),
+    items: z
+      .array(z.literal([...byLabel.keys()]))
+      .describe("exact labels of the categories and procedures to keep"),
+    reasoning: z.string().optional().describe("brief clinical reasoning"),
+  });
+  const schema = allowDiagnose
+    ? z.discriminatedUnion("action", [select, DiagnoseActionSchema])
+    : z.discriminatedUnion("action", [select]);
+  const promptSchema = z.object({
+    action: z.literal("select"),
+    items: z
+      .array(z.string())
+      .describe("exact labels of the categories and procedures to keep"),
+    reasoning: z.string().optional().describe("brief clinical reasoning"),
+  });
+
+  const narrowing = `The approved procedure catalogue is too large to show at once, so it is narrowed level by level. Choose the categories that contain procedures you may want to order now, and any single procedures listed directly. You then see the full contents of the chosen categories and pick exact procedures from them — anything you do not choose here is unavailable for this step, so be inclusive, but leave out clearly irrelevant areas.`;
+
+  const systemPrompt = buildSystemPrompt(
+    runtime,
+    "internal",
+    section(
+      "Role",
+      view.mode === "blinded"
+        ? BLINDED_ROLE
+        : `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
+The true diagnosis is known to you. The diagnostic workup so far has not yet confirmed the diagnosis. You are choosing where in the catalogue the confirmatory procedures are.`
+    ),
+    section(
+      "Rules",
+      allowDiagnose
+        ? `Choose ONE action:
+- "select": ${narrowing}
+${DIAGNOSE_RULE}`
+        : narrowing
+    ),
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object matching ${allowDiagnose ? "one of these shapes" : "this shape"}:
+${renderSchemaForPrompt(
+  allowDiagnose
+    ? z.discriminatedUnion("action", [promptSchema, DiagnoseActionSchema])
+    : promptSchema
+)}`
+    )
+  );
+
+  const userPrompt = buildPrompt(
+    presentationSection(view.presentation),
+    view.mode === "bridge"
+      ? section("True diagnosis", diagnosisLabel(view.diagnosis))
+      : undefined,
+    section(
+      "Catalogue level (choose by exact label)",
+      items.map(renderLevelItem).join("\n")
+    ),
+    section("Additional instructions", view.userInstructions),
+    previousProceduresSection(view.previousProcedures),
+    view.mode === "blinded"
+      ? ruledOutSection(view.ruledOutDiagnoses)
+      : undefined,
+    view.mode === "blinded"
+      ? workupBudgetSection(view.iterationsRemaining)
+      : undefined,
+    view.mode === "blinded"
+      ? `Based on the patient's presentation and the workup so far, which parts of the catalogue are relevant for your next batch?`
+      : `Which parts of the catalogue contain the procedures needed to confirm the diagnosis?`
+  );
+
+  console.debug(
+    `[SelectProcedureLevel] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+  );
+
+  const raw = await retry(
+    async (attempt, previousError) => {
+      const res = (await runtime.llm
+        .for({ role: "generator", temperature: "balanced" }, context?.llmConfig)
+        .withStructuredOutput(schema)
+        .invoke(
+          [
+            new SystemMessage(systemPrompt),
+            new HumanMessage(userPrompt + errorFeedback(previousError)),
+          ],
+          context?.signal !== undefined ? { signal: context.signal } : undefined
+        )
+        .catch((error) => {
+          handleLangchainError(error);
+        })) as
+        | { action: "select"; items: string[]; reasoning?: string }
+        | { action: "diagnose"; diagnosisName: string; reasoning?: string };
+      console.debug(
+        `[SelectProcedureLevel] [Attempt ${attempt}] Response:\n`,
+        JSON.stringify(res, null, 2)
+      );
+      return res;
+    },
+    2,
+    0,
+    (error, attempt) => {
+      const msg = `[SelectProcedureLevel] Attempt ${attempt} failed: ${error.message}`;
+      console.error(msg);
+      runtime.log.error(msg);
+    }
+  );
+
+  if (raw.action === "diagnose") return raw;
+  return {
+    action: "select",
+    items: [...new Set(raw.items)].flatMap((label) => {
+      const item = byLabel.get(label);
+      return item ? [item] : [];
+    }),
+    reasoning: raw.reasoning,
+  };
 }
 
 // ─── 2. planProcedureResults ──────────────────────────────────────────────────
@@ -444,7 +631,7 @@ ${outline}`
 // Bridge PICKS confirmatory procedure names (bare `Procedure[]`, same shape
 // as `pendingProcedures` after a blinded "order"), then defers to
 // `planProcedureResults` (same planner as `result_step`) for relevance and
-// rendering plan (`DirectPick.bridge`).
+// rendering plan (`DrillDownPick.bridge`).
 // `ProcedureCandidates.grammar()`/`.assemble()` cover flat/grouped/freeform.
 
 function buildBridgePickSchema(procedureFieldSchema: z.ZodTypeAny) {
@@ -461,16 +648,13 @@ function buildBridgePickSchema(procedureFieldSchema: z.ZodTypeAny) {
  */
 export async function pickBridgeProcedures(
   runtime: GraphRuntime,
+  candidates: ProcedureCandidates,
   presentation: Presentation,
   diagnosis: Diagnosis,
   previousProcedures: PreviousProcedureFinding[],
   userInstructions?: string,
   context?: RequestContext
 ): Promise<ProcedureRef[]> {
-  const candidates = runtime.catalogs.procedures
-    .candidates()
-    .exclude(previousProcedures);
-
   if (candidates.isEmpty()) {
     console.warn(
       "[PickBridgeProcedures] All approved procedures already ordered — nothing left to bridge with."

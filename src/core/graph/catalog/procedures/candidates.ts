@@ -4,10 +4,17 @@ import { ProcedureSchema, type Procedure } from "../../models/Procedure.js";
 import {
   filterTree,
   leafCount,
+  leaves,
   refKey,
   type ProcedureRef,
 } from "../../models/ProcedureTree.js";
-import type { ProcedureCandidates, ProcedureCatalogTree } from "../ports.js";
+import type {
+  LevelItem,
+  ProcedureCandidates,
+  ProcedureCatalogTree,
+} from "../ports.js";
+
+const LEVEL_SAMPLE_SIZE = 3;
 
 /**
  * Candidate procedures for one pick: a catalogue tree, or `undefined` for
@@ -28,6 +35,55 @@ export class ProcedureCandidatesImpl implements ProcedureCandidates {
       filterTree(
         this.tree,
         (path, leaf) => !orderedKeys.has(refKey({ path, name: leaf.name }))
+      )
+    );
+  }
+
+  size(): number | undefined {
+    return this.tree && leafCount(this.tree);
+  }
+
+  levelItems(open: string[][]): LevelItem[] {
+    if (!this.tree) return [];
+    const tree = this.tree;
+    return open.flatMap((path) => {
+      const node = subtreeAt(tree, path);
+      if (!node) return [];
+      return [
+        ...node.categories.map(
+          (c): LevelItem => ({
+            kind: "category",
+            path: [...path, c.name],
+            size: leafCount(c),
+            sample: leaves(c)
+              .slice(0, LEVEL_SAMPLE_SIZE)
+              .map((l) => l.leaf.name),
+          })
+        ),
+        ...node.procedures.map(
+          (p): LevelItem => ({ kind: "procedure", ref: { path, name: p.name } })
+        ),
+      ];
+    });
+  }
+
+  narrow(
+    procedures: ProcedureRef[],
+    categories: string[][]
+  ): ProcedureCandidates {
+    if (!this.tree) return this;
+    const keys = new Set(procedures.map(refKey));
+    const under = (path: string[]) =>
+      categories.some(
+        (category) =>
+          path.length >= category.length &&
+          category.every((name, i) => path[i] === name)
+      );
+    return new ProcedureCandidatesImpl(
+      filterTree(
+        this.tree,
+        (path, leaf) =>
+          under(path) || keys.has(refKey({ path, name: leaf.name }))
       )
     );
   }
@@ -120,6 +176,17 @@ function treePickGrammar(tree: ProcedureCatalogTree): z.ZodObject {
       .describe("sub-selections keyed by exact category name");
   }
   return z.object(shape);
+}
+
+function subtreeAt(
+  tree: ProcedureCatalogTree,
+  path: string[]
+): ProcedureCatalogTree | undefined {
+  let node: ProcedureCatalogTree | undefined = tree;
+  for (const name of path) {
+    node = node?.categories.find((c) => c.name === name);
+  }
+  return node;
 }
 
 /** Indented outline: procedures as `- name`, categories as `name:` with their contents below. */

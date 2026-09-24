@@ -24,32 +24,32 @@ export const BasisQuerySchema = z.object({
 });
 
 /**
- * One labelled slab of third-party content for the plan prompt.
- * `retrievedAt` from `runtime.clock()`, never `new Date()`. Zod schema
- * because it lives on graph state (`CaseGenerationStateSchema.basisFragments`).
+ * One provider's contribution to the plan prompt. `source` is the provider's
+ * `description`, shown as the fragment's header. Zod schema because it lives
+ * on graph state (`CaseGenerationStateSchema.basisFragments`).
  */
 export const BasisFragmentSchema = z.object({
-  sourceId: z.string(),
-  /** Section heading in the rendered prompt. */
-  label: z.string(),
+  source: z.string(),
   content: z.string(),
-  /** ISO 8601, from `runtime.clock()`. */
-  retrievedAt: z.string(),
-  licence: z.string().optional(),
 });
 
 export type BasisFragment = z.infer<typeof BasisFragmentSchema>;
 
 /**
- * Source of disease knowledge for the plan stage. May return zero or more
- * fragments and may throw; `resolveAllFragments` logs and skips a throwing
- * provider.
+ * Source of disease knowledge for the plan stage. Returns plain text, or
+ * `undefined` when it has nothing for this query (not rendered). May throw;
+ * `resolveAllFragments` logs and skips a throwing provider.
  *
  * `fetch` takes whole `RequestContext`, not just `AbortSignal`: under
  * `ALLOW_LLMS`, `llmConfig` is the only source of provider/model, needed by
- * providers that call an LLM (`umlsSymptoms` on cache miss).
+ * providers that call an LLM (`llmSymptoms` on cache miss).
  */
 export interface MedicalBasisProvider {
   readonly id: string;
-  fetch(query: BasisQuery, context?: RequestContext): Promise<BasisFragment[]>;
+  /** What the provider supplies; header of its fragment in the prompt. */
+  readonly description: string;
+  fetch(
+    query: BasisQuery,
+    context?: RequestContext
+  ): Promise<string | undefined>;
 }

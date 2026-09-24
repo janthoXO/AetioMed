@@ -18,7 +18,6 @@ export async function generateSymptomsOneShot(
   runtime: GraphRuntime,
   diagnosis: Diagnosis,
   userInstructions?: string,
-  symptomsToExclude: Symptom[] = [],
   context?: RequestContext
 ): Promise<Symptom[]> {
   const SymptomArrayWrapperSchema = z.object({
@@ -50,13 +49,6 @@ ${renderSchemaForPrompt(SymptomArrayWrapperSchema)}`
 
   const userPrompt = buildPrompt(
     section("Provided diagnosis", `${diagnosis.name} ${diagnosis.icd ?? ""}`),
-
-    symptomsToExclude.length > 0
-      ? section(
-          "Excluded symptoms",
-          `Try to generate symptoms that are not in this list: ${symptomsToExclude.map((s) => s.name).join(", ")}`
-        )
-      : undefined,
 
     section("Additional instructions", userInstructions)
   );

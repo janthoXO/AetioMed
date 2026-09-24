@@ -211,7 +211,6 @@ describe("labels.router — end-to-end over real HTTP", () => {
         return {
           diagnosis: opts.diagnosis,
           userInstructions: opts.userInstructions,
-          basisFragments: [],
           outlineAccepted: true,
           outlineSegments: [
             { fixed: false, text: "" },

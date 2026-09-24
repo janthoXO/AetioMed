@@ -56,7 +56,7 @@ export interface GraphAppContext {
   /**
    * Compiled plan + case graphs this deployment serves (deployer's flag
    * variant). Consumed by `GET /api/graph` (`structure.ts`) via
-   * `getGraphAsync({ xray: true })`, same call as `02graphs/exportGraphs.ts`.
+   * `getGraphAsync({ xray: true })`, same call as `scripts/exportGraphs.ts`.
    */
   graphs: CompiledCaseGraphs;
 }

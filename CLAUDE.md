@@ -14,7 +14,7 @@ pnpm lint         # eslint
 pnpm lint:fix     # eslint --fix
 pnpm format       # prettier --write src (markdown, package.json, workflows and scripts/ are not covered)
 pnpm format:check # prettier --check src
-pnpm graph:export # export LangGraph diagrams as SVGs (src/core/graph/02graphs/exportGraphs.ts)
+pnpm graph:export # export LangGraph diagrams as SVGs (scripts/exportGraphs.ts)
 pnpm db:generate  # drizzle-kit generate — regenerate SQL migrations in drizzle/
 ```
 
@@ -237,7 +237,7 @@ LangGraph computes at every point a compiled subgraph is mounted (issue 15 §3/�
 **`GET /api/graph`** (`core/graph/structure.ts` + `transports/rest/routes/graph.router.ts`) is
 always on, following labels' gate: it returns the deployment's actually-compiled topology —
 nodes (with English `labelKey`) and edges from `getGraphAsync({ xray: true })`, the same call
-`02graphs/exportGraphs.ts` uses for mermaid diagrams. Label keys, not localized strings: the
+`scripts/exportGraphs.ts` uses for mermaid diagrams. Label keys, not localized strings: the
 structure is language-independent and cacheable; a client wanting localization already has it
 on the label channel, per job. Since #159 the pipeline is two top-level graphs (plan, case), so
 `buildGraphStructure` returns their **union**, in execution order — plan, then the sandwich's
@@ -271,7 +271,7 @@ slice's `index.ts`. `catalog/index.ts` composes all four `Yaml*` adapters into t
 
 `procedures/index.ts` and `anamnesis/index.ts` export their repo alongside their catalog —
 not just the port adapter — because the from-English translation graph
-(`02graphs/03case-translation-from-english/`) and `02graphs/exportGraphs.ts` still bypass the
+(`02graphs/03case-translation-from-english/`) and `scripts/exportGraphs.ts` still bypass the
 `ProcedureCatalog`/`AnamnesisCatalog` port to reach translation accessors
 (`getProcedureNameTranslationFromEnglish`/`saveProcedureNameTranslation`,
 `getAnamnesisCategoryTranslationFromEnglish`/`saveAnamnesisCategoryTranslations`) that the
@@ -447,8 +447,13 @@ pure wiring with no I/O, so four is cheap.
 `pnpm graph:export` writes **two** topologies to `docs/graphs/`, not four:
 `PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter and leaves the procedure graph at
 three nodes either way, so it is not a shape (`graphTopologyKey` is the authority, and
-`caseGraph.test.ts` asserts the premise still holds). Each topology gets the one detailed view
-the script produces.
+`caseGraph.test.ts` asserts the premise still holds). Each topology gets one diagram per run
+mode (`plan-mode.<topology>`, `normal-mode.<topology>`): the script lives in `scripts/`, not
+`src/`, so it never lands in `dist/`. It mounts the compiled graphs in an export-only wrapper
+that draws the job service's call sequence as edges — plan, then (plan mode) `outlineOut` →
+`human_review` → `reviewIn`, then case. The wrapper level is stripped from node ids before
+`drawMermaid`, because that function silently drops every subgraph that sits under a prefix
+with no edges of its own.
 
 **Generation flags** (`src/core/graph/models/GenerationFlags.ts`): `patient`, `chiefComplaint`, `anamnesis`, `procedures`. Requests also carry a **difficulty** (`models/Difficulty.ts`: `easy | medium | hard`, default `medium`).
 

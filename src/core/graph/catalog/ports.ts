@@ -34,8 +34,6 @@ export interface ProcedureCatalog {
   categories(): string[];
   /** The full candidate set. */
   candidates(): ProcedureCandidates;
-  /** Candidates narrowed to these categories, plus the uncategorized bucket. */
-  scope(categories: string[]): ProcedureCandidates;
 }
 
 export interface ProcedureCandidates {
@@ -47,8 +45,6 @@ export interface ProcedureCandidates {
   /** Remove already-ordered procedures (full names). Returns a new set. */
   exclude(ordered: ProcedureName[]): ProcedureCandidates;
   isEmpty(): boolean;
-  /** Real categories still present in this candidate set. */
-  categories(): string[];
   /** Zod schema constraining a pick to this set — the grammar sent to the provider. */
   grammar(): z.ZodTypeAny;
   /** Name-agnostic schema for the prompt's "Output format" example. */
@@ -59,8 +55,6 @@ export interface ProcedureCandidates {
    * is mode-dependent and the mode is the catalogue's business.
    */
   render(): string | undefined;
-  /** One line per real category with a size hint and sample names. */
-  categoryMenu(only?: string[]): string;
   /** Turn a model's raw pick back into full "Category: Name" values. */
   assemble(pick: unknown): Procedure[];
 }

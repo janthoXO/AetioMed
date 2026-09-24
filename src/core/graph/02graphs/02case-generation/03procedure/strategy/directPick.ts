@@ -16,10 +16,9 @@ import { invokeLogged } from "./invokeLogged.js";
 import { toSolverMove } from "./solverMove.js";
 
 /**
- * Default strategy: one LLM call against full candidate list per blinded
- * step. Bridge: `pickBridgeProcedures` for names, then `planProcedureResults`
- * (same planner as `result_step`). Used when `PROCEDURE_PRESELECTION` unset
- * or list has no categories (`strategy/index.ts`).
+ * One LLM call against full candidate list per blinded step. Bridge:
+ * `pickBridgeProcedures` for names, then `planProcedureResults` (same
+ * planner as `result_step`). The only `ProcedureStrategy`.
  */
 export class DirectPick implements ProcedureStrategy {
   readonly id = "direct-pick";

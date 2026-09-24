@@ -45,36 +45,4 @@ describe("InMemoryProcedureCatalog candidates()", () => {
       candidates.assemble({ Lab: ["CRP"], General: ["Rest"], Bogus: ["X"] })
     ).toEqual([{ name: "Lab: CRP" }, { name: "Rest" }]);
   });
-
-  it("scope() keeps the uncategorized bucket and returns a grouped set even when nothing matches", () => {
-    const catalog = new InMemoryProcedureCatalog(["Lab: CRP", "Rest"]);
-
-    const scoped = catalog.scope(["Imaging"]);
-    expect(scoped.mode.kind).toBe("grouped");
-    if (scoped.mode.kind === "grouped") {
-      expect(scoped.mode.grouped.has("Imaging")).toBe(false);
-      expect(scoped.mode.grouped.get("General")).toEqual(["Rest"]);
-    }
-  });
-
-  it("exclude() drops a category that becomes empty", () => {
-    const catalog = new InMemoryProcedureCatalog([
-      "Lab: CRP",
-      "Imaging: X-ray",
-    ]);
-
-    const excluded = catalog.candidates().exclude(["Lab: CRP"]);
-    expect(excluded.categories()).toEqual(["Imaging"]);
-  });
-
-  it("categoryMenu(only) renders only the requested category", () => {
-    const catalog = new InMemoryProcedureCatalog([
-      "Lab: CRP",
-      "Imaging: X-ray",
-    ]);
-
-    const menu = catalog.candidates().categoryMenu(["Imaging"]);
-    expect(menu).toContain("Imaging");
-    expect(menu).not.toContain("Lab");
-  });
 });

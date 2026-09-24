@@ -95,13 +95,11 @@ describe("GET /api/graph structure", () => {
     const off = await buildGraphStructure(
       assembleCaseGraphs(buildDeps(), {
         translationSandwich: false,
-        procedurePreselection: false,
       })
     );
     const on = await buildGraphStructure(
       assembleCaseGraphs(buildDeps(), {
         translationSandwich: true,
-        procedurePreselection: false,
       })
     );
 
@@ -122,7 +120,6 @@ describe("GET /api/graph structure", () => {
     const structure = await buildGraphStructure(
       assembleCaseGraphs(buildDeps(), {
         translationSandwich: true,
-        procedurePreselection: false,
       })
     );
 
@@ -136,7 +133,6 @@ describe("GET /api/graph structure", () => {
     const structure = await buildGraphStructure(
       assembleCaseGraphs(buildDeps(), {
         translationSandwich: false,
-        procedurePreselection: false,
       })
     );
 
@@ -149,7 +145,6 @@ describe("GET /api/graph structure", () => {
     // Only variant built here, so `getNodeLabels()` is its full traceable id set.
     const compiled = assembleCaseGraphs(buildDeps(), {
       translationSandwich: true,
-      procedurePreselection: false,
     });
     const structure = await buildGraphStructure(compiled);
 

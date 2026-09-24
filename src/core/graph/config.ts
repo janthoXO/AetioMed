@@ -87,14 +87,6 @@ export const ConfigSchema = z
     LLM_TRANSLATOR_API_KEY: z.string().optional(),
     LLM_TRANSLATOR_URL: z.url().optional(),
     /**
-     * Enables category-then-procedure pick for blinded solver. See
-     * `02case-generation/03procedure/strategy/`.
-     */
-    PROCEDURE_PRESELECTION: z
-      .string()
-      .optional()
-      .transform((v) => v === "true" || v === "1"),
-    /**
      * Whether translation sandwich is compiled into graph. Off = nodes absent,
      * not skipped. Default true.
      */

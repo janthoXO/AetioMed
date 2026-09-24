@@ -6,7 +6,6 @@ import {
   assembleCaseGraphs,
   buildCaseGraph,
   type CompiledCaseGraphs,
-  graphTopologyKey,
   graphVariantKey,
   type AssemblyDeps,
   type GraphFlags,
@@ -34,7 +33,7 @@ import {
 } from "./02case-generation/index.js";
 import { buildPlanGraph } from "./02case-generation/01plan/index.js";
 import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
-import { createProcedureStrategy } from "./02case-generation/03procedure/strategy/index.js";
+import { DirectPick } from "./02case-generation/03procedure/strategy/index.js";
 import { taggedOutlineFixture } from "@/core/graph/outline/fixtures.js";
 
 const TRANSLATION_NODES = [
@@ -126,10 +125,9 @@ async function nodeIds(graph: {
   return Object.keys(drawn.nodes).sort();
 }
 
-const flags = (
-  translationSandwich: boolean,
-  procedurePreselection: boolean
-): GraphFlags => ({ translationSandwich, procedurePreselection });
+const flags = (translationSandwich: boolean): GraphFlags => ({
+  translationSandwich,
+});
 
 // Phase-level graphs with no dedicated test file. Subgraphs assert their own `outputChannels` in their own tests.
 describe("phase-level graphs — output surface", () => {
@@ -145,7 +143,7 @@ describe("phase-level graphs — output surface", () => {
 
   it("generation_phase (buildCaseGenerationGraph) writes back only `case`", async () => {
     const deps = buildDeps();
-    const strategy = createProcedureStrategy(deps.runtime, false);
+    const strategy = new DirectPick(deps.runtime, []);
     const graph = buildCaseGenerationGraph(
       deps.runtime,
       strategy,
@@ -255,17 +253,15 @@ describe("plan graph — outline and judge loop", () => {
 describe("assembleCaseGraphs", () => {
   it("is pure: the same (deps, flags) produce the same node set", async () => {
     const deps = buildDeps();
-    const a = await allNodeIds(assembleCaseGraphs(deps, flags(true, false)));
-    const b = await allNodeIds(assembleCaseGraphs(deps, flags(true, false)));
+    const a = await allNodeIds(assembleCaseGraphs(deps, flags(true)));
+    const b = await allNodeIds(assembleCaseGraphs(deps, flags(true)));
 
     expect(a).toEqual(b);
     expect(a.length).toBeGreaterThan(0);
   });
 
   it("omits the translation nodes entirely when the sandwich is off", async () => {
-    const ids = await allNodeIds(
-      assembleCaseGraphs(buildDeps(), flags(false, false))
-    );
+    const ids = await allNodeIds(assembleCaseGraphs(buildDeps(), flags(false)));
 
     for (const node of TRANSLATION_NODES) {
       expect(ids.some((id) => id.startsWith(node))).toBe(false);
@@ -273,9 +269,7 @@ describe("assembleCaseGraphs", () => {
   });
 
   it("includes both translation nodes when the sandwich is on", async () => {
-    const ids = await allNodeIds(
-      assembleCaseGraphs(buildDeps(), flags(true, false))
-    );
+    const ids = await allNodeIds(assembleCaseGraphs(buildDeps(), flags(true)));
 
     for (const node of TRANSLATION_NODES) {
       expect(ids.some((id) => id.startsWith(node))).toBe(true);
@@ -295,7 +289,7 @@ describe("assembleCaseGraphs", () => {
 
   it("compiles no basis_resolve node at all when the medical-basis registry is empty", async () => {
     const ids = await allNodeIds(
-      assembleCaseGraphs(buildDeps([]), flags(false, false))
+      assembleCaseGraphs(buildDeps([]), flags(false))
     );
     expect(ids.some((id) => id.includes("basis_resolve"))).toBe(false);
   });
@@ -304,7 +298,7 @@ describe("assembleCaseGraphs", () => {
     const ids = await allNodeIds(
       assembleCaseGraphs(
         buildDeps([{ id: "fake-basis", fetch: async () => [] }]),
-        flags(false, false)
+        flags(false)
       )
     );
     expect(ids.some((id) => id.includes("basis_resolve"))).toBe(true);
@@ -318,7 +312,7 @@ describe("assembleCaseGraphs", () => {
           anamnesis: [fakeTextProvider()],
           procedureResult: [],
         }),
-        flags(false, false)
+        flags(false)
       )
     ).toThrow(/modality registry is empty/i);
   });
@@ -331,7 +325,7 @@ describe("assembleCaseGraphs", () => {
           anamnesis: [],
           procedureResult: [],
         }),
-        flags(false, false)
+        flags(false)
       )
     ).toThrow(/modality registry is empty/i);
   });
@@ -344,34 +338,19 @@ describe("assembleCaseGraphs", () => {
           anamnesis: [fakeTextProvider()],
           procedureResult: [],
         }),
-        flags(false, false)
+        flags(false)
       )
     ).toThrow(/modality registry is empty/i);
   });
 
   it("compiles the outline translation graphs only with the sandwich", async () => {
-    const off = assembleCaseGraphs(buildDeps(), flags(false, false));
+    const off = assembleCaseGraphs(buildDeps(), flags(false));
     expect(off.outlineOut).toBeUndefined();
     expect(off.reviewIn).toBeUndefined();
 
-    const on = assembleCaseGraphs(buildDeps(), flags(true, false));
+    const on = assembleCaseGraphs(buildDeps(), flags(true));
     expect(await nodeIds(on.outlineOut!)).toContain("translate_outline_out");
     expect(await nodeIds(on.reviewIn!)).toContain("translate_review_in");
-  });
-
-  it("gives the two preselection variants of a topology identical shapes", async () => {
-    // Premise of `exportGraphs.ts`'s two diagrams: PROCEDURE_PRESELECTION swaps strategy adapter, not topology.
-    // On failure, export loop must grow to four.
-    const deps = buildDeps();
-    for (const sandwich of [false, true]) {
-      const off = await allNodeIds(
-        assembleCaseGraphs(deps, flags(sandwich, false))
-      );
-      const on = await allNodeIds(
-        assembleCaseGraphs(deps, flags(sandwich, true))
-      );
-      expect(on).toEqual(off);
-    }
   });
 });
 
@@ -391,7 +370,7 @@ describe("language routing reads ALS, never graph state", () => {
     bus.on("Node Started", (e) => started.push(e.node));
 
     const deps = { ...buildDeps(), traceNode: createTraceNode(bus) };
-    const graph = assembleCaseGraphs(deps, flags(true, false)).plan;
+    const graph = assembleCaseGraphs(deps, flags(true)).plan;
 
     await runWithContext(
       async () => {
@@ -453,7 +432,7 @@ describe("translate-in trigger reads provenance, not just language", () => {
     const started: string[] = [];
     bus.on("Node Started", (e) => started.push(e.node));
     const deps = { ...buildDeps(), traceNode: createTraceNode(bus) };
-    const graph = assembleCaseGraphs(deps, flags(true, false)).plan;
+    const graph = assembleCaseGraphs(deps, flags(true)).plan;
 
     await runWithContext(
       async () => {
@@ -491,7 +470,7 @@ describe("translate-in trigger reads provenance, not just language", () => {
     deps.runtime.catalogs.diagnosis = diagnosisCatalog;
     const graph = assembleCaseGraphs(
       { ...deps, traceNode: createTraceNode(bus) },
-      flags(true, false)
+      flags(true)
     ).plan;
 
     await runWithContext(
@@ -525,18 +504,14 @@ describe("translate-in trigger reads provenance, not just language", () => {
 });
 
 describe("variant keys", () => {
-  it("names activated flags, sorted and `+`-joined, `none` when empty", () => {
-    expect(graphVariantKey(flags(false, false))).toBe("none");
-    expect(graphVariantKey(flags(false, true))).toBe("procedure-preselection");
-    expect(graphVariantKey(flags(true, false))).toBe("translation-sandwich");
-    expect(graphVariantKey(flags(true, true))).toBe(
-      "procedure-preselection+translation-sandwich"
-    );
+  it("is `none` unset, `translation-sandwich` when set", () => {
+    expect(graphVariantKey(flags(false))).toBe("none");
+    expect(graphVariantKey(flags(true))).toBe("translation-sandwich");
   });
 
-  it("collapses to two topologies, since preselection is not a shape", () => {
-    expect(ALL_GRAPH_FLAGS).toHaveLength(4);
-    expect(new Set(ALL_GRAPH_FLAGS.map(graphTopologyKey))).toEqual(
+  it("has exactly two variants", () => {
+    expect(ALL_GRAPH_FLAGS).toHaveLength(2);
+    expect(new Set(ALL_GRAPH_FLAGS.map(graphVariantKey))).toEqual(
       new Set(["none", "translation-sandwich"])
     );
   });
@@ -548,7 +523,7 @@ describe("buildCaseGraph", () => {
     LLM_MODEL: "llama3.1",
   });
 
-  it("compiles all four variants at boot and returns a distinct one per combination", () => {
+  it("compiles both variants at boot and returns a distinct one per combination", () => {
     const deps = buildDeps();
     const { getCaseGraphs } = buildCaseGraph(
       deps.runtime,
@@ -560,8 +535,8 @@ describe("buildCaseGraph", () => {
     );
 
     const variants = ALL_GRAPH_FLAGS.map((f) => getCaseGraphs(f));
-    expect(new Set(variants.map((v) => v.plan)).size).toBe(4);
-    expect(new Set(variants.map((v) => v.case)).size).toBe(4);
+    expect(new Set(variants.map((v) => v.plan)).size).toBe(2);
+    expect(new Set(variants.map((v) => v.case)).size).toBe(2);
   });
 
   it("returns the same instance for the same flags — the map is built once", () => {
@@ -575,9 +550,7 @@ describe("buildCaseGraph", () => {
       deps.modalityRegistries
     );
 
-    expect(getCaseGraphs(flags(true, false))).toBe(
-      getCaseGraphs(flags(true, false))
-    );
+    expect(getCaseGraphs(flags(true))).toBe(getCaseGraphs(flags(true)));
   });
 
   it("binds planCase/renderCase to the variant the deployer's config selects", async () => {
@@ -589,14 +562,13 @@ describe("buildCaseGraph", () => {
         LLM_PROVIDER: "ollama",
         LLM_MODEL: "llama3.1",
         TRANSLATION_SANDWICH: "false",
-        PROCEDURE_PRESELECTION: "true",
       }),
       deps.repos,
       deps.medicalBasisRegistry,
       deps.modalityRegistries
     );
 
-    expect(graphs).toBe(getCaseGraphs(flags(false, true)));
+    expect(graphs).toBe(getCaseGraphs(flags(false)));
     const ids = await allNodeIds(graphs);
     for (const node of TRANSLATION_NODES) {
       expect(ids.some((id) => id.startsWith(node))).toBe(false);

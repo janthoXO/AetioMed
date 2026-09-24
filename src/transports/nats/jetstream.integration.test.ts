@@ -72,7 +72,6 @@ function fakeGraph(generateCase: GenerateCaseFn = vi.fn()): GraphAppContext {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      PROCEDURE_PRESELECTION: false,
       LANGUAGES: ["English", "German"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
@@ -356,7 +355,6 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: ["ollama:llama3.1"],
       MAX_CONTENT_PART_BYTES: 5_000_000,
-      PROCEDURE_PRESELECTION: false,
       LANGUAGES: ["English", "German"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
@@ -707,7 +705,6 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
       MAX_CONTENT_PART_BYTES: 5_000_000,
-      PROCEDURE_PRESELECTION: false,
       LANGUAGES: ["English", "German"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,

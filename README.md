@@ -222,8 +222,6 @@ The loop works like this:
 
 Two properties are enforced structurally rather than by asking the model nicely: already-ordered procedures are removed from the candidate list before each pick, so duplicate orders are impossible; and when an approved procedure list is configured, the model is constrained to exact names from it.
 
-**Small-model support.** When the approved list is large and categorized, the candidate set can overwhelm a smaller model. `PROCEDURE_PRESELECTION` selects a different procedure-selection _strategy_ at assembly time: instead of one call against the full list, each pick becomes a category pick (deliberately over-inclusive) followed by a procedure pick scoped to those categories. The scoped pick may ask to pull in more categories if nothing in scope fits, under a hard cap. The graph shape is fixed at four nodes either way — the flag swaps an adapter, not a topology.
-
 ### Translation
 
 Generation always runs in English — prompts, restricted vocabularies, and clinical reasoning are all English-native — and translation brackets the pipeline on both sides:

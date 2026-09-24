@@ -38,7 +38,6 @@ function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      PROCEDURE_PRESELECTION: false,
       LANGUAGES: ["English", "German"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,

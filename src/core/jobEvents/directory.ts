@@ -10,7 +10,10 @@
 import type { JobCompleteEvent, JobEventChannel } from "./channel.js";
 import type { LabelEvent } from "./labels.js";
 
-/** What an observer sees: labels, then the terminal marker — never the case. */
+/**
+ * What an observer sees: labels, then the terminal marker — never the case,
+ * never the plan.
+ */
 export type WatchedEvent =
   | { type: "label"; data: LabelEvent }
   | { type: "complete"; data: JobCompleteEvent };

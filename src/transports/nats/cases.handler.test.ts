@@ -1,15 +1,22 @@
-// Rewritten for #142: the old mock targeted `publishCaseGenerationResponse`,
-// which no longer exists — results now publish through `publishCaseResult`
-// (per-job subject, `cases.result.<jobId>`). Also covers the new `slot`
-// plumbing (`Release`, from `core/concurrency.ts`) and the `msg.working()`
-// heartbeat that keeps a long-running job's ack deadline alive.
+// Rewritten for #159 (stateless generation): the generator keeps nothing
+// between calls, so an unacked request *is* the recovery path — the handler
+// now acks only once the call's output is published (`msg.ack()` at the
+// very end), naks on a publish failure, and gives up after
+// `REQUEST_MAX_ATTEMPTS` deliveries by publishing a `RETRIES_EXHAUSTED`
+// result instead of calling the service again. A normal-mode plan is
+// published through `onPlan` as soon as it exists, best-effort.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { JsMsg } from "@nats-io/jetstream";
 import {
   consumeCaseGenerateMessage,
   runRequestWorker,
 } from "./cases.handler.js";
-import { WORKING_INTERVAL_MS } from "./subjects.js";
+import {
+  WORKING_INTERVAL_MS,
+  REQUEST_MAX_ATTEMPTS,
+  resultSubject,
+  planSubject,
+} from "./subjects.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type {
   CaseGenerationService,
@@ -17,19 +24,21 @@ import type {
 } from "@/core/caseGenerationService.js";
 import type { Release } from "@/core/concurrency.js";
 
-vi.mock("./cases.publisher.js", () => ({
-  publishCaseResult: vi.fn().mockResolvedValue(undefined),
+const publish = vi.fn().mockResolvedValue(undefined);
+vi.mock("./client.js", () => ({
+  getJetStreamClient: () => ({ publish }),
 }));
 
-import { publishCaseResult } from "./cases.publisher.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
 
-function fakeMsg(payload: unknown): JsMsg {
+function fakeMsg(payload: unknown, deliveryCount = 1): JsMsg {
   return {
     json: () => payload,
     ack: vi.fn(),
     nak: vi.fn(),
     term: vi.fn(),
     working: vi.fn(),
+    info: { deliveryCount },
   } as unknown as JsMsg;
 }
 
@@ -47,7 +56,7 @@ function fakeGraph(): GraphAppContext {
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
     runtime: {} as GraphAppContext["runtime"],
-    generateCase: vi.fn(),
+    ...planAndRenderFrom(vi.fn()),
   } as unknown as GraphAppContext;
 }
 
@@ -58,16 +67,20 @@ function fakeService(
     generate,
     reserveSlot: vi.fn(),
     cancel: vi.fn(),
-  };
+  } as unknown as CaseGenerationService;
 }
 
 beforeEach(() => {
-  vi.mocked(publishCaseResult).mockClear();
-  vi.mocked(publishCaseResult).mockResolvedValue(undefined);
+  publish.mockClear();
+  publish.mockResolvedValue(undefined);
 });
 
-describe("consumeCaseGenerateMessage (#142)", () => {
-  it("forwards difficulty and passes the slot through to service.generate's 2nd arg", async () => {
+function publishedSubjects(): string[] {
+  return publish.mock.calls.map((call) => call[0] as string);
+}
+
+describe("consumeCaseGenerateMessage (#142, #159)", () => {
+  it("forwards difficulty, and passes the slot plus onPlan through to service.generate's 2nd arg", async () => {
     const generate = vi.fn(
       async (): Promise<CaseGenerationResult> => ({
         jobId: "job-1",
@@ -93,8 +106,69 @@ describe("consumeCaseGenerateMessage (#142)", () => {
       diagnosis: "Influenza",
       difficulty: "hard",
     });
-    expect(opts).toEqual({ slot });
+    expect(opts).toMatchObject({ slot });
+    expect(typeof opts!.onPlan).toBe("function");
     expect(slot).toHaveBeenCalled();
+  });
+
+  it("acks only after the result is published, not before", async () => {
+    let resolveGenerate!: (result: CaseGenerationResult) => void;
+    const generate = vi.fn(
+      () =>
+        new Promise<CaseGenerationResult>((resolve) => {
+          resolveGenerate = resolve;
+        })
+    );
+    const service = fakeService(generate);
+    const msg = fakeMsg({ jobId: "job-ck", diagnosis: "Influenza" });
+
+    const pending = consumeCaseGenerateMessage(msg, fakeGraph(), service);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(msg.ack).not.toHaveBeenCalled();
+
+    resolveGenerate({ jobId: "job-ck", status: "done", case: {} });
+    await pending;
+
+    expect(msg.ack).toHaveBeenCalledTimes(1);
+  });
+
+  it("a normal-mode plan is published through onPlan, best-effort, to cases.plan.<jobId>", async () => {
+    const generate = vi.fn(async (_req, opts) => {
+      opts!.onPlan!({
+        jobId: "job-plan",
+        mode: "normal",
+        language: "English",
+        plan: [{ fixed: false, text: "Chest pain." }],
+      });
+      return { jobId: "job-plan", status: "done", case: {} };
+    });
+    const service = fakeService(generate);
+    const msg = fakeMsg({ jobId: "job-plan", diagnosis: "Influenza" });
+
+    await consumeCaseGenerateMessage(msg, fakeGraph(), service);
+
+    expect(publishedSubjects()).toContain(planSubject("job-plan"));
+    expect(publishedSubjects()).toContain(resultSubject("job-plan"));
+  });
+
+  it("a plan-mode stop ('planned') publishes to cases.plan.<jobId>, not cases.result.<jobId>", async () => {
+    const generate = vi.fn(
+      async (): Promise<CaseGenerationResult> => ({
+        jobId: "job-planned",
+        status: "planned",
+        language: "English",
+        plan: [{ fixed: false, text: "Chest pain." }],
+      })
+    );
+    const service = fakeService(generate);
+    const msg = fakeMsg({ jobId: "job-planned", diagnosis: "Influenza" });
+
+    await consumeCaseGenerateMessage(msg, fakeGraph(), service);
+
+    expect(publishedSubjects()).toEqual([planSubject("job-planned")]);
+    expect(publishedSubjects()).not.toContain(resultSubject("job-planned"));
+    expect(msg.ack).toHaveBeenCalledTimes(1);
   });
 
   it("missing jobId: terminates the message, never publishes, never calls generate", async () => {
@@ -107,7 +181,7 @@ describe("consumeCaseGenerateMessage (#142)", () => {
     expect(msg.term).toHaveBeenCalledTimes(1);
     expect(msg.ack).not.toHaveBeenCalled();
     expect(generate).not.toHaveBeenCalled();
-    expect(publishCaseResult).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
   });
 
   it("jobId containing '.': terminates the message (it is a subject token)", async () => {
@@ -119,10 +193,10 @@ describe("consumeCaseGenerateMessage (#142)", () => {
 
     expect(msg.term).toHaveBeenCalledTimes(1);
     expect(generate).not.toHaveBeenCalled();
-    expect(publishCaseResult).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
   });
 
-  it("invalid body with a valid jobId: publishes INVALID_REQUEST_BODY to that jobId and acks", async () => {
+  it("invalid body with a valid jobId: publishes INVALID_REQUEST_BODY to that jobId's result subject and acks", async () => {
     const generate = vi.fn();
     const service = fakeService(generate);
     // Neither `icd` nor `diagnosis` — fails the request schema's refine.
@@ -131,10 +205,10 @@ describe("consumeCaseGenerateMessage (#142)", () => {
     await consumeCaseGenerateMessage(msg, fakeGraph(), service);
 
     expect(generate).not.toHaveBeenCalled();
-    expect(publishCaseResult).toHaveBeenCalledTimes(1);
-    const [jobId, response] = vi.mocked(publishCaseResult).mock.calls[0]!;
-    expect(jobId).toBe("job-bad-body");
-    expect(response).toMatchObject({
+    expect(publish).toHaveBeenCalledTimes(1);
+    const [subject, body] = publish.mock.calls[0]!;
+    expect(subject).toBe(resultSubject("job-bad-body"));
+    expect(JSON.parse(body as string)).toMatchObject({
       error: { code: "INVALID_REQUEST_BODY" },
     });
     expect(msg.ack).toHaveBeenCalledTimes(1);
@@ -153,14 +227,12 @@ describe("consumeCaseGenerateMessage (#142)", () => {
 
     await consumeCaseGenerateMessage(msg, fakeGraph(), service);
 
-    expect(publishCaseResult).not.toHaveBeenCalled();
+    expect(publish).not.toHaveBeenCalled();
     expect(msg.ack).toHaveBeenCalledTimes(1);
   });
 
-  it("publish throwing: naks the message", async () => {
-    vi.mocked(publishCaseResult).mockRejectedValueOnce(
-      new Error("publish failed")
-    );
+  it("publish failing: naks the message, never acks", async () => {
+    publish.mockRejectedValueOnce(new Error("publish failed"));
     const generate = vi.fn(
       async (): Promise<CaseGenerationResult> => ({
         jobId: "job-fail-publish",
@@ -175,6 +247,44 @@ describe("consumeCaseGenerateMessage (#142)", () => {
 
     expect(msg.nak).toHaveBeenCalledTimes(1);
     expect(msg.ack).not.toHaveBeenCalled();
+  });
+
+  it("past REQUEST_MAX_ATTEMPTS deliveries: publishes RETRIES_EXHAUSTED and acks, without calling the service", async () => {
+    const generate = vi.fn();
+    const service = fakeService(generate);
+    const msg = fakeMsg(
+      { jobId: "job-exhausted", diagnosis: "Influenza" },
+      REQUEST_MAX_ATTEMPTS + 1
+    );
+
+    await consumeCaseGenerateMessage(msg, fakeGraph(), service);
+
+    expect(generate).not.toHaveBeenCalled();
+    expect(publishedSubjects()).toEqual([resultSubject("job-exhausted")]);
+    const [, body] = publish.mock.calls[0]!;
+    expect(JSON.parse(body as string)).toMatchObject({
+      error: { code: "RETRIES_EXHAUSTED" },
+    });
+    expect(msg.ack).toHaveBeenCalledTimes(1);
+  });
+
+  it("exactly REQUEST_MAX_ATTEMPTS deliveries still runs the service", async () => {
+    const generate = vi.fn(
+      async (): Promise<CaseGenerationResult> => ({
+        jobId: "job-last-try",
+        status: "done",
+        case: {},
+      })
+    );
+    const service = fakeService(generate);
+    const msg = fakeMsg(
+      { jobId: "job-last-try", diagnosis: "Influenza" },
+      REQUEST_MAX_ATTEMPTS
+    );
+
+    await consumeCaseGenerateMessage(msg, fakeGraph(), service);
+
+    expect(generate).toHaveBeenCalledTimes(1);
   });
 
   it("releases the slot on every path: missing jobId, invalid body, duplicate, and success", async () => {
@@ -221,7 +331,7 @@ describe("consumeCaseGenerateMessage (#142)", () => {
   });
 });
 
-describe("consumeCaseGenerateMessage — msg.working() heartbeat (#142)", () => {
+describe("consumeCaseGenerateMessage — msg.working() heartbeat (#142, #159)", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });

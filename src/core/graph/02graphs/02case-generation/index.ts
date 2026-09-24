@@ -7,6 +7,7 @@ import {
   RequestContextSchema,
   type RequestContext,
 } from "@/core/graph/utils/context.js";
+import { buildPlanGraph, PlanGraphStateSchema } from "./01plan/index.js";
 import { buildFieldGenerationGraph } from "./02presentation/generation/index.js";
 import { buildProcedureGraph } from "./03procedure/index.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
@@ -52,20 +53,87 @@ function makeResolveMedicalBasis(
   };
 }
 
-// ─── graph ────────────────────────────────────────────────────────────────────
+// ─── graphs ───────────────────────────────────────────────────────────────────
 
-// This graph is `addNode`'d into `assembleCaseGraph` (`caseGraph.ts`) as
-// `generation_phase` (issue 17 §1). `.pick()` off `CaseGenerationStateSchema`
-// directly, not a hand-written duplicate, so the picked `case` channel keeps
-// the identical reducer registration.
+// Both phase graphs below are `addNode`'d into `caseGraph.ts`'s top-level
+// graphs (issue 17 §1): `planning_phase` into the plan graph,
+// `generation_phase` into the case graph (#159). `.pick()` off the phase
+// state schema directly, not a hand-written duplicate, so the picked
+// channels keep their identical reducer registration.
+const PlanningPhaseStateSchema = PlanGraphStateSchema.extend(
+  CaseGenerationStateSchema.pick({ generationFlags: true }).shape
+);
+
+const PlanningPhaseOutputSchema = PlanningPhaseStateSchema.pick({
+  outlineSegments: true,
+  outlineAccepted: true,
+  basisFragments: true,
+});
+
 const CaseGenerationOutputSchema = CaseGenerationStateSchema.pick({
   case: true,
 });
 
+/**
+ * The planning phase (#159): resolve the medical basis, then plan and judge
+ * the outline. Ends with an outline and the judge's verdict — never with
+ * any case field. `basisFragments` is written back so a later revision of
+ * the outline can reuse it rather than resolve it again.
+ */
+export function buildPlanningPhaseGraph(
+  runtime: GraphRuntime,
+  medicalBasisRegistry: MedicalBasisProvider[],
+  traceNode: ReturnType<typeof createTraceNode>
+) {
+  // Scoped to match the `"outline_phase"` mount name below — see
+  // `nodeWrapper.ts`'s `TraceNodeFn.scope` doc comment (issue 15 §3/§4).
+  const outlinePhase = buildPlanGraph(
+    runtime,
+    traceNode.scope("outline_phase")
+  );
+
+  // Written out in full rather than conditionally chained, mirroring
+  // `caseGraph.ts`: LangGraph accumulates node names into the builder's
+  // type parameter. An empty registry is the absent-capability-⇒-absent-node
+  // rule (see `medicalBasis/registry.ts`'s `createMedicalBasisRegistry`).
+  if (medicalBasisRegistry.length === 0) {
+    return new StateGraph(PlanningPhaseStateSchema, {
+      context: RequestContextSchema,
+      output: PlanningPhaseOutputSchema,
+    })
+      .addNode("outline_phase", outlinePhase)
+      .addEdge(START, "outline_phase")
+      .addEdge("outline_phase", END)
+      .compile();
+  }
+
+  return new StateGraph(PlanningPhaseStateSchema, {
+    context: RequestContextSchema,
+    output: PlanningPhaseOutputSchema,
+  })
+    .addNode(
+      "basis_resolve",
+      traceNode(
+        "basis_resolve",
+        makeResolveMedicalBasis(runtime, medicalBasisRegistry),
+        "Resolving medical basis"
+      )
+    )
+    .addNode("outline_phase", outlinePhase)
+    .addEdge(START, "basis_resolve")
+    .addEdge("basis_resolve", "outline_phase")
+    .addEdge("outline_phase", END)
+    .compile();
+}
+
+/**
+ * The generation phase (#159): every case field, from an outline handed in
+ * as input. The presentation phase fans the outline out to the field
+ * generators; the procedure phase follows when the `procedures` flag is set.
+ */
 export function buildCaseGenerationGraph(
   runtime: GraphRuntime,
   procedureStrategy: ProcedureStrategy,
-  medicalBasisRegistry: MedicalBasisProvider[],
   modalityRegistries: ModalityRegistries,
   traceNode: ReturnType<typeof createTraceNode>
 ) {
@@ -87,58 +155,17 @@ export function buildCaseGenerationGraph(
   const gotoProcedureOrEnd = (state: { generationFlags: string[] }) =>
     state.generationFlags.includes("procedures") ? "generate" : "skip";
 
-  // The two branches are written out in full rather than conditionally
-  // chained, mirroring `caseGraph.ts`'s `assembleCaseGraph`: LangGraph
-  // accumulates node names into the builder's type parameter, so a
-  // conditionally-extended builder loses the very typing that makes
-  // `addEdge(...)` checkable. An empty registry is the absent-capability-⇒
-  // -absent-node rule again (see `medicalBasis/registry.ts`'s
-  // `createMedicalBasisRegistry` doc comment) — with zero providers,
-  // `basis_resolve` does not exist in the compiled graph at all, not a node
-  // that runs and does nothing.
-  if (medicalBasisRegistry.length === 0) {
-    return new StateGraph(CaseGenerationStateSchema, {
-      context: RequestContextSchema,
-      output: CaseGenerationOutputSchema,
+  return new StateGraph(CaseGenerationStateSchema, {
+    context: RequestContextSchema,
+    output: CaseGenerationOutputSchema,
+  })
+    .addNode("presentation_phase", presentationPhase)
+    .addNode("procedure_phase", procedurePhase)
+    .addEdge(START, "presentation_phase")
+    .addConditionalEdges("presentation_phase", gotoProcedureOrEnd, {
+      generate: "procedure_phase",
+      skip: END,
     })
-      .addNode("presentation_phase", presentationPhase)
-      .addNode("procedure_phase", procedurePhase)
-
-      .addEdge(START, "presentation_phase")
-      .addConditionalEdges("presentation_phase", gotoProcedureOrEnd, {
-        generate: "procedure_phase",
-        skip: END,
-      })
-      .addEdge("procedure_phase", END)
-      .compile();
-  }
-
-  return (
-    new StateGraph(CaseGenerationStateSchema, {
-      context: RequestContextSchema,
-      output: CaseGenerationOutputSchema,
-    })
-      .addNode(
-        "basis_resolve",
-        traceNode(
-          "basis_resolve",
-          makeResolveMedicalBasis(runtime, medicalBasisRegistry),
-          "Resolving medical basis"
-        )
-      )
-      // The presentation phase is the field-generation graph mounted
-      // directly: consistency is judged on the outline inside its evaluate ⇄
-      // revise loop, so there is no post-fan-out consistency check.
-      .addNode("presentation_phase", presentationPhase)
-      .addNode("procedure_phase", procedurePhase)
-
-      .addEdge(START, "basis_resolve")
-      .addEdge("basis_resolve", "presentation_phase")
-      .addConditionalEdges("presentation_phase", gotoProcedureOrEnd, {
-        generate: "procedure_phase",
-        skip: END,
-      })
-      .addEdge("procedure_phase", END)
-      .compile()
-  );
+    .addEdge("procedure_phase", END)
+    .compile();
 }

@@ -10,6 +10,7 @@ import {
   REQUESTS_STREAM,
   REQUEST_ACK_WAIT_MS,
   REQUEST_CONSUMER,
+  REQUEST_MAX_ATTEMPTS,
   REQUEST_SUBJECT,
   STREAMS,
 } from "./subjects.js";
@@ -32,12 +33,12 @@ async function streamInfo(
 }
 
 /**
- * Create `CASE_REQUESTS` and `CASE_RESULTS`, or reconcile their subjects and
- * limits if they exist. Fails loudly rather than guessing in two cases, both
- * of which JetStream cannot fix in place:
+ * Create `CASE_REQUESTS`, `CASE_RESULTS` and `CASE_PLANS` (#159), or
+ * reconcile their subjects and limits if they exist. Fails loudly rather
+ * than guessing in two cases, both of which JetStream cannot fix in place:
  *
  * - the pre-#142 `cases` stream still exists. Its `cases.>` filter overlaps
- *   both new streams, so JetStream would refuse to create them with an
+ *   every stream here, so JetStream would refuse to create them with an
  *   opaque "subjects overlap" error. It is **not** deleted automatically: it
  *   may still hold requests nobody has processed.
  * - a stream exists with a different retention policy — retention cannot be
@@ -75,10 +76,12 @@ export async function ensureStreams(jsm: JetStreamManager): Promise<void> {
 
   // The worker's durable pull consumer, shared by every replica.
   const ackWait = REQUEST_ACK_WAIT_MS * 1_000_000;
+  const maxDeliver = REQUEST_MAX_ATTEMPTS + 1;
   try {
     await jsm.consumers.info(REQUESTS_STREAM.name, REQUEST_CONSUMER);
     await jsm.consumers.update(REQUESTS_STREAM.name, REQUEST_CONSUMER, {
       ack_wait: ackWait,
+      max_deliver: maxDeliver,
     });
   } catch (error) {
     if (
@@ -93,6 +96,7 @@ export async function ensureStreams(jsm: JetStreamManager): Promise<void> {
       filter_subject: REQUEST_SUBJECT,
       ack_policy: AckPolicy.Explicit,
       ack_wait: ackWait,
+      max_deliver: maxDeliver,
     });
   }
 }

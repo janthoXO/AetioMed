@@ -5,7 +5,10 @@ import { getRequestContext, RequestContextSchema } from "../utils/context.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { GenerationFlag } from "../models/GenerationFlags.js";
 import type { UserInstructions } from "../models/UserInstructions.js";
-import { buildCaseGenerationGraph } from "./02case-generation/index.js";
+import {
+  buildCaseGenerationGraph,
+  buildPlanningPhaseGraph,
+} from "./02case-generation/index.js";
 import { CaseGenerationStateSchema } from "./02case-generation/state.js";
 import { createProcedureStrategy } from "./02case-generation/03procedure/strategy/index.js";
 import { buildCaseTranslationFromEnglishGraph } from "./03case-translation-from-english/index.js";
@@ -13,6 +16,10 @@ import type { Language } from "../models/Language.js";
 import type { Difficulty } from "../models/Difficulty.js";
 import { GenerationError } from "../errors/AppError.js";
 import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
+import {
+  buildOutlineTranslationGraph,
+  translateOutlineValues,
+} from "./outline-translation/index.js";
 import {
   createTraceNode,
   noopNodeTracer,
@@ -22,20 +29,33 @@ import type { GraphRuntime } from "../runtime.js";
 import type { Config } from "../config.js";
 import type { EventBus } from "../../event-bus.js";
 import type { Repos } from "../repos.js";
-import type { MedicalBasisProvider } from "../medicalBasis/ports.js";
+import type {
+  BasisFragment,
+  MedicalBasisProvider,
+} from "../medicalBasis/ports.js";
+import {
+  OutlineSegmentsSchema,
+  type OutlineSegments,
+} from "../outline/segments.js";
+import { RunModeSchema, type RunMode } from "../models/RunMode.js";
 import type { ModalityRegistries } from "../modality/registry.js";
 
-// No `language` field (issue 09 §2, §4 of the issue doc): the outer graph
-// resolves language before invoke and binds ports to it via
-// `AsyncLocalStorage` (`utils/context.ts`), never via graph state — a
-// narrower state schema is a real, runtime-enforced boundary (subgraph
-// state is filtered), unlike LangGraph's own runtime context, which is not.
-const CaseStateSchema = CaseGenerationStateSchema.pick({
+// No `language` field (issue 09 §2): the outer graphs resolve language
+// before invoke and bind ports to it via `AsyncLocalStorage`
+// (`utils/context.ts`), never via graph state — a narrower state schema is a
+// real, runtime-enforced boundary (subgraph state is filtered), unlike
+// LangGraph's own runtime context, which is not.
+//
+// The pipeline is two top-level graphs since #159: the **plan graph** ends
+// with an outline, the **case graph** starts from one. The seam between
+// them is where plan mode pauses for a human reviewer, and where the job
+// service checkpoints the outline in both modes.
+const PlanStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
   generationFlags: true,
   difficulty: true,
-  case: true,
+  basisFragments: true,
 }).extend({
   /**
    * Per-request routing input (issue 12 §3), not ALS: whether the *caller*
@@ -46,11 +66,42 @@ const CaseStateSchema = CaseGenerationStateSchema.pick({
    * not ALS, is where this belongs — #120's rule is *branch on what the
    * caller asked for*, and this is per-request routing input, visible in
    * the graph's input contract; `language` stays on ALS because it is a
-   * property of the bound ports (see the file-level comment above), not a
-   * per-request routing signal like this one.
+   * property of the bound ports (see the comment above), not a per-request
+   * routing signal like this one.
    */
   callerSuppliedFreeText: z.boolean(),
+  mode: RunModeSchema.default("normal"),
+  /**
+   * A plan handed in with the request (#159): when set, the plan graph only
+   * translates the request in and skips planning — see {@link planOrSkip}.
+   */
+  outlineSegments: OutlineSegmentsSchema.default([]),
+  outlineAccepted: z.boolean().default(false),
 });
+
+// The plan graph hands back everything the case graph needs, in the
+// working language: after translate-in, `diagnosis`/`userInstructions` are
+// English, and they are what the case graph must use.
+const PlanOutputSchema = PlanStateSchema.pick({
+  diagnosis: true,
+  userInstructions: true,
+  basisFragments: true,
+  outlineSegments: true,
+  outlineAccepted: true,
+});
+
+const CaseStateSchema = CaseGenerationStateSchema.pick({
+  diagnosis: true,
+  userInstructions: true,
+  generationFlags: true,
+  difficulty: true,
+  case: true,
+}).extend({
+  /** The prompt-ready outline text (`joinOutline`) every generator reads. */
+  outline: z.string(),
+});
+
+const CaseOutputSchema = CaseStateSchema.pick({ case: true });
 
 /**
  * The translate-**out** edge (after generation): does this *request* need
@@ -85,6 +136,16 @@ function requestNeedsTranslationIn(state: {
   return language && language !== "English" && state.callerSuppliedFreeText
     ? "translate"
     : "skip";
+}
+
+/**
+ * After translate-in: plan, or — with a plan handed in (#159) — stop, the
+ * request's working-language values being all the case graph still needs.
+ */
+function planOrSkip(state: {
+  outlineSegments: OutlineSegments;
+}): "planning_phase" | typeof END {
+  return state.outlineSegments.length > 0 ? END : "planning_phase";
 }
 
 /** The repos the case graph's phases need. */
@@ -192,7 +253,7 @@ export function graphTopologyKey(
  * Pure wiring: same `(deps, flags)` gives a structurally identical graph, and
  * nothing here performs I/O.
  */
-export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
+export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
   const {
     runtime,
     repos,
@@ -201,41 +262,23 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
     traceNode,
   } = deps;
 
-  // The two branches are written out in full rather than conditionally
-  // chained: LangGraph accumulates node names into the builder's type
-  // parameter, so a conditionally-extended builder loses the very typing
-  // that makes `addEdge("generation_phase", …)` checkable.
-  if (!flags.translationSandwich) {
-    const generationPhase = buildCaseGenerationGraph(
-      runtime,
-      createProcedureStrategy(
-        runtime,
-        flags.procedurePreselection,
-        modalityRegistries.procedureResult
-      ),
-      medicalBasisRegistry,
-      modalityRegistries,
-      // Scoped to match the `"generation_phase"` mount name below — see
-      // `nodeWrapper.ts`'s `TraceNodeFn.scope` doc comment (issue 15 §3/§4).
-      traceNode.scope("generation_phase")
-    );
-    return new StateGraph(CaseStateSchema, RequestContextSchema)
-      .addNode("generation_phase", generationPhase)
-      .addEdge(START, "generation_phase")
-      .addEdge("generation_phase", END)
-      .compile();
-  }
-
   // With the sandwich compiled in, generation always runs in English (issue
   // 09 §3/§4) — the request's real target language only ever reaches the
   // translate-out phase below, built from the *unmodified* `runtime`. This
   // is the one `languageOverride` binding today: see `GraphRuntime`'s doc
   // comment (`runtime.ts`) and `buildSystemPrompt` (`utils/prompt.ts`),
   // which is what actually reads it.
-  const generationRuntime: GraphRuntime = {
-    ...runtime,
-    languageOverride: "English",
-  };
+  const generationRuntime: GraphRuntime = flags.translationSandwich
+    ? { ...runtime, languageOverride: "English" }
+    : runtime;
+
+  // Scoped to match the mount names below — see `nodeWrapper.ts`'s
+  // `TraceNodeFn.scope` doc comment (issue 15 §3/§4).
+  const planningPhase = buildPlanningPhaseGraph(
+    generationRuntime,
+    medicalBasisRegistry,
+    traceNode.scope("planning_phase")
+  );
   const generationPhase = buildCaseGenerationGraph(
     generationRuntime,
     createProcedureStrategy(
@@ -243,46 +286,103 @@ export function assembleCaseGraph(deps: AssemblyDeps, flags: GraphFlags) {
       flags.procedurePreselection,
       modalityRegistries.procedureResult
     ),
-    medicalBasisRegistry,
     modalityRegistries,
     traceNode.scope("generation_phase")
   );
 
-  return new StateGraph(CaseStateSchema, RequestContextSchema)
-    .addNode("generation_phase", generationPhase)
-    .addNode(
-      "translation_to_english_phase",
-      buildCaseTranslationToEnglishGraph(
-        runtime,
-        traceNode.scope("translation_to_english_phase")
-      )
-    )
-    .addNode(
-      "translation_from_english_phase",
-      buildCaseTranslationFromEnglishGraph(
-        runtime,
-        { anamnesis: repos.anamnesis, procedures: repos.procedures },
-        traceNode.scope("translation_from_english_phase")
-      )
-    )
+  // Each branch is written out in full rather than conditionally chained:
+  // LangGraph accumulates node names into the builder's type parameter, so
+  // a conditionally-extended builder loses the very typing that makes
+  // `addEdge("planning_phase", …)` checkable.
+  if (!flags.translationSandwich) {
+    return {
+      plan: new StateGraph(PlanStateSchema, {
+        context: RequestContextSchema,
+        output: PlanOutputSchema,
+      })
+        .addNode("planning_phase", planningPhase)
+        .addConditionalEdges(START, planOrSkip, ["planning_phase", END])
+        .addEdge("planning_phase", END)
+        .compile(),
+      case: new StateGraph(CaseStateSchema, {
+        context: RequestContextSchema,
+        output: CaseOutputSchema,
+      })
+        .addNode("generation_phase", generationPhase)
+        .addEdge(START, "generation_phase")
+        .addEdge("generation_phase", END)
+        .compile(),
+      // The sandwich's middle layer (#159) exists only when the sandwich
+      // does: with it off, plan mode generates the outline directly in the
+      // request language, so there is nothing to translate.
+      outlineOut: undefined,
+      reviewIn: undefined,
+    };
+  }
 
-    .addConditionalEdges(START, requestNeedsTranslationIn, {
-      translate: "translation_to_english_phase",
-      skip: "generation_phase",
+  return {
+    plan: new StateGraph(PlanStateSchema, {
+      context: RequestContextSchema,
+      output: PlanOutputSchema,
     })
-    .addEdge("translation_to_english_phase", "generation_phase")
-    .addConditionalEdges("generation_phase", requestNeedsTranslationOut, {
-      translate: "translation_from_english_phase",
-      skip: END,
+      .addNode(
+        "translation_to_english_phase",
+        buildCaseTranslationToEnglishGraph(
+          runtime,
+          traceNode.scope("translation_to_english_phase")
+        )
+      )
+      .addNode("planning_phase", planningPhase)
+      .addConditionalEdges(
+        START,
+        (state) =>
+          requestNeedsTranslationIn(state) === "translate"
+            ? "translation_to_english_phase"
+            : planOrSkip(state),
+        ["translation_to_english_phase", "planning_phase", END]
+      )
+      .addConditionalEdges("translation_to_english_phase", planOrSkip, [
+        "planning_phase",
+        END,
+      ])
+      .addEdge("planning_phase", END)
+      .compile(),
+    case: new StateGraph(CaseStateSchema, {
+      context: RequestContextSchema,
+      output: CaseOutputSchema,
     })
-    .addEdge("translation_from_english_phase", END)
-    .compile();
+      .addNode("generation_phase", generationPhase)
+      .addNode(
+        "translation_from_english_phase",
+        buildCaseTranslationFromEnglishGraph(
+          runtime,
+          { anamnesis: repos.anamnesis, procedures: repos.procedures },
+          traceNode.scope("translation_from_english_phase")
+        )
+      )
+      .addEdge(START, "generation_phase")
+      .addConditionalEdges("generation_phase", requestNeedsTranslationOut, {
+        translate: "translation_from_english_phase",
+        skip: END,
+      })
+      .addEdge("translation_from_english_phase", END)
+      .compile(),
+    // The sandwich's middle layer (#159): the outline out to the reviewer
+    // and their edits back in. Compiled with the sandwich, entered only by
+    // plan-mode requests in a language other than English — never by normal
+    // mode. Built from the unmodified `runtime`: they translate to and from
+    // the request's real language.
+    outlineOut: buildOutlineTranslationGraph(runtime, traceNode, "out"),
+    reviewIn: buildOutlineTranslationGraph(runtime, traceNode, "in"),
+  };
 }
 
-export type CompiledCaseGraph = ReturnType<typeof assembleCaseGraph>;
+export type CompiledCaseGraphs = ReturnType<typeof assembleCaseGraphs>;
+export type CompiledPlanGraph = CompiledCaseGraphs["plan"];
+export type CompiledCaseGraph = CompiledCaseGraphs["case"];
 
 /**
- * Builds every flag variant eagerly, and binds `generateCase` to the one the
+ * Builds every flag variant eagerly, and binds `planCase`/`renderCase` to the one the
  * deployer's config selects. Called once from the composition root
  * (`graph/index.ts`) — and once from `exportGraphs.ts`, with a minimal
  * in-memory runtime, purely to render topologies.
@@ -326,109 +426,152 @@ export function buildCaseGraph(
     traceNode: createTraceNode(bus, tracer),
   };
 
-  const variants = new Map<string, CompiledCaseGraph>(
+  const variants = new Map<string, CompiledCaseGraphs>(
     ALL_GRAPH_FLAGS.map((flags) => [
       graphVariantKey(flags),
-      assembleCaseGraph(deps, flags),
+      assembleCaseGraphs(deps, flags),
     ])
   );
 
-  function getCaseGraph(flags: GraphFlags): CompiledCaseGraph {
-    const graph = variants.get(graphVariantKey(flags));
-    if (!graph) {
+  function getCaseGraphs(flags: GraphFlags): CompiledCaseGraphs {
+    const graphs = variants.get(graphVariantKey(flags));
+    if (!graphs) {
       // Unreachable: `ALL_GRAPH_FLAGS` is derived from the same two booleans.
       throw new Error(
         `No compiled graph variant for flags "${graphVariantKey(flags)}"`
       );
     }
-    return graph;
+    return graphs;
   }
 
-  const caseGraph = getCaseGraph({
+  const graphs = getCaseGraphs({
     translationSandwich: config.TRANSLATION_SANDWICH,
     procedurePreselection: config.PROCEDURE_PRESELECTION,
   });
 
-  /**
-   * Execute the case generator graph.
-   *
-   * Takes one options object (issue 12 §3) — a sixth parameter (`callerSuppliedFreeText`)
-   * would have made this five positional scalars deep, an argument order
-   * nobody can read at a call site.
-   *
-   * `language` is accepted for the public signature's sake, but is not
-   * threaded into the graph's state (`CaseStateSchema` has no `language`
-   * field — see its comment above): by the time this runs, `runWithContext`
-   * (called by `caseGenerationService.ts`, the only real caller) has already
-   * bound it on ALS from this same value, so `requestNeedsTranslationIn`/
-   * `requestNeedsTranslationOut` and every generation gateway already see it
-   * via `getRequestContext()`. `callerSuppliedFreeText` *is* threaded into
-   * graph state — it is per-request routing input the translate-in edge
-   * reads directly (see `CaseStateSchema`'s comment).
-   */
-  async function generateCase(opts: {
-    diagnosis: Diagnosis;
-    generationFlags: GenerationFlag[];
-    userInstructions?: UserInstructions | undefined;
-    language?: Language | undefined;
-    difficulty?: Difficulty | undefined;
-    callerSuppliedFreeText: boolean;
-  }): Promise<Case> {
-    const {
-      diagnosis,
-      generationFlags,
-      userInstructions,
-      language,
-      difficulty,
-      callerSuppliedFreeText,
-    } = opts;
-
-    console.log(
-      `[CaseGraph] Starting case generation for:\n`,
-      JSON.stringify(
-        {
-          diagnosis,
-          userInstructions,
-          generationFlags,
-          difficulty,
-          language,
-          callerSuppliedFreeText,
-        },
-        null,
-        2
-      )
-    );
-
+  /** LangGraph's invoke options for the request bound on ALS. */
+  function invokeOptions() {
     const context = getRequestContext();
+    return {
+      context: { llmConfig: context?.llmConfig, jobId: context?.jobId },
+      ...(context?.signal !== undefined ? { signal: context.signal } : {}),
+    };
+  }
 
-    const result = await caseGraph.invoke(
+  /**
+   * Run the plan graph: translate-in (sandwich on, when needed), the medical
+   * basis, and the outline with its judge loop (#159). Returns the outline
+   * and the working-language inputs the case graph needs.
+   *
+   * `language` is not threaded into graph state (see `PlanStateSchema`'s
+   * comment above): by the time this runs, `runWithContext` (called by
+   * `caseGenerationService.ts`) has already bound it on ALS, so the
+   * translation edges and every gateway see it via `getRequestContext()`.
+   * `callerSuppliedFreeText` *is* graph state — per-request routing input
+   * the translate-in edge reads directly.
+   */
+  async function planCase(opts: PlanCaseInput): Promise<PlanResult> {
+    const result = await graphs.plan.invoke(
       {
-        diagnosis,
-        generationFlags,
-        userInstructions,
-        difficulty,
-        callerSuppliedFreeText,
+        diagnosis: opts.diagnosis,
+        generationFlags: opts.generationFlags,
+        userInstructions: opts.userInstructions,
+        difficulty: opts.difficulty,
+        callerSuppliedFreeText: opts.callerSuppliedFreeText,
+        mode: opts.mode ?? "normal",
+        ...(opts.outline && { outlineSegments: opts.outline }),
       },
-      {
-        context: {
-          llmConfig: context?.llmConfig,
-          jobId: context?.jobId,
-        },
-        ...(context?.signal !== undefined ? { signal: context.signal } : {}),
-      }
+      invokeOptions()
     );
 
-    console.log(
-      "[CaseGraph] Generation complete",
-      JSON.stringify(result, null, 2)
+    return {
+      diagnosis: result.diagnosis,
+      userInstructions: result.userInstructions,
+      basisFragments: result.basisFragments,
+      outlineSegments: result.outlineSegments,
+      outlineAccepted: result.outlineAccepted,
+    };
+  }
+
+  /**
+   * Run the case graph from an outline: field fan-out, procedures and (sandwich
+   * on, when needed) translate-out. `diagnosis`/`userInstructions` must be the
+   * working-language values {@link planCase} returned.
+   */
+  async function renderCase(opts: RenderCaseInput): Promise<Case> {
+    const result = await graphs.case.invoke(
+      {
+        diagnosis: opts.diagnosis,
+        generationFlags: opts.generationFlags,
+        userInstructions: opts.userInstructions,
+        difficulty: opts.difficulty,
+        outline: opts.outline,
+      },
+      invokeOptions()
     );
 
     if (!result.case) {
       throw new GenerationError("Case generation failed: No case generated");
     }
-
     return result.case;
   }
 
-  return { caseGraph, getCaseGraph, generateCase };
+  /**
+   * Translate outline values keyed by segment index (#159): `"out"` from
+   * English to the request language for the reviewer, `"in"` back to
+   * English. `undefined` when the sandwich is compiled out — plan mode then
+   * writes the outline in the request language and never translates it.
+   */
+  const translateOutline =
+    graphs.outlineOut && graphs.reviewIn
+      ? (values: Record<string, string>, direction: "out" | "in") =>
+          translateOutlineValues(
+            direction === "out" ? graphs.outlineOut! : graphs.reviewIn!,
+            values
+          )
+      : undefined;
+
+  return {
+    graphs,
+    getCaseGraphs,
+    planCase,
+    renderCase,
+    translateOutline,
+  };
 }
+
+export type PlanCaseInput = {
+  diagnosis: Diagnosis;
+  generationFlags: GenerationFlag[];
+  userInstructions?: UserInstructions | undefined;
+  language?: Language | undefined;
+  difficulty?: Difficulty | undefined;
+  callerSuppliedFreeText: boolean;
+  mode?: RunMode | undefined;
+  /**
+   * The plan handed in with the request, in English (#159): planning is
+   * skipped and only translate-in runs, so the result's `outlineSegments`
+   * is this plan and its `diagnosis`/`userInstructions` are in the working
+   * language.
+   */
+  outline?: OutlineSegments | undefined;
+};
+
+export type PlanResult = {
+  /** Working language: English after translate-in (sandwich on). */
+  diagnosis: Diagnosis;
+  userInstructions?: UserInstructions | undefined;
+  basisFragments: BasisFragment[];
+  outlineSegments: OutlineSegments;
+  /** `false` when the judge loop ended on its iteration cap. */
+  outlineAccepted: boolean;
+};
+
+export type RenderCaseInput = {
+  diagnosis: Diagnosis;
+  generationFlags: GenerationFlag[];
+  userInstructions?: UserInstructions | undefined;
+  difficulty?: Difficulty | undefined;
+  /** Prompt-ready outline text (`joinOutline`). */
+  outline: string;
+};

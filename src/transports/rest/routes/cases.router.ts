@@ -6,9 +6,10 @@ import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type {
   CaseGenerationResult,
   CaseGenerationService,
+  PlanPayload,
 } from "@/core/caseGenerationService.js";
 import type { JobDirectory, JobEventChannel } from "@/core/jobEvents/index.js";
-import { openSse } from "../sse.js";
+import { openSse, type SseStream } from "../sse.js";
 
 /**
  * How often the POST stream writes a `: ping` comment. Holding the
@@ -27,6 +28,16 @@ function errorBody(result: CaseGenerationResult) {
       message: error.message,
       details: error.details,
     },
+  };
+}
+
+/** A plan-mode stop — the same payload as a normal-mode `event: plan`. */
+function planBody(result: CaseGenerationResult): PlanPayload {
+  return {
+    jobId: result.jobId,
+    mode: "plan",
+    language: result.language!,
+    plan: result.plan!,
   };
 }
 
@@ -51,23 +62,22 @@ export default function createCasesRouter(
     });
 
   /**
-   * `POST /api/cases` — the synchronous transport (#143).
+   * `POST /api/cases` — the synchronous transport (#143). Opening the stream
+   * with the request itself removes the handshake race a 202-then-subscribe
+   * design has: every event between minting the jobId and the client
+   * subscribing would otherwise be lost, short of a replay buffer (deferred).
    *
    * - `Accept: application/json` (or no preference): blocks and returns the
-   *   case, exactly as before.
-   * - `Accept: text/event-stream`: SSE on the POST's own response —
-   *   `event: accepted {jobId}` before any node runs, then `event: label`…,
-   *   then `event: result {case…}` or `event: error {error}`, with a
-   *   `: ping` comment every {@link HEARTBEAT_MS}.
+   *   case (200), a plan-mode plan (200, `{jobId, mode, language, plan}`),
+   *   or the error.
+   * - `Accept: text/event-stream`: SSE on this response — `event: accepted
+   *   {jobId}` before any node runs, then `event: label`…, `event: plan` as
+   *   soon as the plan exists (#159), then `event: result`/`event: error` —
+   *   except in plan mode, whose stream ends with the plan. A `: ping`
+   *   comment is written every {@link HEARTBEAT_MS}.
    *
-   * The stream is opened by the request itself, so no event can be lost
-   * between learning the jobId and subscribing — which a 202-then-subscribe
-   * design cannot promise without a replay buffer.
-   *
-   * On either path a client disconnect cancels the job. That is the
-   * accepted trade of a connection-scoped transport, not an oversight:
-   * HTTP cannot tell "the user cancelled" from "the network dropped". A
-   * client that needs to survive drops uses NATS.
+   * A body with a `plan` generates the case from it; the same jobId as the
+   * plan's own call is fine (#159). A client disconnect cancels the job.
    */
   router.post("/", async (req: express.Request, res: express.Response) => {
     const bodyResult = CaseGenerationRequestSchema.safeParse(req.body);
@@ -84,7 +94,12 @@ export default function createCasesRouter(
       return;
     }
 
-    const started = service.start(bodyResult.data);
+    // Set once the response turns into a stream; the JSON path has
+    // nowhere to put a normal-mode plan, so it drops it.
+    const stream: { sse?: SseStream } = {};
+    const started = service.start(bodyResult.data, {
+      onPlan: (plan) => stream.sse?.event("plan", plan),
+    });
     const { jobId } = started;
 
     // A duplicate jobId is a plain 409 on both paths, answered before any
@@ -104,19 +119,22 @@ export default function createCasesRouter(
       "text/event-stream";
 
     if (!wantsStream) {
-      const result = await started.result;
+      const finished = await started.result;
       if (res.writableEnded) return;
-      if (result.status === "done") {
-        res.status(200).json(successBody(result));
-      } else if (result.error!.code === "GENERATION_CANCELLED") {
-        res.status(result.error!.statusCode ?? 499).end();
+      if (finished.status === "done") {
+        res.status(200).json(successBody(finished));
+      } else if (finished.status === "planned") {
+        res.status(200).json(planBody(finished));
+      } else if (finished.error!.code === "GENERATION_CANCELLED") {
+        res.status(finished.error!.statusCode ?? 499).end();
       } else {
-        res.status(result.error!.statusCode ?? 500).json(errorBody(result));
+        res.status(finished.error!.statusCode ?? 500).json(errorBody(finished));
       }
       return;
     }
 
     const sse = openSse(res);
+    stream.sse = sse;
     sse.event("accepted", { jobId });
 
     // Subscribed synchronously after `start`, which opened the channel:
@@ -127,11 +145,13 @@ export default function createCasesRouter(
     const heartbeat = setInterval(() => sse.comment("ping"), heartbeatMs);
 
     try {
-      const result = await started.result;
-      if (result.status === "done") {
-        sse.event("result", successBody(result));
+      const finished = await started.result;
+      if (finished.status === "done") {
+        sse.event("result", successBody(finished));
+      } else if (finished.status === "planned") {
+        sse.event("plan", planBody(finished));
       } else {
-        sse.event("error", errorBody(result));
+        sse.event("error", errorBody(finished));
       }
     } catch (error) {
       // The headers are long gone, so Express's error handler cannot turn

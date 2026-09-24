@@ -2,25 +2,30 @@ import z from "zod";
 import { generateCaseOutline as generateCaseOutlineGateway } from "@/core/graph/03aigateway/case.aigateway.js";
 import { evaluateOutline as evaluateOutlineGateway } from "@/core/graph/03aigateway/outlineEvaluation.aigateway.js";
 import { DiagnosisSchema } from "@/core/graph/models/Diagnosis.js";
-import { GenerationFlagSchema } from "@/core/graph/models/GenerationFlags.js";
 import { BasisFragmentSchema } from "@/core/graph/medicalBasis/ports.js";
 import { DifficultySchema } from "@/core/graph/models/Difficulty.js";
 import type { OutlineEvaluation } from "@/core/graph/models/OutlineEvaluation.js";
 import type { Tool } from "@/core/graph/utils/tool.js";
+import {
+  OutlineSegmentsSchema,
+  type OutlineSegments,
+} from "@/core/graph/outline/segments.js";
+
+const PromptAudienceSchema = z.enum(["internal", "user-facing"]);
 
 const GenerateCaseOutlineInputSchema = z.object({
   diagnosis: DiagnosisSchema,
-  generationFlags: z.array(GenerationFlagSchema),
   basisFragments: z.array(BasisFragmentSchema),
   difficulty: DifficultySchema,
   userInstructions: z.string().optional(),
   feedback: z.array(z.string()).optional(),
-  previousOutline: z.string().optional(),
+  previousOutline: OutlineSegmentsSchema.optional(),
+  audience: PromptAudienceSchema.optional(),
 });
 
 export const generateCaseOutline: Tool<
   z.infer<typeof GenerateCaseOutlineInputSchema>,
-  string
+  OutlineSegments
 > = {
   name: "generate_case_outline",
   description:
@@ -29,12 +34,12 @@ export const generateCaseOutline: Tool<
   invoke: (
     {
       diagnosis,
-      generationFlags,
       basisFragments,
       difficulty,
       userInstructions,
       feedback,
       previousOutline,
+      audience,
     },
     runtime,
     context
@@ -42,12 +47,9 @@ export const generateCaseOutline: Tool<
     generateCaseOutlineGateway(
       runtime,
       diagnosis,
-      generationFlags.filter((f) => f !== "procedures"),
       basisFragments,
       difficulty,
-      userInstructions,
-      feedback,
-      previousOutline,
+      { userInstructions, feedback, previousOutline, audience },
       context
     ),
 };
@@ -59,6 +61,7 @@ const EvaluateOutlineInputSchema = z.object({
   outline: z.string(),
   difficulty: DifficultySchema,
   userInstructions: z.string().optional(),
+  audience: PromptAudienceSchema.optional(),
 });
 
 export const evaluateOutline: Tool<
@@ -70,7 +73,7 @@ export const evaluateOutline: Tool<
     "Judge in one call whether a case blueprint is too obvious for the requested difficulty and whether it is clinically consistent.",
   inputSchema: EvaluateOutlineInputSchema,
   invoke: (
-    { diagnosis, outline, difficulty, userInstructions },
+    { diagnosis, outline, difficulty, userInstructions, audience },
     runtime,
     context
   ) =>
@@ -80,7 +83,8 @@ export const evaluateOutline: Tool<
       outline,
       difficulty,
       userInstructions,
-      context
+      context,
+      audience
     ),
 };
 

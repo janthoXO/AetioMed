@@ -4,6 +4,7 @@ import {
   buildSystemPrompt,
   section,
   summarizeValidationError,
+  type PromptAudience,
 } from "../utils/prompt.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
 import type { BasisFragment } from "../medicalBasis/ports.js";
@@ -11,7 +12,16 @@ import { renderMedicalBasisSection } from "../medicalBasis/render.js";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "../utils/retry.js";
 import type { RequestContext } from "../utils/context.js";
-import type { GenerationFlag } from "../models/GenerationFlags.js";
+import {
+  FIXED_CLOSE,
+  FIXED_OPEN,
+  OutlineFormatError,
+  checkSkeleton,
+  outlineSkeleton,
+  parseTaggedOutline,
+  renderTaggedOutline,
+  type OutlineSegments,
+} from "../outline/segments.js";
 import type { Difficulty } from "../models/Difficulty.js";
 import type { GraphRuntime } from "../runtime.js";
 
@@ -27,28 +37,60 @@ const DIFFICULTY_STRATEGY: Record<Difficulty, string> = {
 - The case should require synthesizing multiple pieces of evidence and actively ruling out plausible alternatives before reaching the diagnosis.`,
 };
 
+/**
+ * Generate the case outline as tag-delimited markdown and parse it into the
+ * positional segment array (#159). The headings are a server-owned skeleton
+ * (`outlineSkeleton`): the model must reproduce them verbatim inside
+ * `<fixed>` tags, and an outline whose fixed sequence differs is rejected
+ * and retried with the mismatch fed back — the skeleton is enforced by
+ * validation, not by a grammar, so the plain-text call (and its prose
+ * quality) stays exactly what it was.
+ *
+ * Every section is always outlined, regardless of the requested
+ * `generationFlags`: a procedures-only request still needs a patient, a
+ * presentation and an anamnesis for the procedure results to be reasoned
+ * about, and a reviewer in plan mode edits one stable shape.
+ */
 export async function generateCaseOutline(
   runtime: GraphRuntime,
   diagnosis: Diagnosis,
-  generationFlags: GenerationFlag[],
   basisFragments: BasisFragment[],
   difficulty: Difficulty,
-  userInstructions?: string,
-  feedback?: string[],
-  previousOutline?: string,
+  opts: {
+    userInstructions?: string | undefined;
+    feedback?: string[] | undefined;
+    previousOutline?: OutlineSegments | undefined;
+    /**
+     * `"internal"` (English) everywhere except plan mode with the sandwich
+     * off, where the reviewer reads the outline as generated and it is
+     * written in the request language (#159). With the sandwich on the
+     * bound runtime's `languageOverride` keeps it English either way.
+     */
+    audience?: PromptAudience | undefined;
+  } = {},
   context?: RequestContext
-): Promise<string> {
-  const effectiveCategories = generationFlags.includes("anamnesis")
-    ? runtime.catalogs.anamnesis.list()
-    : undefined;
+): Promise<OutlineSegments> {
+  const { userInstructions, feedback, previousOutline } = opts;
+  const audience = opts.audience ?? "internal";
+  const anamnesisCategories = runtime.catalogs.anamnesis.list();
+  const skeleton = outlineSkeleton({ anamnesisCategories });
 
-  // Internal artifact (issue 09 §3): the outline is the blueprint downstream
-  // generators render, never shown to the student as-is, and it must stay
-  // English in both sandwich modes for the generation core to stay
-  // language-agnostic — so this never gets the language directive.
+  const structure = anamnesisCategories
+    ? skeleton.map((heading) => `${FIXED_OPEN}${heading}${FIXED_CLOSE}`)
+    : [
+        ...skeleton.map((heading) =>
+          heading === "## Procedures"
+            ? `${FIXED_OPEN}### <intake category name>${FIXED_CLOSE}   (one per anamnesis category you choose, before Procedures)\n${FIXED_OPEN}${heading}${FIXED_CLOSE}`
+            : `${FIXED_OPEN}${heading}${FIXED_CLOSE}`
+        ),
+      ];
+
+  // Internal artifact by default (issue 09 §3): the outline is the blueprint
+  // downstream generators render, and it stays English unless the caller
+  // binds it to the request language (plan mode, sandwich off — #159).
   const systemPrompt = buildSystemPrompt(
     runtime,
-    "internal",
+    audience,
     section(
       "Role",
       `You are an expert medical educator tasked with creating a concrete outline for a clinical practice case based on a specific diagnosis.
@@ -57,27 +99,27 @@ This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents g
 
     section(
       "Instructions",
-      `1. Generate a structured markdown outline with one section per required field, containing hard, concrete data:
-   - Patient: exact age, gender, height (in cm), weight (in kg), and any relevant demographic details.
-   - Symptoms/presentation: select a clinically coherent subset of the reference symptoms (see "Medical basis", when present) to feature, with concrete onset, duration, severity, and timeline.
+      `1. Write the outline under the fixed headings listed in "Structure", with hard, concrete data in each section:
+   - General: the clinical picture — select a clinically coherent subset of the reference symptoms (see "Medical basis", when present) to feature, with concrete onset, duration, severity, timeline, and any distractors the difficulty strategy calls for.
+   - Patient: exact age, sex, height (in cm), weight (in kg), and any relevant demographic details.
    - Chief complaint: the specific presenting problem in one or two factual sentences.
-   - Anamnesis: for each intake form category, the concrete facts to state (history items, medications with names and doses, lifestyle details, family history).
+   - Anamnesis: under each intake category heading, the concrete facts to state (history items, medications with names and doses, lifestyle details, family history).
+   - Procedures: the workup / procedure results strategy — how procedure and lab results should be shaped per the difficulty strategy, so a downstream agent generating those results can follow it.
 2. Downstream generators must be able to write their field using ONLY facts from this outline. Any fact not specified here does not exist. Do not leave placeholders or vague descriptions.
-3. Make sure that all fields are clinically coherent to each other.
-4. Include a dedicated "Workup / Procedure Results Strategy" section describing how procedure and lab results should be shaped per the difficulty strategy, so a downstream agent generating those results can follow it.
-5. The diagnosis must never be explicitly named anywhere in the outline's field content — the student must deduce it.
-6. Return ONLY the markdown outline. Do not include introductory text, acknowledgments, or conversational filler.`
+3. Make sure that all sections are clinically coherent with each other.
+4. The diagnosis must never be explicitly named anywhere in the outline's content — the student must deduce it.
+5. Return ONLY the outline. Do not include introductory text, acknowledgments, or conversational filler.`
+    ),
+
+    section(
+      "Structure",
+      `Reproduce these fixed headings EXACTLY, in this order, each wrapped in ${FIXED_OPEN}…${FIXED_CLOSE} on its own line — never translate, rename, reorder or omit them. Write each section's content on the lines below its heading, OUTSIDE the tags. Never put anything else inside ${FIXED_OPEN} tags, and do not add other markdown headings.
+${structure.join("\n")}`
     )
   );
 
   const userPrompt = buildPrompt(
     section("Target diagnosis", `${diagnosis.name} ${diagnosis.icd ?? ""}`),
-
-    section(
-      "Required fields to outline",
-      `You must outline the specific content and direction for the following required fields:
-${generationFlags.join(", ")}`
-    ),
 
     renderMedicalBasisSection(basisFragments),
 
@@ -87,18 +129,21 @@ ${generationFlags.join(", ")}`
 ${DIFFICULTY_STRATEGY[difficulty]}`
     ),
 
-    effectiveCategories
+    anamnesisCategories
       ? section(
           "Anamnesis intake form categories",
-          `The anamnesis section of the outline must specify concrete facts for each of these intake form categories, using their exact names:
-${effectiveCategories.join(", ")}`
+          `The Anamnesis section must specify concrete facts for each of these intake form categories, under their fixed headings:
+${anamnesisCategories.join(", ")}`
         )
       : undefined,
 
     section("Additional instructions", userInstructions),
 
     previousOutline
-      ? section("Previous outline (rejected)", previousOutline)
+      ? section(
+          "Previous outline (rejected)",
+          renderTaggedOutline(previousOutline)
+        )
       : undefined,
 
     feedback && feedback.length > 0
@@ -115,7 +160,7 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
   );
 
   try {
-    const outline: string = await retry(
+    return await retry(
       async (attempt: number, previousError?: Error) => {
         const result = await runtime.llm
           .for(
@@ -145,7 +190,16 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
           result.text
         );
 
-        return result.text;
+        // A malformed or off-skeleton outline is rejected here, so the
+        // retry feeds the exact mismatch back to the model.
+        const segments = parseTaggedOutline(result.text);
+        const check = checkSkeleton(segments, { anamnesisCategories });
+        if (!check.ok) {
+          throw new OutlineFormatError(
+            `The outline's fixed headings are wrong: ${check.message}`
+          );
+        }
+        return segments;
       },
       2,
       0,
@@ -155,8 +209,6 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
         runtime.log.error(msg);
       }
     );
-
-    return outline;
   } catch (error) {
     console.error(`[GenerateCaseOutline] Error:`, error);
     throw error;

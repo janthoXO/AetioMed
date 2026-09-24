@@ -6,9 +6,12 @@ import {
   resultSubject,
   progressSubject,
   cancelSubject,
+  planSubject,
+  PLANS_STREAM,
   REQUESTS_STREAM,
   RESULTS_STREAM,
   RESULT_MAX_AGE_MS,
+  STREAMS,
   CATALOG_DIAGNOSIS_SUBJECT,
   CATALOG_PROCEDURES_SUBJECT,
   META_FEATURES_SUBJECT,
@@ -43,10 +46,11 @@ describe("subjectMatches", () => {
   });
 });
 
-describe("no stream captures another channel's subjects (#142)", () => {
+describe("no stream captures another channel's subjects (#142, #159)", () => {
   const sampleSubjects: Record<string, string> = {
     request: REQUEST_SUBJECT,
     result: resultSubject("j1"),
+    plan: planSubject("j1"),
     progressLabel: progressSubject("j1", "label"),
     progressAccepted: progressSubject("j1", "accepted"),
     progressComplete: progressSubject("j1", "complete"),
@@ -59,11 +63,9 @@ describe("no stream captures another channel's subjects (#142)", () => {
   };
 
   function matchingStreams(subject: string): string[] {
-    return [REQUESTS_STREAM, RESULTS_STREAM]
-      .filter((stream) =>
-        stream.subjects.some((filter) => subjectMatches(filter, subject))
-      )
-      .map((stream) => stream.name);
+    return STREAMS.filter((stream) =>
+      stream.subjects.some((filter) => subjectMatches(filter, subject))
+    ).map((stream) => stream.name);
   }
 
   it("REQUESTS_STREAM matches only the request subject", () => {
@@ -84,15 +86,32 @@ describe("no stream captures another channel's subjects (#142)", () => {
     }
   });
 
-  it("the two streams' filters don't overlap each other", () => {
+  it("CASE_PLANS matches only the plan subject (#159)", () => {
+    for (const [label, subject] of Object.entries(sampleSubjects)) {
+      const matches = PLANS_STREAM.subjects.some((filter) =>
+        subjectMatches(filter, subject)
+      );
+      expect([label, matches]).toEqual([label, label === "plan"]);
+    }
+  });
+
+  it("cases.plan.<jobId> is captured by CASE_PLANS only", () => {
+    expect(matchingStreams(planSubject("j1"))).toEqual([PLANS_STREAM.name]);
+  });
+
+  it("no two streams' filters overlap each other", () => {
     for (const subject of Object.values(sampleSubjects)) {
       expect(matchingStreams(subject).length).toBeLessThanOrEqual(1);
     }
-    // And directly: neither stream's filter subjects match the other's.
-    for (const filter of REQUESTS_STREAM.subjects) {
-      for (const otherFilter of RESULTS_STREAM.subjects) {
-        expect(subjectMatches(filter, otherFilter)).toBe(false);
-        expect(subjectMatches(otherFilter, filter)).toBe(false);
+    // And directly: no stream's filter subjects match another's.
+    for (const stream of STREAMS) {
+      for (const other of STREAMS) {
+        if (stream === other) continue;
+        for (const filter of stream.subjects) {
+          for (const otherFilter of other.subjects) {
+            expect(subjectMatches(filter, otherFilter)).toBe(false);
+          }
+        }
       }
     }
   });
@@ -107,5 +126,11 @@ describe("stream retention configuration", () => {
 
   it("REQUESTS_STREAM uses workqueue retention", () => {
     expect(REQUESTS_STREAM.retention).toBe(RetentionPolicy.Workqueue);
+  });
+
+  it("PLANS_STREAM uses limits retention, same max_age as results (#159)", () => {
+    expect(PLANS_STREAM.retention).toBe(RetentionPolicy.Limits);
+    expect(PLANS_STREAM.subjects).toEqual(["cases.plan.*"]);
+    expect(PLANS_STREAM.max_age).toBe(RESULTS_STREAM.max_age);
   });
 });

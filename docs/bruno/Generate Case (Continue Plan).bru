@@ -1,0 +1,48 @@
+meta {
+  name: Generate Case (Continue Plan)
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{base_url}}/api/cases
+  body: json
+  auth: inherit
+}
+
+body:json {
+  // Same jobId as "Generate Case (Plan Mode)" — reusing it after a
+  // plan-mode stop is the one case a jobId may be resent for. `plan` is
+  // the outline that call returned, pasted back verbatim or with only its
+  // editable segments changed (fixed segments and the segment count must
+  // stay untouched). This skips planning and generates the case from it.
+  {
+    "jobId": "{{jobId}}",
+    "diagnosis": "diabetes",
+    "language": "German",
+    "generationFlags": [
+      "patient",
+      "chiefComplaint",
+      "anamnesis",
+      "procedures"
+    ],
+    "plan": [
+      { "fixed": false, "text": "" },
+      { "fixed": true, "text": "## General" },
+      { "fixed": false, "text": "…" },
+      { "fixed": true, "text": "## Patient" },
+      { "fixed": false, "text": "…" },
+      { "fixed": true, "text": "## Chief complaint" },
+      { "fixed": false, "text": "…" },
+      { "fixed": true, "text": "## Anamnesis" },
+      { "fixed": false, "text": "…" },
+      { "fixed": true, "text": "## Procedures" },
+      { "fixed": false, "text": "" }
+    ]
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

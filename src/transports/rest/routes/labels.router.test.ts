@@ -22,12 +22,12 @@ import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import createLabelsRouter from "./labels.router.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { Case } from "@/core/graph/models/Case.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
+import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
 // Same shape as `caseGenerationService.test.ts`'s `fakeGraph` — a minimal
 // stand-in for the composition root's real `GraphAppContext`.
-function fakeGraph(
-  generateCase: GraphAppContext["generateCase"]
-): GraphAppContext {
+function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
   return {
     config: {
       llm: { provider: "ollama", model: "test-model" },
@@ -43,7 +43,7 @@ function fakeGraph(
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
+    ...planAndRenderFrom(generateCase),
   } as GraphAppContext;
 }
 
@@ -191,6 +191,85 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     expect(text).not.toContain('"ok":true');
     expect(text).toContain('"status":"started"');
     expect(text).toContain('"status":"completed"');
+
+    const { done } = await reader.read();
+    expect(done).toBe(true);
+  });
+
+  it("a plan-mode call ends with event: complete whose status is 'planned', never the plan itself (#159)", async () => {
+    // A gated `planCase`, not `planAndRenderFrom` (whose plan stage never
+    // awaits anything) — this test needs the stop to land *after* the
+    // labels stream subscribes, or the buffered-watch race the harness
+    // above exists for real generation would let it happen before any
+    // listener attaches.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const graph = {
+      config: {
+        llm: { provider: "ollama", model: "test-model" },
+        allowedLlms: undefined,
+        PROCEDURE_PRESELECTION: false,
+        LANGUAGES: ["English", "German"],
+        LANGUAGE_AUTO_DETECT: false,
+        LANGUAGE_DETECT_LLM_FALLBACK: false,
+      } as GraphAppContext["config"],
+      runtime: {
+        catalogs: { diagnosis: { byIcd: () => undefined } },
+        llm: { for: vi.fn() },
+      } as unknown as GraphAppContext["runtime"],
+      async planCase(opts: { diagnosis: unknown; userInstructions: unknown }) {
+        await gate;
+        return {
+          diagnosis: opts.diagnosis,
+          userInstructions: opts.userInstructions,
+          basisFragments: [],
+          outlineAccepted: true,
+          outlineSegments: [
+            { fixed: false, text: "" },
+            { fixed: true, text: "## Plan options" },
+            { fixed: false, text: "{}" },
+          ],
+        };
+      },
+      async renderCase() {
+        return { patient: { name: "Jane", age: 40, sex: "female" } } as Case;
+      },
+      translateOutline: undefined,
+    } as unknown as GraphAppContext;
+
+    const channel: JobEventChannel = createJobEventChannel();
+    const service = createCaseGenerationService(graph, new EventBus(), channel);
+    const directory = createLocalJobDirectory(channel, service.cancel);
+    ({ server } = await startServer(directory));
+    const port = (server!.address() as AddressInfo).port;
+
+    const p = service.generate({
+      diagnosis: "Influenza",
+      generationFlags: ["patient"],
+      jobId: "job-plan-labels",
+      mode: "plan",
+      language: "English",
+    });
+
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-labels/labels`
+    );
+    const reader = res.body!.getReader();
+    await readUntil(reader, (text) => text.includes("event: connected"));
+
+    release();
+    const result = await p;
+    expect(result.status).toBe("planned");
+
+    const text = await readUntil(reader, (text) =>
+      text.includes("event: complete")
+    );
+    expect(text).toContain('"jobId":"job-plan-labels"');
+    expect(text).toContain('"status":"planned"');
+    // An observer never sees the plan itself — only the requester gets it,
+    // as this call's own return value.
+    expect(text).not.toContain("outline");
+    expect(text).not.toContain("Plan options");
 
     const { done } = await reader.read();
     expect(done).toBe(true);

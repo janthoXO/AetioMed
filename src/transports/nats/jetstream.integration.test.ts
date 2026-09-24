@@ -25,11 +25,13 @@ import { ensureStreams } from "./streams.js";
 import {
   REQUESTS_STREAM,
   RESULTS_STREAM,
+  PLANS_STREAM,
   LEGACY_STREAM,
   REQUEST_CONSUMER,
   resultSubject,
   cancelSubject,
   progressSubject,
+  planSubject,
   CATALOG_DIAGNOSIS_SUBJECT,
   CATALOG_PROCEDURES_SUBJECT,
   META_FEATURES_SUBJECT,
@@ -61,14 +63,13 @@ import { getRequestContext } from "@/core/graph/utils/context.js";
 import { createReadModel } from "@/core/readModel.js";
 import { createRestApp } from "@/transports/rest/index.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
-import type { CompiledCaseGraph } from "@/core/graph/02graphs/caseGraph.js";
 import type { Case } from "@/core/graph/models/Case.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
+import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
 const NATS_TEST_URL = process.env.NATS_TEST_URL;
 
-function fakeGraph(
-  generateCase: GraphAppContext["generateCase"] = vi.fn()
-): GraphAppContext {
+function fakeGraph(generateCase: GenerateCaseFn = vi.fn()): GraphAppContext {
   return {
     config: {
       llm: { provider: "ollama", model: "test-model" },
@@ -84,7 +85,7 @@ function fakeGraph(
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
+    ...planAndRenderFrom(generateCase),
   } as GraphAppContext;
 }
 
@@ -178,25 +179,23 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
       const js = getJetStreamClient();
       const nc = getNatsConnection();
 
-      const generateCase: GraphAppContext["generateCase"] = vi.fn(
-        async (): Promise<Case> => {
-          const signal = getRequestContext()?.signal;
-          await new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(resolve, 300);
-            signal?.addEventListener(
-              "abort",
-              () => {
-                clearTimeout(timer);
-                const error = new Error("aborted");
-                error.name = "AbortError";
-                reject(error);
-              },
-              { once: true }
-            );
-          });
-          return { patient: { name: "Jane", age: 40, sex: "female" } };
-        }
-      );
+      const generateCase: GenerateCaseFn = vi.fn(async (): Promise<Case> => {
+        const signal = getRequestContext()?.signal;
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 300);
+          signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            },
+            { once: true }
+          );
+        });
+        return { patient: { name: "Jane", age: 40, sex: "female" } };
+      });
 
       const graph = fakeGraph(generateCase);
       const channel = createJobEventChannel();
@@ -350,7 +349,7 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
     async () => ({ ok: true }),
     "Doing a thing"
   );
-  const generateCase: GraphAppContext["generateCase"] = vi.fn(async () => {
+  const generateCase: GenerateCaseFn = vi.fn(async () => {
     await doThing();
     return {
       patient: {
@@ -383,16 +382,21 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
-    caseGraph: {
-      getGraphAsync: async () => ({
-        nodes: { __start__: {}, some_node: {}, __end__: {} },
-        edges: [
-          { source: "__start__", target: "some_node" },
-          { source: "some_node", target: "__end__" },
-        ],
-      }),
-    } as unknown as CompiledCaseGraph,
+    ...planAndRenderFrom(generateCase),
+    graphs: {
+      plan: {
+        getGraphAsync: async () => ({ nodes: {}, edges: [] }),
+      },
+      case: {
+        getGraphAsync: async () => ({
+          nodes: { __start__: {}, some_node: {}, __end__: {} },
+          edges: [
+            { source: "__start__", target: "some_node" },
+            { source: "some_node", target: "__end__" },
+          ],
+        }),
+      },
+    } as unknown as GraphAppContext["graphs"],
   } as GraphAppContext;
 }
 
@@ -690,7 +694,7 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
     return err;
   }
 
-  const generateCase: GraphAppContext["generateCase"] = vi.fn(async () => {
+  const generateCase: GenerateCaseFn = vi.fn(async () => {
     const signal = getRequestContext()?.signal;
     for (let i = 0; i < 3; i++) {
       if (signal?.aborted) throw abortError();
@@ -731,10 +735,11 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
-    caseGraph: {
-      getGraphAsync: async () => ({ nodes: {}, edges: [] }),
-    } as unknown as GraphAppContext["caseGraph"],
+    ...planAndRenderFrom(generateCase),
+    graphs: {
+      plan: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
+      case: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
+    } as unknown as GraphAppContext["graphs"],
   } as GraphAppContext;
 }
 
@@ -1097,4 +1102,154 @@ describe.skipIf(!NATS_TEST_URL)("partial NATS backbone (#145)", () => {
   afterEach(async () => {
     await ncB?.close();
   });
+});
+
+// #159 — plan mode over NATS, stateless: a plan-mode request's plan lands on
+// `cases.plan.<jobId>`, and a second request carrying that plan (the same
+// jobId, since the generator is stateless and keeps nothing between calls)
+// produces the case on `cases.result.<jobId>`. Kept in this file for the
+// same reason as the two `describe`s above: sharing
+// `CASE_REQUESTS`/`CASE_RESULTS`/`CASE_PLANS` by name with a sibling file
+// would race a `beforeEach` that deletes and recreates them.
+describe.skipIf(!NATS_TEST_URL)("plan mode over NATS (#159)", () => {
+  let jsm: JetStreamManager;
+
+  beforeEach(async () => {
+    await connectNats({
+      url: NATS_TEST_URL!,
+      user: process.env.NATS_TEST_USER ?? "nats",
+      password: process.env.NATS_TEST_PASSWORD ?? "nats",
+    });
+    jsm = await jetstreamManager(getNatsConnection());
+
+    for (const name of [
+      REQUESTS_STREAM.name,
+      RESULTS_STREAM.name,
+      PLANS_STREAM.name,
+      LEGACY_STREAM,
+    ]) {
+      await jsm.streams.delete(name).catch(() => undefined);
+    }
+  });
+
+  afterAll(async () => {
+    await closeNats();
+  });
+
+  /**
+   * Read the next stored message matching `subject` off `streamName`, via a
+   * fresh ephemeral consumer with `deliver_policy: All` — the same shape
+   * the "two independent consumers" test above uses. `All` means creation
+   * order relative to the publish doesn't matter: a message already stored
+   * by the time this consumer is created is still delivered.
+   */
+  async function awaitStored(
+    streamName: string,
+    subject: string,
+    timeoutMs = 5000
+  ): Promise<unknown> {
+    const js = getJetStreamClient();
+    const consumer = await js.consumers.get(streamName, {
+      filter_subjects: [subject],
+      deliver_policy: DeliverPolicy.All,
+    });
+    const msg = await consumer.next({ expires: timeoutMs });
+    if (!msg) throw new Error(`No message on ${subject} within ${timeoutMs}ms`);
+    msg.ack();
+    return JSON.parse(new TextDecoder().decode(msg.data));
+  }
+
+  it(
+    "plan request → plan on cases.plan.<jobId>; the plan handed back → the case on cases.result.<jobId>, same jobId",
+    { timeout: 20000 },
+    async () => {
+      await ensureStreams(jsm);
+      const js = getJetStreamClient();
+      const nc = getNatsConnection();
+
+      const generateCase: GenerateCaseFn = vi.fn(async () => ({
+        patient: { name: "Jane", age: 40, sex: "female" },
+      }));
+      const graph = fakeGraph(generateCase);
+      const channel = createJobEventChannel();
+      const service = createCaseGenerationService(
+        graph,
+        new EventBus(),
+        channel,
+        { maxConcurrent: 2 }
+      );
+
+      const stopResponders = startJobResponders({
+        nc,
+        jobEvents: channel,
+        service,
+      });
+      const consumer = await js.consumers.get(
+        REQUESTS_STREAM.name,
+        REQUEST_CONSUMER
+      );
+      let closed = false;
+      const workerPromise = runRequestWorker({
+        consumer,
+        graph,
+        service,
+        isClosed: () => closed,
+      });
+
+      try {
+        await js.publish(
+          "cases.request.generate",
+          JSON.stringify({
+            jobId: "job-plan-1",
+            diagnosis: "Influenza",
+            mode: "plan",
+            language: "English",
+          })
+        );
+
+        const plan = await awaitStored(
+          PLANS_STREAM.name,
+          planSubject("job-plan-1")
+        );
+        // `planAndRenderFrom` (`src/testing/graphFakes.ts`) always plans
+        // the same 3-segment outline: an editable segment 0, a fixed
+        // marker, and the render options as JSON.
+        expect(plan).toMatchObject({
+          jobId: "job-plan-1",
+          mode: "plan",
+          plan: [
+            { fixed: false, text: "" },
+            { fixed: true, text: "## Plan options" },
+            { fixed: false },
+          ],
+        });
+
+        // The generator kept nothing: a second request, carrying the plan
+        // back, reuses the same jobId and produces the case.
+        await js.publish(
+          "cases.request.generate",
+          JSON.stringify({
+            jobId: "job-plan-1",
+            diagnosis: "Influenza",
+            mode: "plan",
+            language: "English",
+            plan: (plan as { plan: unknown }).plan,
+          })
+        );
+
+        const result = await awaitStored(
+          RESULTS_STREAM.name,
+          resultSubject("job-plan-1")
+        );
+        expect(result).toMatchObject({
+          jobId: "job-plan-1",
+          patient: { name: "Jane" },
+        });
+      } finally {
+        closed = true;
+        stopResponders();
+        void workerPromise.catch(() => undefined);
+      }
+    }
+  );
 });

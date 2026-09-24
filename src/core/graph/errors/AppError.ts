@@ -34,3 +34,17 @@ export class GenerationError extends AppError {
     super(message, "GENERATION_FAILED", 500, details);
   }
 }
+
+/**
+ * The outline judge never accepted the outline before its iteration cap
+ * (#159). Normal mode fails here instead of generating a case from an
+ * outline nobody approved; plan mode shows it to the reviewer instead.
+ */
+export class OutlineNotAcceptedError extends AppError {
+  constructor(
+    message: string = "The case outline did not pass the consistency check",
+    details?: string
+  ) {
+    super(message, "OUTLINE_NOT_ACCEPTED", 500, details);
+  }
+}

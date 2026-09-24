@@ -33,7 +33,7 @@ import {
 } from "./02case-generation/index.js";
 import { buildPlanGraph } from "./02case-generation/01plan/index.js";
 import { buildCaseTranslationToEnglishGraph } from "./01case-translation-to-english/index.js";
-import { DirectPick } from "./02case-generation/03procedure/strategy/index.js";
+import { DrillDownPick } from "./02case-generation/03procedure/strategy/index.js";
 import { taggedOutlineFixture } from "@/core/graph/outline/fixtures.js";
 
 const TRANSLATION_NODES = [
@@ -144,7 +144,7 @@ describe("phase-level graphs — output surface", () => {
 
   it("generation_phase (buildCaseGenerationGraph) writes back only `case`", async () => {
     const deps = buildDeps();
-    const strategy = new DirectPick(deps.runtime, []);
+    const strategy = new DrillDownPick(deps.runtime, []);
     const graph = buildCaseGenerationGraph(
       deps.runtime,
       strategy,

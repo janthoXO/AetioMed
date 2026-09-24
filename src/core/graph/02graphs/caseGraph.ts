@@ -10,7 +10,7 @@ import {
   buildPlanningPhaseGraph,
 } from "./02case-generation/index.js";
 import { CaseGenerationStateSchema } from "./02case-generation/state.js";
-import { DirectPick } from "./02case-generation/03procedure/strategy/index.js";
+import { DrillDownPick } from "./02case-generation/03procedure/strategy/index.js";
 import { buildCaseTranslationFromEnglishGraph } from "./03case-translation-from-english/index.js";
 import type { Language } from "../models/Language.js";
 import type { Difficulty } from "../models/Difficulty.js";
@@ -174,7 +174,7 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
   );
   const generationPhase = buildCaseGenerationGraph(
     generationRuntime,
-    new DirectPick(generationRuntime, modalityRegistries.procedureResult),
+    new DrillDownPick(generationRuntime, modalityRegistries.procedureResult),
     modalityRegistries,
     traceNode.scope("generation_phase")
   );

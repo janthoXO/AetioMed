@@ -1,4 +1,4 @@
-export { DirectPick } from "./directPick.js";
+export { DrillDownPick } from "./drillDownPick.js";
 export type {
   BlindedView,
   OracleView,

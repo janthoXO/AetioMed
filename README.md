@@ -222,6 +222,8 @@ The loop works like this:
 
 Two properties are enforced structurally rather than by asking the model nicely: already-ordered procedures are removed from the candidate list before each pick, so duplicate orders are impossible; and when an approved procedure catalogue is configured, the model is constrained to exact names from it, placed under their exact category. `Case.procedures` mirrors the catalogue's category tree, with each ordered procedure carrying its 0-based workup position (`order`) so the sequence in which it was ordered survives the regrouping by category.
 
+**Large catalogues.** A pick is offered at most 255 procedures. A larger catalogue is narrowed level by level first: the model keeps the categories (shown with their size and a few sample names) and single procedures relevant to this step, the kept categories are opened one level deeper, and this repeats until fewer than 255 procedures remain — then the model picks exact procedures from what is left. The bridge narrows the same way, knowing the diagnosis.
+
 ### Translation
 
 Generation always runs in English — prompts, restricted vocabularies, and clinical reasoning are all English-native — and translation brackets the pipeline on both sides:

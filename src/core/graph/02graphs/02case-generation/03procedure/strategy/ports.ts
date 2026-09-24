@@ -52,11 +52,11 @@ export type SolverMove =
   | { action: "exhausted"; reason: string };
 
 /**
- * Procedure-selection strategy. `DirectPick` is the only implementation,
+ * Procedure-selection strategy. `DrillDownPick` is the only implementation,
  * constructed directly at assembly.
  */
 export interface ProcedureStrategy {
-  /** "direct-pick" — for logs and tests. */
+  /** "drill-down-pick" — for logs and tests. */
   readonly id: string;
   nextStep(view: BlindedView): Promise<SolverMove>;
   /**

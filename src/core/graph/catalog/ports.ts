@@ -15,7 +15,21 @@ export interface ProcedureCatalog {
   candidates(): ProcedureCandidates;
 }
 
+/** One entry of a selection level: a whole category, or a single procedure. */
+export type LevelItem =
+  | { kind: "category"; path: string[]; size: number; sample: string[] }
+  | { kind: "procedure"; ref: ProcedureRef };
+
 export interface ProcedureCandidates {
+  /** Number of procedures; `undefined` in freeform (nothing to count). */
+  size(): number | undefined;
+  /** One selection level: the sub-categories and procedures directly under each open category path (`[]` = root). */
+  levelItems(open: string[][]): LevelItem[];
+  /** These procedures plus everything under these categories. Returns a new set. */
+  narrow(
+    procedures: ProcedureRef[],
+    categories: string[][]
+  ): ProcedureCandidates;
   /** Remove already-ordered procedures. Returns a new set. */
   exclude(ordered: ProcedureRef[]): ProcedureCandidates;
   isEmpty(): boolean;

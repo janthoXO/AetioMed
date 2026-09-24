@@ -604,13 +604,17 @@ field's registry — a `discriminatedUnion` on `provider` so a request naming `"
 carry an image provider's input shape. Building an LLM grammar from runtime configuration is
 the house style here, not a novelty: see `ProcedureCandidates.grammar()` and
 `makeLanguageSchema`. Its `unitKeys` is **optional, and omitting it differs from passing an
-empty array**: a known unit set (chief complaint's single unit, anamnesis under a configured
-category catalogue) pins both key names and plan count, while a _freeform_ field — anamnesis
-where `catalogs.anamnesis.list()` returns `undefined` because the deployer configured no
-categories — gets a plain `z.string()` key and a `.min(1)` count, so the planner names its own
-units. That is the freedom the pre-planner generator had, and it must stay: a default category
+empty array**: a known unit set (chief complaint's single unit, procedure names, anamnesis
+under a configured category catalogue) makes `plans` a strict object with one required property
+per key — every unit exactly once, by construction; an array of `{ key }` with an enum key and a
+length check still admitted a duplicated key, which silently cost another unit its plan. A
+_freeform_ field — anamnesis where `catalogs.anamnesis.list()` returns `undefined` because the
+deployer configured no categories — stays an array of `{ key, … }` with a plain `z.string()` key
+and a `.min(1)` count, so the planner names its own units (not a `z.record`: OpenAI strict mode
+rejects open-keyed objects). That is the freedom the pre-planner generator had, and it must stay: a default category
 list here would bake opinionated clinical content into code, which is what the catalogue layer
-exists to prevent.
+exists to prevent. `plansByKey` reads either shape back as a keyed record; the optional `unitSchema`
+argument lets a caller extend the per-unit shape (procedures add `relevance`).
 
 `renderPlan` (`modality/pipeline.ts`) is the **only** place a `ContentPart` is constructed. It
 flattens every unit's requests, groups them **by provider across units** (so one call covers

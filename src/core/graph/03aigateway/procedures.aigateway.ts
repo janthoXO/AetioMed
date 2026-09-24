@@ -24,9 +24,11 @@ import { translateTermsKeyed } from "./translate.helper.js";
 import type { GraphRuntime } from "../runtime.js";
 import {
   buildCompositionSchema,
+  buildUnitPlanSchema,
   describeProviders,
 } from "../modality/composition.js";
 import type { ModalityProvider, PlannedPart } from "../modality/ports.js";
+import { OUTLINE_SECTIONS } from "../outline/segments.js";
 
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
@@ -641,30 +643,23 @@ ${all.categoryMenu(expandable)}`
 // ─── 2. planProcedureResults ──────────────────────────────────────────────────
 
 /**
- * Per-procedure plan schema: `buildCompositionSchema` unit entry
- * (`{ key, requests }`) plus `relevance`, both from one non-blinded call.
+ * Per-procedure plan schema: a composition unit (`{ requests }`) plus
+ * `relevance`, both from one non-blinded call, keyed by procedure name.
  * `unitKeys` always passed: procedure names known beforehand, never freeform.
  */
 function buildProcedureResultPlanSchema(
   providers: ModalityProvider<unknown>[],
   procedureNames: string[]
 ) {
-  const composition = buildCompositionSchema(
+  return buildCompositionSchema(
     providers,
-    procedureNames
-  ) as z.ZodObject<{
-    plans: z.ZodArray<
-      z.ZodObject<{ key: z.ZodTypeAny; requests: z.ZodTypeAny }>
-    >;
-  }>;
-  const planWithRelevance = composition.shape.plans.element.extend({
-    relevance: ProcedureRelevanceSchema.describe(
-      "Relevance of the procedure to the TRUE diagnosis"
-    ),
-  });
-  return z.object({
-    plans: z.array(planWithRelevance).length(procedureNames.length),
-  });
+    procedureNames,
+    buildUnitPlanSchema(providers).extend({
+      relevance: ProcedureRelevanceSchema.describe(
+        "Relevance of the procedure to the TRUE diagnosis"
+      ),
+    })
+  );
 }
 
 /**
@@ -707,7 +702,7 @@ These procedures were chosen by a separate, BLINDED solver who does not know the
 
     section(
       "Rules",
-      `- Provide exactly one plan entry per procedure in the batch, keyed by its exact "name".
+      `- Provide exactly one plan entry per procedure in the batch, keyed by its exact name.
 - Each plan's "alt" MUST be a self-contained statement of the clinical finding, not a bare label — a later step renders bytes from "alt" alone, without seeing anything else you produced. Write "Chest X-ray: consolidation of the left lower lobe with air bronchograms", not "chest x-ray image".
 - Each finding must be clinically consistent with the true diagnosis. Use specific, realistic medical findings (e.g., exact lab values, imaging descriptions). Keep each finding concise (1–3 sentences).
 - Prefer a single request against the "text" provider per procedure, unless another available provider would clearly add value.
@@ -731,7 +726,7 @@ ${renderSchemaForPrompt(schema)}`
     outline
       ? section(
           "Case blueprint",
-          `Single source of truth — follow its "Workup / Procedure Results Strategy" section, including any difficulty-driven ambiguity or borderline values it specifies:
+          `Single source of truth — follow its "${OUTLINE_SECTIONS.procedures}" section, including any difficulty-driven ambiguity or borderline values it specifies:
 ${outline}`
         )
       : undefined,
@@ -776,11 +771,10 @@ ${outline}`
           .catch((error) => {
             handleLangchainError(error);
           })) as {
-          plans: {
-            key: string;
-            requests: PlannedPart[];
-            relevance: ProcedureRelevance;
-          }[];
+          plans: Record<
+            string,
+            { requests: PlannedPart[]; relevance: ProcedureRelevance }
+          >;
         };
 
         console.debug(
@@ -799,10 +793,9 @@ ${outline}`
       }
     );
 
-    // Merge plans onto steps by "key", falling back to index (key is
-    // grammar-pinned to `procedureNames`, so a plan should always be found).
-    return procedureSteps.map((step, index) => {
-      const match = plans.find((p) => p.key === step.name) ?? plans[index]!;
+    // Schema requires exactly one plan per procedure name.
+    return procedureSteps.map((step) => {
+      const match = plans[step.name]!;
       return {
         name: step.name,
         relevance: match.relevance,

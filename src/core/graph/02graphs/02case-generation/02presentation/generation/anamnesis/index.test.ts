@@ -120,9 +120,8 @@ describe("anamnesisGraph", () => {
         // The planner returns "Past Illnesses" before "Current Symptoms" —
         // the catalogue says the opposite.
         JSON.stringify({
-          plans: [
-            {
-              key: "Past Illnesses",
+          plans: {
+            "Past Illnesses": {
               requests: [
                 {
                   provider: "text",
@@ -131,8 +130,7 @@ describe("anamnesisGraph", () => {
                 },
               ],
             },
-            {
-              key: "Current Symptoms",
+            "Current Symptoms": {
               requests: [
                 {
                   provider: "text",
@@ -141,7 +139,7 @@ describe("anamnesisGraph", () => {
                 },
               ],
             },
-          ],
+          },
         }),
       ],
     });
@@ -176,9 +174,8 @@ describe("anamnesisGraph", () => {
     const llm = makeQueuedLlmPort({
       generator: [
         JSON.stringify({
-          plans: [
-            {
-              key: "Current Symptoms",
+          plans: {
+            "Current Symptoms": {
               requests: [
                 {
                   provider: "text",
@@ -187,8 +184,7 @@ describe("anamnesisGraph", () => {
                 },
               ],
             },
-            {
-              key: "Past Illnesses",
+            "Past Illnesses": {
               requests: [
                 {
                   provider: "text",
@@ -197,7 +193,7 @@ describe("anamnesisGraph", () => {
                 },
               ],
             },
-          ],
+          },
         }),
       ],
     });
@@ -246,15 +242,14 @@ describe("anamnesisGraph", () => {
     const llm = makeQueuedLlmPort({
       generator: [
         JSON.stringify({
-          plans: [
-            {
-              key: "Current Symptoms",
+          plans: {
+            "Current Symptoms": {
               requests: [
                 { provider: "slow", input: "slow desc", alt: "slow desc" },
                 { provider: "fast", input: "fast desc", alt: "fast desc" },
               ],
             },
-          ],
+          },
         }),
       ],
     });

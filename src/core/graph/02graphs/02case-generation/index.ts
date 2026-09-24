@@ -20,12 +20,7 @@ import type { ProcedureStrategy } from "./03procedure/strategy/index.js";
 
 // ─── node: resolve the medical basis ──────────────────────────────────────
 //
-// Runs every registered provider (concurrently) and concatenates their
-// fragments in *registry* order, not completion order — see
-// `medicalBasis/registry.ts`'s `resolveAllFragments`. Only compiled into the
-// graph when the registry is non-empty (see `buildCaseGenerationGraph`
-// below); with zero providers there is no basis section at all and nothing
-// here runs.
+// Runs all providers concurrently; fragments concatenated in *registry* order (`medicalBasis/registry.ts`'s `resolveAllFragments`). Compiled in only when registry non-empty.
 
 function makeResolveMedicalBasis(
   runtime: GraphRuntime,
@@ -55,11 +50,7 @@ function makeResolveMedicalBasis(
 
 // ─── graphs ───────────────────────────────────────────────────────────────────
 
-// Both phase graphs below are `addNode`'d into `caseGraph.ts`'s top-level
-// graphs (issue 17 §1): `planning_phase` into the plan graph,
-// `generation_phase` into the case graph (#159). `.pick()` off the phase
-// state schema directly, not a hand-written duplicate, so the picked
-// channels keep their identical reducer registration.
+// Both phases mounted in top-level graphs: `planning_phase` in plan graph, `generation_phase` in case graph. `.pick()` off phase state schema.
 const PlanningPhaseStateSchema = PlanGraphStateSchema.extend(
   CaseGenerationStateSchema.pick({ generationFlags: true }).shape
 );
@@ -74,28 +65,19 @@ const CaseGenerationOutputSchema = CaseGenerationStateSchema.pick({
   case: true,
 });
 
-/**
- * The planning phase (#159): resolve the medical basis, then plan and judge
- * the outline. Ends with an outline and the judge's verdict — never with
- * any case field. `basisFragments` is written back so a later revision of
- * the outline can reuse it rather than resolve it again.
- */
+/** Resolve medical basis, then plan and judge outline. Ends with outline and verdict, no case fields. `basisFragments` written back for reuse on revision. */
 export function buildPlanningPhaseGraph(
   runtime: GraphRuntime,
   medicalBasisRegistry: MedicalBasisProvider[],
   traceNode: ReturnType<typeof createTraceNode>
 ) {
-  // Scoped to match the `"outline_phase"` mount name below — see
-  // `nodeWrapper.ts`'s `TraceNodeFn.scope` doc comment (issue 15 §3/§4).
+  // Scoped to match `"outline_phase"` mount name; see `TraceNodeFn.scope`.
   const outlinePhase = buildPlanGraph(
     runtime,
     traceNode.scope("outline_phase")
   );
 
-  // Written out in full rather than conditionally chained, mirroring
-  // `caseGraph.ts`: LangGraph accumulates node names into the builder's
-  // type parameter. An empty registry is the absent-capability-⇒-absent-node
-  // rule (see `medicalBasis/registry.ts`'s `createMedicalBasisRegistry`).
+  // Written out in full, not chained: LangGraph accumulates node names in builder type parameter. Empty registry ⇒ node absent (`medicalBasis/registry.ts`).
   if (medicalBasisRegistry.length === 0) {
     return new StateGraph(PlanningPhaseStateSchema, {
       context: RequestContextSchema,
@@ -126,11 +108,7 @@ export function buildPlanningPhaseGraph(
     .compile();
 }
 
-/**
- * The generation phase (#159): every case field, from an outline handed in
- * as input. The presentation phase fans the outline out to the field
- * generators; the procedure phase follows when the `procedures` flag is set.
- */
+/** Every case field from a handed-in outline. Presentation phase fans out to field generators; procedure phase follows when `procedures` flag set. */
 export function buildCaseGenerationGraph(
   runtime: GraphRuntime,
   procedureStrategy: ProcedureStrategy,
@@ -140,9 +118,7 @@ export function buildCaseGenerationGraph(
   const presentationPhase = buildFieldGenerationGraph(
     runtime,
     modalityRegistries,
-    // Scoped to match the `"presentation_phase"`/`"procedure_phase"` mount
-    // names below — see `nodeWrapper.ts`'s `TraceNodeFn.scope` doc comment
-    // (issue 15 §3/§4).
+    // Scoped to match `"presentation_phase"`/`"procedure_phase"` mount names; see `TraceNodeFn.scope`.
     traceNode.scope("presentation_phase")
   );
   const procedurePhase = buildProcedureGraph(

@@ -25,8 +25,7 @@ export async function generateSymptomsOneShot(
     symptoms: SymptomSchema.array(),
   });
 
-  // Internal artifact (issue 09 §3): the symptom/basis provider feeds the
-  // plan, not the student directly — English always.
+  // Internal: feeds the plan, not the student; English always.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "internal",

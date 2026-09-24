@@ -1,22 +1,13 @@
 import { z } from "zod";
 
 /**
- * Positional segment model for the plan-mode outline editor (#159).
+ * Positional segment model for the outline. LLM emits markdown with
+ * server-owned headings in `<fixed>…</fixed>`; split into a **segment array**
+ * strictly alternating editable/fixed. Compare **by position**, never label
+ * text (position anchors a heading to the skeleton).
  *
- * The LLM emits a case outline as markdown with its fixed (server-owned)
- * headings wrapped in `<fixed>…</fixed>` tags. We never store or diff that
- * markdown directly — we split it into a **segment array** that strictly
- * alternates editable and fixed text, and every downstream comparison
- * (what did the reviewer change? did they touch a heading?) is done **by
- * position**, never by matching label text. Matching by label would let a
- * reviewer who retypes a heading verbatim smuggle it through as "unchanged"
- * even though its *position* in the sequence — the only thing that actually
- * anchors it to the server's skeleton — may have moved.
- *
- * Canonical shape: `segments.length` is always odd. Even indices (0, 2, 4,
- * …) are editable (`fixed: false`); odd indices are fixed (`fixed: true`).
- * An editable segment may be the empty string — e.g. between two adjacent
- * fixed headings, or before the very first heading.
+ * Canonical shape: `length` odd; even indices editable (`fixed: false`, may
+ * be empty string), odd indices fixed.
  */
 export type OutlineSegment = { fixed: boolean; text: string };
 export type OutlineSegments = OutlineSegment[];
@@ -44,12 +35,7 @@ export const OutlineSegmentsSchema = z
 
 const TAG_RE = /<fixed>|<\/fixed>/g;
 
-/**
- * Splits tag-delimited outline markdown into the canonical alternating
- * segment shape. Editable text between fixed blocks (and leading/trailing)
- * is always present, even as an empty string, so index arithmetic downstream
- * never has to special-case a missing gap.
- */
+/** Splits tagged markdown into canonical segments. Editable gaps (incl. leading/trailing) always present, possibly empty, so index math needs no special case. */
 export function parseTaggedOutline(markdown: string): OutlineSegments {
   const segments: OutlineSegments = [];
   let cursor = 0;
@@ -97,11 +83,7 @@ export function parseTaggedOutline(markdown: string): OutlineSegments {
   return segments;
 }
 
-/**
- * Inverse of {@link parseTaggedOutline}, for feeding a previous outline back
- * to the LLM (e.g. on a revise loop). Round-trips exactly for canonical
- * segments whose texts are already trimmed.
- */
+/** Inverse of {@link parseTaggedOutline}, for feeding an outline back to the LLM. Exact round-trip for trimmed canonical segments. */
 export function renderTaggedOutline(segments: OutlineSegments): string {
   const parts: string[] = [];
   for (const segment of segments) {
@@ -114,13 +96,7 @@ export function renderTaggedOutline(segments: OutlineSegments): string {
   return parts.join("\n\n");
 }
 
-/**
- * Prompt-ready text for downstream generators that consume the outline as
- * plain prose (patient/chief-complaint/anamnesis generation, etc). Fixed
- * text is emitted as-is; editable text has any `<fixed>`/`</fixed>` a
- * reviewer might have typed escaped first, so a submitted edit can never
- * re-create outline structure that only the server is allowed to own.
- */
+/** Prompt-ready text for downstream generators. Fixed text as-is; editable text has `<fixed>`/`</fixed>` escaped so an edit cannot recreate server-owned structure. */
 export function joinOutline(segments: OutlineSegments): string {
   const parts: string[] = [];
   for (const segment of segments) {
@@ -147,11 +123,9 @@ export const OUTLINE_SECTIONS = Object.freeze([
 ] as const);
 
 /**
- * The ordered list of fixed segment texts the LLM must reproduce. With a
- * configured anamnesis catalogue, a `### <category>` heading is required per
- * category, between `## Anamnesis` and `## Procedures`; with no catalogue
- * (freeform anamnesis), the LLM names its own categories instead — see
- * {@link checkSkeleton}.
+ * Ordered fixed segment texts the LLM must reproduce. Configured catalogue:
+ * one `### <category>` per category between `## Anamnesis` and `## Procedures`.
+ * Freeform: LLM names them; see {@link checkSkeleton}.
  */
 export function outlineSkeleton(opts: {
   anamnesisCategories?: string[] | undefined;
@@ -164,15 +138,13 @@ export function outlineSkeleton(opts: {
 }
 
 /**
- * Validates that the outline's fixed sections match what the server expects
- * to see — the retry signal for an LLM that emitted a malformed or incomplete
- * skeleton (#159). Takes `parseTaggedOutline`'s output, whose alternating
- * shape is guaranteed by construction.
+ * Checks fixed sections match the expected skeleton; retry signal for a
+ * malformed LLM outline. Input is `parseTaggedOutline` output (alternation
+ * guaranteed).
  *
- * Without a catalogue (freeform anamnesis) the categories are whatever
- * `### <name>` headings the LLM wrote between Anamnesis and Procedures; a
- * heading there without that prefix is left out of the expected skeleton,
- * so it surfaces as a mismatch at its own index.
+ * Freeform: categories are the `### <name>` headings between Anamnesis and
+ * Procedures; a heading without that prefix is left out, surfacing as a
+ * mismatch at its index.
  */
 export function checkSkeleton(
   segments: OutlineSegments,
@@ -198,10 +170,7 @@ export function checkSkeleton(
   return { ok: true };
 }
 
-/**
- * Whether `segments` has the canonical alternating shape — the one thing a
- * handed-back plan must prove before its skeleton is even checked (#159).
- */
+/** Whether `segments` has canonical alternating shape; a handed-back plan must pass before skeleton check. */
 export function isCanonicalShape(segments: OutlineSegments): boolean {
   return (
     segments.length % 2 === 1 &&
@@ -210,13 +179,10 @@ export function isCanonicalShape(segments: OutlineSegments): boolean {
 }
 
 /**
- * Puts the server's own English headings back into a plan translated in
- * from the request language, by position (#159). A translated heading need
- * not round-trip to the exact English string {@link checkSkeleton} expects,
- * but every heading's English is known — except, with a freeform catalogue,
- * the LLM-named anamnesis categories, which keep their translation. A plan
- * with the wrong number of fixed segments is returned as is, for
- * `checkSkeleton` to reject.
+ * Restores server English headings by position in a plan translated in from
+ * the request language (translation need not round-trip to what
+ * {@link checkSkeleton} expects). Freeform LLM-named categories keep their
+ * translation. Wrong fixed-segment count: returned as is, for `checkSkeleton` to reject.
  */
 export function restoreSkeletonHeadings(
   segments: OutlineSegments,

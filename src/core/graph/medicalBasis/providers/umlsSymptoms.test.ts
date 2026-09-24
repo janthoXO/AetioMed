@@ -1,7 +1,4 @@
-// Reproduces the former `01symptom/` node's behaviour test-for-test, now
-// through the `MedicalBasisProvider` port: UMLS floor + cache-aside LLM
-// additions, same TTL semantics, a fresh cache hit skips the LLM entirely,
-// and a diagnosis without an ICD code is never cached.
+// UMLS floor + cache-aside LLM additions via `MedicalBasisProvider`; fresh hit skips LLM; no ICD = never cached.
 import { describe, expect, it, vi } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { createUmlsSymptomProvider } from "./umlsSymptoms.js";
@@ -29,7 +26,7 @@ function makeFakeSymptomsRepo(opts: {
   return { repo, saved };
 }
 
-/** Throws immediately — used to prove "zero LLM calls" tests really are. */
+/** Throws immediately: proves zero-LLM-call paths. */
 function makeThrowingLlmPort(): LlmPort {
   return {
     for() {

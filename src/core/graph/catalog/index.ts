@@ -1,7 +1,5 @@
-// Composition helper: builds the full `GraphRuntime["catalogs"]` bundle from
-// a constructed `Repos` bundle (see `repos.ts`). Callers needing a
-// single catalogue in isolation (tests, InMemory adapters) should import the
-// adapter classes directly rather than going through this bundle.
+// Builds the `GraphRuntime["catalogs"]` bundle from a `Repos` bundle. Tests
+// needing one catalogue import its adapter directly.
 import type { GraphRuntime } from "../runtime.js";
 import type { Repos } from "../repos.js";
 import { YamlProcedureCatalog } from "./procedures/index.js";

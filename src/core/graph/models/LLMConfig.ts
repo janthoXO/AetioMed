@@ -1,23 +1,13 @@
 import z from "zod";
 
-/**
- * Per-call model selection. Deliberately carries **no** temperature: that is
- * a fixed policy class chosen by the call site (`LlmPort.for`'s
- * `deterministic`/`balanced`/`creative`, resolved in `utils/llm.ts`), never
- * something a request or a deployer picks — so it is threaded into the
- * provider client separately rather than living on this shape.
- */
+/** Per-call model selection. **No** temperature: fixed policy class from call site (`LlmPort.for`, `utils/llm.ts`). */
 export const LLMConfigSchema = z.object({
   provider: z.enum(["ollama", "google", "openai"]),
   model: z.string(),
   apiKey: z.string().optional(),
   url: z.url().optional(),
   outputFormat: z.enum(["json", "text"]).default("json"),
-  /**
-   * Controls the model's hidden "thinking"/reasoning phase on providers that
-   * support it. `false` suppresses it (fast), `true` forces it on, `undefined`
-   * leaves the server default. Ignored by the `google` provider.
-   */
+  /** Hidden reasoning phase: `false` suppresses, `true` forces, `undefined` server default. Ignored by `google`. */
   enableThinking: z.boolean().optional(),
 });
 

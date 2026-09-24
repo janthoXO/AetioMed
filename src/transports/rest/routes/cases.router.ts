@@ -12,11 +12,9 @@ import type { JobDirectory, JobEventChannel } from "@/core/jobEvents/index.js";
 import { openSse, type SseStream } from "../sse.js";
 
 /**
- * How often the POST stream writes a `: ping` comment. Holding the
- * connection open must not depend on label cadence: labels fire on node
- * boundaries, and one node (outline generation on a local model, one solver
- * iteration) can be silent for minutes — long enough for a proxy to close
- * what it sees as an idle connection (#143).
+ * Interval of the POST stream's `: ping` comment. Independent of label
+ * cadence: one node can be silent for minutes, long enough for a proxy to
+ * drop the idle connection.
  */
 export const HEARTBEAT_MS = 15_000;
 
@@ -31,7 +29,7 @@ function errorBody(result: CaseGenerationResult) {
   };
 }
 
-/** A plan-mode stop — the same payload as a normal-mode `event: plan`. */
+/** Plan-mode stop; same payload as normal-mode `event: plan`. */
 function planBody(result: CaseGenerationResult): PlanPayload {
   return {
     jobId: result.jobId,
@@ -62,22 +60,18 @@ export default function createCasesRouter(
     });
 
   /**
-   * `POST /api/cases` — the synchronous transport (#143). Opening the stream
-   * with the request itself removes the handshake race a 202-then-subscribe
-   * design has: every event between minting the jobId and the client
-   * subscribing would otherwise be lost, short of a replay buffer (deferred).
+   * `POST /api/cases` — synchronous transport. Stream opens with the request,
+   * so no events are lost between minting jobId and subscribing.
    *
-   * - `Accept: application/json` (or no preference): blocks and returns the
-   *   case (200), a plan-mode plan (200, `{jobId, mode, language, plan}`),
-   *   or the error.
-   * - `Accept: text/event-stream`: SSE on this response — `event: accepted
-   *   {jobId}` before any node runs, then `event: label`…, `event: plan` as
-   *   soon as the plan exists (#159), then `event: result`/`event: error` —
-   *   except in plan mode, whose stream ends with the plan. A `: ping`
-   *   comment is written every {@link HEARTBEAT_MS}.
+   * - `Accept: application/json` (or none): blocks; returns case (200),
+   *   plan-mode plan (200, `{jobId, mode, language, plan}`), or error.
+   * - `Accept: text/event-stream`: SSE — `event: accepted {jobId}` before
+   *   any node runs, `event: label`…, `event: plan` once plan exists, then
+   *   `event: result`/`event: error`; plan-mode ends with the plan. `: ping`
+   *   every {@link HEARTBEAT_MS}.
    *
-   * A body with a `plan` generates the case from it; the same jobId as the
-   * plan's own call is fine (#159). A client disconnect cancels the job.
+   * Body with `plan` generates from it; same jobId as plan's call is fine.
+   * Client disconnect cancels job.
    */
   router.post("/", async (req: express.Request, res: express.Response) => {
     const bodyResult = CaseGenerationRequestSchema.safeParse(req.body);
@@ -94,17 +88,15 @@ export default function createCasesRouter(
       return;
     }
 
-    // Set once the response turns into a stream; the JSON path has
-    // nowhere to put a normal-mode plan, so it drops it.
+    // Set once response is a stream; JSON path drops normal-mode plan.
     const stream: { sse?: SseStream } = {};
     const started = service.start(bodyResult.data, {
       onPlan: (plan) => stream.sse?.event("plan", plan),
     });
     const { jobId } = started;
 
-    // A duplicate jobId is a plain 409 on both paths, answered before any
-    // stream opens: a retry must never start a second generation, nor
-    // silently attach to someone else's.
+    // Duplicate jobId: plain 409 on both paths, before any stream opens.
+    // Never start a second generation or attach to another's.
     if (!started.accepted) {
       res.status(409).json(errorBody(started.result));
       return;
@@ -137,8 +129,7 @@ export default function createCasesRouter(
     stream.sse = sse;
     sse.event("accepted", { jobId });
 
-    // Subscribed synchronously after `start`, which opened the channel:
-    // nothing can have run yet.
+    // Synchronous after `start` opened the channel: nothing has run yet.
     const subscription = jobEvents.subscribe(jobId, (event) => {
       if (event.type === "label") sse.event("label", event.data);
     });
@@ -154,10 +145,8 @@ export default function createCasesRouter(
         sse.event("error", errorBody(finished));
       }
     } catch (error) {
-      // The headers are long gone, so Express's error handler cannot turn
-      // this into a 500 — the stream must say it failed itself. The likely
-      // cause is encoding the result: a content part over
-      // `MAX_CONTENT_PART_BYTES` fails loudly by design (`contentWire.ts`).
+      // Headers already sent: Express can't 500, stream must report failure.
+      // Likely cause: content part over `MAX_CONTENT_PART_BYTES` (`contentWire.ts`).
       console.error(
         `[rest] Failed to finish the stream for jobId=${jobId}`,
         error
@@ -177,12 +166,9 @@ export default function createCasesRouter(
   });
 
   /**
-   * `DELETE /api/cases/:jobId` — cancel any job, whatever submitted it and
-   * whichever replica runs it (#145), through the {@link JobDirectory}. With
-   * NATS enabled this is a request to `cases.cancel.<jobId>`, answered only
-   * by the owner, so the answer is synchronous and exact: 204 when it was
-   * cancelled, 404 when no replica runs it (never started, or finished), 504
-   * when the owner could not be reached in time.
+   * `DELETE /api/cases/:jobId` — cancel any job on any replica via
+   * {@link JobDirectory}. 204 cancelled, 404 no replica runs it (never
+   * started or finished), 504 owner unreachable.
    */
   router.delete("/:jobId", async (req, res) => {
     const { jobId } = req.params;

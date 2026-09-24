@@ -1,8 +1,6 @@
-// #140 — app-level coverage for `createRestApp`: the always-on `GET
-// /api/graph` and `GET /api/cases/:jobId/labels` routes are actually
-// mounted, the old traces-over-SSE route is gone, and `GET /api/features`
-// still reports the raw flag set — all with no OTel env configured, since
-// neither gate applies here any more.
+// App-level coverage for `createRestApp`: `GET /api/graph` and
+// `GET /api/cases/:jobId/labels` are mounted, and `GET /api/features`
+// reports the raw flag set, all with no OTel env configured.
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -16,7 +14,7 @@ import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { CaseGenerationService } from "@/core/caseGenerationService.js";
 import { planAndRenderFrom } from "@/testing/graphFakes.js";
 
-// Same shape as `caseGenerationService.test.ts`'s `fakeGraph`.
+// Same shape as `fakeGraph` in `caseGenerationService.test.ts`.
 function fakeGraph(): GraphAppContext {
   return {
     config: {
@@ -55,7 +53,7 @@ function fakeGraph(): GraphAppContext {
   } as GraphAppContext;
 }
 
-describe("createRestApp (#140) — app-level route table", () => {
+describe("createRestApp — app-level route table", () => {
   const savedEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
@@ -122,7 +120,7 @@ describe("createRestApp (#140) — app-level route table", () => {
     expect(body.edges).toEqual([{ source: "a", target: "b" }]);
   });
 
-  it("GET /api/cases/unknown/labels answers 404 (#145) — unknown is never a stream", async () => {
+  it("GET /api/cases/unknown/labels answers 404 — unknown is never a stream", async () => {
     ({ server } = await startApp());
     const port = (server!.address() as AddressInfo).port;
 

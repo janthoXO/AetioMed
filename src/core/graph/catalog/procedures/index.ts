@@ -1,9 +1,5 @@
-// Public surface of the procedures slice: the catalogue port adapters plus
-// the repo itself. The repo is exported (not just the catalog) because
-// `02graphs/03case-translation-from-english/` (`index.ts` and `tools.ts`)
-// and `02graphs/exportGraphs.ts` bypass the `ProcedureCatalog` port to reach
-// `getProcedureNameTranslationFromEnglish` / `saveProcedureNameTranslation`
-// directly — translation accessors the port does not expose. Issue #89
-// collapses this to a single entry point.
+// Slice surface: catalogue adapters plus the repo. Repo exported because
+// `02graphs/03case-translation-from-english/` and `02graphs/exportGraphs.ts`
+// read translation accessors the `ProcedureCatalog` port doesn't expose.
 export { createProceduresRepo, type ProceduresRepo } from "./repo.js";
 export { YamlProcedureCatalog, InMemoryProcedureCatalog } from "./catalog.js";

@@ -1,9 +1,7 @@
-// #139 — static import-boundary check. `src/core/graph/` (part of core) must
-// never import from `tracing/`, `transports/` or `observability/`: those are
-// adapters around core-owned ports (the `EventBus`, `core/jobEvents/`,
-// `NodeTracer`/`NodeSpan`), never the other way around. This is enforced
-// here as a plain source scan rather than an eslint rule so it runs with
-// `pnpm test` and reports every offending file/specifier pair in one go.
+// Static import-boundary check. `src/core/graph/` must never import
+// `tracing/`, `transports/` or `observability/`: those are adapters around
+// core-owned ports (`EventBus`, `core/jobEvents/`, `NodeTracer`/`NodeSpan`).
+// Plain source scan (not eslint) so it runs in `pnpm test` and lists all offenders.
 import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -44,7 +42,7 @@ function isForbidden(specifier: string): boolean {
   );
 }
 
-describe("import boundary (#139) — src/core/graph/ never imports tracing/transports/observability", () => {
+describe("import boundary — src/core/graph/ never imports tracing/transports/observability", () => {
   it("has no offending import/export specifiers", () => {
     const files = listTsFiles(GRAPH_DIR);
     expect(files.length).toBeGreaterThan(0);
@@ -62,13 +60,10 @@ describe("import boundary (#139) — src/core/graph/ never imports tracing/trans
     expect(offenses).toEqual([]);
   });
 
-  // #141 — `observability/otel.ts` is the *only* place `@opentelemetry/*`
-  // may be imported. This is a package-shaped boundary, not the
-  // directory-shaped one above, so it is scanned separately and over all of
-  // `src/core/` (not just `src/core/graph/`): `src/core/app.ts` is the
-  // composition root that imports the *adapter* (`observability/otel.ts`)
-  // without ever importing an `@opentelemetry/*` package itself — core only
-  // knows the `NodeTracer`/`NodeSpan` port (`utils/nodeWrapper.ts`).
+  // `observability/otel.ts` is the only place `@opentelemetry/*` may be
+  // imported. Package boundary, scanned over all of `src/core/`: `app.ts`
+  // imports the adapter, never an `@opentelemetry/*` package; core knows only
+  // the `NodeTracer`/`NodeSpan` port (`utils/nodeWrapper.ts`).
   it("no module under src/core/ imports @opentelemetry/*", () => {
     const CORE_DIR = fileURLToPath(new URL("../", import.meta.url));
     const files = listTsFiles(CORE_DIR);
@@ -88,15 +83,10 @@ describe("import boundary (#139) — src/core/graph/ never imports tracing/trans
     expect(offenses).toEqual([]);
   });
 
-  // #145 — direction matters: REST depends on NATS through composition
-  // (`app.ts`'s `selectJobDirectory`), never the reverse. NATS is
-  // infrastructure here, not a peer, so no *production* module under
-  // `src/transports/nats/` may import `src/transports/rest/`. Test files are
-  // excluded on purpose: `jetstream.integration.test.ts` (#144's NATS-parity
-  // block) legitimately builds a REST app to assert "the NATS endpoint
-  // returns the same payload as its REST counterpart" — that is a test
-  // asserting parity between the two transports, not a runtime dependency of
-  // one on the other, and the distinction this rule actually cares about.
+  // REST depends on NATS via composition (`app.ts`'s `selectJobDirectory`),
+  // never the reverse: no production module under `src/transports/nats/` may
+  // import `src/transports/rest/`. Test files excluded: NATS-parity tests
+  // legitimately build a REST app to compare payloads.
   it("no production module under src/transports/nats/ imports transports/rest", () => {
     const NATS_DIR = fileURLToPath(
       new URL("../../transports/nats/", import.meta.url)

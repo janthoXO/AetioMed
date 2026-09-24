@@ -5,31 +5,21 @@ import type { RequestContext } from "./context.js";
 import { sanitizeForTrace } from "./traceSanitize.js";
 
 /**
- * The OTel operator channel's port (issue #141, formerly issue 15 §5/§1.1)
- * — core (this file) owns the interface and the adapter implements it:
- * core never imports `@opentelemetry/*` or reads `process.env` (both are
- * off-limits under `src/core/graph/` — see `CLAUDE.md`), so the concrete
- * adapter (`observability/otel.ts`) lives outside core and is constructed
- * once by the composition root (`app.ts`), gated only by the standard
- * `OTEL_SDK_DISABLED` — this is a separate channel from labels
- * (`core/jobEvents/labels.ts`), which are always on (#140) and carry no
- * node output.
+ * OTel operator channel port. Core owns interface; adapter
+ * (`observability/otel.ts`, built in `app.ts`) implements it. Core never
+ * imports `@opentelemetry/*` or reads `process.env`. Separate from labels
+ * (`core/jobEvents/labels.ts`), which carry no node output.
  */
 export interface NodeSpan {
   /**
-   * The node's output, already sanitized (content-part bytes projected to
-   * text — `sanitizeForTrace`). The adapter records its **size** as a span
-   * attribute and ships the value itself as a correlated log record, never
-   * as a span attribute (#141).
+   * Node output, already sanitized (`sanitizeForTrace`). Adapter records its
+   * **size** as span attribute, value as correlated log record, never as
+   * span attribute.
    */
   setOutput(output: unknown): void;
   /**
-   * Model/provider used by this node's request, when known — only
-   * available today via per-request `llmConfig` (the `ALLOW_LLMS` path);
-   * the deployer's static default config is not currently threaded to this
-   * seam. Token counts are not recorded anywhere in this codebase as of
-   * issue 15 — "where available" is honestly "never" right now, so no
-   * attribute is fabricated for them.
+   * Model/provider for this request. Known only from per-request `llmConfig`
+   * (`ALLOW_LLMS`); static default not threaded here. No token counts.
    */
   setLlm(provider: string, model: string): void;
   /** Record the node's failure and mark the span errored. */
@@ -54,15 +44,9 @@ export const noopNodeTracer: NodeTracer = {
 };
 
 /**
- * Every label passed to {@link traceNode} — collected as `buildCaseGraph()`
- * (and friends) construct the graphs. Core no longer translates labels (see
- * `02graphs/caseGraph.ts` and `catalog/startupValidation.ts`'s doc
- * comments); this registry's job now is purely the labels catalogue's
- * **base key set** for startup validation — `validateCatalogsOrExit`
- * (`catalog/startupValidation.ts`) checks `labelTranslations.yml` against
- * exactly these keys, which is what first caught six stale and four missing
- * keys in that file. Deleting this registry would silently drop that
- * guarantee.
+ * Every label passed to {@link traceNode}, collected during graph
+ * construction. Labels catalogue **base key set**: `validateCatalogsOrExit`
+ * checks `labelTranslations.yml` against it.
  */
 const knownLabels = new Set<string>();
 
@@ -70,99 +54,41 @@ export function getKnownLabels(): string[] {
   return [...knownLabels];
 }
 
-/**
- * `nodeId -> labelKey`, populated the same way `knownLabels` is — as
- * `buildCaseGraph()` constructs every graph variant. This is what
- * `GET /api/graph` (issue #140, `core/graph/structure.ts`) joins against the
- * compiled topology's node ids to attach each node's English label key,
- * without the structure endpoint reaching back into every subgraph module
- * to ask. `knownLabels` stays a `Set<string>` (startup validation only cares
- * about the key set); this is the id-keyed view the structure endpoint
- * needs on top of it.
- */
+/** `nodeId -> labelKey`, populated like `knownLabels`. `structure.ts` joins it to topology node ids. */
 const nodeLabels = new Map<string, string>();
 
 export function getNodeLabels(): Record<string, string> {
   return Object.fromEntries(nodeLabels);
 }
 
-/**
- * A `traceNode` function as handed to a graph-assembly module, plus the
- * `.scope()` it carries — see `createTraceNode`'s doc comment for why
- * scoping exists at all.
- */
+/** `traceNode` plus `.scope()`; see `createTraceNode`. */
 export interface TraceNodeFn {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   <F extends (...args: any[]) => any>(name: string, fn: F, label?: string): F;
   /**
-   * Return a new `TraceNodeFn` whose emitted node ids are prefixed with
-   * `name:` (and, recursively, whatever this one's own prefix already was).
-   * Call this exactly where a compiled subgraph is about to be mounted
-   * under `name` via `.addNode(name, someBuiltSubgraph)`, passing the
-   * result into that subgraph's builder instead of the unscoped
-   * `traceNode` — see `createTraceNode`'s doc comment for why the prefix
-   * must match LangGraph's own mount name exactly.
+   * New `TraceNodeFn` whose node ids get prefix `name:` (nested with any
+   * existing prefix). Call where a subgraph is mounted via
+   * `.addNode(name, subgraph)`; prefix must match LangGraph's mount name.
    */
   scope(name: string): TraceNodeFn;
 }
 
 /**
- * Builds `traceNode`, closed over the bus it emits "Node Started"/"Node
- * Completed"/"Node Failed" on. Called once per `GraphRuntime` at
- * graph-assembly time.
+ * Builds `traceNode`, closed over `bus`. Wraps a node function to emit "Node
+ * Started" then exactly one of "Node Completed"/"Node Failed"; errors are
+ * rethrown, never swallowed. Labels emitted in English; `wireLabels`
+ * localizes per job.
  *
- * Wraps a graph node function to automatically emit "Node Started" and
- * "Node Completed" (or, on failure, "Node Failed") bus events around the
- * node's logic. Labels are always emitted in English on the bus — the
- * per-job channel (`core/jobEvents/labels.ts`'s `wireLabels`) looks up the
- * request's language and localizes, falling back to English.
+ * `.scope()`: LangGraph reports nested nodes by colon-joined path (e.g.
+ * `generation_phase:presentation_phase:chief_complaint_generate:generate_content`),
+ * and bare names repeat across subgraphs. Every module mounting a compiled
+ * subgraph via `.addNode(name, subgraph)` must pass `traceNode.scope(name)`
+ * into that subgraph's builder so ids match.
  *
- * **Issue 15 §2 defect fix.** This used to have no `try`/`catch`: a
- * throwing node emitted "Node Started" and never anything terminal, so any
- * consumer pairing started/completed events (a progress UI, a span, a
- * per-job resource waiting for a terminal state) stayed unbalanced forever.
- * Now every path — success or failure — emits exactly one terminal event,
- * and the error is rethrown, never swallowed: `traceNode` is instrumentation
- * wrapped around the node, not error handling for it, so callers see
- * exactly the failure they would have without this wrapper, just with an
- * event and (issue 15 §5) an errored span recorded on the way out.
+ * One OTel span per node brackets the same region as the bus events and
+ * fails in the same `catch`. `tracer` defaults to `noopNodeTracer`.
  *
- * **Issue 15 §3/§4 — why `.scope()` exists.** The spec for this issue
- * assumed a node's bare name (`traceNode`'s first argument, e.g.
- * `"generate_content"`) already *is* "the LangGraph node id" the structure
- * endpoint (`GET /api/graph`) would report. Verified against a real
- * compiled graph, that is false for any node nested inside a subgraph:
- * `getGraphAsync({ xray: true })` (the same call `exportGraphs.ts` uses)
- * reports nested nodes under a colon-joined path — e.g.
- * `"generation_phase:presentation_phase:chief_complaint_generate:generate_content"`
- * — not the bare `"generate_content"`. Two different subgraphs
- * (`chiefComplaintGraph.ts` and `anamnesisGraph.ts`) both have a node
- * literally named `generate_content`, so the bare name is not even unique
- * across the compiled graph — reporting it unqualified from the structure
- * endpoint would collapse two distinct nodes onto one id and corrupt the
- * rendered graph's edges, not just the trace/structure correlation.
- *
- * The fix threads the same qualification LangGraph itself uses: every
- * module that mounts a compiled subgraph under a name (`.addNode(name,
- * builtSubgraph)`) calls `traceNode.scope(name)` and passes *that* into the
- * subgraph's builder instead of the unscoped `traceNode` — see
- * `caseGraph.ts`'s `assembleCaseGraph`, `02case-generation/index.ts`'s
- * `buildCaseGenerationGraph`, and `02presentation/generation/index.ts`'s
- * `buildFieldGenerationGraph` for the five call sites that do this. Every
- * other `traceNode(...)` call site is unchanged: it already receives a
- * `traceNode` scoped correctly by its caller and just uses it directly.
- *
- * **Issue 15 §5 — one OTel span per node, from this same seam.** `tracer`
- * defaults to `noopNodeTracer`, so every existing call site
- * (`exportGraphs.ts`, every test) is unaffected; only `buildCaseGraph`
- * (`02graphs/caseGraph.ts`) is given a real one, sourced from the
- * composition root. The span brackets exactly the same region the bus
- * events do, ends with an error status on the same `catch` that emits
- * "Node Failed", and is otherwise inert when `tracer` is the no-op (no
- * attribute call does anything observable).
- *
- * Only wrap plain node functions — do not wrap compiled subgraphs
- * (CompiledStateGraph instances); those are not callable as functions.
+ * Wrap plain node functions only, not compiled subgraphs.
  */
 export function createTraceNode(
   bus: EventBus,
@@ -198,10 +124,8 @@ function buildTraceNode(
       const runtime = args[1] as Runtime<RequestContext> | undefined;
       const context = runtime?.context ?? getRequestContext();
       const jobId = context?.jobId;
-      // Off ALS, never LangGraph's own runtime context: `language` is
-      // deliberately absent from `RequestContextSchema` (see `context.ts`).
-      // It rides on the event so the label channel (`core/jobEvents/`) can
-      // localize without keeping a per-job language map.
+      // From ALS: `language` is absent from `RequestContextSchema`. Rides on
+      // the event so the label channel can localize.
       const language = getRequestContext()?.language;
 
       bus.emit("Node Started", {

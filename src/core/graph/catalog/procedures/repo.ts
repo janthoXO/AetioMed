@@ -23,22 +23,15 @@ export interface ProceduresRepo {
     englishToTarget: Record<ProcedureName, ProcedureName>,
     language: ForeignLanguage
   ): void;
-  /**
-   * Resolve the effective procedure name list.
-   *
-   * - If a static default list is configured (Rules 2 & 3) it is returned.
-   * - Otherwise `undefined` is returned and the LLM may invent procedure
-   *   names freely.
-   */
+  /** Effective procedure name list; `undefined` = freeform, LLM invents names. */
   getEffectiveProcedureList(): ProcedureName[] | undefined;
 }
 
 const SOURCE = "procedures";
 
 /**
- * Syncs `procedures.yml` / `proceduresTranslations.yml` (under `catalogDir`)
- * into `dbHandle`'s embedded database, then exposes the effective procedure
- * list and translation lookups. All I/O happens here, not at import time.
+ * Syncs `procedures.yml` / `proceduresTranslations.yml` into `dbHandle`, exposes
+ * list and translation lookups. I/O here, not at import.
  */
 export function createProceduresRepo(
   dbHandle: DbHandle,

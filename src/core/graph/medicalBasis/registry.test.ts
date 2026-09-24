@@ -1,5 +1,4 @@
-// Exercises `resolveAllFragments` directly against fake providers — no
-// graph, no LLM, no filesystem — plus `createMedicalBasisRegistry`'s shape.
+// `resolveAllFragments` against fake providers (no graph/LLM/fs), plus `createMedicalBasisRegistry` shape.
 import { describe, expect, it, vi } from "vitest";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import { createMedicalBasisRegistry, resolveAllFragments } from "./registry.js";
@@ -112,10 +111,7 @@ describe("resolveAllFragments", () => {
   });
 
   it("hands the provider the whole RequestContext, not just its signal", async () => {
-    // Under ALLOW_LLMS the request's `llmConfig` is the only source of
-    // provider/model, so a provider that makes an LLM call (as the UMLS one
-    // does on a cold cache miss) is broken without it. The signal-only
-    // signature issue 14 sketched would have been a silent regression.
+    // Under ALLOW_LLMS, `llmConfig` is the only provider/model source; LLM-calling providers need it.
     const seen: (RequestContext | undefined)[] = [];
     const recorder: MedicalBasisProvider = {
       id: "recorder",

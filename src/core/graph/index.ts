@@ -53,8 +53,6 @@ declare module "../event-bus.js" {
       language?: Language;
       timestamp: string;
     };
-    // Issue 15 §2: the defect this fixes is `traceNode` never emitting a
-    // terminal event for a throwing node. This is that terminal event.
     "Node Failed": {
       node: string;
       label?: string;
@@ -69,10 +67,8 @@ declare module "../event-bus.js" {
 export { ConfigSchema };
 
 /**
- * Build the `GraphRuntime` (ports), construct the graph as a function of it,
- * and validate the catalogues. Called once from `createApp()`, before any
- * transport starts — there is no module-scope mutable state left for
- * transports to race against.
+ * Build `GraphRuntime`, construct graph from it, validate catalogues. Called
+ * once from `createApp()` before any transport starts.
  */
 export function initGraph(opts: {
   bus: EventBus;
@@ -82,13 +78,7 @@ export function initGraph(opts: {
   /** Already-resolved absolute path (see `persistence/paths.ts`). */
   cacheDir: string;
   symptomCacheTtlDays: number;
-  /**
-   * The OTel operator channel's port (issue #141), constructed by
-   * `app.ts` via `observability/otel.ts`'s `createOtelNodeTracer()`,
-   * gated only by the standard `OTEL_SDK_DISABLED`. Required: `app.ts` is
-   * the only caller, and it always has one — pass `noopNodeTracer`
-   * explicitly if you ever need a silent graph.
-   */
+  /** OTel port from `observability/otel.ts`'s `createOtelNodeTracer()`. Pass `noopNodeTracer` for silence. */
   tracer: NodeTracer;
 }): GraphAppContext {
   const { bus, config, catalogDir, cacheDir, symptomCacheTtlDays, tracer } =
@@ -103,21 +93,15 @@ export function initGraph(opts: {
     clock: () => new Date(),
   };
 
-  // The medical-basis registry is a plain list built here, in the
-  // composition root — not a `FEATURES`/config flag (see
-  // `medicalBasis/registry.ts`'s `createMedicalBasisRegistry` doc comment
-  // for why). Today it always returns `[umlsSymptomProvider]`; a deployer
-  // cannot currently switch it off.
+  // Plain list, not a config flag (see `createMedicalBasisRegistry`). Always
+  // `[umlsSymptomProvider]`.
   const medicalBasisRegistry = createMedicalBasisRegistry({
     runtime,
     symptomsRepo: repos.symptoms,
   });
 
-  // The per-field modality registries (issue 21 §4): each field composes
-  // its own provider list from its `providers.ts` slice
-  // (`02presentation/generation/chiefComplaint/providers.ts`,
-  // `.../anamnesis/providers.ts`, `03procedure/providers.ts`), mirroring the
-  // `catalog/<domain>/` vertical-slice convention.
+  // Per-field modality registries; each field's providers come from its own
+  // `providers.ts` slice.
   const modalityRegistries: ModalityRegistries = {
     chiefComplaint: createChiefComplaintProviders(runtime),
     anamnesis: createAnamnesisProviders(runtime),
@@ -134,11 +118,9 @@ export function initGraph(opts: {
     tracer
   );
 
-  // Validate catalogue translation files here, and not any earlier: the
-  // "labels" catalogue's base key set is `getKnownLabels()`
-  // (utils/nodeWrapper.ts), which `traceNode` populates as `buildCaseGraph`
-  // constructs the graph modules above. Running the validation any earlier
-  // would validate labels against an empty set and silently pass.
+  // Must run after graph construction: labels' base key set is
+  // `getKnownLabels()`, populated by `traceNode` while graph builds. Earlier =
+  // empty set, silent pass.
   validateCatalogsOrExit(repos, config.LANGUAGES);
 
   if (config.allowedLlms) {

@@ -15,7 +15,7 @@ function fakeRuntime(invokeResult: unknown): {
   };
 }
 
-describe("detectLanguageViaLlm (issue 10 §1, step 3)", () => {
+describe("detectLanguageViaLlm (step 3)", () => {
   it("returns the language the model picked", async () => {
     const { runtime, forSpy } = fakeRuntime({ language: "German" });
 

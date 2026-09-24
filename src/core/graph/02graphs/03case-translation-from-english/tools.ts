@@ -23,12 +23,7 @@ const TranslateAnamnesisCategoriesFromEnglishInputSchema = z.object({
   language: z.string(),
 });
 
-/**
- * Category/procedure translation lookups live on the repos, not on the
- * (deliberately minimal) `ProcedureCatalog`/`AnamnesisCatalog` ports from
- * issue 01 — so these two tools are built from the repos directly, closed
- * over at graph-assembly time, rather than reading `runtime.catalogs`.
- */
+/** Translation lookups live on repos, not the minimal `ProcedureCatalog`/`AnamnesisCatalog` ports; tools built from repos, closed over at assembly time. */
 export function createTranslateAnamnesisCategoriesFromEnglish(
   anamnesisRepo: AnamnesisRepo
 ): Tool<
@@ -122,16 +117,9 @@ export function createTranslateProcedureNamesFromEnglish(
   };
 }
 
-// ─── translate_rest_values (issue 12 §1/§2) ───────────────────────────────────
+// ─── translate_rest_values ────────────────────────────────────────────────────
 
-/**
- * Every `ContentPart[]` field on `Case`, paired with the path prefix its
- * parts are keyed under (see {@link caseTextMap}/{@link applyCaseTextTranslations}
- * below). Index by position, not by name (issue 12 §2) — a procedure name is
- * itself translated by the disjoint defined pass, so keying the rest pass on
- * it would couple the two passes right where the point is that they are
- * disjoint.
- */
+/** Every `ContentPart[]` field on `Case` with its path prefix (see {@link caseTextMap}/{@link applyCaseTextTranslations}). Index by position, not name: names are translated by the defined pass; keying on them would couple the passes. */
 function contentPartFields(
   c: Case
 ): { prefix: string; parts: ContentPart[] }[] {
@@ -151,25 +139,11 @@ function contentPartFields(
 }
 
 /**
- * Build the flat, keyed map of every `ContentPart` text fragment in the
- * case — the rest pass's entire input. Keys look like `chiefComplaint.0.alt`,
- * `anamnesis.2.answer.0.text`, `procedures.1.result.3.alt`.
+ * Flat keyed map of every `ContentPart` text fragment in case; sole input of rest pass. Keys: `chiefComplaint.0.alt`, `anamnesis.2.answer.0.text`, `procedures.1.result.3.alt`.
  *
- * Two keys per part now that `alt` and `value` carry independent text
- * (issue 21 §2): every part contributes an `.alt` entry (its short label),
- * and a `text/*` part additionally contributes a `.text` entry (its
- * decoded prose, via `textOfPart`) — a non-text part's `value` is bytes and
- * never reaches this map, so it has no `.text` entry. Only these strings
- * ever appear in the map's values; bytes never reach the translation prompt
- * built from it.
+ * Every part gives `.alt`; `text/*` part also gives `.text` (decoded prose via `textOfPart`). Non-text `value` bytes never reach map or prompt.
  *
- * Today `alt` and the decoded text are equal for every text part (both
- * generators still set `alt` to the same string they render into `value`),
- * so the `.alt` and `.text` entries for a given text part carry the same
- * value and get translated to the same output. That duplication is expected
- * at this step, not a bug to optimise away — a planner-authored `alt` that
- * genuinely differs from the rendered prose (issue 21 §5) is what makes the
- * two keys diverge.
+ * `.alt` and `.text` currently equal for text parts (same string); duplication expected. They diverge when `alt` differs from rendered prose.
  */
 export function caseTextMap(c: Case): Record<string, string> {
   const map: Record<string, string> = {};
@@ -185,20 +159,9 @@ export function caseTextMap(c: Case): Record<string, string> {
 }
 
 /**
- * Apply a translated `caseTextMap` back onto a case's content-part fields.
- * Per part: a `text/plain` part takes its translated `.text` entry into
- * `value` (via `encodeText`) and its translated `.alt` entry into `alt` —
- * the two are translated, and applied, independently, since they are no
- * longer derived from one another. Any other MIME type passes `value`
- * through byte-identical, translating only `alt`. A missing key (translation
- * didn't cover it) falls back to the original `alt`/`value` untouched. Part
- * count and order are always preserved (issue 13).
+ * Apply translated `caseTextMap` onto content-part fields. `text/plain` part: `.text` -> `value` (via `encodeText`), `.alt` -> `alt`, independently. Other MIME: `value` byte-identical, only `alt` translated. Missing key falls back to original. Part count and order preserved.
  *
- * Returns only the `ContentPart[]` fields — `patient`, `procedures[].name`,
- * `procedures[].relevance` and `anamnesis[].category` are untouched by this
- * function on purpose; the caller (`translate_merge`) applies
- * `definedTranslations` to the latter two and passes everything else through
- * from the original case.
+ * Returns only `ContentPart[]` fields; `patient`, `procedures[].name`/`relevance`, `anamnesis[].category` untouched (caller applies `definedTranslations`, passes rest through).
  */
 export function applyCaseTextTranslations(
   c: Case,
@@ -244,14 +207,7 @@ const TranslateRestValuesInputSchema = z.object({
   language: z.string(),
 });
 
-/**
- * One LLM call translating every `ContentPart` text fragment in the case
- * (both its `alt` label and, for text parts, its decoded prose), keyed by
- * stable path — see {@link caseTextMap}. Never sent: `value` bytes, procedure
- * names, anamnesis categories, or any enum/identifier/number field (those
- * are either the defined pass's job or pass through untouched — issue 12
- * §1's table).
- */
+/** One LLM call translating every `ContentPart` text fragment (`alt`, plus decoded prose for text parts), keyed by path; see {@link caseTextMap}. Never sent: `value` bytes, procedure names, categories, enums/identifiers/numbers. */
 export const translateRestValues: Tool<
   z.infer<typeof TranslateRestValuesInputSchema>,
   Record<string, string>

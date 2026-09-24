@@ -1,7 +1,5 @@
-// Unit coverage for the shared read model (#144): each accessor against a
-// fake `GraphAppContext`, proving it delegates rather than reimplementing
-// anything — the actual REST-vs-NATS parity guarantee is exercised in
-// `src/transports/nats/nats.parity.integration.test.ts`.
+// Each accessor against fake `GraphAppContext`: delegates, no reimplementation.
+// REST-vs-NATS parity tested in `src/transports/nats/nats.parity.integration.test.ts`.
 import { describe, expect, it, vi } from "vitest";
 import { createReadModel } from "./readModel.js";
 import type { GraphAppContext } from "./graph/appContext.js";
@@ -40,7 +38,7 @@ function fakeGraph(): GraphAppContext {
   } as GraphAppContext;
 }
 
-describe("createReadModel (#144)", () => {
+describe("createReadModel", () => {
   it("diagnoses() delegates to the diagnosis catalog", () => {
     const readModel = createReadModel(fakeGraph(), new Set());
     expect(readModel.diagnoses()).toEqual([{ icd: "1A00", name: "Cholera" }]);

@@ -1,6 +1,4 @@
-// The embedded database is now injectable (issue 04): construct a `DbHandle`
-// directly over a temporary directory, no environment-variable dance and no
-// dynamic import required.
+// `DbHandle` built directly over a temp directory; no env vars or dynamic import.
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 import os from "node:os";

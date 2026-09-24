@@ -10,75 +10,36 @@ import * as schema from "./schema.js";
 import { meta } from "./schema.js";
 
 /**
- * Embedded SQLite cache that the various repos sync `data/*.yml` config
- * files into on startup, and query live at runtime.
- *
- * Rationale: parsing the large config files (e.g. ~37k-entry
- * diagnosisTranslations.yml) with the spec-complete `yaml` package took
- * multiple seconds on every boot. `syncSource()` below only re-parses (with
- * the much faster `js-yaml`) and re-ingests a file when its content hash has
- * changed since the last successful sync — on an unchanged file, startup
- * skips parsing entirely and the previously-synced rows are reused as-is.
- *
- * AI-generated values (e.g. on-demand translations) are written directly via
- * normal insert/upsert calls by callers (not through `syncSource`), so they
- * persist across restarts without ever being written back into the YAML
- * source files.
+ * Embedded SQLite cache synced from `data/*.yml` at startup, queried live.
+ * `syncSource()` re-parses (`js-yaml`) and re-ingests a file only when its
+ * content hash changed; unchanged files skip parsing. AI-generated values are
+ * written directly by callers, persist across restarts, never go back to YAML.
  */
 
 export interface DbHandle {
   db: NodeSQLiteDatabase<typeof schema>;
   /**
-   * Sync a YAML config file into the embedded DB, but only re-parse and
-   * re-ingest it when its content changed since the last sync (a sha256
-   * fingerprint of the raw file is stored per `source` in `_meta`).
-   *
-   * `ingest(parsed)` is called inside a transaction with the parsed YAML
-   * document. What it does with that data is up to the caller: for plain
-   * read-only lists (predefined diagnoses/procedures/anamnesis categories) a
-   * full delete-then-insert is appropriate. For translation maps, `ingest`
-   * should *upsert* (insert-or-overwrite) rather than delete first, so that
-   * rows added at runtime for keys absent from the YAML (e.g. AI-generated
-   * translations) are preserved across a YAML edit — only YAML-listed keys
-   * get overwritten with the YAML's value.
-   *
-   * Returns `true` if a (re)sync happened, `false` if the file was missing
-   * or unchanged (parse + ingest skipped entirely).
-   *
-   * `yamlFile` must already be an absolute path (resolved by the composition
-   * root) — this function resolves nothing itself.
+   * Sync a YAML file into the DB when its sha256 (stored per `source` in `_meta`)
+   * changed. `ingest(parsed)` runs in a transaction: read-only lists should
+   * delete-then-insert; translation maps should upsert so runtime rows for keys
+   * absent from YAML survive. Returns `true` if synced, `false` if missing or
+   * unchanged. `yamlFile` must be absolute.
    */
   syncSource(
     source: string,
     yamlFile: string,
     ingest: (parsed: unknown) => void
   ): boolean;
-  /**
-   * SQLite binds a limited number of parameters per statement. Multi-row
-   * inserts of large synced sources (e.g. ~37k translation rows) are batched
-   * through this helper to stay well under that limit regardless of column
-   * count, while still avoiding a separate prepared statement per row.
-   */
+  /** Batched multi-row insert helper; stays under SQLite's bound-parameter limit. */
   chunk<T>(items: T[], size?: number): T[][];
   close(): void;
 }
 
 /**
- * Opens (creating if necessary) the embedded SQLite database under
- * `cacheDir` and runs migrations. Called once from the composition root —
- * importing this module performs no I/O by itself.
- *
- * This module does **not** register any process-exit handling of its own
- * (issue 18) — a persistence module owning process lifecycle is what made
- * shutdown ordering accidental instead of declared: a signal handler
- * registered here ran before the transports' and called `process.exit`
- * synchronously, killing the process before a transport's own handler ever
- * ran. Shutdown is now one sequence owned by the composition root
- * (`app.ts`'s `createApp()` returns a `shutdown()` that closes this handle
- * last, via `close()` below — see `src/shutdown.ts`).
- *
- * `cacheDir` must already be an absolute path (resolved by the composition
- * root, see `app.ts`).
+ * Opens (creating if needed) the SQLite DB under `cacheDir` and runs
+ * migrations. No I/O on import. Registers no process-exit handling: shutdown
+ * is owned by the composition root, which calls `close()` last. `cacheDir`
+ * must be absolute.
  */
 export function createDb(cacheDir: string): DbHandle {
   const dbPath = path.join(cacheDir, "aetiomed.db");
@@ -91,9 +52,7 @@ export function createDb(cacheDir: string): DbHandle {
 
   const db = drizzle({ client, schema });
 
-  // Drizzle migrations are application assets shipped with the code, not
-  // deployer-owned data — they stay resolved against process.cwd() rather
-  // than CATALOG_DIR/CACHE_DIR.
+  // Migrations ship with the code: resolved against process.cwd(), not CATALOG_DIR/CACHE_DIR.
   migrate(db, {
     migrationsFolder: path.resolve(process.cwd(), "drizzle"),
   });
@@ -119,9 +78,7 @@ export function createDb(cacheDir: string): DbHandle {
     const raw = fs.readFileSync(yamlFile, "utf-8");
     const hash = crypto.createHash("sha256").update(raw).digest("hex");
 
-    // The `_meta` fingerprint is keyed on `source` (a fixed domain name, e.g.
-    // "diagnosis"), never on the file path — so moving CATALOG_DIR does not
-    // invalidate an existing cache.
+    // `_meta` fingerprint keyed on `source` (fixed domain name), not file path, so moving CATALOG_DIR keeps the cache.
     const existing = db
       .select()
       .from(meta)

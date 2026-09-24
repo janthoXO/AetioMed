@@ -13,10 +13,7 @@ import type { RequestContext } from "@/core/graph/utils/context.js";
 import { GenerationError } from "@/core/graph/errors/AppError.js";
 
 function requiredTargetLanguage(): string {
-  // Read off ALS, not graph state (issue 09 §2) — this phase is only ever
-  // entered when `requestNeedsTranslation` (`caseGraph.ts`) already found
-  // a bound, non-English language, so an absent value here is a real bug,
-  // not a legitimate "no language" case.
+  // Read off ALS. Phase only entered when a non-English language is bound; absent = bug.
   const language = getRequestContext()?.language;
   if (!language) {
     throw new GenerationError(
@@ -46,13 +43,7 @@ function makeTranslateDiagnosis(runtime: GraphRuntime) {
   };
 }
 
-/**
- * Issue 12 §3: `userInstructions` is free text supplied by the caller and
- * must be translated to English alongside `diagnosis`, or it flows into
- * English generation prompts unmodified. Writes only `userInstructions` —
- * disjoint from `translateDiagnosis`'s `diagnosis`, so both run in parallel
- * from `START` with no merge needed.
- */
+/** Translates caller-supplied `userInstructions`. Writes only `userInstructions`, disjoint from `translateDiagnosis`, so both run parallel from `START`. */
 function makeTranslateUserInstructions(runtime: GraphRuntime) {
   return async function translateUserInstructions(
     state: CaseTranslationToEnglishState,
@@ -82,12 +73,7 @@ function makeTranslateUserInstructions(runtime: GraphRuntime) {
   };
 }
 
-// This graph is `addNode`'d into `assembleCaseGraph` (`caseGraph.ts`) as
-// `translation_to_english_phase` (issue 17 §1). Its entire job is
-// translating `diagnosis` and `userInstructions` — `.pick()` off this
-// graph's own state schema, not a hand-written duplicate, so the picked
-// channels keep their identical reducer registration. `generationFlags` is
-// input only, never written back.
+// Mounted as `translation_to_english_phase`. Output `.pick()`ed off own state schema: `diagnosis`, `userInstructions`. `generationFlags` input only.
 const TranslationToEnglishOutputSchema =
   CaseTranslationToEnglishStateSchema.pick({
     diagnosis: true,
@@ -120,12 +106,7 @@ export function buildCaseTranslationToEnglishGraph(
         )
       )
 
-      // Two plain edges, deliberately NOT `Send(node, state)` (issue 21): a
-      // `Send` payload is JSON round-tripped, and while this graph's state
-      // carries no `ContentPart` bytes today, the pattern is the one that
-      // corrupted them in the from-English phase. An edge hands each node the
-      // same full state without serialising it, so there was never anything to
-      // gain here.
+      // Plain edges, not `Send`: `Send` payload is JSON round-tripped, which corrupts `ContentPart` bytes.
       .addEdge(START, "translate_diagnosis")
       .addEdge(START, "translate_user_instructions")
       .addEdge("translate_diagnosis", END)

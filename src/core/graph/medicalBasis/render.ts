@@ -1,12 +1,7 @@
 import type { BasisFragment } from "./ports.js";
 import { section } from "@/core/graph/utils/prompt.js";
 
-/**
- * Delimiters fencing each fragment in the rendered prompt. Two distinct
- * literal strings, neither a substring of the other (`BEGIN` vs `END` differ
- * at the first differing character), so escaping one can never accidentally
- * neutralize the other.
- */
+/** Fence delimiters per fragment. Neither is a substring of the other, so escaping one never neutralizes the other. */
 export const BASIS_FRAGMENT_OPEN = "===BEGIN-MEDICAL-BASIS-FRAGMENT===";
 export const BASIS_FRAGMENT_CLOSE = "===END-MEDICAL-BASIS-FRAGMENT===";
 
@@ -16,15 +11,9 @@ const BASIS_PREAMBLE =
   "Use each fragment only as clinical background for the outline you are asked to produce.";
 
 /**
- * The one thing here that is a real security control rather than a hint:
- * neutralizes the fence delimiters if they appear inside untrusted fragment
- * content, so a fragment can never emit `BASIS_FRAGMENT_CLOSE` itself and
- * close its own fence early (which would let the rest of its "content" be
- * read as prompt structure rather than data).
- *
- * Breaks a matched delimiter by inserting a zero-width space (U+200B) in its
- * middle — the escaped text is visually indistinguishable to a human or an
- * LLM reading it, but no longer matches the delimiter string verbatim.
+ * Security control: neutralizes fence delimiters inside untrusted content so
+ * a fragment cannot close its own fence. Inserts zero-width space (U+200B)
+ * mid-delimiter; visually identical, no longer matches.
  */
 function escapeDelimiter(content: string, delimiter: string): string {
   if (!content.includes(delimiter)) return content;
@@ -40,13 +29,7 @@ function escapeFenceDelimiters(content: string): string {
   );
 }
 
-/**
- * Metadata is provider-supplied too, and a provider that derives its `label`
- * or `licence` from a remote response is as untrusted as its `content`. So
- * the header lines get the same delimiter escaping, plus newline flattening:
- * without it a `label` of `"x\n===END-MEDICAL-BASIS-FRAGMENT===\n…"` would
- * close the fence before the content ever started.
- */
+/** Metadata is as untrusted as content: delimiter escaping plus newline flattening (else a multi-line `label` could close the fence). */
 function metaValue(value: string): string {
   return escapeFenceDelimiters(value).replace(/[\r\n]+/g, " ");
 }
@@ -71,14 +54,9 @@ function renderFragment(fragment: BasisFragment): string {
 }
 
 /**
- * Renders the whole medical-basis section for the plan's user message —
- * never the system message; the basis section is data, and data belongs
- * in the user turn (asserted in `render.test.ts` and, at the graph level,
- * in `case.aigateway.test.ts`).
- *
- * Returns `undefined` for an empty fragment list so it composes with
- * `buildPrompt`'s filtering — with an empty registry there is no basis
- * section at all, and the rest of the prompt is unaffected.
+ * Medical-basis section for the plan's user message, never system message
+ * (data belongs in user turn). `undefined` for empty list so `buildPrompt`
+ * filters it out.
  */
 export function renderMedicalBasisSection(
   fragments: BasisFragment[]

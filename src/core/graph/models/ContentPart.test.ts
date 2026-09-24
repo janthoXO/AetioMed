@@ -1,4 +1,3 @@
-// Issue 11 §8, issue 21 §2.
 import { describe, expect, it } from "vitest";
 import {
   ContentPartSchema,
@@ -9,10 +8,7 @@ import {
   type ContentPart,
 } from "./ContentPart.js";
 
-/** The pre-issue-21 constructor, inlined at every call site now — kept as a
- * local test helper so fixtures stay readable. Builds exactly what
- * `textPart(alt)` used to: a `text/plain` part whose `value` is the UTF-8
- * encoding of `alt`. */
+/** Fixture helper: `text/plain` part whose `value` is UTF-8 of `alt`. */
 function fixtureTextPart(alt: string): ContentPart {
   return { type: "text/plain", value: encodeText(alt), alt };
 }
@@ -56,12 +52,7 @@ describe("textOfPart", () => {
     expect(textOfPart(part)).toBe("An unrenderable placeholder.");
   });
 
-  // The equivalence that makes issue 21 step A safe to ship on its own:
-  // today every text part is built so that `value === utf8(alt)` (the old
-  // `textPart()` constructor's invariant). This test pins that today's
-  // behaviour is unchanged by MIME-dispatching `textOfPart` — it is NOT a
-  // guarantee about tomorrow's planner-authored parts, where `alt` and the
-  // rendered prose are expected to diverge (issue 21 §5).
+  // Pins behaviour for `value === utf8(alt)` parts only; planner-authored parts may diverge.
   it("pins today's behaviour: for a part built the old textPart way (value === utf8(alt)), textOfPart returns exactly alt", () => {
     const part = fixtureTextPart("Chest X-ray, PA. Consolidation noted.");
     expect(textOfPart(part)).toBe(part.alt);
@@ -88,8 +79,7 @@ describe("textOf — the only path from content parts to a prompt", () => {
       fixtureTextPart("Impression: right lower lobe pneumonia."),
     ];
 
-    // A non-text part contributes its `alt` (via `textOfPart`'s fallback)
-    // exactly like a text part contributes its decoded `value`.
+    // Non-text part contributes `alt` (fallback), text part its decoded `value`.
     expect(textOf(parts)).toBe(
       [
         "Chest X-ray, PA. Consolidation noted.",

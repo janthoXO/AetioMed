@@ -20,12 +20,7 @@ import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import { GenerationError } from "@/core/graph/errors/AppError.js";
 
-/**
- * Read off ALS, not graph state (issue 09 §2). This subgraph is only ever
- * entered when `requestNeedsTranslation` (`caseGraph.ts`) already found a
- * bound, non-English language, so an absent value here is a real bug, not a
- * legitimate "no language" case.
- */
+/** Read off ALS, not graph state. Phase only entered when a non-English language is bound; absent = bug. */
 function requiredTargetLanguage(): string {
   const language = getRequestContext()?.language;
   if (!language) {
@@ -36,14 +31,7 @@ function requiredTargetLanguage(): string {
   return language;
 }
 
-/**
- * Issue 12 §1's "Defined" pass: catalog dictionary lookups (per-key locked
- * LLM fill on a miss, issue 03) for `procedures[].name` and
- * `anamnesis[].category`. The two former nodes are merged into one — they
- * share a trigger, a language, and now a single output channel
- * (`definedTranslations`), so two nodes bought nothing once neither writes
- * `case` directly. Writes ONLY `definedTranslations` — never `case`.
- */
+/** "Defined" pass: catalog dictionary lookups (per-key locked LLM fill on miss) for `procedures[].name` and `anamnesis[].category`. Writes ONLY `definedTranslations`, never `case`. */
 function makeTranslateDefined(
   runtime: GraphRuntime,
   tools: ReturnType<typeof createTranslationFromEnglishTools>
@@ -87,13 +75,7 @@ function makeTranslateDefined(
   };
 }
 
-/**
- * Issue 12 §1/§2's "Rest" pass: one LLM call over every `ContentPart` text
- * fragment in the case — both `alt` and, for text parts, the decoded
- * prose — keyed by stable path (`tools.ts`'s `caseTextMap`). Writes ONLY
- * `restTranslations` — never `case`, and never sees `value` bytes, procedure
- * names, or anamnesis categories (those are the defined pass's job).
- */
+/** "Rest" pass: one LLM call over every `ContentPart` text fragment (`alt`, plus decoded prose for text parts), keyed by stable path (`caseTextMap`). Writes ONLY `restTranslations`. Never sees `value` bytes, procedure names, categories. */
 function makeTranslateRest(
   runtime: GraphRuntime,
   tools: ReturnType<typeof createTranslationFromEnglishTools>
@@ -119,16 +101,7 @@ function makeTranslateRest(
   };
 }
 
-/**
- * The only node that writes `case` (issue 12 §1). A pure function of the
- * two disjoint channels the passes above produced plus the original case —
- * there is no order between the two passes to be sensitive to, so reversing
- * their completion order is guaranteed, by construction, to produce an
- * identical merged case. Exported directly (not behind a factory, since it
- * needs no runtime/tools closure) so tests can call it with hand-built
- * `definedTranslations`/`restTranslations` in either order and assert the
- * outputs are identical.
- */
+/** Only node writing `case`. Pure function of both channels plus original case; pass completion order irrelevant. Exported for tests. */
 export function translateMerge(
   state: CaseTranslationFromEnglishState
 ): Pick<CaseTranslationFromEnglishState, "case"> {
@@ -158,12 +131,7 @@ export function translateMerge(
   return { case: mergedCase };
 }
 
-// This graph is `addNode`'d into `assembleCaseGraph` (`caseGraph.ts`) as
-// `translation_from_english_phase` (issue 17 §1). `.pick()` off this graph's
-// own state schema, not a hand-written duplicate, so the picked `case`
-// channel keeps the identical reducer registration. `definedTranslations`/
-// `restTranslations` are this graph's own internal scratch channels, never
-// written back to the parent.
+// Mounted as `translation_from_english_phase`. `.pick()` off own state schema: `case` only. `definedTranslations`/`restTranslations` are internal scratch, never written back.
 const TranslationFromEnglishOutputSchema =
   CaseTranslationFromEnglishStateSchema.pick({ case: true });
 
@@ -200,24 +168,11 @@ export function buildCaseTranslationFromEnglishGraph(
         traceNode("translate_merge", translateMerge, "Merging translated case")
       )
 
-      // Both passes fire unconditionally and in parallel from START — there is
-      // no ordering between them to get wrong (issue 12 §1). Each is a no-op
-      // internally when it finds nothing to translate (empty categories/
-      // procedures/content-part map), rather than being skipped by an edge —
-      // that keeps `translate_merge`'s two input channels always populated
-      // (with their schema defaults) instead of conditionally absent.
+      // Both passes fire unconditionally in parallel from START, no ordering. Each no-ops when nothing to translate,
+      // so `translate_merge`'s input channels are always populated.
       //
-      // Two plain edges, deliberately NOT `Send(node, state)` (issue 21).
-      // `Send` round-trips its payload through JSON, which turns a
-      // `ContentPart.value` `Uint8Array` into a plain index-keyed object —
-      // `instanceof Uint8Array` becomes false and the bytes are corrupt from
-      // there on. These two Sends carried the whole state, `case` bytes and
-      // all, and bought nothing a plain edge does not: an edge hands the node
-      // the same full channel state without serialising it. **A `Send`
-      // payload must never carry `ContentPart` bytes** — see
-      // `02presentation/generation/index.ts`'s `buildFieldGenerationSends`,
-      // which is a legitimate `Send` precisely because its per-target payload
-      // is text only.
+      // Plain edges, not `Send`: `Send` JSON round-trips payload, corrupting `ContentPart.value` bytes.
+      // A `Send` payload must never carry `ContentPart` bytes (see `buildFieldGenerationSends`, text-only).
       .addEdge(START, "translate_defined")
       .addEdge(START, "translate_rest")
       .addEdge("translate_defined", "translate_merge")

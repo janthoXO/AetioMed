@@ -1,10 +1,6 @@
-// Rewritten for #159 (stateless generation): the generator keeps nothing
-// between calls, so an unacked request *is* the recovery path — the handler
-// now acks only once the call's output is published (`msg.ack()` at the
-// very end), naks on a publish failure, and gives up after
-// `REQUEST_MAX_ATTEMPTS` deliveries by publishing a `RETRIES_EXHAUSTED`
-// result instead of calling the service again. A normal-mode plan is
-// published through `onPlan` as soon as it exists, best-effort.
+// Handler acks only after output published, naks on publish failure, and
+// past `REQUEST_MAX_ATTEMPTS` deliveries publishes `RETRIES_EXHAUSTED`
+// without calling service. Normal-mode plan published via `onPlan`, best-effort.
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { JsMsg } from "@nats-io/jetstream";
 import {
@@ -79,7 +75,7 @@ function publishedSubjects(): string[] {
   return publish.mock.calls.map((call) => call[0] as string);
 }
 
-describe("consumeCaseGenerateMessage (#142, #159)", () => {
+describe("consumeCaseGenerateMessage", () => {
   it("forwards difficulty, and passes the slot plus onPlan through to service.generate's 2nd arg", async () => {
     const generate = vi.fn(
       async (): Promise<CaseGenerationResult> => ({
@@ -199,7 +195,7 @@ describe("consumeCaseGenerateMessage (#142, #159)", () => {
   it("invalid body with a valid jobId: publishes INVALID_REQUEST_BODY to that jobId's result subject and acks", async () => {
     const generate = vi.fn();
     const service = fakeService(generate);
-    // Neither `icd` nor `diagnosis` — fails the request schema's refine.
+    // Neither `icd` nor `diagnosis`: fails schema refine.
     const msg = fakeMsg({ jobId: "job-bad-body" });
 
     await consumeCaseGenerateMessage(msg, fakeGraph(), service);
@@ -331,7 +327,7 @@ describe("consumeCaseGenerateMessage (#142, #159)", () => {
   });
 });
 
-describe("consumeCaseGenerateMessage — msg.working() heartbeat (#142, #159)", () => {
+describe("consumeCaseGenerateMessage — msg.working() heartbeat", () => {
   beforeEach(() => {
     vi.useFakeTimers();
   });
@@ -353,7 +349,7 @@ describe("consumeCaseGenerateMessage — msg.working() heartbeat (#142, #159)", 
 
     const pending = consumeCaseGenerateMessage(msg, fakeGraph(), service);
 
-    // Let the synchronous part of the handler run and register the interval.
+    // Let sync part of handler run and register the interval.
     await vi.advanceTimersByTimeAsync(0);
     expect(msg.working).not.toHaveBeenCalled();
 
@@ -369,9 +365,7 @@ describe("consumeCaseGenerateMessage — msg.working() heartbeat (#142, #159)", 
   });
 });
 
-// Sanity check that the module still exports the pull-worker entry point
-// used by `index.ts` — not part of the acceptance criteria for this file,
-// but a cheap guard against an accidental rename.
+// Guard: pull-worker entry point used by `index.ts` stays exported.
 describe("runRequestWorker export", () => {
   it("is a function", () => {
     expect(typeof runRequestWorker).toBe("function");

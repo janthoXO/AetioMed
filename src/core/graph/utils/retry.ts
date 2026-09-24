@@ -18,7 +18,7 @@ export function retry<T>(
       fn(retries - remainingAttempts, error)
         .then(resolve)
         .catch((err: Error) => {
-          // AbortErrors are never retried — propagate immediately
+          // AbortErrors never retried
           if (err?.name === "AbortError") {
             reject(err);
             return;

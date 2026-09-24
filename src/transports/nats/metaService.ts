@@ -1,16 +1,6 @@
-// Request/reply parity (#144): the NATS-only counterpart of the REST
-// read-only endpoints (`GET /api/diagnosis`, `/procedures`, `/features`,
-// `/allowedLlms`, `/graph`), built on `@nats-io/services`, the NATS "micro"
-// framework.
-//
-// Decision (#144): use `@nats-io/services` rather than five bare `nc.subscribe`
-// request/reply handlers. It gives a NATS-only client discovery
-// (`$SRV.PING|INFO|STATS`), per-endpoint stats, and an error-header
-// mechanism (`msg.respondError`) for free — close to the literal definition
-// of "a NATS-only client has every feature": those clients would otherwise
-// have no way to even discover this service exists. The cost is one small
-// dependency from the same `@nats-io/*` org as the ones already in
-// `package.json`.
+// NATS counterpart of the REST read-only endpoints (`/api/diagnosis`,
+// `/procedures`, `/features`, `/allowedLlms`, `/graph`), on `@nats-io/services`
+// (discovery via `$SRV.PING|INFO|STATS`, per-endpoint stats, `respondError`).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { NatsConnection } from "@nats-io/transport-node";
@@ -27,13 +17,9 @@ import {
 const FALLBACK_VERSION = "0.0.0";
 
 /**
- * Read the repo's own `package.json` `version` field at runtime, relative to
- * this module's own location — `src/transports/nats/` and
- * `dist/transports/nats/` are both three levels below the repo root, so
- * `../../../package.json` resolves correctly either way.
- *
- * The `Dockerfile`'s `runner` stage copies `package.json` for this. Falls
- * back to {@link FALLBACK_VERSION} if the file is unreadable or unparsable.
+ * Read `version` from repo `package.json`. `src/` and `dist/` are both three
+ * levels below root, so `../../../package.json` works either way. Dockerfile
+ * `runner` stage copies it. Falls back to {@link FALLBACK_VERSION}.
  */
 function readPackageVersion(): string {
   try {
@@ -50,7 +36,7 @@ function readPackageVersion(): string {
   }
 }
 
-/** One row of the REST/NATS parity table (§D2). */
+/** One REST/NATS parity endpoint. */
 interface MetaEndpoint {
   name: string;
   subject: string;
@@ -92,12 +78,10 @@ function respond(msg: ServiceMsg, value: unknown): void {
 }
 
 /**
- * Start the `aetiomed` micro service and register the five read-only
- * endpoints above. Every replica answers reads identically, so this uses the
- * framework's default queue group rather than opting out of it — whichever
- * replica gets the request answers it.
+ * Start `aetiomed` micro service with the five read-only endpoints. Default
+ * queue group: replicas answer identically, any one may respond.
  *
- * Returns a function that stops the service.
+ * Returns stop function.
  */
 export async function startMetaService(opts: {
   nc: NatsConnection;

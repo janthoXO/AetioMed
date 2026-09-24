@@ -1,6 +1,4 @@
-// Issue 12 §3: `userInstructions` must be translated to English alongside
-// `diagnosis` — previously it flowed into English generation prompts
-// unmodified.
+// `userInstructions` translated to English alongside `diagnosis`.
 import { describe, expect, it } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { translateUserInstructionsToEnglish } from "./tools.js";

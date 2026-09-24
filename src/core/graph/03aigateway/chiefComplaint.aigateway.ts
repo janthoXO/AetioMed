@@ -18,19 +18,14 @@ import {
 } from "../modality/composition.js";
 import type { ModalityPlan, ModalityProvider } from "../modality/ports.js";
 
-/** The chief complaint's one content unit — there is no per-category split
- * here, unlike anamnesis (`anamnesis.aigateway.ts`). */
+/** Chief complaint has one content unit, no per-category split. */
 export const CHIEF_COMPLAINT_UNIT_KEY = "chiefComplaint";
 
 /**
- * Plans the chief complaint's rendering (issue 21 §1/§5): ONE LLM call that
- * still decides the case content — it reads the outline exactly as the old
- * direct generator did (the Role/Requirements below are that generator's
- * prompt, kept verbatim in substance) — but instead of returning prose
- * directly, it returns an ORDERED list of render requests against the
- * field's registered providers. `alt` is authored HERE, by the planner,
- * never by a provider (issue 21 §1): a provider that could author its own
- * `alt` could inject facts into the blinded solver's view down the line.
+ * Plans chief complaint rendering: one LLM call returning ordered render
+ * requests against the field's providers. `alt` authored here, never by a
+ * provider: a provider-authored `alt` could inject facts into the blinded
+ * solver's view.
  */
 export async function planChiefComplaint(
   runtime: GraphRuntime,
@@ -42,8 +37,7 @@ export async function planChiefComplaint(
 ): Promise<ModalityPlan> {
   const schema = buildCompositionSchema(providers, [CHIEF_COMPLAINT_UNIT_KEY]);
 
-  // User-facing (issue 09 §3): a planned `alt`/instruction both become
-  // user-visible content once rendered.
+  // User-facing: planned `alt`/instruction become user-visible content.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "user-facing",
@@ -125,13 +119,9 @@ ${renderSchemaForPrompt(schema)}`
 }
 
 /**
- * The chief complaint's TEXT-rendering call (issue 21 §4): renders an
- * entire batch of planner-authored instructions in ONE LLM call — the
- * batching is the whole point of `ModalityProvider.render`'s batch-in/
- * batch-out contract (`modality/ports.ts`). Keeps the old direct
- * generator's tuned clinical-chart voice; only the FACTS now arrive via
- * each instruction, so the renderer is told explicitly to render exactly
- * what it's given and invent nothing.
+ * Text rendering for chief complaint: whole batch of planner instructions in
+ * ONE LLM call, per `ModalityProvider.render` batch contract. Renders exactly
+ * what given, invents nothing.
  */
 export async function renderChiefComplaintTexts(
   runtime: GraphRuntime,

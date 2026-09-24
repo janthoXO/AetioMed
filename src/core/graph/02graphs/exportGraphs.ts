@@ -37,9 +37,7 @@ export async function exportGraphPng(
   }
 }
 
-// Minimal runtime — this script only renders topology, it never calls the
-// LLM or touches the filesystem-backed catalogues, so every port is a bare
-// in-memory/no-op stand-in rather than the real app's composition root.
+// Minimal runtime: script only renders topology, so every port is a bare no-op stand-in.
 const minimalLlmRole: {
   provider: "ollama";
   model: string;
@@ -114,9 +112,7 @@ const medicalBasisRegistry = createMedicalBasisRegistry({
   symptomsRepo: minimalSymptomsRepo,
 });
 
-// Mirrors the composition root: one text provider per field — the planner
-// always runs regardless of registry size (issue 21 §1), so there is no
-// registry-size topology variance left for this script to show.
+// Mirrors composition root: one text provider per field. Planner always runs, so registry size never changes topology.
 const modalityRegistries: ModalityRegistries = {
   chiefComplaint: createChiefComplaintProviders(minimalRuntime),
   anamnesis: createAnamnesisProviders(minimalRuntime),
@@ -137,19 +133,14 @@ const { getCaseGraphs } = buildCaseGraph(
 
 await fs.mkdir("docs/graphs", { recursive: true });
 
-// Two topologies, not four. `PROCEDURE_PRESELECTION` swaps a
-// `ProcedureStrategy` adapter and leaves the procedure graph at three nodes
-// either way (issue 07), so the two preselection variants of each topology
-// would render byte-identically. `graphTopologyKey` is the authority on this
-// and `caseGraph.test.ts` asserts the premise still holds — if that test ever
-// fails, this loop is what needs to grow back to four.
+// Two topologies, not four: `PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter, so preselection variants
+// render identically. `graphTopologyKey` is authority; `caseGraph.test.ts` asserts it.
 for (const translationSandwich of [false, true]) {
   const flags = { translationSandwich, procedurePreselection: false };
   const graphs = getCaseGraphs(flags);
   const name = graphTopologyKey(flags);
 
-  // Two graphs per topology since #159: the plan graph ends with an outline,
-  // the case graph starts from one.
+  // Two graphs per topology: plan graph ends with outline, case graph starts from one.
   await exportGraphPng(graphs.plan, `plan-graph.${name}`);
   await exportGraphPng(graphs.case, `case-graph.${name}`);
 }

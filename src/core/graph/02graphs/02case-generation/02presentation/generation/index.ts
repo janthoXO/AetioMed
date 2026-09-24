@@ -20,20 +20,14 @@ import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
 import { buildChiefComplaintGraph } from "./chiefComplaint/index.js";
 import { buildAnamnesisGraph } from "./anamnesis/index.js";
 
-// The outline arrives as input (#159): it is produced by the plan graph
-// (`../../01plan/`) and handed to the case graph, so this graph only fans
-// it out to the field generators.
+// Outline arrives as input from plan graph (`../../01plan/`); this graph only fans it out.
 const GenerationGraphStateSchema = CaseGenerationStateSchema.extend({
   outline: z.string(),
 });
 
 type GenerationGraphState = z.infer<typeof GenerationGraphStateSchema>;
 
-// This graph is `addNode`'d into `buildCaseGenerationGraph` as
-// `presentation_phase` (issue 17 §1). `.pick()` off this graph's own state
-// schema, not a hand-written duplicate, so the picked channel keeps its
-// identical reducer registration. `outline` is input only now — the parent
-// already holds it for the procedure phase.
+// Mounted as `presentation_phase`. `.pick()` off own state schema. `outline` input only.
 const GenerationOutputSchema = GenerationGraphStateSchema.pick({
   case: true,
 });
@@ -107,16 +101,7 @@ type PatientNodeInput = Pick<
   "diagnosis" | "outline" | "userInstructions"
 >;
 
-// `patient` stays a single function node — it is deliberately NOT a
-// subgraph, unlike `chiefComplaintGraph`/`anamnesisGraph` below (issue 13
-// §1). `patient` is not a `ContentPart[]` field: issue 11 converted exactly
-// three fields (`chiefComplaint`, `anamnesis[].answer`, `procedures[].result`)
-// and `patient` stayed a structured `Patient` object (name, age, gender,
-// height, weight). It is demographic *data*, not renderable *content* —
-// there is no `alt` to render, and forcing it through a modality provider
-// would mean either breaking `PatientSchema` or wrapping structured data in
-// a text part that nothing consumes as text. So only two of the three
-// fields the issue named got subgraphs; this is why.
+// `patient` stays a plain function node, not a subgraph: structured `Patient` object, not `ContentPart[]`; no `alt` to render, nothing for a modality provider.
 function makeGeneratePatient(runtime: GraphRuntime) {
   return async function generatePatient(
     state: PatientNodeInput,
@@ -147,28 +132,11 @@ function makeGeneratePatient(runtime: GraphRuntime) {
   };
 }
 
-// `chief_complaint_generate` and `anamnesis_generate` are compiled
-// subgraphs (`chiefComplaintGraph.ts`, `anamnesisGraph.ts`) — both are
-// `ContentPart[]` fields (issue 11), so both earn the
-// generate/decide/render internal control flow issue 13 introduces.
-// `procedures[].result` is also `ContentPart[]` but is produced in the
-// procedure phase, not here — out of scope for this issue; a natural
-// follow-up.
+// `chief_complaint_generate`/`anamnesis_generate` are compiled subgraphs (`ContentPart[]` fields). `procedures[].result` is produced in procedure phase.
 
 // ─── graph ────────────────────────────────────────────────────────────────────
 
-/**
- * A join point produces no update — `patient_generate`,
- * `chief_complaint_generate` and `anamnesis_generate` have already written
- * `case` themselves, so `case_fan_in` has nothing left to contribute (issue
- * 17 §2a). It used to be `passthrough`, returning the whole incoming state as
- * its update; that made every channel in `GenerationGraphStateSchema` a
- * "write" on this node, which only avoided `INVALID_CONCURRENT_GRAPH_UPDATE`
- * because it runs alone in its own superstep — and it made the `case`
- * reducer merge the case into itself for no reason. Its trace payload is
- * correctly `{}`: the assembled case is already visible at the phase
- * boundary, so there is nothing to invent here.
- */
+/** Join point: no update. Field nodes already wrote `case`. Trace payload `{}`. */
 export function caseFanIn(): Record<string, never> {
   return {};
 }
@@ -191,13 +159,10 @@ export function buildFieldGenerationGraph(
           "Generating patient"
         )
       )
-      // Compiled subgraphs are mounted directly, not wrapped in `traceNode`
-      // (see its doc comment: only plain node functions are callable that
-      // way) — each subgraph traces its own internal nodes instead.
+      // Subgraphs mounted directly, not `traceNode`-wrapped; each traces its own nodes.
       .addNode(
         "chief_complaint_generate",
-        // Scoped to match the mount name — see `nodeWrapper.ts`'s
-        // `TraceNodeFn.scope` doc comment (issue 15 §3/§4).
+        // Scoped to match mount name; see `TraceNodeFn.scope` in `nodeWrapper.ts`.
         buildChiefComplaintGraph(
           runtime,
           modalityRegistries.chiefComplaint,

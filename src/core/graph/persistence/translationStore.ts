@@ -65,11 +65,8 @@ export interface TranslationStore {
   ): Promise<Record<string, string>>;
 }
 
-// Language keys are plain strings here (issue 09 §1): the supported set is
-// deployment configuration, not a source-level enum, and this schema has no
-// config to validate against at parse time — `validateCatalogsOrExit`
-// (`catalog/startupValidation.ts`) is what checks a YAML file's declared
-// languages against the deployment's configured `LANGUAGES`.
+// Language keys are plain strings: supported set is deployment config.
+// `validateCatalogsOrExit` (`catalog/startupValidation.ts`) checks YAML languages against `LANGUAGES`.
 export const TranslationMappingSchema = z.partialRecord(
   z.string(),
   z.record(z.string(), z.string())

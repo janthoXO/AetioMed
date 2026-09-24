@@ -2,15 +2,9 @@ import type { BlindedProcedureStepResult } from "@/core/graph/03aigateway/proced
 import type { SolverMove } from "./ports.js";
 
 /**
- * Converts the aigateway's `BlindedProcedureStepResult` shape — shared by
- * `generateBlindedProcedureStep` (`DirectPick`) and, once reconstructed from
- * a category pick, `CategoryScopedPick` — into a `SolverMove`.
- *
- * Mirrors the original `blinded_step` node's three-way branch exactly: a
- * non-empty procedure pick orders, a diagnose action with a name commits, a
- * procedure action with a (possibly empty) `procedures` array is an "empty
- * pick", and anything else is an "unexpected shape" — the two `exhausted`
- * reasons the node logs differently (info vs. warn).
+ * `BlindedProcedureStepResult` to `SolverMove`. Non-empty procedure pick
+ * orders; diagnose with name commits; procedure action with empty array is
+ * "empty pick"; else "unexpected shape" (the two `exhausted` reasons).
  */
 export function toSolverMove(step: BlindedProcedureStepResult): SolverMove {
   if (step.action === "procedure" && step.procedures?.length) {

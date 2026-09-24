@@ -1,9 +1,5 @@
-// Same style as `chiefComplaint/index.test.ts`: drives the compiled
-// `anamnesisGraph` directly, with a fake `LlmPort` that throws on anything
-// unscripted. The anamnesis-specific behaviour under test is per-category
-// planning and reassembly in CATALOGUE order (issue 13 §2, issue 21 §7),
-// not LLM array order, plus the cross-category BATCHING property the
-// planner architecture exists for (issue 21 §3/§6).
+// Drives compiled `anamnesisGraph` with fake `LlmPort` that throws on anything unscripted.
+// Under test: per-category planning, reassembly in CATALOGUE order (not LLM order), cross-category BATCHING.
 import { describe, expect, it } from "vitest";
 import z from "zod";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
@@ -91,7 +87,7 @@ function buildGraph(
   return buildAnamnesisGraph(runtime, providers, createTraceNode(bus));
 }
 
-describe("anamnesisGraph — output surface (issue 17 §1)", () => {
+describe("anamnesisGraph — output surface", () => {
   it("writes back only `case`, not the whole state schema", () => {
     const { provider } = makeCountingTextProvider();
     const graph = buildGraph(makeQueuedLlmPort({}), [provider]);
@@ -99,7 +95,7 @@ describe("anamnesisGraph — output surface (issue 17 §1)", () => {
   });
 });
 
-describe("anamnesisGraph — node shape (issue 21 §7: no registry-size branching)", () => {
+describe("anamnesisGraph — node shape (no registry-size branching)", () => {
   it("rejects an empty registry immediately, at build time", () => {
     expect(() => buildGraph(makeQueuedLlmPort({}), [])).toThrow(
       EmptyModalityRegistryError
@@ -117,7 +113,7 @@ describe("anamnesisGraph — node shape (issue 21 §7: no registry-size branchin
 });
 
 describe("anamnesisGraph", () => {
-  it("reorders categories to CATALOGUE order, not the planner's array order (issue 13 §2)", async () => {
+  it("reorders categories to CATALOGUE order, not the planner's array order", async () => {
     const { provider } = makeCountingTextProvider();
     const llm = makeQueuedLlmPort({
       generator: [
@@ -175,7 +171,7 @@ describe("anamnesisGraph", () => {
     );
   });
 
-  it("batches every category's instructions into ONE render call (issue 21 §6) — the token-efficiency property this design exists for", async () => {
+  it("batches every category's instructions into ONE render call — the token-efficiency property this design exists for", async () => {
     const { provider, calls } = makeCountingTextProvider();
     const llm = makeQueuedLlmPort({
       generator: [

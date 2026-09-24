@@ -1,6 +1,4 @@
-// Config resolution takes the environment as an argument
-// (`ConfigSchema.parse({...})`) rather than reading `process.env` — these
-// tests never mutate `process.env`, they just pass different shapes in.
+// Env passed as argument to `ConfigSchema.parse`; `process.env` never mutated.
 import { describe, expect, it, vi } from "vitest";
 import type { ChatOllama } from "@langchain/ollama";
 import { ConfigSchema } from "./config.js";
@@ -44,7 +42,7 @@ describe("ConfigSchema — LLM role resolution", () => {
       apiKey: "general-key",
       url: "http://general:11434",
     });
-    // The other two roles are untouched by the judge override.
+    // Other roles unaffected.
     expect(config.llmRoles?.generator.model).toBe("llama3.1");
     expect(config.llmRoles?.translator.model).toBe("llama3.1");
   });
@@ -111,7 +109,7 @@ describe("ConfigSchema — LLM role resolution", () => {
   });
 });
 
-describe("ConfigSchema — LANGUAGES (issue 09 §1)", () => {
+describe("ConfigSchema — LANGUAGES", () => {
   const base = { LLM_PROVIDER: "ollama" as const, LLM_MODEL: "llama3.1" };
 
   it("defaults to English, German when unset", () => {
@@ -142,9 +140,7 @@ describe("ConfigSchema — LANGUAGES (issue 09 §1)", () => {
   });
 
   it("treats a blank LANGUAGES string as unset, falling back to the default", () => {
-    // Not a rejection: an operator who exports LANGUAGES= with nothing after
-    // it means "I did not configure this", and the default already includes
-    // English, so there is nothing to fail on.
+    // Blank = unset, not a rejection.
     const config = ConfigSchema.parse({ ...base, LANGUAGES: "   " });
     expect(config.LANGUAGES).toEqual(["English", "German"]);
   });

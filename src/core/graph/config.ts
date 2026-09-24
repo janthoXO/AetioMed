@@ -18,10 +18,9 @@ interface LlmRoleConfig {
 }
 
 /**
- * Per-field fallback (not per-role): a role that sets only `MODEL` still
- * inherits the general provider/apiKey/url. A role that sets `PROVIDER`
- * without `MODEL` is rejected — otherwise per-field fallback would resolve
- * to a model name from the wrong provider's namespace.
+ * Per-field fallback: role setting only `MODEL` inherits general
+ * provider/apiKey/url. `PROVIDER` without `MODEL` rejected (model name would
+ * come from wrong provider's namespace).
  */
 function resolveRole(
   role: LlmRole,
@@ -66,10 +65,7 @@ function resolveRole(
 
 export const ConfigSchema = z
   .object({
-    // Declared here (rather than read from the process environment directly
-    // inside the transform below) so this module performs no I/O of its
-    // own — the caller already passes the full environment to `.parse()`,
-    // so this is a pure re-slice of that same input, not a new read.
+    // Declared so transform reads parsed input, not process env: no I/O here.
     FEATURES: z.string().optional(),
     LLM_PROVIDER: PossibleProvidersSchema.optional(),
     LLM_MODEL: z.string().optional(),
@@ -91,10 +87,7 @@ export const ConfigSchema = z
     LLM_TRANSLATOR_API_KEY: z.string().optional(),
     LLM_TRANSLATOR_URL: z.url().optional(),
     /**
-     * When set, enables the category-then-procedure preselection strategy
-     * for the blinded procedure solver — small-model-friendly prompting
-     * that splits a single pick against the full candidate list into a
-     * category pick followed by a scoped procedure pick. See
+     * Enables category-then-procedure pick for blinded solver. See
      * `02case-generation/03procedure/strategy/`.
      */
     PROCEDURE_PRESELECTION: z
@@ -102,27 +95,17 @@ export const ConfigSchema = z
       .optional()
       .transform((v) => v === "true" || v === "1"),
     /**
-     * Whether the translation sandwich is compiled into the graph at all.
-     * Deployment config, so it is compiled away rather than branched on
-     * (see `assembleCaseGraph`) — with this off the translation nodes do not
-     * exist, which is different from existing and never being entered.
-     *
-     * Defaults to **true**: the translation phases exist today and are
-     * entered whenever the requested language is not English, so anything
-     * else would silently change behaviour for every current deployment.
+     * Whether translation sandwich is compiled into graph. Off = nodes absent,
+     * not skipped. Default true.
      */
     TRANSLATION_SANDWICH: z
       .string()
       .optional()
       .transform((v) => v !== "false" && v !== "0"),
     /**
-     * The deployment's supported language set, comma-separated
-     * (`LANGUAGES=English,German,French`). Trimmed, de-duplicated, order
-     * preserved. Defaults to `["English", "German"]` — today's behaviour.
-     *
-     * "English" is mandatory: it is the pivot language the translation
-     * sandwich turns on and the base catalogue's identity space (issue 09
-     * §1). Parsing fails loudly rather than silently dropping it.
+     * Supported languages, comma-separated. Trimmed, de-duplicated, order
+     * preserved. Default `["English", "German"]`. "English" mandatory (pivot
+     * language, base catalogue identity space); parse fails without it.
      */
     LANGUAGES: z
       .string()
@@ -146,33 +129,22 @@ export const ConfigSchema = z
         return languages;
       }),
     /**
-     * Enables steps 2–3 of the language-detection ladder (issue 10 §1): an
-     * offline n-gram detector (step 2, always tried once this is on) and,
-     * separately opted into via `LANGUAGE_DETECT_LLM_FALLBACK`, an LLM
-     * fallback (step 3). With this unset, an omitted request `language`
-     * resolves straight to the configured default ("English") — no
-     * detection work happens at all. This is communication-layer request
-     * normalisation (`caseGenerationService.ts`), not a graph flag: it
-     * never compiles a graph variant.
+     * Enables language-detection steps 2-3: offline n-gram detector, plus LLM
+     * fallback if `LANGUAGE_DETECT_LLM_FALLBACK`. Unset: omitted `language`
+     * resolves to default. Service-layer normalisation, not a graph flag.
      */
     LANGUAGE_AUTO_DETECT: z
       .string()
       .optional()
       .transform((v) => v === "true" || v === "1"),
-    /**
-     * Step 3's own opt-in, on top of `LANGUAGE_AUTO_DETECT` — a deployer
-     * enabling auto-detect should never *also* start paying for LLM calls
-     * unknowingly. Ignored when `LANGUAGE_AUTO_DETECT` is unset.
-     */
+    /** Step 3 (LLM) opt-in. Ignored unless `LANGUAGE_AUTO_DETECT`. */
     LANGUAGE_DETECT_LLM_FALLBACK: z
       .string()
       .optional()
       .transform((v) => v === "true" || v === "1"),
     /**
-     * Ceiling on one content part's decoded byte size (issue 11). Inline
-     * base64 inflates by ~33% and the whole case is held in memory,
-     * persisted and returned in one response, so a part beyond this fails
-     * loudly rather than silently shipping an oversized document.
+     * Ceiling on one content part's decoded bytes. Base64 inflates ~33% and
+     * whole case sits in memory; oversize fails loudly.
      */
     MAX_CONTENT_PART_BYTES: z.coerce
       .number()

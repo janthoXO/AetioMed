@@ -1,8 +1,5 @@
-// Proves issue 05's §5: terminal events ("Generation Completed"/"Failure"/
-// "Cancelled") are emitted by CaseGenerationService itself, not by a
-// transport — so a direct call with no transport involved still produces
-// them. Before this refactor only the rest/nats transports emitted these,
-// so any other caller (this test included) got none.
+// Terminal events ("Generation Completed"/"Failure"/"Cancelled") come from
+// CaseGenerationService itself: a direct call, no transport, still emits them.
 import { describe, it, expect, vi } from "vitest";
 import { EventBus } from "@/core/event-bus.js";
 import { createCaseGenerationService } from "@/core/caseGenerationService.js";
@@ -122,9 +119,7 @@ describe("CaseGenerationService — terminal events, no transport involved", () 
   });
 });
 
-/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
- * inlined at every real call site now; kept here only to keep this
- * fixture readable. */
+/** Fixture builder for a text part. */
 function fixtureTextPart(alt: string): ContentPart {
   return { type: "text/plain", value: encodeText(alt), alt };
 }
@@ -146,8 +141,7 @@ describe("CaseGenerationService — generationFlags expansion and projection", (
   };
 
   it("generates the presentation internally for a procedures-only request, then projects it out", async () => {
-    // The blinded solver reasons from the presentation, so it has to exist —
-    // but the caller asked for procedures, so that is all they get back.
+    // Blinded solver needs the presentation; caller gets only procedures.
     const generateCase = vi.fn(async () => fullCase);
     const service = createCaseGenerationService(
       fakeGraph(generateCase),
@@ -186,13 +180,12 @@ describe("CaseGenerationService — generationFlags expansion and projection", (
       "procedures",
       "patient",
     ]);
-    // No expansion means no projection either — the case comes back as the
-    // graph produced it.
+    // No expansion, no projection.
     expect(result.case).toBe(fullCase);
   });
 });
 
-describe("CaseGenerationService — callerSuppliedFreeText provenance (issue 12 §3)", () => {
+describe("CaseGenerationService — callerSuppliedFreeText provenance", () => {
   const fullCase: Case = { patient: { name: "Jane", age: 40, sex: "female" } };
 
   it("is true when the request supplies a diagnosis name", async () => {
@@ -251,7 +244,7 @@ describe("CaseGenerationService — callerSuppliedFreeText provenance (issue 12 
   });
 });
 
-describe("CaseGenerationService — language resolution (issue 10)", () => {
+describe("CaseGenerationService — language resolution", () => {
   const fullCase: Case = { patient: { name: "Jane", age: 40, sex: "female" } };
 
   function fakeDetector(
@@ -425,8 +418,7 @@ describe("CaseGenerationService — language resolution (issue 10)", () => {
   });
 });
 
-// #139 — the service owns each job's lifetime on the core-owned channel, so
-// every transport sees the same lifecycle whatever door a request came in.
+// Service owns each job's lifetime on the channel; same lifecycle for every transport.
 describe("CaseGenerationService — job channel lifecycle", () => {
   const minimalCase: Case = {
     patient: { name: "Jane", age: 40, sex: "female" },
@@ -504,8 +496,7 @@ describe("CaseGenerationService — job channel lifecycle", () => {
       status: "failed",
       error: { code: "INVALID_REQUEST_BODY" },
     });
-    // The terminal marker never carries the case: an observer is not the
-    // requester.
+    // Terminal marker never carries the case.
     expect(JSON.stringify(completes["done"])).not.toContain("Jane");
   });
 
@@ -545,19 +536,16 @@ describe("CaseGenerationService — job channel lifecycle", () => {
   });
 });
 
-// #142 — one limiter bounds generations across both transports. NATS holds
-// its slot before calling `generate` (via `reserveSlot()`); REST lets
-// `generate` acquire its own.
-describe("CaseGenerationService — concurrency limit (#142)", () => {
+// One limiter bounds generations across both transports. NATS holds its slot
+// before `generate` (`reserveSlot()`); REST lets `generate` acquire its own.
+describe("CaseGenerationService — concurrency limit", () => {
   const minimalCase: Case = {
     patient: { name: "Jane", age: 40, sex: "female" },
   };
 
   /**
-   * A `generateCase` that gates on an externally-controlled release and
-   * records the maximum number of concurrently in-flight calls. Release is
-   * FIFO by actual invocation order (not by name), so a caller does not need
-   * to know which of several concurrent jobs happens to be running first.
+   * `generateCase` gated on external release; records max concurrent calls.
+   * Release FIFO by invocation order, not by name.
    */
   function gatedGenerateCase() {
     let inFlight = 0;
@@ -595,9 +583,8 @@ describe("CaseGenerationService — concurrency limit (#142)", () => {
       { maxConcurrent: 2 }
     );
 
-    // REST-style: generate() acquires its own slot. Not awaited here — the
-    // point is that these run concurrently with the NATS-style jobs below,
-    // all gated behind the same limiter.
+    // REST-style: generate() acquires own slot. Not awaited; runs concurrently
+    // with NATS-style jobs below, same limiter.
     const restJobs = ["r1", "r2", "r3"].map((jobId) =>
       service.generate({
         diagnosis: jobId,
@@ -605,10 +592,8 @@ describe("CaseGenerationService — concurrency limit (#142)", () => {
         jobId,
       })
     );
-    // NATS-style: the caller reserves the slot up front, then hands it to
-    // generate() — reserveSlot() itself waits for a free slot, so it is
-    // chained rather than awaited at the top level (awaiting here would
-    // block this test on a slot nothing has released yet).
+    // NATS-style: reserve slot, hand to generate(). Chained, not awaited:
+    // awaiting would block on a slot nothing has released yet.
     const natsJobs = ["n1", "n2"].map((jobId) =>
       service
         .reserveSlot()
@@ -620,9 +605,8 @@ describe("CaseGenerationService — concurrency limit (#142)", () => {
         )
     );
 
-    // Release progressively: wait for at least one call to actually be
-    // in-flight, then free it, five times over — this drains all five jobs
-    // through the 2-wide limiter regardless of arrival order.
+    // Release progressively: wait for an in-flight call, free it, x5.
+    // Drains all five through the 2-wide limiter in any arrival order.
     for (let i = 0; i < 5; i++) {
       await waitUntil(() => pendingCount() > 0);
       releaseNext();
@@ -677,9 +661,7 @@ describe("CaseGenerationService — concurrency limit (#142)", () => {
 
   it("releases a slot handed in when the job is rejected as a duplicate, so a following generate can still run", async () => {
     const { generateCase, inFlightNow, releaseNext } = gatedGenerateCase();
-    // maxConcurrent: 2 so the duplicate's own reserved slot does not have to
-    // wait behind the still-running "dup" job — the point under test is
-    // whether that slot is released, not whether it was ever grantable.
+    // maxConcurrent 2: duplicate's reserved slot need not wait behind "dup".
     const service = createCaseGenerationService(
       fakeGraph(generateCase),
       new EventBus(),
@@ -696,14 +678,12 @@ describe("CaseGenerationService — concurrency limit (#142)", () => {
     await new Promise((resolve) => setTimeout(resolve, 5));
     expect(inFlightNow()).toBe(1);
 
-    // Second caller reserves a slot itself (NATS-style) and hands it to a
-    // duplicate request; the service must release it since it never runs.
+    // NATS-style slot handed to a duplicate; service must release it.
     const slot = await service.reserveSlot();
     const duplicateResult = await service.generate(dup, { slot });
     expect(duplicateResult.error?.code).toBe("JOB_ALREADY_ACTIVE");
 
-    // Two slots exist; "dup" holds one. If the duplicate's slot leaked, both
-    // are gone and "following" would queue forever instead of running.
+    // "dup" holds one of two slots; a leaked duplicate slot would queue "following" forever.
     const following = service.generate({
       diagnosis: "following",
       generationFlags: ["patient"],
@@ -737,11 +717,9 @@ describe("CaseGenerationService — concurrency limit (#142)", () => {
   });
 });
 
-// #143 — `start()` is the synchronous primitive `generate()` is built on: it
-// reserves the jobId and opens the channel before returning, so a caller
-// (the REST POST stream) can subscribe before any node runs and learns
-// about a duplicate before committing to a response format.
-describe("CaseGenerationService — start() (#143)", () => {
+// `start()` reserves jobId and opens channel before returning: caller can
+// subscribe before any node runs and learns of a duplicate up front.
+describe("CaseGenerationService — start()", () => {
   const minimalCase: Case = {
     patient: { name: "Jane", age: 40, sex: "female" },
   };
@@ -798,11 +776,8 @@ describe("CaseGenerationService — start() (#143)", () => {
     const first = service.start(req);
     expect(first.accepted).toBe(true);
 
-    // `generateCase` is only reached after `run()`'s internal awaits
-    // (language resolution, slot acquisition) settle, so it may not have
-    // been called yet at this point — the property under test is that
-    // issuing the duplicate itself never adds a call, not that the first
-    // job has already reached it.
+    // `generateCase` runs after `run()`'s awaits, so may not be called yet;
+    // under test: the duplicate adds no call.
     const callsBeforeDuplicate = generateCase.mock.calls.length;
 
     const duplicate = service.start(req);

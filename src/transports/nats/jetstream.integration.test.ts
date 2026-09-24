@@ -1,6 +1,4 @@
-// Integration tests against a real nats-server (#142). Skipped entirely
-// unless NATS_TEST_URL is set — see CLAUDE.md's Testing section for how to
-// start one locally and how CI provides it.
+// Integration tests against a real nats-server. Skipped unless NATS_TEST_URL is set.
 import {
   afterAll,
   afterEach,
@@ -89,7 +87,7 @@ function fakeGraph(generateCase: GenerateCaseFn = vi.fn()): GraphAppContext {
   } as GraphAppContext;
 }
 
-describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
+describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker", () => {
   let jsm: JetStreamManager;
 
   beforeEach(async () => {
@@ -257,12 +255,9 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
         const requestsInfo = await jsm.streams.info(REQUESTS_STREAM.name);
         expect(requestsInfo.state.messages).toBe(0);
       } finally {
-        // `closed` only stops the loop between pulls — the worker's current
-        // `consumer.next({ expires: 30_000 })` call (cases.handler.ts) is
-        // still outstanding and would otherwise block this test's own
-        // timeout. Let it settle in the background instead of awaiting it;
-        // it errors out (or returns) on its own once this describe block's
-        // `afterAll` closes the connection.
+        // `closed` only stops the loop between pulls; the outstanding
+        // `consumer.next({ expires: 30_000 })` would block the test timeout.
+        // Don't await: it settles when `afterAll` closes the connection.
         closed = true;
         stopResponders();
         void workerPromise.catch(() => undefined);
@@ -322,12 +317,9 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
         const after = await jsm.streams.info(RESULTS_STREAM.name);
         expect(after.state.messages).toBe(before.state.messages);
       } finally {
-        // `closed` only stops the loop between pulls — the worker's current
-        // `consumer.next({ expires: 30_000 })` call (cases.handler.ts) is
-        // still outstanding and would otherwise block this test's own
-        // timeout. Let it settle in the background instead of awaiting it;
-        // it errors out (or returns) on its own once this describe block's
-        // `afterAll` closes the connection.
+        // `closed` only stops the loop between pulls; the outstanding
+        // `consumer.next({ expires: 30_000 })` would block the test timeout.
+        // Don't await: it settles when `afterAll` closes the connection.
         closed = true;
         stopResponders();
         void workerPromise.catch(() => undefined);
@@ -336,12 +328,9 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
   );
 });
 
-// #144 — NATS parity: the progress publisher and the request/reply meta
-// service. Kept in this file, in its own `describe`, rather than a sibling
-// file: both hit the same `CASE_REQUESTS`/`CASE_RESULTS` streams by name, and
-// two files each deleting/recreating them in a `beforeEach` race when
-// vitest runs test files in parallel workers — sequential `it`s inside one
-// file don't.
+// NATS parity: progress publisher and request/reply meta service. Same file
+// as the other blocks: files hitting the same streams by name race their
+// `beforeEach` delete/recreate under parallel vitest workers.
 function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
   const traceNode = createTraceNode(bus);
   const doThing = traceNode(
@@ -400,8 +389,7 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
   } as GraphAppContext;
 }
 
-/** Collect every message on `subject` (a core-NATS fan-out subject, `>`
- * wildcard allowed) until `count` have arrived or `timeoutMs` elapses. */
+/** Collect messages on `subject` (core NATS, `>` allowed) until `count` arrive or `timeoutMs`. */
 async function collectCore(
   subject: string,
   count: number,
@@ -429,7 +417,7 @@ async function collectCore(
   return received;
 }
 
-describe.skipIf(!NATS_TEST_URL)("NATS parity (#144)", () => {
+describe.skipIf(!NATS_TEST_URL)("NATS parity", () => {
   let jsm: JetStreamManager;
 
   beforeEach(async () => {
@@ -493,7 +481,7 @@ describe.skipIf(!NATS_TEST_URL)("NATS parity (#144)", () => {
           progressSubject("job-n", "label").replace(".label", ".>"),
           4
         );
-        // Let the subscription land before publishing.
+        // Let subscription land before publishing.
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         await js.publish(
@@ -671,15 +659,10 @@ describe.skipIf(!NATS_TEST_URL)("NATS parity (#144)", () => {
   );
 });
 
-// #145 — the partial NATS backbone: with both `REST` and `NATS` enabled,
-// REST watches and cancels jobs over NATS, so it sees jobs on every replica.
-// Two independent connections stand in for two replicas on the same server —
-// replica A rides the shared `getNatsConnection()` (as the other describe
-// blocks in this file do), replica B connects on its own via `connect()`
-// directly, exactly as a second process would. Kept in this file, in its own
-// `describe`, for the same reason as "NATS parity (#144)" above: both hit
-// the same `CASE_REQUESTS`/`CASE_RESULTS` streams by name, and a sibling
-// file's `beforeEach` deleting/recreating them would race this one's.
+// NATS backbone: with `REST` and `NATS` both enabled, REST watches and
+// cancels jobs over NATS, seeing every replica. Two connections stand in for
+// two replicas: A uses shared `getNatsConnection()`, B its own `connect()`.
+// Same file as the other blocks, to avoid stream-name races (see above).
 function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
   const traceNode = createTraceNode(bus);
   const doThing = traceNode(
@@ -743,8 +726,7 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
   } as GraphAppContext;
 }
 
-/** One replica: its own bus/channel/service around the fake 3-step graph,
- * with both NATS adapters (`jobResponders`, `progressPublisher`) started. */
+/** One replica: own bus/channel/service around the fake 3-step graph, `jobResponders` and `progressPublisher` started. */
 function createReplica(nc: NatsConnection): {
   graph: GraphAppContext;
   service: CaseGenerationService;
@@ -796,7 +778,7 @@ async function startRestApp(opts: {
   return { server, port };
 }
 
-describe.skipIf(!NATS_TEST_URL)("partial NATS backbone (#145)", () => {
+describe.skipIf(!NATS_TEST_URL)("partial NATS backbone", () => {
   let jsm: JetStreamManager;
   let ncB: NatsConnection;
 
@@ -873,7 +855,7 @@ describe.skipIf(!NATS_TEST_URL)("partial NATS backbone (#145)", () => {
         expect(text).toContain("event: label");
         expect(text).toContain("event: complete");
         expect(text).toContain('"status":"done"');
-        // Watch, not collect: the observer stream never carries the case.
+        // Watch, not collect: observer stream never carries the case.
         expect(text).not.toContain("patient");
 
         // (b) job submitted via A's POST /api/cases, watched over NATS from
@@ -942,7 +924,7 @@ describe.skipIf(!NATS_TEST_URL)("partial NATS backbone (#145)", () => {
         }));
         const port = (server.address() as AddressInfo).port;
 
-        // Give the responder subscription on B a moment to land.
+        // Let B's responder subscription land.
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         const deleteRes = await fetch(
@@ -1104,14 +1086,10 @@ describe.skipIf(!NATS_TEST_URL)("partial NATS backbone (#145)", () => {
   });
 });
 
-// #159 — plan mode over NATS, stateless: a plan-mode request's plan lands on
-// `cases.plan.<jobId>`, and a second request carrying that plan (the same
-// jobId, since the generator is stateless and keeps nothing between calls)
-// produces the case on `cases.result.<jobId>`. Kept in this file for the
-// same reason as the two `describe`s above: sharing
-// `CASE_REQUESTS`/`CASE_RESULTS`/`CASE_PLANS` by name with a sibling file
-// would race a `beforeEach` that deletes and recreates them.
-describe.skipIf(!NATS_TEST_URL)("plan mode over NATS (#159)", () => {
+// Plan mode over NATS: plan-mode request's plan lands on `cases.plan.<jobId>`;
+// a second request carrying that plan (same jobId) produces the case on
+// `cases.result.<jobId>`. Same file as above, to avoid stream-name races.
+describe.skipIf(!NATS_TEST_URL)("plan mode over NATS", () => {
   let jsm: JetStreamManager;
 
   beforeEach(async () => {
@@ -1137,11 +1115,9 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS (#159)", () => {
   });
 
   /**
-   * Read the next stored message matching `subject` off `streamName`, via a
-   * fresh ephemeral consumer with `deliver_policy: All` — the same shape
-   * the "two independent consumers" test above uses. `All` means creation
-   * order relative to the publish doesn't matter: a message already stored
-   * by the time this consumer is created is still delivered.
+   * Read next stored message on `subject` from `streamName` via a fresh
+   * ephemeral consumer, `deliver_policy: All`, so publish order vs consumer
+   * creation doesn't matter.
    */
   async function awaitStored(
     streamName: string,
@@ -1211,9 +1187,8 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS (#159)", () => {
           PLANS_STREAM.name,
           planSubject("job-plan-1")
         );
-        // `planAndRenderFrom` (`src/testing/graphFakes.ts`) always plans
-        // the same 3-segment outline: an editable segment 0, a fixed
-        // marker, and the render options as JSON.
+        // `planAndRenderFrom` (`src/testing/graphFakes.ts`) always plans a
+        // 3-segment outline: editable segment 0, fixed marker, render options JSON.
         expect(plan).toMatchObject({
           jobId: "job-plan-1",
           mode: "plan",
@@ -1224,8 +1199,7 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS (#159)", () => {
           ],
         });
 
-        // The generator kept nothing: a second request, carrying the plan
-        // back, reuses the same jobId and produces the case.
+        // Second request carrying the plan reuses the jobId and produces the case.
         await js.publish(
           "cases.request.generate",
           JSON.stringify({

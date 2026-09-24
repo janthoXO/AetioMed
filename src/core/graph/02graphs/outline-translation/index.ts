@@ -12,13 +12,8 @@ import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import { GenerationError } from "@/core/graph/errors/AppError.js";
 
-// Deliberately NOT numbered under `02graphs/` (issue #159): unlike
-// `01case-translation-to-english/` and `03case-translation-from-english/`,
-// this pair does not run as a phase of the case generation pipeline at all
-// — it runs between the plan graph and the case graph, translating plan
-// mode's case outline for display to a human reviewer (out) and their
-// edited segments back to English (in). A number here would claim a
-// pipeline position that does not exist.
+// Not numbered under `02graphs/`: runs between plan graph and case graph, not as a pipeline phase.
+// Translates plan-mode outline out for display and edited segments back to English.
 
 const TASK_DESCRIPTION =
   "These are sections of a clinical case outline shown to a human reviewer " +
@@ -27,9 +22,7 @@ const TASK_DESCRIPTION =
   "with '#' must keep its '#' prefix in the translation.";
 
 function requiredLanguage(): string {
-  // Same read path as `01case-translation-to-english/index.ts`'s
-  // `requiredTargetLanguage` (issue #159): language is a property of the
-  // bound ports, read off ALS, never off graph state.
+  // Same as `01case-translation-to-english/index.ts`'s `requiredTargetLanguage`: language read off ALS, not graph state.
   const language = getRequestContext()?.language;
   if (!language) {
     throw new GenerationError(
@@ -89,14 +82,7 @@ const OutlineTranslationOutputSchema = OutlineTranslationStateSchema.pick({
   translations: true,
 });
 
-/**
- * Two thin single-node graphs (issue #159), compiled separately by
- * `direction` — plan mode saves a checkpoint between the plan graph, this
- * graph and the case graph, which is why translate-out and translate-in are
- * each their own compiled graph rather than two nodes in one: the job
- * service needs a checkpoint boundary right where the human reviewer edits
- * the outline.
- */
+/** Two thin single-node graphs, compiled separately by `direction`: translate-out and translate-in never run in the same call. */
 export function buildOutlineTranslationGraph(
   runtime: GraphRuntime,
   traceNode: ReturnType<typeof createTraceNode>,

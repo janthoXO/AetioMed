@@ -1,11 +1,6 @@
-// Issue #141 — the real OTel SDK, no mocks: `InMemorySpanExporter` +
-// `SimpleSpanProcessor` on a `BasicTracerProvider` (sdk-trace-base), and
-// `InMemoryLogRecordExporter` + `SimpleLogRecordProcessor` on a
-// `LoggerProvider` (sdk-logs). This proves the actual wire-shaped behaviour
-// `otel.test.ts`'s mocked constructor-call assertions cannot: that the log
-// record really does correlate to the span by trace_id/span_id, that no
-// span attribute ever carries the node's output text, and that a truncated
-// payload's marker actually reaches the log body.
+// Real OTel SDK, no mocks: in-memory span and log exporters. Proves what mocked
+// `otel.test.ts` cannot: log correlates to span by trace_id/span_id, no span
+// attribute carries output text, truncation marker reaches log body.
 import { describe, expect, it } from "vitest";
 import {
   BasicTracerProvider,
@@ -42,7 +37,7 @@ function setup() {
   return { spanExporter, logExporter, nodeTracer };
 }
 
-describe("OTel signals end to end (#141) — real SDK, no mocks", () => {
+describe("OTel signals end to end — real SDK, no mocks", () => {
   it("a node's output is a correlated log record, never a span attribute", async () => {
     const { spanExporter, logExporter, nodeTracer } = setup();
     const bus = new EventBus();

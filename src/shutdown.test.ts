@@ -1,8 +1,5 @@
-// Issue 18: one ordered, bounded shutdown owned by the composition root.
-// These tests drive `runClosers`/`installSignalHandlers` directly rather
-// than sending real OS signals — `installSignalHandlers` returns its
-// internal handler for exactly this reason, and every deadline case uses
-// fake timers instead of sleeping.
+// Ordered, bounded shutdown. Drives `runClosers`/`installSignalHandlers` directly
+// (returned handler, fake timers), no real signals.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { installSignalHandlers, runClosers, type Closer } from "./shutdown.js";
 
@@ -34,8 +31,7 @@ describe("runClosers", () => {
       { name: "DB", close: async () => void calls.push("DB") },
     ];
 
-    // A failing closer must not strand the ones after it — the DB has to
-    // close even when REST or NATS blew up on the way there.
+    // Failing closer must not strand later ones.
     await expect(runClosers(closers)).rejects.toThrow(/REST/);
     expect(calls).toEqual(["REST", "NATS", "DB"]);
   });

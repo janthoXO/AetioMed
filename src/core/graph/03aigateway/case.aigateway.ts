@@ -38,18 +38,11 @@ const DIFFICULTY_STRATEGY: Record<Difficulty, string> = {
 };
 
 /**
- * Generate the case outline as tag-delimited markdown and parse it into the
- * positional segment array (#159). The headings are a server-owned skeleton
- * (`outlineSkeleton`): the model must reproduce them verbatim inside
- * `<fixed>` tags, and an outline whose fixed sequence differs is rejected
- * and retried with the mismatch fed back — the skeleton is enforced by
- * validation, not by a grammar, so the plain-text call (and its prose
- * quality) stays exactly what it was.
- *
- * Every section is always outlined, regardless of the requested
- * `generationFlags`: a procedures-only request still needs a patient, a
- * presentation and an anamnesis for the procedure results to be reasoned
- * about, and a reviewer in plan mode edits one stable shape.
+ * Generates outline as tag-delimited markdown, parsed to positional segments.
+ * Headings are server-owned skeleton (`outlineSkeleton`) reproduced in `<fixed>`
+ * tags; mismatch rejected and retried with error fed back (validation, not grammar).
+ * All sections always outlined regardless of `generationFlags`: procedure
+ * results need patient/presentation/anamnesis, and plan reviewer edits one stable shape.
  */
 export async function generateCaseOutline(
   runtime: GraphRuntime,
@@ -61,10 +54,8 @@ export async function generateCaseOutline(
     feedback?: string[] | undefined;
     previousOutline?: OutlineSegments | undefined;
     /**
-     * `"internal"` (English) everywhere except plan mode with the sandwich
-     * off, where the reviewer reads the outline as generated and it is
-     * written in the request language (#159). With the sandwich on the
-     * bound runtime's `languageOverride` keeps it English either way.
+     * `"internal"` (English) except plan mode with sandwich off: request
+     * language. With sandwich on, `languageOverride` keeps English either way.
      */
     audience?: PromptAudience | undefined;
   } = {},
@@ -85,9 +76,7 @@ export async function generateCaseOutline(
         ),
       ];
 
-  // Internal artifact by default (issue 09 §3): the outline is the blueprint
-  // downstream generators render, and it stays English unless the caller
-  // binds it to the request language (plan mode, sandwich off — #159).
+  // Internal (English) by default; caller may bind request language.
   const systemPrompt = buildSystemPrompt(
     runtime,
     audience,
@@ -190,8 +179,7 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
           result.text
         );
 
-        // A malformed or off-skeleton outline is rejected here, so the
-        // retry feeds the exact mismatch back to the model.
+        // Off-skeleton outline rejected; retry feeds mismatch back.
         const segments = parseTaggedOutline(result.text);
         const check = checkSkeleton(segments, { anamnesisCategories });
         if (!check.ok) {

@@ -12,27 +12,15 @@ import type {
 type Slot = { unitKey: string; index: number; request: PlannedPart };
 
 /**
- * Renders an entire field's plan: flattens every unit's planned requests,
- * groups them by provider id ACROSS units (so, e.g., one anamnesis text call
- * covers every category's instruction, and one image call covers every
- * image in the field), calls each provider's `render` exactly once with its
- * whole batch, then scatters the results back into `(unitKey, slot)` order
- * — PLANNED order, never completion order (same rule and reason as
- * `medicalBasis/registry.ts`'s `resolveAllFragments`: otherwise the same
- * plan would produce different field content run to run, which makes
- * evaluation meaningless).
+ * Renders a field's plan: flattens unit requests, groups by provider id
+ * ACROSS units, one `render` call per provider with its whole batch, scatters
+ * results back in PLANNED order, never completion order.
  *
- * `renderPlan` is the ONLY place a `ContentPart` is constructed.
+ * ONLY place a `ContentPart` is constructed.
  *
- * Failure policy: a provider that throws (or an id the plan names but the
- * registry does not carry) is logged and its parts are dropped — one bad
- * provider must not fail the whole field. A unit left with zero parts after
- * that throws: `ContentPartsSchema.min(1)` would reject it downstream
- * anyway, and a silently empty field is worse than a loud error.
- *
- * `runtime.log` is not reachable here (this module sits below `GraphRuntime`),
- * mirroring `medicalBasis/registry.ts`'s `resolveAllFragments` — the caller
- * passes its own `Logger` instead.
+ * Provider throws or unknown id: logged, parts dropped. Unit left with zero
+ * parts throws (empty field is invalid). Caller passes its own `Logger`;
+ * `GraphRuntime` not reachable here.
  */
 export async function renderPlan(
   providers: ModalityProvider<unknown>[],
@@ -54,8 +42,7 @@ export async function renderPlan(
     else byProvider.set(slot.request.provider, [slot]);
   }
 
-  // Pre-sized per unit so a provider failure leaves a sparse (not
-  // shrunk-and-reindexed) array — planned order survives a partial failure.
+  // Pre-sized per unit: failure leaves sparse array, planned order survives.
   const rendered = new Map<string, (ContentPart | undefined)[]>(
     Object.entries(plan).map(([unitKey, requests]) => [
       unitKey,

@@ -22,12 +22,9 @@ import {
 import type { ModalityPlan, ModalityProvider } from "../modality/ports.js";
 
 /**
- * Plans the anamnesis's rendering (issue 21 §1/§5): ONE LLM call that still
- * decides the case content — the Role/Requirements below are the old direct
- * generator's prompt, kept verbatim in substance — but instead of returning
- * prose per category directly, it returns one content unit PER CATALOGUE
- * CATEGORY, each an ORDERED list of render requests. `alt` is authored
- * HERE, by the planner, never by a provider (issue 21 §1).
+ * Plans anamnesis rendering: one LLM call, one content unit per catalogue
+ * category, each an ordered list of render requests. `alt` authored here by
+ * planner, never by a provider.
  */
 export async function planAnamnesis(
   runtime: GraphRuntime,
@@ -37,16 +34,12 @@ export async function planAnamnesis(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<ModalityPlan> {
-  // `undefined` in freeform mode (no configured category catalogue), which
-  // `buildCompositionSchema` turns into a planner-named unit key rather than
-  // a fixed enum — the same freedom `buildAnamnesisFieldSchema()` gave the
-  // old direct generator. Do not substitute a default list here; that would
-  // put opinionated clinical content in code instead of the catalogue.
+  // `undefined` = freeform (no category catalogue): planner names unit keys.
+  // Do not substitute a default list; clinical content belongs in catalogue.
   const categories = runtime.catalogs.anamnesis.list();
   const schema = buildCompositionSchema(providers, categories);
 
-  // User-facing (issue 09 §3): a planned `alt`/instruction both become
-  // user-visible content once rendered.
+  // User-facing: planned `alt`/instruction become user-visible content.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "user-facing",
@@ -137,13 +130,8 @@ ${renderSchemaForPrompt(schema)}`
 }
 
 /**
- * The anamnesis field's TEXT-rendering call (issue 21 §4): renders an
- * entire batch of planner-authored instructions — potentially spanning
- * every category the plan touched — in ONE LLM call. The batching is the
- * whole point of `ModalityProvider.render`'s batch-in/batch-out contract
- * (`modality/ports.ts`): a loop of single calls here would defeat the
- * design. Keeps the old direct generator's tuned patient voice; only the
- * FACTS now arrive via each instruction.
+ * Text rendering for anamnesis: whole batch of planner instructions (all
+ * categories) in ONE LLM call, per `ModalityProvider.render` batch contract.
  */
 export async function renderAnamnesisTexts(
   runtime: GraphRuntime,

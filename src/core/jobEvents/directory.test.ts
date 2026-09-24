@@ -1,7 +1,5 @@
-// #145 — the `JobDirectory` port and its local (in-process) implementation:
-// watch, not collect (never a case), and cancel. `createBufferedWatch` is
-// shared machinery, tested here directly since it has no state of its own
-// beyond what its caller pushes into it.
+// `JobDirectory` local implementation: watch (never a case) and cancel.
+// `createBufferedWatch` tested directly.
 import { describe, expect, it } from "vitest";
 import {
   createBufferedWatch,
@@ -49,8 +47,7 @@ describe("createLocalJobDirectory — watch", () => {
     const result = await directory.watch("job");
     if (result.state !== "active") throw new Error("expected active");
 
-    // Published between `watch()` and `listen()` — must be buffered, not
-    // lost.
+    // Published between `watch()` and `listen()`: must be buffered.
     channel.publish("job", "label", label("job", "started"));
 
     const seen: WatchedEvent[] = [];
@@ -58,7 +55,7 @@ describe("createLocalJobDirectory — watch", () => {
 
     expect(seen.map((e) => e.type)).toEqual(["label"]);
 
-    // Published after `listen()` — delivered live, appended in order.
+    // After `listen()`: delivered live, in order.
     channel.publish("job", "label", label("job", "completed"));
     channel.close("job", { status: "done" });
 

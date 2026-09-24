@@ -31,10 +31,8 @@ export type CaseGenerationResultError = {
 };
 
 /**
- * A job's plan (#159): the outline as the positional segment array. A
- * plan-mode plan is in the request language; a normal-mode plan is always
- * English. The language follows the mode, never the deployment, so a plan
- * handed back needs no language tag.
+ * Outline as positional segment array. Plan-mode plan: request language;
+ * normal-mode plan: always English. No language tag needed on hand-back.
  */
 export type PlanPayload = {
   jobId: string;
@@ -45,31 +43,22 @@ export type PlanPayload = {
 
 export type CaseGenerationResult = {
   jobId: string;
-  /**
-   * `planned` is where a plan-mode request without a plan stops (#159): the
-   * call is over, and the generator keeps nothing of it — `plan` goes to the
-   * requester, who sends it back with the next request.
-   */
+  /** `planned`: plan-mode request without a plan stops here; nothing kept. */
   status: "done" | "planned" | "failed";
   case?: Case;
   plan?: OutlineSegments;
   /**
-   * The language generation actually ran in — the ladder's resolved output
-   * (issue 10 §1), not necessarily `req.language` (which may have been
-   * omitted). Set on success and on a plan stop: a request that fails
-   * before generation runs (e.g. an unresolvable `icd`) never reaches
-   * language resolution. Echoed back to the caller so a client can notice
-   * a wrong auto-detect guess and retry with an explicit `language` (issue
-   * 10 §5).
+   * Language generation ran in (resolved; `req.language` may be omitted).
+   * Set on success and plan stop; absent if failed before resolution. Lets
+   * client spot wrong auto-detect and retry explicitly.
    */
   language?: Language;
   error?: CaseGenerationResultError;
 };
 
 /**
- * A job as {@link CaseGenerationService.start} hands it back: either
- * accepted — its channel is already open, and `result` settles when the
- * call ends — or rejected up front as a duplicate jobId (409).
+ * Accepted (channel already open; `result` settles when call ends) or
+ * rejected up front as duplicate jobId (409).
  */
 export type StartedJob =
   | { accepted: true; jobId: string; result: Promise<CaseGenerationResult> }
@@ -79,37 +68,26 @@ export type StartOptions = {
   /** A generation slot the caller already holds (the NATS worker). */
   slot?: Release;
   /**
-   * Called with a normal-mode job's plan as soon as it exists, while the
-   * case is still being generated (#159). A plan-mode job's plan is its
-   * result instead. Must not throw; a slow listener delays nothing.
+   * Called with a normal-mode job's plan once it exists, mid-generation.
+   * Plan-mode plan is the result instead. Must not throw.
    */
   onPlan?: (plan: PlanPayload) => void;
 };
 
 /**
- * The single seam both transports (rest, nats) call through. Owns what both
- * used to duplicate: ICD→name resolution, jobId minting, `runWithContext`,
- * terminal event emission ("Generation Completed"/"Failure"/"Cancelled"),
- * and error→status mapping. It also owns each job's lifetime on the per-job
- * event channel (`core/jobEvents/`, #139): it opens the channel and closes it
- * with the job's outcome, so every transport sees the same lifecycle whatever
- * door the request came in through. Transports shrink to protocol
- * translation.
+ * Single seam both transports call through. Owns ICD→name resolution, jobId
+ * minting, `runWithContext`, terminal event emission, error→status mapping,
+ * and each job's open/close on the per-job event channel.
  *
- * **Stateless between calls (#159).** A call carries everything it needs —
- * the request, and optionally a plan — and nothing survives it: no job
- * record, no checkpoint, no stored API key. A call without a plan produces
- * one (plan mode stops there; normal mode goes on to the case); a call with
- * a plan skips planning and generates the case from it. Recovering a crashed
- * call is the transport's job: NATS redelivers an unacked request, and a
- * REST client resends.
+ * Stateless between calls: request (plus optional plan) carries everything;
+ * nothing survives. No plan: produce one (plan mode stops, normal mode goes
+ * on to case). With plan: skip planning, generate case. Crash recovery is
+ * transport's job.
  */
 export interface CaseGenerationService {
   /**
-   * Reserve the jobId, open its channel and start the job — all
-   * synchronously, before this returns. A caller can therefore subscribe to
-   * the job's events before any node runs, and learns about a duplicate
-   * before it has committed to a response format (#143).
+   * Reserve jobId, open channel, start job, all synchronously. Caller can
+   * subscribe before any node runs and learns of a duplicate up front.
    */
   start(req: CaseGenerationRequest, opts?: StartOptions): StartedJob;
   /** {@link start}, awaited. */
@@ -125,11 +103,7 @@ export interface CaseGenerationService {
 
 export const DEFAULT_MAX_CONCURRENT_GENERATIONS = 4;
 
-/**
- * How long a translated plan segment is remembered with the English it was
- * translated from (#159). Long enough for a reviewer to come back the same
- * day; a miss only costs one translation.
- */
+/** TTL for translated plan segment → source English. Miss costs one translation. */
 const PLAN_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 const PLAN_CACHE_MAX_ENTRIES = 10_000;
 
@@ -185,11 +159,9 @@ export function createCaseGenerationService(
   bus: EventBus,
   jobEvents: JobEventChannel,
   opts: {
-    /** Bounds generations across every transport (#142). */
+    /** Bounds generations across every transport. */
     maxConcurrent?: number;
-    // Injectable for tests (a spy asserting the diagnosis name is never
-    // passed to it — issue 10 §2); the real `tinyld`-backed detector by
-    // default, constructed here rather than at module scope so nothing
+    // Injectable for tests; default `tinyld` detector, built here so nothing
     // runs at import time.
     detector?: LanguageDetector;
     now?: () => number;
@@ -201,15 +173,13 @@ export function createCaseGenerationService(
   );
   const now = opts.now ?? Date.now;
   const sandwich = graph.config.TRANSLATION_SANDWICH;
-  // One per job, from submission, so a job still queued for a slot can be
-  // cancelled too.
+  // One per job from submission, so queued jobs are cancellable.
   const controllers = new Map<string, AbortController>();
 
   // ─── the plan's round trip ────────────────────────────────────────────────
 
-  // Translated segment → the English it came from (#159). Only the plan's
-  // way out writes it, so an untouched segment comes back as its original
-  // English rather than a re-translation, and only edited ones cost a call.
+  // Translated segment → source English. Written only by plan-out, so an
+  // untouched segment returns as original English; only edited ones cost a call.
   // ponytail: per-replica and in memory — a restart or another replica just
   // translates again; share it (e.g. NATS KV) if that ever shows in cost.
   const planCache = new Map<string, { english: string; expires: number }>();
@@ -275,12 +245,9 @@ export function createCaseGenerationService(
   }
 
   /**
-   * The plan a call was handed, in English, or an {@link InvalidPlanError}.
-   * Its shape is the request schema's check; its skeleton is checked here,
-   * not diffed against anything — the generator never saw this plan before
-   * (#159). The fixed headings are what the
-   * server owns, so they are restored by position rather than trusted from
-   * a translation.
+   * Handed-in plan in English, or {@link InvalidPlanError}. Shape checked by
+   * request schema; skeleton checked here. Fixed headings are server-owned,
+   * restored by position, not trusted from a translation.
    */
   async function englishPlanOf(
     plan: OutlineSegments,
@@ -306,11 +273,9 @@ export function createCaseGenerationService(
     startOpts: StartOptions,
     signal: AbortSignal
   ): Promise<CaseGenerationResult> {
-    // Provenance for the translate-in trigger (issue 12 §3): true only
-    // when the caller actually supplied free text — a diagnosis name
-    // (rather than only an `icd`) or any `userInstructions`. Computed
-    // BEFORE ICD→name resolution below, which would otherwise make an
-    // ICD-only request look identical to a free-text one.
+    // Translate-in trigger: caller supplied a diagnosis name or
+    // `userInstructions`. Compute BEFORE ICD→name resolution, which would
+    // make ICD-only look like free text.
     const callerSuppliedFreeText =
       Boolean(req.diagnosis) ||
       (req.userInstructions !== undefined &&
@@ -329,12 +294,8 @@ export function createCaseGenerationService(
       }
     }
 
-    // The laddered resolver (issue 10 §1) — request normalisation
-    // alongside the ICD→name resolution above, and deliberately run
-    // *before* `runWithContext` binds the language: detection selects
-    // which ports generation binds, and binding happens before invoke, so
-    // a detection step inside the graph could not inform the thing its
-    // answer is for.
+    // Must run before `runWithContext` binds language: detection selects
+    // the ports generation binds.
     const language = await resolveLanguage({
       explicitLanguage: req.language,
       userInstructions: req.userInstructions,
@@ -345,10 +306,8 @@ export function createCaseGenerationService(
       runtime: graph.runtime,
     });
 
-    // A `procedures`-only request needs a presentation for the blinded
-    // solver to reason from, so one is generated internally and projected
-    // back out at the end. See `expandFlagsForSolver` for why the plan
-    // outline is not used instead.
+    // `procedures`-only request: blinded solver needs a presentation, so
+    // generate internally, project out at end. See `expandFlagsForSolver`.
     const generationFlags = expandFlagsForSolver(req.generationFlags);
     const mode = req.mode ?? "normal";
 
@@ -357,8 +316,8 @@ export function createCaseGenerationService(
         const plan =
           req.plan && (await englishPlanOf(req.plan, mode, language));
 
-        // With a plan the plan graph only translates the request in (when
-        // the sandwich needs it) and skips planning (#159).
+        // With a plan, plan graph only translates request in (if sandwich
+        // needs it); planning skipped.
         const planned = await graph.planCase({
           diagnosis: { name: diagnosisName, icd: req.icd },
           generationFlags,
@@ -372,8 +331,7 @@ export function createCaseGenerationService(
 
         if (!plan) {
           if (mode === "plan") {
-            // Plan mode shows the outline even when the judge never
-            // accepted it, and lets the reviewer judge.
+            // Shown even if judge never accepted; reviewer judges.
             return {
               jobId,
               status: "planned",
@@ -383,7 +341,7 @@ export function createCaseGenerationService(
               language,
             };
           }
-          // Normal mode never renders an outline the judge did not accept.
+          // Never render an unaccepted outline.
           if (!planned.outlineAccepted) throw new OutlineNotAcceptedError();
           startOpts.onPlan?.({
             jobId,
@@ -456,9 +414,8 @@ export function createCaseGenerationService(
   ): StartedJob {
     const jobId = req.jobId ?? crypto.randomUUID();
 
-    // A jobId is an idempotency key — a duplicate must never start a
-    // second generation. The one reuse the channel allows is the call that
-    // follows a plan stop with the plan (#159).
+    // jobId is idempotency key: duplicate never starts a second generation.
+    // Only reuse allowed: call following a plan stop, carrying the plan.
     if (!jobEvents.open(jobId)) {
       startOpts.slot?.();
       const active = jobEvents.state(jobId) === "active";
@@ -484,8 +441,7 @@ export function createCaseGenerationService(
       let release = startOpts.slot;
       let finished: CaseGenerationResult;
       try {
-        // Inside the `try` so a cancel while queued maps to
-        // `GENERATION_CANCELLED`.
+        // Inside `try` so cancel while queued maps to `GENERATION_CANCELLED`.
         release ??= await limiter.acquire(controller.signal);
         finished = await run(req, jobId, startOpts, controller.signal);
         if (finished.status === "done") {

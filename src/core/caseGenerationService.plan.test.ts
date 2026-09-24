@@ -1,9 +1,6 @@
-// Plan mode (#159): the generator is stateless between calls. A call
-// without a `plan` stops at `planned` (plan mode) or hands its plan over on
-// the way (normal mode, via `onPlan`); a call with a `plan` skips planning
-// and generates the case from it. The graph is faked at the plan/case seam
-// — `planCase`, `renderCase`, `translateOutline` — so these tests exercise
-// the service's orchestration, not LLM behaviour.
+// Plan mode: no `plan` stops at `planned` (plan mode) or hands plan over via
+// `onPlan` (normal mode); with `plan` skips planning. Graph faked at
+// `planCase`/`renderCase`/`translateOutline`: tests service orchestration only.
 import { describe, expect, it, vi } from "vitest";
 import { EventBus } from "@/core/event-bus.js";
 import {
@@ -22,8 +19,7 @@ import {
 } from "@/core/graph/outline/segments.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
 
-// A full, valid English skeleton (all five fixed sections) so
-// `checkSkeleton` always accepts it.
+// Valid English skeleton (five fixed sections); `checkSkeleton` accepts.
 const OUTLINE: OutlineSegments = [
   { fixed: false, text: "" },
   { fixed: true, text: "## General" },
@@ -45,11 +41,7 @@ type Fake = {
   translateCalls: { values: Record<string, string>; direction: string }[];
 };
 
-/**
- * A graph faked at the plan/case seam. `translateOutline` marks direction
- * so a test can see exactly which segments were translated: out prefixes
- * `DE:`, in replaces it with `EN:`.
- */
+/** Graph faked at plan/case seam. `translateOutline`: out prefixes `DE:`, in swaps it for `EN:`. */
 function fakeGraph(
   opts: { sandwich?: boolean; accepted?: boolean } = {}
 ): Fake {
@@ -178,8 +170,7 @@ describe("normal mode", () => {
       plan: OUTLINE,
     } satisfies PlanPayload);
     expect(fake.renderCalls[0]!.outline).toBe(joinOutline(OUTLINE));
-    // Normal mode never translates the outline shown to a reviewer — there
-    // is no reviewer.
+    // Normal mode: no reviewer, no outline translation.
     expect(fake.translateCalls).toHaveLength(0);
   });
 
@@ -216,9 +207,8 @@ describe("continuation, plan mode + sandwich on", () => {
 
   it("only the edited editable segment is translated in; a fixed heading is restored to English even if it also misses the cache and the translator mangles it", async () => {
     const fake = fakeGraph();
-    // The translator would mangle a fixed heading if it were ever asked to
-    // translate one in — restoreSkeletonHeadings must never let that reach
-    // checkSkeleton.
+    // Translator mangles fixed headings; restoreSkeletonHeadings must keep
+    // that from reaching checkSkeleton.
     fake.graph.translateOutline = vi.fn(
       async (values: Record<string, string>, direction: "out" | "in") => {
         fake.translateCalls.push({ values, direction });
@@ -240,8 +230,7 @@ describe("continuation, plan mode + sandwich on", () => {
 
     const edited = structuredClone(planned.plan!);
     edited[2]!.text = "DE:edited body";
-    // A fixed heading that no longer matches what was cached on the way
-    // out — a cache miss, forcing a translate-in call for it too.
+    // Fixed heading not matching cached one: cache miss, forces translate-in.
     edited[1]!.text = "DE:## General (retyped)";
 
     const result = await service.generate(
@@ -250,17 +239,13 @@ describe("continuation, plan mode + sandwich on", () => {
 
     expect(result.status).toBe("done");
     const inCalls = fake.translateCalls.filter((c) => c.direction === "in");
-    // Only the two segments that missed the cache were sent in for
-    // translation — every unchanged segment came from the cache written on
-    // the way out.
+    // Only the two cache-missing segments translated; rest from cache.
     expect(inCalls).toHaveLength(1);
     expect(inCalls[0]!.values).toEqual({
       "1": "DE:## General (retyped)",
       "2": "DE:edited body",
     });
-    // The mangled translator output for the fixed heading is discarded —
-    // the English skeleton is restored by position, not trusted from
-    // translation.
+    // Mangled heading discarded; English skeleton restored by position.
     expect(fake.planCalls[1]!.outline![1]!.text).toBe("## General");
     const expectedOutline = structuredClone(OUTLINE);
     expectedOutline[2]!.text = "EN:edited body";
@@ -286,9 +271,8 @@ describe("continuation, plan mode + sandwich on", () => {
     const { service } = build(fake);
     const planned = await service.generate(request({ jobId: "cont-4" }));
 
-    // Fewer than the five required fixed sections — restoreSkeletonHeadings
-    // (freeform, no configured categories) refuses to guess and leaves it
-    // unchanged, so checkSkeleton is the one that rejects it.
+    // Fewer than five fixed sections: restoreSkeletonHeadings leaves it
+    // unchanged, checkSkeleton rejects.
     const broken = planned.plan!.slice(0, 5);
 
     const result = await service.generate(
@@ -338,9 +322,8 @@ describe("continuation, sandwich off (any mode)", () => {
 
     const edited = structuredClone(englishPlan);
     edited[2]!.text = "Edited body.";
-    // A fresh jobId: normal mode never stops to free "n1" for reuse — this
-    // models a client that already has the English plan and skips planning
-    // on a new request, not a continuation of the same job.
+    // Fresh jobId: normal mode never frees "n1"; models a client that already
+    // has the English plan, not a continuation.
     const result = await service.generate(
       request({ mode: "normal", jobId: "n2", plan: edited })
     );
@@ -351,7 +334,7 @@ describe("continuation, sandwich off (any mode)", () => {
   });
 });
 
-describe("jobId reuse across a plan stop (#159)", () => {
+describe("jobId reuse across a plan stop", () => {
   it("the same jobId can be started again after a 'planned' stop", async () => {
     const fake = fakeGraph();
     const { service } = build(fake);

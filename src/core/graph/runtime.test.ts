@@ -1,7 +1,5 @@
-// Proves the whole point of the seam: a `GraphRuntime` built entirely from
-// fakes — no real LLM, no filesystem, no SQLite — can run an actual graph
-// node (the tool a LangGraph node calls into) and observe its LLM call
-// count. No repo/persistence import, no network.
+// `GraphRuntime` built from fakes only (no LLM, fs, SQLite, network) can run a
+// graph node's tool and count LLM calls.
 import { describe, expect, it } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import type { GraphRuntime, LlmPort, LlmRole } from "@/core/graph/runtime.js";
@@ -31,12 +29,7 @@ function makeCountingFakeLlmPort(response: string): {
   };
 }
 
-/**
- * Mirrors `createLlmPort`'s resolution order (per-call `llmConfig` overrides
- * the role's resolved default) without any real network/provider — so this
- * proves role plumbing end to end (config resolution through to the exact
- * call site), not just that a role string got passed somewhere.
- */
+/** Mirrors `createLlmPort` resolution (per-call `llmConfig` overrides role default), no network. */
 function makeRoleAwareFakeLlmPort(
   config: Config,
   responses: Partial<Record<LlmRole, string>>
@@ -86,8 +79,7 @@ describe("GraphRuntime with a fake LlmPort", () => {
     expect(result.name).toBe("Influenza");
     expect(callCount()).toBe(1);
 
-    // The translation is now cached on the InMemoryDiagnosisCatalog — a
-    // second call for the same key must not call the LLM again.
+    // Cached on InMemoryDiagnosisCatalog.
     const cached = runtime.catalogs.diagnosis.toEnglish("Grippe", "German");
     expect(cached).toBe("Influenza");
   });
@@ -113,9 +105,7 @@ describe("GraphRuntime with a fake LlmPort", () => {
     );
     await generateSymptomsOneShot(runtime, { name: "Influenza" });
 
-    // Both directions: the judge call used the judge's own model, and the
-    // generator call — despite running after it — was not contaminated by
-    // it and used the general model instead.
+    // Judge uses judge model; later generator call still uses general model.
     expect(calls).toEqual([
       { role: "judge", model: "judge-model" },
       { role: "generator", model: "general-model" },

@@ -11,19 +11,10 @@ import type {
 const SOURCE_ID = "umls-symptoms";
 
 /**
- * Migrated verbatim from the former `02case-generation/01symptom/`
- * `symptoms_resolve` node (issue 14): reads the static UMLS floor for the
- * diagnosis's ICD code (`symptomsRepo.SymptomsRelatedToDiagnosisIcd`), then
- * resolves LLM-generated additions cache-aside with the same TTL — a fresh
- * cache hit skips the LLM entirely, and a diagnosis without an ICD code is
- * never cached. Same log lines as the old node, prefixed for this slice.
- *
- * Collapses the resulting symptom union into a single fragment instead of
- * returning it on graph state.
- *
- * Receives the full `RequestContext` — not just an abort signal — because a
- * cold cache miss makes an LLM call, and under `ALLOW_LLMS` the request's
- * `llmConfig` is the only source of provider/model. See `../ports.ts`.
+ * Static UMLS floor for the diagnosis's ICD code, unioned with LLM-generated
+ * additions (cache-aside; fresh hit skips LLM; no ICD code = never cached).
+ * Collapsed into one fragment. Needs full `RequestContext` for `llmConfig`
+ * on cache miss. See `../ports.ts`.
  */
 export function createUmlsSymptomProvider(
   runtime: GraphRuntime,
@@ -72,9 +63,7 @@ export function createUmlsSymptomProvider(
         symptoms = [...umls, ...generated];
       }
 
-      // Always emits exactly one fragment — even with an empty symptom list
-      // — mirroring the old node's unconditional `{ symptoms: [...] }`
-      // return, so the rendered section's presence never depends on content.
+      // Always one fragment, even with empty symptoms: section presence never depends on content.
       return [
         {
           sourceId: SOURCE_ID,

@@ -1,10 +1,4 @@
-// Smoke test for the test harness itself (issue 00). Do NOT import anything
-// under `src/core/graph/persistence/` from a test — those modules do
-// filesystem and SQLite work at module scope (see `persistence/db.ts`,
-// `symptoms/repo.ts`, and the module-scope `createTranslationStore(...)`
-// calls in `catalog/procedures/repo.ts` / `catalog/anamnesis/repo.ts` /
-// `catalog/labels/repo.ts`). Issues 01 and 04 move that behind constructors;
-// until then, keep tests to pure modules like this one.
+// Pure-module tests: no persistence imports.
 import { describe, expect, it } from "vitest";
 
 import {
@@ -63,10 +57,8 @@ describe("renderUserInstructions", () => {
   });
 });
 
-// Issue 09 §3/§6: the language directive is appended only for
-// `"user-facing"` prompts, only when a foreign language is bound, and never
-// when `runtime.languageOverride` forces English (the sandwich-on binding —
-// see `GraphRuntime.languageOverride`, `runtime.ts`).
+// Language directive only for `"user-facing"` prompts with a foreign language
+// bound, never when `runtime.languageOverride` forces English.
 describe("buildSystemPrompt", () => {
   const fakeRuntime: GraphRuntime = {
     llm: {

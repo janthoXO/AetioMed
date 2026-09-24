@@ -10,14 +10,9 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 const TextInputSchema = z.object({ instruction: z.string().min(1) });
 
 /**
- * The procedure-result field's registry (issue 21 §4/§7): today, exactly one
- * provider — a thin adapter over `renderProcedureResultTexts`
- * (`03aigateway/procedures.aigateway.ts`), which is where the prompt and the
- * LLM call actually live, per the numbered-layer rule. It calls that gateway
- * function ONCE with the whole batch it was handed — `render_results`
- * (`03procedure/index.ts`) flattens every planned part across EVERY
- * procedure before calling `renderPlan`, so this one call covers the whole
- * case's procedure results, not one call per procedure.
+ * Procedure-result registry: one text provider, thin adapter over
+ * `renderProcedureResultTexts` (prompt + LLM live there). One gateway call
+ * per batch; `render_results` batches all procedures.
  */
 export function createProcedureResultProviders(
   runtime: GraphRuntime

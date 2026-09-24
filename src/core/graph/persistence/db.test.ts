@@ -1,17 +1,13 @@
-// Issue 18's direct regression test: `createDb` used to register `SIGINT`,
-// `SIGTERM` and `beforeExit` handlers itself, and — because it runs during
-// `initGraph`, before any transport starts — its handler's synchronous
-// `process.exit(0)` ran first and silently killed the process before a
-// transport's own shutdown ever got a turn. Shutdown is now owned entirely
-// by the composition root (`src/shutdown.ts`); this asserts `createDb`
-// contributes no process listener at all, not just that it fires last.
+// `createDb` must register no process listeners (SIGINT/SIGTERM/beforeExit):
+// its synchronous `process.exit(0)` would run before transports shut down.
+// Shutdown belongs to the composition root (`src/shutdown.ts`).
 import { afterAll, describe, expect, it } from "vitest";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createDb, type DbHandle } from "./db.js";
 
-describe("createDb registers no process listeners (issue 18)", () => {
+describe("createDb registers no process listeners", () => {
   let dbHandle: DbHandle | undefined;
   let tmpDir: string | undefined;
 

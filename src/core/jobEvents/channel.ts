@@ -1,17 +1,10 @@
-// The per-job event channel (#139). Core owns it; every transport is an
-// adapter that subscribes to it. It used to live in `src/tracing/` behind a
-// single-slot `registerJobHook`, which is why only the SSE adapter ever
-// attached and a NATS client had no progress channel at all.
+// Per-job event channel. Core owns it; transports subscribe.
 import type { LabelEvent } from "./labels.js";
 
 /**
- * Every event type the channel carries, keyed by name. Filled by module
- * augmentation, the same way `EventBus`'s `EventMap` is: a producer module
- * declares its own event type here without the channel importing it.
- *
- * One name means the same thing on every wire. It is the SSE `event:` name
- * on REST and the last subject token on NATS
- * (`cases.progress.<jobId>.<name>`), so no adapter needs a mapping table.
+ * Event types by name. Extendable by module augmentation, like `EventBus`'s
+ * `EventMap`. Name is the SSE `event:` name on REST and last subject token on
+ * NATS (`cases.progress.<jobId>.<name>`); no mapping table.
  */
 export interface JobEventMap {
   /** The job was accepted and its channel opened. Always the first event. */
@@ -31,9 +24,8 @@ export type JobEvent = {
 export type JobAcceptedEvent = { jobId: string; timestamp: string };
 
 /**
- * `planned`: a plan-mode call stopped at its plan (#159). The job is over
- * here — the case comes from a later call that carries the plan, which may
- * reuse this jobId (see {@link JobEventChannel.open}).
+ * `planned`: plan-mode call stopped at its plan. Job over; a later call
+ * carrying the plan may reuse this jobId (see {@link JobEventChannel.open}).
  */
 export type JobOutcome =
   | { status: "done" }
@@ -41,11 +33,7 @@ export type JobOutcome =
   | { status: "cancelled" }
   | { status: "failed"; error: { code: string; message: string } };
 
-/**
- * A terminal marker, deliberately **without** the case: an observer of a
- * job is not its requester, and the result only goes back to the requester
- * (#145, "watch, not collect").
- */
+/** Terminal marker, **without** the case: observers are not the requester. */
 export type JobCompleteEvent = {
   jobId: string;
   timestamp: string;
@@ -66,14 +54,10 @@ export type JobPeek =
 
 export interface JobEventChannel {
   /**
-   * Reserve `jobId` and open its channel. Returns `false` if the id is
-   * already in use: still running, or finished within the last
-   * {@link TOMBSTONE_MS}. A jobId is an idempotency key, so a retry of a
-   * finished job must not start a second generation either — except after a
-   * `planned` stop, whose continuation carries the same jobId (#159), and
-   * after `cancelled`, which is also how a REST call ends when its
-   * connection drops — the client's resend of that call must be able to run
-   * (#159). Such a job is forgotten and the id opened afresh.
+   * Reserve `jobId`, open channel. `false` if id in use: running, or
+   * finished within {@link TOMBSTONE_MS} (jobId is idempotency key). Exempt:
+   * `planned` (continuation reuses jobId) and `cancelled` (REST disconnect
+   * resend must run). Those are forgotten and id reopened.
    */
   open(jobId: string): boolean;
   /** Deliver an event to the job's subscribers. Dropped if the job is not active. */
@@ -85,15 +69,13 @@ export interface JobEventChannel {
   /** The job reached a terminal state: publish `complete` and stop accepting events. */
   close(jobId: string, outcome: JobOutcome): void;
   /**
-   * Subscribe to one job. Answers and subscribes in one step, so no event
-   * can be lost between checking the state and attaching. A terminal job
-   * hands back its `complete` event instead of a subscription.
+   * Subscribe to one job. State check and attach are one step; no event
+   * lost. Terminal job returns its `complete` event instead.
    */
   subscribe(jobId: string, listener: JobListener): SubscribeResult;
   /**
-   * Subscribe to every job. A transport that forwards all jobs (the NATS
-   * progress publisher) uses this. It does not count as a consumer of any
-   * one job, so it never holds a job's resources open.
+   * Subscribe to every job (NATS progress publisher). Not a consumer of any
+   * one job; never holds resources open.
    */
   subscribeAll(listener: GlobalJobListener): () => void;
   /** Whether a job is running, finished recently, or was never seen here. */
@@ -103,18 +85,15 @@ export interface JobEventChannel {
 }
 
 /**
- * A fallback for a consumer that never disconnects (a hung connection, a
- * proxy that swallows the FIN). It is the backstop, not the mechanism. The
- * mechanism is {@link maybeTeardown}: a job's listeners are released the
- * moment it is terminal **and** its last subscriber has gone (issue 15 §2).
+ * Backstop for a consumer that never disconnects. Normal teardown is
+ * {@link maybeTeardown}: terminal **and** last subscriber gone.
  */
 export const BACKSTOP_MS = 5 * 60 * 1000;
 
 /**
- * How long a finished job is remembered after teardown: its `complete`
- * event, nothing else. This is what lets "finished" and "never existed" get
- * different answers (#145), and what makes a reused jobId a detectable
- * duplicate. It is not a result store (#143).
+ * How long a finished job's `complete` event is kept after teardown.
+ * Distinguishes "finished" from "never existed"; makes reused jobId a
+ * detectable duplicate. Not a result store.
  */
 export const TOMBSTONE_MS = 10 * 60 * 1000;
 
@@ -125,9 +104,8 @@ interface JobState {
 }
 
 /**
- * Build a channel. Constructed once by the composition root (`app.ts`) and
- * handed to `CaseGenerationService` and to every transport. It is an
- * instance, not a module singleton, so tests get one each.
+ * Build a channel. One instance from `app.ts`, shared by service and
+ * transports; not a singleton.
  */
 export function createJobEventChannel(): JobEventChannel {
   const jobs = new Map<string, JobState>();
@@ -137,8 +115,8 @@ export function createJobEventChannel(): JobEventChannel {
   >();
   const globalListeners = new Set<GlobalJobListener>();
 
-  // A throwing adapter must not break the other adapters, or the node that
-  // emitted the event (`publish` runs inside `traceNode`'s bus emit).
+  // Throwing listener must not break others or the emitting node
+  // (`publish` runs inside `traceNode`'s bus emit).
   function deliver(jobId: string, state: JobState, event: JobEvent): void {
     for (const listener of [...state.listeners]) {
       try {

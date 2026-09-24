@@ -1,7 +1,5 @@
-// Covers §4/§6 of the medical-basis registry work: the basis section must
-// never reach the system message, and the "select a subset" instruction
-// that used to live inside the (now provider-owned) symptom data must live
-// in the plan's own system-prompt instructions instead.
+// Basis section never reaches system message; "select a subset" instruction
+// lives in plan's own system prompt.
 import { describe, expect, it } from "vitest";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
@@ -118,7 +116,7 @@ describe("generateCaseOutline prompt shape", () => {
   });
 });
 
-describe("generateCaseOutline skeleton (#159)", () => {
+describe("generateCaseOutline skeleton", () => {
   it("returns the outline as positional segments, fixed headings at odd indices", async () => {
     const model = new CapturingChatModel(taggedOutlineFixture());
     const segments = await generateCaseOutline(

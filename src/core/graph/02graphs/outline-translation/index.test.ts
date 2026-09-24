@@ -1,7 +1,5 @@
-// Issue #159: plan mode's outline translation is two small single-node
-// graphs, not a shared one — these tests exercise the compiled graphs
-// (`buildOutlineTranslationGraph`) end to end with a fake LLM, mirroring
-// `03case-translation-from-english/index.test.ts`'s style.
+// Plan mode's outline translation: two single-node graphs. Tests drive compiled graphs
+// (`buildOutlineTranslationGraph`) with fake LLM; style of `03case-translation-from-english/index.test.ts`.
 import { describe, expect, it } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {

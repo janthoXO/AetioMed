@@ -1,7 +1,4 @@
-// #145 — `selectJobDirectory`: with both `REST` and `NATS` enabled, REST
-// rides NATS for its job directory; otherwise (or if NATS failed to
-// connect) it falls back to the in-process one. A pure function, tested
-// directly rather than through `createApp()`.
+// `selectJobDirectory`: pure function, tested directly, not via `createApp()`.
 import { describe, expect, it, vi } from "vitest";
 import { selectJobDirectory } from "./app.js";
 import {
@@ -19,7 +16,7 @@ function fakeNats() {
   return createNatsJobDirectory({} as NatsConnection);
 }
 
-describe("selectJobDirectory (#145)", () => {
+describe("selectJobDirectory", () => {
   it("features {REST} → local", () => {
     const local = fakeLocal();
     const result = selectJobDirectory({

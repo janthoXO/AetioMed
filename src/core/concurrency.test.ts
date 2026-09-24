@@ -73,7 +73,7 @@ describe("createLimiter", () => {
     expect(limiter.active).toBe(1);
     expect(limiter.waiting).toBe(0);
 
-    // No third waiter should have been granted by the extra release.
+    // Extra release must not grant a third waiter.
     const p3 = limiter.acquire();
     let grantedThird = false;
     void p3.then(() => (grantedThird = true));
@@ -96,8 +96,7 @@ describe("createLimiter", () => {
     await expect(pending).rejects.toMatchObject({ name: "AbortError" });
     expect(limiter.waiting).toBe(0);
 
-    // The slot is still held by release1; releasing it now should grant a
-    // fresh waiter rather than the aborted one.
+    // Slot still held by release1; releasing grants fresh waiter, not aborted one.
     let granted = false;
     const p2 = limiter.acquire().then((release) => {
       granted = true;

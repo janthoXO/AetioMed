@@ -1,6 +1,4 @@
-// Assembly is pure wiring, so these tests need no LLM, no filesystem and no
-// SQLite — just a minimal runtime and no-op repos, mirroring the stand-ins
-// `exportGraphs.ts` already uses for the same reason.
+// Assembly is pure wiring: minimal runtime and no-op repos, no LLM/filesystem/SQLite; same stand-ins as `exportGraphs.ts`.
 import { describe, expect, it, vi } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {
@@ -107,7 +105,7 @@ function buildDeps(
   };
 }
 
-/** Every node id across both top-level graphs (#159). */
+/** Every node id across both top-level graphs. */
 async function allNodeIds(graphs: CompiledCaseGraphs): Promise<string[]> {
   return [
     ...(await nodeIds(graphs.plan)),
@@ -129,12 +127,9 @@ const flags = (
   procedurePreselection: boolean
 ): GraphFlags => ({ translationSandwich, procedurePreselection });
 
-// Issue 17 §1/§3.2: the three phase-level graphs that have no dedicated
-// test file of their own — `chiefComplaintGraph`/`anamnesisGraph`/
-// `buildProcedureGraph`/`buildCaseTranslationFromEnglishGraph` each assert
-// their own `outputChannels` in their own test files.
-describe("phase-level graphs — output surface (issue 17 §1)", () => {
-  it("presentation_phase (buildFieldGenerationGraph) writes back only `case` — the outline is input (#159)", async () => {
+// Phase-level graphs with no dedicated test file. Subgraphs assert their own `outputChannels` in their own tests.
+describe("phase-level graphs — output surface", () => {
+  it("presentation_phase (buildFieldGenerationGraph) writes back only `case` — the outline is input", async () => {
     const deps = buildDeps();
     const graph = buildFieldGenerationGraph(
       deps.runtime,
@@ -156,7 +151,7 @@ describe("phase-level graphs — output surface (issue 17 §1)", () => {
     expect([...graph.outputChannels].sort()).toEqual(["case"]);
   });
 
-  it("planning_phase (buildPlanningPhaseGraph) writes back the outline, the verdict and the basis — never `case` (#159)", async () => {
+  it("planning_phase (buildPlanningPhaseGraph) writes back the outline, the verdict and the basis — never `case`", async () => {
     const deps = buildDeps();
     const graph = buildPlanningPhaseGraph(
       deps.runtime,
@@ -183,7 +178,7 @@ describe("phase-level graphs — output surface (issue 17 §1)", () => {
   });
 });
 
-describe("plan graph — outline and judge loop (#159)", () => {
+describe("plan graph — outline and judge loop", () => {
   function scriptedRuntime(generator: string[], judge: string[]): GraphRuntime {
     const bus = new EventBus();
     return {
@@ -285,8 +280,7 @@ describe("assembleCaseGraphs", () => {
   });
 
   it("keeps the per-request `procedures` branch in every variant", async () => {
-    // `generationFlags` is per-request, so the procedure phase must never be
-    // compiled away — that is the other half of the compile-vs-branch rule.
+    // `generationFlags` is per-request: procedure phase never compiled away.
     for (const f of ALL_GRAPH_FLAGS) {
       const ids = await allNodeIds(assembleCaseGraphs(buildDeps(), f));
       expect(
@@ -313,7 +307,7 @@ describe("assembleCaseGraphs", () => {
     expect(ids.some((id) => id.includes("basis_resolve"))).toBe(true);
   });
 
-  it("rejects an empty chief-complaint modality registry at assembly time (issue 21 §7)", () => {
+  it("rejects an empty chief-complaint modality registry at assembly time", () => {
     expect(() =>
       assembleCaseGraphs(
         buildDeps(undefined, {
@@ -326,7 +320,7 @@ describe("assembleCaseGraphs", () => {
     ).toThrow(/modality registry is empty/i);
   });
 
-  it("rejects an empty anamnesis modality registry at assembly time (issue 21 §7)", () => {
+  it("rejects an empty anamnesis modality registry at assembly time", () => {
     expect(() =>
       assembleCaseGraphs(
         buildDeps(undefined, {
@@ -339,7 +333,7 @@ describe("assembleCaseGraphs", () => {
     ).toThrow(/modality registry is empty/i);
   });
 
-  it("rejects an empty procedure-result modality registry at assembly time (issue 21 §7)", () => {
+  it("rejects an empty procedure-result modality registry at assembly time", () => {
     expect(() =>
       assembleCaseGraphs(
         buildDeps(undefined, {
@@ -352,7 +346,7 @@ describe("assembleCaseGraphs", () => {
     ).toThrow(/modality registry is empty/i);
   });
 
-  it("compiles the outline translation graphs only with the sandwich (#159)", async () => {
+  it("compiles the outline translation graphs only with the sandwich", async () => {
     const off = assembleCaseGraphs(buildDeps(), flags(false, false));
     expect(off.outlineOut).toBeUndefined();
     expect(off.reviewIn).toBeUndefined();
@@ -363,10 +357,8 @@ describe("assembleCaseGraphs", () => {
   });
 
   it("gives the two preselection variants of a topology identical shapes", async () => {
-    // This is the premise `exportGraphs.ts` rests on when it writes two
-    // diagrams instead of four: PROCEDURE_PRESELECTION swaps a strategy
-    // adapter, it does not change topology. If this ever fails, the export
-    // loop needs to grow back to four.
+    // Premise of `exportGraphs.ts`'s two diagrams: PROCEDURE_PRESELECTION swaps strategy adapter, not topology.
+    // On failure, export loop must grow to four.
     const deps = buildDeps();
     for (const sandwich of [false, true]) {
       const off = await allNodeIds(
@@ -380,19 +372,15 @@ describe("assembleCaseGraphs", () => {
   });
 });
 
-describe("language routing reads ALS, never graph state (issue 09 §2)", () => {
-  // The fake runtime's `llm.for()` throws (see `buildDeps`), so a full
-  // generation always fails partway through — that's fine here, we only
-  // care which nodes started *before* the throw, via "Node Started" bus
-  // events, not whether generation completes.
+describe("language routing reads ALS, never graph state", () => {
+  // Fake `llm.for()` throws (see `buildDeps`): full generation fails partway. Only nodes started before
+  // the throw matter, via "Node Started" bus events.
   async function startedNodes(opts: {
     /** Bound on ALS, via `runWithContext` — the real read path. */
     alsLanguage?: string;
     /** Passed as an (unschemad) extra key on the invoke input — must be a no-op. */
     stateLanguage?: string;
-    /** Provenance for the translate-**in** edge (issue 12 §3). Defaults to
-     * `true` so the pre-existing tests below, written before that trigger
-     * existed, keep exercising the translate-in phase on a German request. */
+    /** Provenance for translate-in edge. Defaults to `true` so German requests exercise translate-in. */
     callerSuppliedFreeText?: boolean;
   }): Promise<string[]> {
     const bus = new EventBus();
@@ -411,10 +399,8 @@ describe("language routing reads ALS, never graph state (issue 09 §2)", () => {
             generationFlags: ["patient"],
             difficulty: "medium",
             callerSuppliedFreeText: opts.callerSuppliedFreeText ?? true,
-            // Excess key: `PlanStateSchema` has no `language` field, so
-            // LangGraph's input-channel filtering must drop this silently —
-            // proving routing cannot be driven by state even if a caller
-            // tried to.
+            // Excess key: `PlanStateSchema` has no `language` field; input filtering must drop it silently,
+            // so state cannot drive routing.
             ...(opts.stateLanguage !== undefined
               ? { language: opts.stateLanguage }
               : {}),
@@ -457,10 +443,9 @@ describe("language routing reads ALS, never graph state (issue 09 §2)", () => {
   });
 });
 
-describe("translate-in trigger reads provenance, not just language (issue 12 §3)", () => {
+describe("translate-in trigger reads provenance, not just language", () => {
   it("a German request with callerSuppliedFreeText enters translate-to-English", async () => {
-    // Re-exercises the routing predicate directly (rather than relying on
-    // the default in `startedNodes` above), naming the fix explicitly.
+    // Exercises routing predicate directly, not via `startedNodes` default.
     const bus = new EventBus();
     const started: string[] = [];
     bus.on("Node Started", (e) => started.push(e.node));
@@ -529,9 +514,8 @@ describe("translate-in trigger reads provenance, not just language (issue 12 §3
     expect(started).not.toContain(
       "translation_to_english_phase:translate_diagnosis"
     );
-    // Assert on the translation store itself, not just call counts on a
-    // mock — this is the store the old `language !== "English"` predicate
-    // used to pollute with `German: { "Influenza": "Influenza" }`.
+    // Assert on translation store itself, not mock call counts: predicate must not pollute it with
+    // identity entries like `German: { "Influenza": "Influenza" }`.
     expect(saveTranslations).not.toHaveBeenCalled();
     expect(diagnosisCatalog.toEnglish("Influenza", "German")).toBeUndefined();
   });

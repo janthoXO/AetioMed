@@ -1,7 +1,4 @@
-// Drives the compiled `chiefComplaintGraph` directly (no outer Send/fan-in,
-// no filesystem, no real LLM) — mirrors the house style in
-// `03procedure/index.test.ts`: a fake `LlmPort` that throws the moment
-// something calls it that a test did not script.
+// Drives compiled `chiefComplaintGraph` directly (no Send, filesystem, real LLM); fake `LlmPort` throws on anything unscripted.
 import { describe, expect, it } from "vitest";
 import z from "zod";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
@@ -107,7 +104,7 @@ function buildGraph(
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe("chiefComplaintGraph — output surface (issue 17 §1)", () => {
+describe("chiefComplaintGraph — output surface", () => {
   it("writes back only `case`, not the whole state schema, at either registry size", () => {
     const single = buildGraph(makeQueuedLlmPort({}), [textProvider()]);
     const multi = buildGraph(makeQueuedLlmPort({}), [
@@ -120,7 +117,7 @@ describe("chiefComplaintGraph — output surface (issue 17 §1)", () => {
   });
 });
 
-describe("chiefComplaintGraph — node shape (issue 21 §7: no registry-size branching)", () => {
+describe("chiefComplaintGraph — node shape (no registry-size branching)", () => {
   it("rejects an empty registry immediately, at build time", () => {
     expect(() => buildGraph(makeQueuedLlmPort({}), [])).toThrow(
       EmptyModalityRegistryError

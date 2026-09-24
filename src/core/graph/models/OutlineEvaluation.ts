@@ -1,11 +1,6 @@
 import z from "zod";
 
-/**
- * Result of judging a case blueprint on both quality dimensions at once:
- * obviousness (does it telegraph the diagnosis beyond what the requested
- * difficulty permits?) and clinical consistency (coherence, realism,
- * diagnosis secrecy).
- */
+/** Judge result on two dimensions at once: obviousness (telegraphs diagnosis beyond difficulty?) and clinical consistency (coherence, realism, diagnosis secrecy). */
 export const OutlineEvaluationSchema = z.object({
   accepted: z
     .boolean()

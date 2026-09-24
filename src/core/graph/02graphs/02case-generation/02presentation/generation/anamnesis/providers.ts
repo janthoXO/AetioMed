@@ -9,15 +9,7 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 
 const TextInputSchema = z.object({ instruction: z.string().min(1) });
 
-/**
- * The anamnesis field's registry (issue 21 §4): today, exactly one
- * provider — a thin adapter over `renderAnamnesisTexts`
- * (`03aigateway/anamnesis.aigateway.ts`), which is where the prompt and the
- * LLM call actually live, per the numbered-layer rule. It calls that
- * gateway function ONCE with the whole batch it was handed — one LLM call
- * for every category's instruction the plan produced, not one call per
- * category, which is the batching property this design exists for.
- */
+/** Anamnesis registry: one text provider, thin adapter over `renderAnamnesisTexts` (`03aigateway/anamnesis.aigateway.ts`; prompt and LLM call live there). Calls it ONCE with whole batch, not per category. */
 export function createAnamnesisProviders(
   runtime: GraphRuntime
 ): ModalityProvider<unknown>[] {

@@ -25,23 +25,13 @@ const ChiefComplaintGraphStateSchema = CaseGenerationStateSchema.pick({
   case: true,
 }).extend({
   outline: z.string(),
-  // Content-unit key -> its ORDERED planned render requests (issue 21 §1):
-  // replaces the old `contentUnits`/`modalityPlan` pair now that planning
-  // happens BEFORE any prose is generated, not after.
+  // Content-unit key -> ORDERED planned render requests.
   plan: z.record(z.string(), z.array(PlannedPartSchema)).default({}),
 });
 
 type ChiefComplaintGraphState = z.infer<typeof ChiefComplaintGraphStateSchema>;
 
-// This graph is `addNode`'d into `buildFieldGenerationGraph` alongside
-// `anamnesisGraph`, fanned out in parallel by `Send` from `outline_evaluate`
-// (issue 17 §0/§1). A compiled subgraph writes back its ENTIRE state schema
-// unless told otherwise, so without an explicit `output` here, the parallel
-// fan-out makes `diagnosis`, `userInstructions` and `outline` each receive
-// two values in one superstep — `LastValue` channels, which accept exactly
-// one, so LangGraph throws `INVALID_CONCURRENT_GRAPH_UPDATE`. `.pick()` off
-// this graph's own state schema (not a hand-written duplicate) so the
-// picked `case` channel keeps the identical reducer registration.
+// Mounted in `buildFieldGenerationGraph`, `Send`-fanned in parallel with `anamnesisGraph`. Subgraph writes back ENTIRE state unless `output` set; parallel writes to `diagnosis`/`userInstructions`/`outline` (`LastValue`) throw `INVALID_CONCURRENT_GRAPH_UPDATE`. `.pick()` off own state schema keeps reducer registration.
 const ChiefComplaintOutputSchema = ChiefComplaintGraphStateSchema.pick({
   case: true,
 });
@@ -88,31 +78,11 @@ function makeRenderParts(
 }
 
 /**
- * `chiefComplaintGraph`: `plan_content` (one LLM call planning an ORDERED
- * list of render requests per content unit — here, always exactly one,
- * keyed `"chiefComplaint"`) → `render_parts` (groups every planned request
- * by provider id, calls each provider's `render` once with its whole batch,
- * and reassembles the result in PLANNED order, not completion order — see
- * `modality/pipeline.ts`'s `renderPlan`).
+ * `plan_content` (one LLM call planning ORDERED render requests per unit; here always one, key `"chiefComplaint"`) → `render_parts` (groups requests by provider id, one `render` per provider with whole batch, results in PLANNED order; see `modality/pipeline.ts`'s `renderPlan`).
  *
- * No registry-size branching (issue 21 §1/§7): the planner always runs, for
- * every field, even when the field's registry holds a single text
- * provider — a deliberate, accepted extra LLM call per field per request in
- * exchange for one uniform shape. The only registry check left is empty ⇒
- * `EmptyModalityRegistryError`, at build time — zero capability is not a
- * compilable shape at all.
+ * No registry-size branching: planner always runs. Empty registry ⇒ `EmptyModalityRegistryError` at build time.
  *
- * Known limitation, recorded rather than fixed here (issue 13 §6, still
- * true under the planner): rendering runs INSIDE this subgraph, i.e. before
- * translate-out. With the translation sandwich on, a modality is rendered
- * from an ENGLISH plan, and its bytes are never translated — only `alt` is
- * (issue 12). Fine for a plain-text part (the only kind that exists today);
- * not fine for an image with burnt-in annotations, speech, or any
- * rendering where meaning lives in the bytes rather than the retained
- * `alt`. The fix is a real future change — move rendering to a
- * post-translation phase — and it stays a *move*, not a rewrite, only
- * because `plan_content` and `render_parts` are distinct nodes here. Do not
- * collapse them into one node to "simplify" this graph.
+ * Limitation: rendering runs before translate-out. Sandwich on: modality rendered from ENGLISH plan, bytes never translated, only `alt`. Fine for text; not for image with burnt-in text or speech. Keep `plan_content`/`render_parts` separate so rendering can move post-translation.
  */
 export function buildChiefComplaintGraph(
   runtime: GraphRuntime,

@@ -145,15 +145,14 @@ function planResponse(
   finding: string
 ) {
   return JSON.stringify({
-    plans: [
-      {
-        key,
+    plans: {
+      [key]: {
         requests: [
           { provider: "text", input: { instruction: finding }, alt: finding },
         ],
         relevance,
       },
-    ],
+    },
   });
 }
 

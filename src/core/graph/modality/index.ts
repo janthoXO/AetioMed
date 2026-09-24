@@ -12,5 +12,10 @@ export {
   type ModalityField,
   type ModalityRegistries,
 } from "./registry.js";
-export { describeProviders, buildCompositionSchema } from "./composition.js";
+export {
+  describeProviders,
+  buildCompositionSchema,
+  buildUnitPlanSchema,
+  plansByKey,
+} from "./composition.js";
 export { renderPlan } from "./pipeline.js";

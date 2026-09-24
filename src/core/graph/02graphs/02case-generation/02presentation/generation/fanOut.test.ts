@@ -83,9 +83,8 @@ describe("chief_complaint_generate + anamnesis_generate fanned out together", ()
       generator: [
         // chief_complaint_generate's plan_content
         JSON.stringify({
-          plans: [
-            {
-              key: "chiefComplaint",
+          plans: {
+            chiefComplaint: {
               requests: [
                 {
                   provider: "text",
@@ -94,13 +93,12 @@ describe("chief_complaint_generate + anamnesis_generate fanned out together", ()
                 },
               ],
             },
-          ],
+          },
         }),
         // anamnesis_generate's plan_content
         JSON.stringify({
-          plans: [
-            {
-              key: "History",
+          plans: {
+            History: {
               requests: [
                 {
                   provider: "text",
@@ -109,7 +107,7 @@ describe("chief_complaint_generate + anamnesis_generate fanned out together", ()
                 },
               ],
             },
-          ],
+          },
         }),
       ],
     });
@@ -173,9 +171,8 @@ describe("chief_complaint_generate + anamnesis_generate fan-out labels", () => {
     const llm = makeQueuedLlmPort({
       generator: [
         JSON.stringify({
-          plans: [
-            {
-              key: "chiefComplaint",
+          plans: {
+            chiefComplaint: {
               requests: [
                 {
                   provider: "text",
@@ -184,12 +181,11 @@ describe("chief_complaint_generate + anamnesis_generate fan-out labels", () => {
                 },
               ],
             },
-          ],
+          },
         }),
         JSON.stringify({
-          plans: [
-            {
-              key: "History",
+          plans: {
+            History: {
               requests: [
                 {
                   provider: "text",
@@ -198,7 +194,7 @@ describe("chief_complaint_generate + anamnesis_generate fan-out labels", () => {
                 },
               ],
             },
-          ],
+          },
         }),
       ],
     });

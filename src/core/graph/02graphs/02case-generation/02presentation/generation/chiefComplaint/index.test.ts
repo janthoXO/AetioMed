@@ -150,9 +150,8 @@ describe("chiefComplaintGraph — single-provider registry", () => {
       generator: [
         // plan_content
         JSON.stringify({
-          plans: [
-            {
-              key: "chiefComplaint",
+          plans: {
+            chiefComplaint: {
               requests: [
                 {
                   provider: "text",
@@ -161,7 +160,7 @@ describe("chiefComplaintGraph — single-provider registry", () => {
                 },
               ],
             },
-          ],
+          },
         }),
         // render_parts (the text provider's own LLM call, scripted directly
         // since this test's fake provider does not itself call the LLM —
@@ -195,9 +194,8 @@ describe("chiefComplaintGraph — single-provider registry", () => {
     const llm = makeQueuedLlmPort({
       generator: [
         JSON.stringify({
-          plans: [
-            {
-              key: "chiefComplaint",
+          plans: {
+            chiefComplaint: {
               requests: [
                 {
                   provider: "text",
@@ -206,7 +204,7 @@ describe("chiefComplaintGraph — single-provider registry", () => {
                 },
               ],
             },
-          ],
+          },
         }),
       ],
     });
@@ -261,15 +259,14 @@ describe("chiefComplaintGraph — multi-provider registry: planned order, not co
     const llm = makeQueuedLlmPort({
       generator: [
         JSON.stringify({
-          plans: [
-            {
-              key: "chiefComplaint",
+          plans: {
+            chiefComplaint: {
               requests: [
                 { provider: "slow", input: "slow input", alt: "slow alt" },
                 { provider: "fast", input: "fast input", alt: "fast alt" },
               ],
             },
-          ],
+          },
         }),
       ],
     });

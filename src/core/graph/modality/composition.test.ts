@@ -1,6 +1,11 @@
 import { describe, expect, it } from "vitest";
 import z from "zod";
-import { buildCompositionSchema, describeProviders } from "./composition.js";
+import {
+  buildCompositionSchema,
+  buildUnitPlanSchema,
+  describeProviders,
+  plansByKey,
+} from "./composition.js";
 import type { ModalityProvider } from "./ports.js";
 
 function textProvider(id = "text"): ModalityProvider<unknown> {
@@ -38,14 +43,13 @@ describe("buildCompositionSchema", () => {
   it("accepts a single-provider registry — zod v4's discriminatedUnion does not reject a one-element option array", () => {
     const schema = buildCompositionSchema([textProvider()], ["unit-a"]);
     const result = schema.safeParse({
-      plans: [
-        {
-          key: "unit-a",
+      plans: {
+        "unit-a": {
           requests: [
             { provider: "text", input: { instruction: "hi" }, alt: "Hi." },
           ],
         },
-      ],
+      },
     });
     expect(result.success).toBe(true);
   });
@@ -53,17 +57,53 @@ describe("buildCompositionSchema", () => {
   it("admits only registered provider ids, rejecting an unregistered one", () => {
     const schema = buildCompositionSchema([textProvider()], ["unit-a"]);
     const result = schema.safeParse({
-      plans: [
-        {
-          key: "unit-a",
+      plans: {
+        "unit-a": {
           requests: [{ provider: "not-registered", input: {}, alt: "x" }],
         },
-      ],
+      },
     });
     expect(result.success).toBe(false);
   });
 
-  it("requires exactly one plan per unit key and rejects an unknown key", () => {
+  it("requires exactly one plan per unit key and rejects a missing key", () => {
+    const schema = buildCompositionSchema(
+      [textProvider()],
+      ["unit-a", "unit-b"]
+    );
+    const result = schema.safeParse({
+      plans: {
+        "unit-a": {
+          requests: [
+            { provider: "text", input: { instruction: "hi" }, alt: "Hi." },
+          ],
+        },
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects an extra key not in unitKeys", () => {
+    const schema = buildCompositionSchema(
+      [textProvider()],
+      ["unit-a", "unit-b"]
+    );
+    const request = {
+      requests: [
+        { provider: "text", input: { instruction: "hi" }, alt: "Hi." },
+      ],
+    };
+    const result = schema.safeParse({
+      plans: {
+        "unit-a": request,
+        "unit-b": request,
+        "unknown-unit": request,
+      },
+    });
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects the old array shape for a known unitKeys schema — closes the duplicate-key hole", () => {
     const schema = buildCompositionSchema(
       [textProvider()],
       ["unit-a", "unit-b"]
@@ -77,9 +117,10 @@ describe("buildCompositionSchema", () => {
           ],
         },
         {
-          key: "unknown-unit",
+          // Same key twice — the array shape could not stop this.
+          key: "unit-a",
           requests: [
-            { provider: "text", input: { instruction: "hi" }, alt: "Hi." },
+            { provider: "text", input: { instruction: "dup" }, alt: "Dup." },
           ],
         },
       ],
@@ -103,29 +144,79 @@ describe("buildCompositionSchema", () => {
     );
 
     const ok = schema.safeParse({
-      plans: [
-        {
-          key: "unit-a",
+      plans: {
+        "unit-a": {
           requests: [
             { provider: "image", input: { prompt: "draw" }, alt: "A diagram." },
           ],
         },
-      ],
+      },
     });
     expect(ok.success).toBe(true);
 
     // Wrong input shape for the named provider.
     const bad = schema.safeParse({
-      plans: [
-        {
-          key: "unit-a",
+      plans: {
+        "unit-a": {
           requests: [
             { provider: "image", input: { instruction: "hi" }, alt: "x" },
           ],
         },
-      ],
+      },
     });
     expect(bad.success).toBe(false);
+  });
+
+  it("requires unitSchema's extended fields (e.g. `relevance`) per key when passed", () => {
+    const providers = [textProvider()];
+    const unitSchema = buildUnitPlanSchema(providers).extend({
+      relevance: z.string(),
+    });
+    const schema = buildCompositionSchema(providers, ["unit-a"], unitSchema);
+
+    const missingRelevance = schema.safeParse({
+      plans: {
+        "unit-a": {
+          requests: [
+            { provider: "text", input: { instruction: "hi" }, alt: "Hi." },
+          ],
+        },
+      },
+    });
+    expect(missingRelevance.success).toBe(false);
+
+    const withRelevance = schema.safeParse({
+      plans: {
+        "unit-a": {
+          requests: [
+            { provider: "text", input: { instruction: "hi" }, alt: "Hi." },
+          ],
+          relevance: "obligatory",
+        },
+      },
+    });
+    expect(withRelevance.success).toBe(true);
+  });
+});
+
+describe("plansByKey", () => {
+  it("passes an object through unchanged", () => {
+    const plans = {
+      "unit-a": { requests: [] as unknown[] },
+    };
+    expect(plansByKey(plans)).toBe(plans);
+  });
+
+  it("turns an array into a keyed record, stripping `key` from each unit", () => {
+    const result = plansByKey([
+      { key: "unit-a", requests: ["a"] },
+      { key: "unit-b", requests: ["b"] },
+    ]);
+    expect(result).toEqual({
+      "unit-a": { requests: ["a"] },
+      "unit-b": { requests: ["b"] },
+    });
+    expect(result["unit-a"]).not.toHaveProperty("key");
   });
 });
 

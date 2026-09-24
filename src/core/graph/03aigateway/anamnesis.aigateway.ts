@@ -17,6 +17,7 @@ import { translateTermsKeyed } from "./translate.helper.js";
 import type { GraphRuntime } from "../runtime.js";
 import {
   buildCompositionSchema,
+  plansByKey,
   describeProviders,
 } from "../modality/composition.js";
 import type { ModalityPlan, ModalityProvider } from "../modality/ports.js";
@@ -108,7 +109,11 @@ ${renderSchemaForPrompt(schema)}`
         )
         .catch((error) => {
           handleLangchainError(error);
-        })) as { plans: { key: string; requests: ModalityPlan[string] }[] };
+        })) as {
+        plans: Parameters<
+          typeof plansByKey<{ requests: ModalityPlan[string] }>
+        >[0];
+      };
 
       console.debug(
         `[PlanAnamnesis] [Attempt ${attempt}] LLM raw Response:\n`,
@@ -126,7 +131,9 @@ ${renderSchemaForPrompt(schema)}`
     }
   );
 
-  return Object.fromEntries(plans.map((p) => [p.key, p.requests]));
+  return Object.fromEntries(
+    Object.entries(plansByKey(plans)).map(([key, unit]) => [key, unit.requests])
+  );
 }
 
 /**

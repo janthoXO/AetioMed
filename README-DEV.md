@@ -124,9 +124,8 @@ src/
 ├── api/                      shared request/response Zod schemas, JobId rule, wire codec
 ├── core/
 │   ├── app.ts                the composition root — builds and starts everything
-│   ├── caseGenerationService.ts  the seam both transports call, and the job segment/checkpoint machine
-│   ├── concurrency.ts        the FIFO limiter behind MAX_CONCURRENT_GENERATIONS (+ a resumed-work priority lane)
-│   ├── jobs/                 the job_record checkpoint repo, and SecretBox (per-request API key encryption)
+│   ├── caseGenerationService.ts  the seam both transports call; stateless between calls
+│   ├── concurrency.ts        the FIFO limiter behind MAX_CONCURRENT_GENERATIONS
 │   ├── jobEvents/            the per-job event channel, progress labels, the JobDirectory port
 │   ├── readModel.ts          catalogue/meta/graph reads, served identically by both transports
 │   ├── event-bus.ts          typed pub/sub between the graph and its observers
@@ -179,7 +178,7 @@ To publish new events, augment `EventMap` via module augmentation on `core/event
 
 REST and NATS are peers: every product feature is reachable from both, and a client speaking only one of them loses nothing. They differ only in delivery guarantees — REST is **connection-scoped** (a job lives as long as its HTTP request), NATS is **durable** (JetStream persists requests and results). Neither transport holds job state of its own; it all lives in core.
 
-**The per-job event channel** (`core/jobEvents/channel.ts`) is created once in `app.ts`. `CaseGenerationService` opens a job's channel and closes it with the job's outcome; transports only subscribe. A job's events are `accepted` → `label`… → `complete`, and those names are the wire names on both transports — the SSE `event:` name on REST, the last subject token on NATS — so no adapter keeps a mapping table. `complete` carries the outcome (`done` / `failed` / `cancelled`), never the case.
+**The per-job event channel** (`core/jobEvents/channel.ts`) is created once in `app.ts`. `CaseGenerationService` opens a job's channel and closes it with the job's outcome; transports only subscribe. A job's events are `accepted` → `label`… → `complete`, and those names are the wire names on both transports — the SSE `event:` name on REST, the last subject token on NATS — so no adapter keeps a mapping table. `complete` carries the outcome (`done` / `planned` / `failed` / `cancelled`), never the case.
 
 **Labels** (`core/jobEvents/labels.ts`) are produced from the graph's node lifecycle events: every node emits `started` and a terminal `completed` or `failed`, localized to the request's language with an English fallback, and never with a payload. They are always on. The node's output is the operator's, and goes to OpenTelemetry instead (see Observability below).
 
@@ -201,7 +200,7 @@ Ownership over NATS is **subscription interest**: the replica running a job subs
 
 ### Graph Assembly
 
-`assembleCaseGraph(deps, flags)` is pure wiring, and follows one rule:
+`assembleCaseGraphs(deps, flags)` builds the plan graph and the case graph (plus, with the sandwich on, the two plan-translation graphs). It is pure wiring, and follows one rule:
 
 > **Compile on what the deployer chose; branch on what the caller asked for.**
 
@@ -260,7 +259,7 @@ Tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`.
 - `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions
 - `labelTranslations.yml` — progress label translations
-- `diagnosis_symptoms.json` — UMLS symptom floor per ICD code (loaded directly, not via the DB sync)
+- `diagnosis_symptoms.json` — UMLS symptoms per ICD code (loaded directly, not via the DB sync)
 
 The generated database lives under `CACHE_DIR` (default `data/cache/`), deliberately a separate directory so a deployer can mount their own catalogues without clobbering it. `scripts/extract-icd11*.ts` build the diagnosis YAML from ICD-11 source data and are run manually.
 
@@ -320,7 +319,13 @@ data: {"patient": {…}, "jobId":"3fa2…","language":"English"}
 through, on the way to its `event: result` — the generator hands the plan over rather than
 pausing on it). Send the same request back with that outline (possibly edited) as `plan` to
 generate the case from it, reusing the same `jobId` — the one case a `jobId` may be resent for.
-See [Plan Mode](README.md#plan-mode) in the main README for the outline segment format.
+
+The plan is an array of segments, `{ "fixed": boolean, "text": string }`, alternating editable and
+fixed: even indices are editable (possibly empty text), odd indices are the server-owned section
+headings — `## General`, `## Patient`, `## Chief complaint`, `## Anamnesis` (followed by one
+`### <category>` per anamnesis category) and `## Procedures`. Edit only the editable segments. A
+plan that no longer alternates is rejected as `400 INVALID_REQUEST_BODY`; one whose headings no
+longer match the skeleton as `400 INVALID_PLAN`.
 
 **Disconnecting cancels the job**, on both paths. REST keeps no result store, so there is nothing to come back to; a client that must survive a dropped connection should use NATS.
 
@@ -402,7 +407,7 @@ NATS_TEST_URL=nats://localhost:4222 pnpm test
 
 CI starts that container before `pnpm test`, so they always run there — including a two-replica test of the NATS backbone.
 
-**`tsconfig.json` excludes `**/_.test.ts`and includes only`src/\*\*/_`**, so `tsc`does not typecheck test files or`scripts/`. A type error in a test surfaces only if an assertion happens to catch it — verify tests by running them, not by trusting the build.
+`tsconfig.json` excludes `**/*.test.ts` and includes only `src/**/*`, so `tsc` does not typecheck test files or `scripts/`. A type error in a test surfaces only if an assertion happens to catch it — verify tests by running them, not by trusting the build.
 
 For pipeline changes, run a generation with `DEBUG` in `FEATURES` and read each node's output from the console exporter. `DEBUG` also adds `cors` and request logging to the REST app.
 
@@ -414,4 +419,4 @@ For pipeline changes, run a generation with `DEBUG` in `FEATURES` and read each 
 ## Additional Tools
 
 - **Bruno**: ready-made API requests in `docs/bruno/` for exercising the endpoints.
-- **Graph diagrams**: `docs/graphs/case-graph.<topology>.svg`, regenerated by `pnpm graph:export`. `<topology>` is `none` or `translation-sandwich` — `PROCEDURE_PRESELECTION` swaps a strategy adapter without changing the graph's shape, so it does not get its own diagram.
+- **Graph diagrams**: `docs/graphs/<mode>.<topology>.svg`, regenerated by `pnpm graph:export` (`scripts/exportGraphs.ts`). `<mode>` is `plan-mode` or `normal-mode`, each drawn end to end across the plan and case graphs; `<topology>` is `none` or `translation-sandwich` — `PROCEDURE_PRESELECTION` swaps a strategy adapter without changing the graph's shape, so it does not get its own diagram.

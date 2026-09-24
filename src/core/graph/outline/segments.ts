@@ -113,28 +113,48 @@ function escapeFixedTags(text: string): string {
   return text.replace(/<(\/?)fixed>/g, "&lt;$1fixed&gt;");
 }
 
-/** The five fixed top-level section headings every outline skeleton starts and ends with. */
-export const OUTLINE_SECTIONS = Object.freeze([
-  "## General",
-  "## Patient",
-  "## Chief complaint",
-  "## Anamnesis",
-  "## Procedures",
-] as const);
+/** Fixed top-level section headings, in outline order. Order is the object's key order. */
+export const OUTLINE_SECTIONS = Object.freeze({
+  general: "## General",
+  patient: "## Patient",
+  chiefComplaint: "## Chief complaint",
+  anamnesis: "## Anamnesis",
+  procedures: "## Procedures",
+} as const);
+
+/** Section the anamnesis category headings follow. */
+const CATEGORY_ANCHOR: keyof typeof OUTLINE_SECTIONS = "anamnesis";
+
+const SECTION_KEYS = Object.keys(OUTLINE_SECTIONS);
+const SECTIONS_BEFORE_CATEGORIES = Object.values(OUTLINE_SECTIONS).slice(
+  0,
+  SECTION_KEYS.indexOf(CATEGORY_ANCHOR) + 1
+);
+const SECTIONS_AFTER_CATEGORIES = Object.values(OUTLINE_SECTIONS).slice(
+  SECTION_KEYS.indexOf(CATEGORY_ANCHOR) + 1
+);
 
 /**
- * Ordered fixed segment texts the LLM must reproduce. Configured catalogue:
- * one `### <category>` per category between `## Anamnesis` and `## Procedures`.
+ * Ordered fixed segment texts the LLM must reproduce: every section, with one
+ * `### <category>` per category right after {@link CATEGORY_ANCHOR}.
  * Freeform: LLM names them; see {@link checkSkeleton}.
  */
 export function outlineSkeleton(opts: {
   anamnesisCategories?: string[] | undefined;
 }): string[] {
   return [
-    ...OUTLINE_SECTIONS.slice(0, 4),
+    ...SECTIONS_BEFORE_CATEGORIES,
     ...(opts.anamnesisCategories ?? []).map((category) => `### ${category}`),
-    OUTLINE_SECTIONS[4],
+    ...SECTIONS_AFTER_CATEGORIES,
   ];
+}
+
+/** Fixed texts between the sections before and after the categories. */
+function categoryHeadings(fixedTexts: string[]): string[] {
+  return fixedTexts.slice(
+    SECTIONS_BEFORE_CATEGORIES.length,
+    fixedTexts.length - SECTIONS_AFTER_CATEGORIES.length
+  );
 }
 
 /**
@@ -142,9 +162,9 @@ export function outlineSkeleton(opts: {
  * malformed LLM outline. Input is `parseTaggedOutline` output (alternation
  * guaranteed).
  *
- * Freeform: categories are the `### <name>` headings between Anamnesis and
- * Procedures; a heading without that prefix is left out, surfacing as a
- * mismatch at its index.
+ * Freeform: categories are the `### <name>` headings where categories go; a
+ * heading without that prefix is left out, surfacing as a mismatch at its
+ * index.
  */
 export function checkSkeleton(
   segments: OutlineSegments,
@@ -153,8 +173,7 @@ export function checkSkeleton(
   const fixedTexts = segments.filter((s) => s.fixed).map((s) => s.text);
   const anamnesisCategories =
     opts.anamnesisCategories ??
-    fixedTexts
-      .slice(4, -1)
+    categoryHeadings(fixedTexts)
       .filter((text) => /^### \S/.test(text))
       .map((text) => text.slice(4));
   const expected = outlineSkeleton({ anamnesisCategories });
@@ -188,28 +207,26 @@ export function restoreSkeletonHeadings(
   segments: OutlineSegments,
   opts: { anamnesisCategories?: string[] | undefined }
 ): OutlineSegments {
-  const fixedCount = segments.filter((s) => s.fixed).length;
+  const fixedTexts = segments.filter((s) => s.fixed).map((s) => s.text);
   const categories = opts.anamnesisCategories;
+  const sectionCount = Object.keys(OUTLINE_SECTIONS).length;
   if (
     categories
-      ? fixedCount !== OUTLINE_SECTIONS.length + categories.length
-      : fixedCount < OUTLINE_SECTIONS.length
+      ? fixedTexts.length !== sectionCount + categories.length
+      : fixedTexts.length < sectionCount
   ) {
     return segments;
   }
 
+  // Freeform: category headings keep their translated text.
+  const expected = [
+    ...SECTIONS_BEFORE_CATEGORIES,
+    ...(categories?.map((category) => `### ${category}`) ??
+      categoryHeadings(fixedTexts)),
+    ...SECTIONS_AFTER_CATEGORIES,
+  ];
   let k = 0;
-  return segments.map((segment) => {
-    if (!segment.fixed) return segment;
-    const i = k++;
-    const text =
-      i < 4
-        ? OUTLINE_SECTIONS[i]!
-        : i === fixedCount - 1
-          ? OUTLINE_SECTIONS[4]
-          : categories
-            ? `### ${categories[i - 4]}`
-            : segment.text;
-    return { fixed: true, text };
-  });
+  return segments.map((segment) =>
+    segment.fixed ? { fixed: true, text: expected[k++]! } : segment
+  );
 }

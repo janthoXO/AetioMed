@@ -1,10 +1,8 @@
-// #143 — `POST /api/cases` as a stream: content negotiation on the same
-// route, `event: accepted` written before any node runs (so the jobId is
-// never learned too late to subscribe), a heartbeat independent of label
-// cadence, body-level `jobId` (the `?jobId=` query param is gone), and a
-// duplicate jobId answered with a 409 on either path without starting a
-// second generation. Real wiring, over real HTTP (`127.0.0.1:0`, global
-// `fetch`, no supertest) — the same pattern as `labels.router.test.ts`.
+// `POST /api/cases` as a stream: content negotiation on one route,
+// `event: accepted` before any node runs, heartbeat independent of label
+// cadence, body-level `jobId`, duplicate jobId → 409 on either path without
+// a second generation. Real wiring over real HTTP (`127.0.0.1:0`, global
+// `fetch`, no supertest), like `labels.router.test.ts`.
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -32,9 +30,8 @@ import type { Case } from "@/core/graph/models/Case.js";
 import { planAndRenderFrom } from "@/testing/graphFakes.js";
 import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
-// Same shape as `caseGenerationService.test.ts`'s `fakeGraph`, plus
-// `MAX_CONTENT_PART_BYTES` (read by `encodeCase` on the success path) and a
-// `graphs` stub — `GET /api/graph` is not exercised here, so
+// Same shape as `fakeGraph` in `caseGenerationService.test.ts`, plus
+// `MAX_CONTENT_PART_BYTES` (read by `encodeCase`) and a `graphs` stub;
 // `getGraphAsync` is never called.
 function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
   return {
@@ -69,12 +66,10 @@ function abortError(): Error {
 }
 
 /**
- * A `generateCase` gated per jobId (read off `getRequestContext()`, the
- * same ALS the real service binds before invoking it): each job's gate
- * opens independently via `release(jobId)`, honours `signal` abort (rejects
- * with an `AbortError`, mirroring the real graph), and — once released —
- * runs one node wrapped by `createTraceNode(bus)` so labels flow, before
- * resolving with a minimal case.
+ * `generateCase` gated per jobId (from `getRequestContext()` ALS): each gate
+ * opens via `release(jobId)`, `signal` abort rejects with `AbortError`, and
+ * once released runs one `createTraceNode(bus)` node so labels flow, then
+ * resolves a minimal case.
  */
 function makeGatedGenerateCase(bus: EventBus) {
   const gates = new Map<
@@ -121,12 +116,8 @@ function makeGatedGenerateCase(bus: EventBus) {
     });
 
     await doThing();
-    // A full `Patient` (not just `{ name, age, sex }` as in the other
-    // harnesses' fixtures) — this result is encoded through the real
-    // `CaseWireSchema`/`PatientSchema` on the success path here, unlike
-    // `caseGenerationService.test.ts`'s and `labels.router.test.ts`'s
-    // harnesses, which never encode their fixture and so tolerate a partial
-    // one.
+    // Full `Patient`: result is encoded through real `CaseWireSchema`/
+    // `PatientSchema` here; other harnesses never encode.
     return {
       patient: {
         name: "Jane",
@@ -198,20 +189,15 @@ function requestBody(overrides: Record<string, unknown> = {}): string {
 }
 
 /**
- * A plan-mode request. `language: "English"` with `TRANSLATION_SANDWICH`
- * unset in `fakeGraph`'s config (falsy) means `translatesOutline` is false
- * (#159), so the review outline is exactly `planAndRenderFrom`'s planned
- * outline: `["", "## Plan options", JSON.stringify(opts)]`.
+ * Plan-mode request. English + `TRANSLATION_SANDWICH` unset in `fakeGraph`
+ * means `translatesOutline` is false, so review outline equals
+ * `planAndRenderFrom`'s: `["", "## Plan options", JSON.stringify(opts)]`.
  */
 function planRequestBody(overrides: Record<string, unknown> = {}): string {
   return requestBody({ mode: "plan", language: "English", ...overrides });
 }
 
-/**
- * Read from `reader` (accumulating across calls, via a per-reader buffer)
- * until `predicate(text)` is true, or reject after `timeoutMs`. Copied from
- * `labels.router.test.ts`.
- */
+/** Read from `reader` until `predicate(text)`; reject after `timeoutMs`. Copied from `labels.router.test.ts`. */
 const buffers = new WeakMap<ReadableStreamDefaultReader<Uint8Array>, string>();
 
 async function readUntil(
@@ -279,7 +265,7 @@ async function waitUntil(
   }
 }
 
-describe("POST /api/cases (#143) — content negotiation, streaming, heartbeat", () => {
+describe("POST /api/cases — content negotiation, streaming, heartbeat", () => {
   let server: Server | undefined;
 
   afterEach(async () => {
@@ -426,9 +412,8 @@ describe("POST /api/cases (#143) — content negotiation, streaming, heartbeat",
     const bus = new EventBus();
     const channel = createJobEventChannel();
     wireLabels(bus, channel, new InMemoryLabelCatalog());
-    // Schema-invalid on the wire (`PatientSchema` needs height/weight/
-    // gender), so encoding the success body throws after the headers are
-    // sent — the same shape as a content part over MAX_CONTENT_PART_BYTES.
+    // Schema-invalid on wire (`PatientSchema` needs height/weight/gender):
+    // encoding throws after headers sent, like a part over MAX_CONTENT_PART_BYTES.
     const generateCase = vi.fn(async () => ({
       patient: { name: "Jane" },
     })) as unknown as GenerateCaseFn;
@@ -703,7 +688,7 @@ describe("POST /api/cases (#143) — content negotiation, streaming, heartbeat",
 
 type Plan = { fixed: boolean; text: string }[];
 
-describe("plan mode (#159) — a stateless call stops at its plan", () => {
+describe("plan mode — a stateless call stops at its plan", () => {
   let server: Server | undefined;
 
   afterEach(async () => {
@@ -736,8 +721,7 @@ describe("plan mode (#159) — a stateless call stops at its plan", () => {
     };
     expect(body.jobId).toBe("job-plan-1");
     expect(body.mode).toBe("plan");
-    // planAndRenderFrom's planned outline (#159): three segments, the
-    // middle one fixed.
+    // planAndRenderFrom's outline: three segments, middle fixed.
     expect(body.plan).toHaveLength(3);
     expect(body.plan[1]).toMatchObject({
       fixed: true,
@@ -863,8 +847,7 @@ describe("plan mode (#159) — a stateless call stops at its plan", () => {
   });
 });
 
-/** A `JobDirectory` whose `cancel` is fully scripted — `watch` is never
- * exercised by these tests. */
+/** `JobDirectory` with scripted `cancel`; `watch` unused. */
 function stubDirectory(cancel: JobDirectory["cancel"]): JobDirectory {
   return {
     watch: () => Promise.reject(new Error("not used by these tests")),
@@ -872,7 +855,7 @@ function stubDirectory(cancel: JobDirectory["cancel"]): JobDirectory {
   };
 }
 
-describe("DELETE /api/cases/:jobId (#145) — via the JobDirectory port", () => {
+describe("DELETE /api/cases/:jobId — via the JobDirectory port", () => {
   let server: Server | undefined;
 
   afterEach(async () => {

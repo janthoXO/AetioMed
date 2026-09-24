@@ -1,6 +1,4 @@
-// InMemoryProcedureCatalog only — no filesystem, no SQLite, nothing imported
-// from the repo/persistence layer. See `src/core/graph/utils/prompt.test.ts`
-// for the house style and the rationale for keeping tests off those modules.
+// InMemoryProcedureCatalog only: no filesystem, SQLite or repo imports.
 import { describe, expect, it } from "vitest";
 
 import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/catalog.js";

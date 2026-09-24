@@ -135,12 +135,9 @@ const textRequest = (instruction: string) => ({
   alt: instruction,
 });
 
-describe("buildCompositionSchema — freeform units (issue 21)", () => {
-  // Anamnesis under a deployment with no configured category catalogue
-  // (`catalogs.anamnesis.list()` returns `undefined`) must keep letting the
-  // planner name its own units, exactly as `buildAnamnesisFieldSchema()`
-  // with no categories did before the planner existed. A hardcoded default
-  // category list would put opinionated clinical content in code.
+describe("buildCompositionSchema — freeform units", () => {
+  // No configured category catalogue (`catalogs.anamnesis.list()` undefined): planner names its own units.
+  // No default category list; clinical content stays out of code.
   const providers = [textProvider()];
 
   it("accepts planner-named keys and any unit count when unitKeys is omitted", () => {

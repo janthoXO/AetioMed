@@ -23,10 +23,7 @@ export interface DiagnosisRepo {
     diagnosisName: string,
     language: ForeignLanguage
   ): string | undefined;
-  /**
-   * Save new diagnosis translations to the translation store (persisted to
-   * the embedded DB, not written back to the YAML config).
-   */
+  /** Persist new translations to the embedded DB, never back to YAML. */
   saveDiagnosisTranslations(
     englishToTarget: Record<string, string>,
     language: ForeignLanguage
@@ -42,9 +39,8 @@ function rowToDiagnosis(row: typeof diagnosis.$inferSelect): Diagnosis {
 }
 
 /**
- * Syncs `diagnosis.yml` / `diagnosisTranslations.yml` (under `catalogDir`)
- * into `dbHandle`'s embedded database, then exposes diagnosis lookups and
- * translations. All I/O happens here, not at import time.
+ * Syncs `diagnosis.yml` / `diagnosisTranslations.yml` into `dbHandle`, exposes
+ * lookups and translations. I/O here, not at import.
  */
 export function createDiagnosisRepo(
   dbHandle: DbHandle,
@@ -87,8 +83,7 @@ export function createDiagnosisRepo(
           return;
         }
 
-        // This source is a plain read-only list (no runtime additions), so a
-        // full replace is safe and keeps removed/renamed entries in sync.
+        // Read-only list: full replace keeps removed/renamed entries in sync.
         dbHandle.db.delete(diagnosis).run();
 
         const rows: (typeof diagnosis.$inferInsert)[] = [];

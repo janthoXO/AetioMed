@@ -1,4 +1,3 @@
-// Issue 11 §8, issue 21 §8 (the alt data-loss fix).
 import { afterEach, describe, expect, it } from "vitest";
 import {
   ContentPartTooLargeError,
@@ -15,10 +14,7 @@ import type { Case } from "@/core/graph/models/Case.js";
 
 afterEach(() => {});
 
-/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
- * inlined at every real call site now; kept here only to keep these
- * fixtures readable. Produces a part whose `alt` equals its decoded
- * `value` — the shape every real generator still produces today. */
+/** Fixture builder: part whose `alt` equals its decoded `value`. */
 function fixtureTextPart(alt: string): ContentPart {
   return { type: "text/plain", value: encodeText(alt), alt };
 }
@@ -29,9 +25,7 @@ const imagePart: ContentPart = {
   value: new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10, 1, 2, 3]),
 };
 
-// Generous ceiling for the round-trip cases; the size-ceiling test passes
-// its own tiny one. Config supplies this in production
-// (`ConfigSchema.MAX_CONTENT_PART_BYTES`) — never `process.env` here.
+// Generous ceiling for round-trips; size-ceiling test passes its own.
 const LIMIT = 5_000_000;
 
 describe("ContentPart wire encoding", () => {
@@ -45,7 +39,7 @@ describe("ContentPart wire encoding", () => {
     expect(wire.value).toBe("Cough for three days.");
   });
 
-  it("always emits alt on the wire, for text/* parts too (issue 21 §8)", () => {
+  it("always emits alt on the wire, for text/* parts too", () => {
     const wire = encodeContentPart(
       fixtureTextPart("Cough for three days."),
       "chiefComplaint",
@@ -89,11 +83,7 @@ describe("ContentPart wire encoding", () => {
     expect(new TextDecoder().decode(decoded.value)).toBe("hello");
   });
 
-  // The issue 21 §8 regression: `alt` is no longer derivable from `value`
-  // (a planner authors a short label distinct from the rendered prose), so
-  // a text part whose `alt` differs from its `value` must round-trip with
-  // BOTH fields intact — this is exactly the case the old "omit alt for
-  // text/*, restore it as `value`" codec silently corrupted.
+  // `alt` not derivable from `value`: part with differing `alt` must round-trip both.
   it("round-trips a text part whose alt differs from its value, keeping both fields intact", () => {
     const part: ContentPart = {
       type: "text/plain",

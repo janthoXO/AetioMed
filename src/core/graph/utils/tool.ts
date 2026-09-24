@@ -3,13 +3,11 @@ import type { RequestContext } from "./context.js";
 import type { GraphRuntime } from "../runtime.js";
 
 /**
- * A named, schema-validated capability callable by graph nodes and exposable via MCP.
- * Prompt construction, LLM invocation, retries, and structured-output parsing
- * all live inside `invoke` — nodes are thin pass-throughs.
+ * Named, schema-validated capability called by graph nodes. Prompting, LLM
+ * calls, retries, parsing live in `invoke`; nodes are thin.
  *
- * `runtime` carries the process-wide ports (LLM, catalogues, logger, clock);
- * `context` carries the per-request data (jobId, per-request llmConfig,
- * abort signal) from the existing `AsyncLocalStorage`.
+ * `runtime`: process-wide ports. `context`: per-request data (jobId,
+ * llmConfig, abort signal) from ALS.
  */
 export interface Tool<TInput, TOutput> {
   readonly name: string;

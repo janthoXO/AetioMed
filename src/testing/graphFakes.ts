@@ -11,10 +11,9 @@ type GraphFake = Pick<
 >;
 
 /**
- * Adapt a whole-pipeline fake (`generateCase`) to the plan/case split
- * (#159): `planCase` always accepts, and `renderCase` calls `generateCase`
- * with the options `planCase` received. Those options travel inside the
- * outline text itself, so concurrent jobs never mix them up.
+ * Adapt whole-pipeline fake (`generateCase`) to plan/case split: `planCase`
+ * always accepts, `renderCase` calls `generateCase` with options `planCase`
+ * received. Options travel inside outline text, so concurrent jobs never mix.
  */
 export function planAndRenderFrom(generateCase: GenerateCaseFn): GraphFake {
   const MARKER = "## Plan options";

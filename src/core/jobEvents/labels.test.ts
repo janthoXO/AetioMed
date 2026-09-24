@@ -1,12 +1,6 @@
-// #139 — `wireLabels` forwards the graph's node lifecycle onto the per-job
-// channel as localized `label` events. Ported from the old, now-deleted
-// `tracing` module's `index.test.ts`, which used to test this behavior mixed
-// in with traces on a since-deleted `TraceBus`; labels are a core concern now
-// (see `labels.ts`'s doc comment) and are driven here against a real
-// `EventBus` + `createJobEventChannel()`, with `language` passed directly on
-// the bus event rather than via `runWithContext`. The one exception (#140)
-// is the throwing-node test below, which goes through `createTraceNode()` +
-// `runWithContext()` to prove the whole started→failed path end to end.
+// `wireLabels` against real `EventBus` + `createJobEventChannel()`, `language`
+// passed on the bus event. Exception: throwing-node test goes through
+// `createTraceNode()` + `runWithContext()` to prove started→failed end to end.
 import { describe, expect, it } from "vitest";
 import { EventBus } from "@/core/event-bus.js";
 import { createJobEventChannel, type JobEvent } from "./channel.js";
@@ -27,7 +21,7 @@ function collectLabels(
   return labels;
 }
 
-describe("wireLabels (#139)", () => {
+describe("wireLabels", () => {
   it("a completed node emits started and completed label events, localized", async () => {
     const bus = new EventBus();
     const channel = createJobEventChannel();
@@ -156,7 +150,7 @@ describe("wireLabels (#139)", () => {
     );
   });
 
-  it("a traceNode-wrapped node that throws still emits a paired started/failed label (#140)", async () => {
+  it("a traceNode-wrapped node that throws still emits a paired started/failed label", async () => {
     const bus = new EventBus();
     const channel = createJobEventChannel();
     wireLabels(bus, channel, new InMemoryLabelCatalog());

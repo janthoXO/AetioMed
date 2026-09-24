@@ -1,25 +1,12 @@
-// Issue #141 (formerly issue 15 §5) — OpenTelemetry as the parallel,
-// operator-facing trace channel. This is deliberately NOT the same
-// mechanism as the end-user labels channel (`core/jobEvents/`, #139/#140):
-// labels carry a localized phrase and no payload and are always on; OTel
-// carries node output — as a correlated **log record**, never a span
-// attribute — and is gated by its own standard `OTEL_SDK_DISABLED`/
-// exporter env vars, never by a `FEATURES` flag — a deployer can run either
-// channel independently of the other.
+// OTel: operator-facing trace channel, independent of end-user labels (`core/jobEvents/`).
+// Node output goes out as correlated **log record**, never span attribute. Gated by
+// standard `OTEL_SDK_DISABLED`/exporter env vars, not `FEATURES`.
 //
-// This module implements the `NodeTracer`/`NodeSpan` port core owns
-// (`core/graph/utils/nodeWrapper.ts`) — core never imports `@opentelemetry/*`
-// or reads `process.env` (both are off-limits under `src/core/graph/`), so
-// the concrete adapter lives here and the composition root (`app.ts`) wires
-// it in, the same core-owns-the-port/adapter-lives-outside pattern used for
-// the labels channel (`core/jobEvents/`).
+// Implements `NodeTracer`/`NodeSpan` port owned by core (`core/graph/utils/nodeWrapper.ts`);
+// core never imports `@opentelemetry/*` or reads `process.env`. `app.ts` wires this in.
 //
-// Only the API packages (`@opentelemetry/api`, `@opentelemetry/api-logs`)
-// are statically imported — they are pure interfaces/no-op globals, not
-// machinery. Every SDK package (`sdk-trace-node`, `sdk-trace-base`,
-// `sdk-logs`, the two OTLP exporters, `resources`) is reached only through a
-// guarded dynamic `import()` in `ensureInitialized`, so "SDK disabled" means
-// NOT CONSTRUCTED, not constructed-and-inert.
+// Only API packages (`@opentelemetry/api`, `api-logs`) imported statically. SDK packages
+// only via guarded dynamic `import()` in `ensureInitialized`: disabled = NOT CONSTRUCTED.
 import {
   trace,
   context as otelContext,
@@ -40,18 +27,12 @@ const TRACER_NAME = "aetiomed";
 const LOGGER_NAME = "aetiomed";
 
 /**
- * Which exporter/processor pair to build, decided purely from env — no new
- * flag (#141):
+ * Exporter/processor pair, decided from env only:
  *
  * - `OTEL_SDK_DISABLED === "true"` (only that literal) → `"none"`.
  * - Any OTLP endpoint var set (general or signal-specific) → `"otlp"`.
- * - Otherwise, `FEATURES=DEBUG` → `"console"`.
- * - Otherwise → `"none"` — a **behaviour change** from before this issue:
- *   an unset endpoint used to still build a real SDK exporting to
- *   `localhost:4318` and failing silently in the background. Now nothing is
- *   constructed unless there is somewhere to send spans/logs, or the
- *   deployer explicitly asked for the zero-infrastructure console path via
- *   `FEATURES=DEBUG`.
+ * - Else `FEATURES=DEBUG` → `"console"`.
+ * - Else → `"none"`.
  */
 export type ExporterMode = "otlp" | "console" | "none";
 
@@ -95,11 +76,7 @@ class OtelNodeSpan implements NodeSpan {
   setLlm(provider: string, model: string): void {
     this.span.setAttribute("aetiomed.llm.provider", provider);
     this.span.setAttribute("aetiomed.llm.model", model);
-    // Token counts: verified against this codebase — no call site records
-    // `usage_metadata`/token counts from any LLM response today, so "where
-    // available" (issue 15 §5) currently means "never". No attribute is
-    // fabricated here; wiring real counts through would mean the
-    // aigateway layer surfacing them, which is out of scope for this issue.
+    // No token counts: no LLM call site surfaces `usage_metadata`.
   }
 
   fail(message: string): void {
@@ -108,10 +85,8 @@ class OtelNodeSpan implements NodeSpan {
   }
 
   end(): void {
-    // The log record is emitted before the span ends, with this span as its
-    // context (`trace.setSpan`): that is what correlates the two by
-    // trace_id/span_id. A failed node never had an output set, so it gets
-    // no log record — its span's error status says what happened.
+    // Log emitted before span ends, with span as context: correlates by
+    // trace_id/span_id. Failed node has no output, so no log; span error says why.
     if (this.outputSet) {
       const payload = buildTracePayload(this.output);
       const attributes: LogAttributes = {
@@ -152,12 +127,7 @@ function byteSizeOf(value: unknown): number {
   }
 }
 
-/**
- * Build the `NodeTracer` port over an already-constructed `Tracer`/`Logger`
- * pair. Exported so tests can wire it over in-memory providers
- * (`otel.signals.test.ts`) without going through `ensureInitialized`'s env
- * gating at all.
- */
+/** `NodeTracer` over given `Tracer`/`Logger`. Exported so tests can use in-memory providers. */
 export function createNodeTracer(tracer: Tracer, logger: Logger): NodeTracer {
   return {
     startSpan(nodeId: string, attrs: { jobId?: string | undefined }): NodeSpan {
@@ -170,8 +140,7 @@ export function createNodeTracer(tracer: Tracer, logger: Logger): NodeTracer {
 }
 
 let initialized = false;
-// Set only in "otlp"/"console" mode, by `ensureInitialized`. The tracer and
-// logger come from these providers, not from the API's globals.
+// Set only in "otlp"/"console" mode. Tracer and logger come from these, not API globals.
 let activeTracerProvider:
   | import("@opentelemetry/sdk-trace-base").BasicTracerProvider
   | undefined;
@@ -180,16 +149,10 @@ let activeLoggerProvider:
   | undefined;
 
 /**
- * Construct the OTel SDK (tracer provider + logger provider, resource,
- * exporters) exactly once, from {@link selectExporterMode}.
+ * Construct OTel SDK (providers, resource, exporters) once, from {@link selectExporterMode}.
  *
- * **A guarded dynamic `import()`, not a static one.** "With the SDK
- * disabled, no OTel machinery is constructed" means NOT CONSTRUCTED, not
- * constructed-and-inert (issue 15 §5) — a static `import` of
- * `@opentelemetry/sdk-trace-node` et al. would pull their classes into the
- * module graph and run module-level code regardless of this flag. Only a
- * dynamic import that is never even reached when disabled satisfies that.
- * `otel.test.ts` proves this with `vi.mock` spies on the heavy packages.
+ * Dynamic `import()`, not static: disabled must mean NOT CONSTRUCTED; a static import
+ * of SDK packages runs module-level code regardless. `otel.test.ts` proves with `vi.mock` spies.
  */
 async function ensureInitialized(mode: ExporterMode): Promise<void> {
   if (initialized) return;
@@ -216,9 +179,8 @@ async function ensureInitialized(mode: ExporterMode): Promise<void> {
     import("@opentelemetry/sdk-logs"),
   ]);
 
-  // `envDetector` reads the standard `OTEL_SERVICE_NAME`/
-  // `OTEL_RESOURCE_ATTRIBUTES` vars; merging over `defaultResource()` keeps
-  // the SDK's own fallback service name for a deployer who sets neither.
+  // `envDetector` reads `OTEL_SERVICE_NAME`/`OTEL_RESOURCE_ATTRIBUTES`; merge over
+  // `defaultResource()` keeps SDK fallback service name.
   const resource = defaultResource().merge(
     detectResources({ detectors: [envDetector] })
   );
@@ -231,17 +193,14 @@ async function ensureInitialized(mode: ExporterMode): Promise<void> {
       import("@opentelemetry/exporter-trace-otlp-http"),
       import("@opentelemetry/exporter-logs-otlp-http"),
     ]);
-    // `OTLPTraceExporter`/`OTLPLogExporter` with no arguments read the
-    // standard `OTEL_EXPORTER_OTLP_ENDPOINT`/`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`/
-    // `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` themselves — no plumbing needed
-    // here. Do not invent our own OTel-ish env vars alongside these.
+    // Exporters with no args read standard `OTEL_EXPORTER_OTLP_*` vars themselves.
+    // Do not invent own env vars.
     spanProcessor = new BatchSpanProcessor(new OTLPTraceExporter());
     logProcessor = new BatchLogRecordProcessor({
       exporter: new OTLPLogExporter(),
     });
   } else {
-    // "console" — the zero-infrastructure development path: no collector,
-    // no backend, no batching delay.
+    // "console": zero-infrastructure dev path, no batching delay.
     spanProcessor = new SimpleSpanProcessor(new ConsoleSpanExporter());
     logProcessor = new SimpleLogRecordProcessor({
       exporter: new ConsoleLogRecordExporter(),
@@ -254,8 +213,7 @@ async function ensureInitialized(mode: ExporterMode): Promise<void> {
   });
   tracerProvider.register();
 
-  // Not registered as the global logger provider: nothing else in the
-  // process logs through OTel, and a global would leak between tests.
+  // Not global: nothing else logs through OTel, and a global leaks between tests.
   const loggerProvider = new LoggerProvider({
     resource,
     processors: [logProcessor],
@@ -266,24 +224,11 @@ async function ensureInitialized(mode: ExporterMode): Promise<void> {
 }
 
 /**
- * Build the `NodeTracer` the composition root (`app.ts`) passes to
- * `initGraph`/`buildCaseGraph`, plus a `shutdown()` closer that flushes both
- * providers' batched processors — registered by `app.ts` after NATS and
- * before the DB, so telemetry is flushed once producers have stopped but
- * before the process exits.
+ * Build the `NodeTracer` for `initGraph`/`buildCaseGraph`, plus `shutdown()` that
+ * flushes both providers' batched processors.
  *
- * Always called, gated only by {@link selectExporterMode}. With mode
- * `"none"` this still returns a working `NodeTracer`/`shutdown`, just one
- * backed by `@opentelemetry/api`'s and `@opentelemetry/api-logs`'s own
- * global no-op tracer/logger (no provider ever registered), rather than a
- * bespoke no-op of ours: one fewer thing to keep in sync with the real
- * `Span`/`Logger` interfaces.
- *
- * **Open question, deliberately not solved here (issue 15 §5):**
- * checkpointing (F09) can re-execute a node on resume, producing two spans
- * for one logical step under this design (span name = node id, one span
- * per `traceNode` invocation). Whether that should collapse into one span
- * with retries, or stay two linked spans, is left open until F09 lands.
+ * Always called, gated only by {@link selectExporterMode}. Mode `"none"` still
+ * returns working tracer/shutdown over `@opentelemetry/api`'s global no-ops.
  */
 export async function createOtelNodeTracer(opts: {
   debug: boolean;

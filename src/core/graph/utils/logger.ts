@@ -1,10 +1,7 @@
 import type { EventBus } from "../../event-bus.js";
 import type { Logger } from "../runtime.js";
 
-/**
- * The one place `bus.emit("Generation Log", ...)` is called from. Every
- * other call site goes through `runtime.log.info/warn/error` instead.
- */
+/** Only caller of `bus.emit("Generation Log", ...)`; others use `runtime.log`. */
 export function createLogger(
   bus: EventBus,
   clock: () => Date = () => new Date()

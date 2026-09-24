@@ -1,9 +1,5 @@
-// Issue 04, Commit 2: every repo module moved its I/O behind a constructor.
-// Proves the claim directly — importing these modules must not touch the
-// filesystem or open the embedded database. No environment variable dance,
-// no dynamic import: these are plain static imports, which is itself part
-// of the proof (a module with import-time side effects couldn't be imported
-// this way without them firing first).
+// Importing repo modules must not touch the filesystem or open the DB. Plain
+// static imports are part of the proof: import-time side effects would fire first.
 import { describe, expect, it, vi } from "vitest";
 import fs from "node:fs";
 

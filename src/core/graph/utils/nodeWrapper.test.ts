@@ -1,8 +1,4 @@
-// Issue 15 §2 — the two defects fixed as their own change, ahead of the
-// feature work in §3-§5: `traceNode` had no `try`/`catch`, so a throwing
-// node emitted "Node Started" and never a terminal event. These tests pin
-// down the fix directly against the bus, independent of the typed
-// `TraceEvent`/OTel work layered on top later in this file's neighbours.
+// `traceNode` terminal-event pairing and span lifecycle, tested against the bus.
 import { describe, expect, it } from "vitest";
 import { EventBus } from "@/core/event-bus.js";
 import { createTraceNode, getNodeLabels } from "./nodeWrapper.js";
@@ -46,7 +42,7 @@ function fakeTracer() {
   return { tracer, spans };
 }
 
-describe("traceNode — terminal-event pairing (issue 15 §2)", () => {
+describe("traceNode — terminal-event pairing", () => {
   it("a successful node emits Node Started then Node Completed, and returns the result", async () => {
     const bus = new EventBus();
     const events: string[] = [];
@@ -58,8 +54,7 @@ describe("traceNode — terminal-event pairing (issue 15 §2)", () => {
     const wrapped = traceNode("ok_node", async () => "value", "Doing a thing");
 
     await expect(wrapped()).resolves.toBe("value");
-    // Bus handlers run synchronously inside `emit`, awaited by `traceNode`,
-    // so by the time the wrapped call resolves both events have landed.
+    // Bus handlers are synchronous: both events landed once call resolves.
     expect(events).toEqual(["Node Started", "Node Completed"]);
   });
 
@@ -83,8 +78,7 @@ describe("traceNode — terminal-event pairing (issue 15 §2)", () => {
       "Doing a thing that fails"
     );
 
-    // The error must still propagate — traceNode instruments, it does not
-    // swallow.
+    // Error must propagate.
     await expect(wrapped()).rejects.toThrow("boom");
     expect(events).toEqual(["Node Started", "Node Failed"]);
     expect(events).not.toContain("Node Completed");
@@ -110,7 +104,7 @@ describe("traceNode — terminal-event pairing (issue 15 §2)", () => {
     expect(failedError).toBe("not an Error object");
   });
 
-  it("records the node id -> labelKey mapping the structure endpoint (§4) joins against", () => {
+  it("records the node id -> labelKey mapping the structure endpoint joins against", () => {
     const bus = new EventBus();
     const traceNode = createTraceNode(bus);
     traceNode("labeled_node", async () => undefined, "A human label");
@@ -121,7 +115,7 @@ describe("traceNode — terminal-event pairing (issue 15 §2)", () => {
   });
 });
 
-describe("traceNode — OTel span lifecycle (issue 15 §5)", () => {
+describe("traceNode — OTel span lifecycle", () => {
   it("a successful node opens and closes exactly one span, carrying jobId and the sanitized output", async () => {
     const bus = new EventBus();
     const { tracer, spans } = fakeTracer();

@@ -1,34 +1,21 @@
 /**
- * One ordered, bounded shutdown, owned by the composition root (issue 18).
- *
- * Before this, `persistence/db.ts` and `transports/nats/index.ts` each
- * registered their own `SIGINT`/`SIGTERM` handlers. Node runs signal
- * listeners in registration order, and the DB's handler — registered
- * first, during graph construction — called `process.exit(0)`
- * *synchronously*, so the NATS handler registered afterwards was never
- * invoked at all: in-flight JetStream messages were neither acked nor
- * nacked, silently, until their ack-wait expired. `createApp()`
- * (`core/app.ts`) now builds one ordered list of closers as each transport
- * starts and returns a single `shutdown()`; this module is the only place
- * that turns a process signal into a call to it.
+ * One ordered, bounded shutdown owned by composition root (`core/app.ts`).
+ * Only place turning a process signal into a `shutdown()` call; nothing else
+ * registers signal handlers (a sync `process.exit` in one would skip the rest).
  */
 
-/** One thing the composition root knows how to close, in the order it was registered. */
+/** One closable thing, in registration order. */
 export interface Closer {
   readonly name: string;
   readonly close: () => Promise<void>;
 }
 
-/** Not an env var — a fixed ceiling so a hung close can never wedge the process open. */
+/** Fixed ceiling so hung close cannot wedge process. Not env var. */
 const SHUTDOWN_DEADLINE_MS = 5000;
 
 /**
- * Runs closers in the given order, continuing even if one rejects — a
- * failed NATS close must not leave the DB open, so every closer is
- * attempted regardless of earlier failures. If any of them rejected,
- * `runClosers` itself rejects after the last one has run, so the failure
- * still surfaces (via `installSignalHandlers`'s deadline/error path)
- * instead of being swallowed.
+ * Runs closers in order, continuing past rejections (failed NATS close must not
+ * leave DB open). Rejects after last one if any failed.
  */
 export async function runClosers(closers: readonly Closer[]): Promise<void> {
   const failed: string[] = [];
@@ -48,12 +35,9 @@ export async function runClosers(closers: readonly Closer[]): Promise<void> {
 }
 
 /**
- * Registers `SIGINT`/`SIGTERM` handlers that run `shutdown()` once, bounded
- * by `SHUTDOWN_DEADLINE_MS`, then exit the process. `exit` is injectable
- * (defaults to the real `process.exit`) so tests can drive this without
- * spawning a process or sending a real signal — call the returned handler
- * directly instead. Returns the handler for that reason; production code
- * (`src/index.ts`) ignores the return value.
+ * Registers `SIGINT`/`SIGTERM` handlers running `shutdown()` once, bounded by
+ * `SHUTDOWN_DEADLINE_MS`, then exit. `exit` injectable; returns handler so tests
+ * call it directly.
  */
 export function installSignalHandlers(
   shutdown: () => Promise<void>,
@@ -64,8 +48,7 @@ export function installSignalHandlers(
 
   const handleSignal = (signal: NodeJS.Signals): void => {
     if (shuttingDown) {
-      // One Ctrl+C is polite, two is an order: exit immediately without
-      // waiting for the shutdown already in flight.
+      // Second signal: exit immediately, don't wait for shutdown in flight.
       console.error(`[shutdown] second ${signal}, exiting immediately`);
       exit(130);
       return;
@@ -73,9 +56,7 @@ export function installSignalHandlers(
     shuttingDown = true;
     console.log(`[shutdown] received ${signal}, shutting down`);
 
-    // Cleared on the success path below, never unref()'d: a clean shutdown
-    // still exits as soon as it finishes, and a hung one always exits by
-    // the deadline either way.
+    // Cleared on success, never unref()'d: exits as soon as done, or by deadline.
     const timeout = setTimeout(() => {
       console.error(
         `[shutdown] deadline of ${SHUTDOWN_DEADLINE_MS}ms exceeded — see ` +

@@ -1,11 +1,6 @@
 import { FIXED_CLOSE, FIXED_OPEN, outlineSkeleton } from "./segments.js";
 
-/**
- * A well-formed tag-delimited outline for tests (#159): the server-owned
- * skeleton, each heading followed by one line of content. Anything that
- * scripts an outline LLM response uses this, so a skeleton change breaks
- * one fixture instead of every test that fakes the outline call.
- */
+/** Well-formed tag-delimited outline for tests: skeleton, each heading plus one content line. Shared so a skeleton change breaks one fixture. */
 export function taggedOutlineFixture(
   opts: { anamnesisCategories?: string[] | undefined; body?: string } = {}
 ): string {

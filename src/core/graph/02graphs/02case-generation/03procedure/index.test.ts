@@ -1,11 +1,7 @@
-// Drives the compiled procedure graph with a fake `ProcedureStrategy` and a
-// fake `LlmPort` that throws if called for anything a test did not script.
-// The fake strategy is the payoff of issue 07's `ProcedureStrategy` port: it
-// makes it cheap to exercise the blinded solver's control flow (order →
-// results → diagnose, the iteration cap, a ruled-out diagnosis, and the
-// `exhausted` move) with zero LLM calls attributable to the strategy itself.
-// No filesystem, no SQLite, no real LLM — mirrors the house style in
-// `runtime.test.ts` and `catalog/procedures/catalog.test.ts`.
+// Drives compiled procedure graph with a fake `ProcedureStrategy` and a fake
+// `LlmPort` that throws on unscripted calls. Covers solver control flow
+// (order, results, diagnose, iteration cap, ruled-out, `exhausted`). No
+// filesystem, SQLite or real LLM.
 import { describe, expect, it } from "vitest";
 import z from "zod";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
@@ -33,11 +29,7 @@ import { wireLabels, type LabelEvent } from "@/core/jobEvents/labels.js";
 
 // ─── Fakes ──────────────────────────────────────────────────────────────────
 
-/**
- * A `LlmPort` that serves a scripted, per-role queue of canned JSON
- * responses and throws for any role/call it wasn't told about — so a test
- * that scripts zero LLM calls fails loudly the moment one happens.
- */
+/** `LlmPort` serving scripted per-role JSON queues; throws on unscripted calls. */
 function makeQueuedLlmPort(
   responses: Partial<Record<LlmRole, string[]>>
 ): LlmPort {
@@ -77,12 +69,7 @@ function buildFakeRuntime(
   };
 }
 
-/**
- * A recording, batch-in/batch-out text provider — the same production shape
- * `03procedure/providers.ts`'s real one has, minus the LLM call: it just
- * echoes each instruction back as bytes, so `render_results`'s output is
- * predictable without scripting a rendering LLM call in every test.
- */
+/** Recording batch text provider; echoes each instruction as bytes, no LLM call. */
 function makeRecordingTextProvider(): {
   provider: ModalityProvider<unknown>;
   calls: { instruction: string }[][];
@@ -187,7 +174,7 @@ function buildGraph(
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe("procedure graph — output surface (issue 17 §1)", () => {
+describe("procedure graph — output surface", () => {
   it("buildProcedureGraph writes back only `case`", () => {
     const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
     const { strategy } = makeScriptedStrategy({});
@@ -233,21 +220,17 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
     ]);
     expect(nextStepViews).toHaveLength(3);
     expect(bridgeViews).toHaveLength(0);
-    // Already-ordered exclusion still holds against `plannedProcedures`
-    // (issue 21 §7 C2's regression risk): the second blinded view already
-    // carries CBC's planned finding — projected as `alt`, not rendered bytes
-    // — which is what the real aigateway's `.exclude(...)` reads to keep a
-    // duplicate order impossible.
+    // Already-ordered exclusion reads `plannedProcedures`: second view carries
+    // CBC's finding as `alt`, not bytes.
     expect(nextStepViews[1]?.previousProcedures).toEqual([
       { name: "CBC", relevance: "obligatory", result: "WBC 11k" },
     ]);
-    // One `render` call for the WHOLE list (issue 21 §7): both procedures'
-    // instructions arrive in a single batch, not one call each.
+    // One `render` call for whole list: both instructions in one batch.
     expect(calls).toHaveLength(1);
     expect(calls[0]).toHaveLength(2);
   });
 
-  it("emits a paired started/terminal label for every node, blinded_step revisited 3x, result_step 2x (#140)", async () => {
+  it("emits a paired started/terminal label for every node, blinded_step revisited 3x, result_step 2x", async () => {
     const llm = makeQueuedLlmPort({
       generator: [
         planResponse("CBC", "obligatory", "WBC 11k"),
@@ -436,7 +419,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
     expect(fromRenderResults[0]?.target).toBe("__end__");
   });
 
-  it("rejects an empty modality registry at build time (issue 21 §7)", () => {
+  it("rejects an empty modality registry at build time", () => {
     const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
     const { strategy } = makeScriptedStrategy({});
 
@@ -450,7 +433,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
     ).toThrow(/modality registry is empty/i);
   });
 
-  it("both the match path and the bridge path reach render_results, with `case.procedures` empty at every point before it and populated after (issue 21 §7)", async () => {
+  it("both the match path and the bridge path reach render_results, with `case.procedures` empty at every point before it and populated after", async () => {
     const llm = makeQueuedLlmPort({
       generator: [planResponse("CBC", "obligatory", "WBC 11k")],
       judge: [JSON.stringify({ matches: true })],
@@ -488,10 +471,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
 
     const childGraph = buildBlindedSolverGraph(strategy);
 
-    // `BlindedView` makes this a compile error everywhere it's actually
-    // constructed — this cast simulates a bug that tries to smuggle the
-    // diagnosis in anyway, to prove the runtime backstop independent of the
-    // type.
+    // Cast bypasses the `BlindedView` compile error to prove the runtime backstop.
     const smuggledInput = {
       presentation: {},
       previousProcedures: [],

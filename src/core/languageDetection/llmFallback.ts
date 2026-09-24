@@ -3,32 +3,20 @@ import z from "zod";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 
 /**
- * Step 3 of the ladder (issue 10 §1) — one cheap, deterministic LLM call
- * asking the model which of this deployment's configured languages the
- * given free text is written in. Only reached when the offline detector
- * (step 2) did not clear its confidence threshold, and only when a deployer
- * has opted in via `LANGUAGE_DETECT_LLM_FALLBACK` on top of
- * `LANGUAGE_AUTO_DETECT` — so nobody pays for this without asking twice.
+ * Step 3 of ladder: one deterministic LLM call picking which configured
+ * language `text` is in. Only when offline detector is under threshold and
+ * `LANGUAGE_DETECT_LLM_FALLBACK` is on.
  *
- * Best-effort: any failure (model error, or an answer outside the
- * configured set) resolves to `undefined` rather than throwing — a missing
- * guess here still degrades to step 4's configured default; it never fails
- * the whole generation request over a language-detection convenience.
+ * Best-effort: any failure or out-of-set answer resolves `undefined`, falls to step 4.
  *
- * Called *before* `runWithContext` binds the request's `AsyncLocalStorage`
- * context — language resolution is what decides what to bind — so there is
- * no jobId/abort-signal to thread through yet. Acceptable for a single
- * rare, opt-in classification call; it does not see the job's abort
- * signal.
+ * Runs before `runWithContext`: no jobId/abort signal.
  */
 export async function detectLanguageViaLlm(
   runtime: GraphRuntime,
   text: string,
   languages: readonly string[]
 ): Promise<string | undefined> {
-  // `languages` is always non-empty (`LANGUAGES` guarantees "English" is
-  // among them — config.ts), so this is just satisfying `z.enum`'s
-  // non-empty-tuple type; the resulting array is never actually empty.
+  // `languages` always non-empty (English mandatory); cast only satisfies `z.enum` tuple type.
   const choices = [...languages, "none"] as unknown as [string, ...string[]];
 
   try {

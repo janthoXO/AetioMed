@@ -1,9 +1,7 @@
-// Issue 15 §4/§6 — `GET /api/graph` must reflect the *actually compiled*
-// topology (flag-varied, since #120), and every id it reports must be one a
-// real node can emit an event under, in both directions. `traceNode(...)`
-// calls happen at graph-*construction* time (see `nodeWrapper.ts`), so a
-// freshly built variant's `getNodeLabels()` already *is* that variant's
-// complete traceable node-id set — no execution required to prove coverage.
+// `GET /api/graph` must reflect the actually compiled (flag-varied) topology,
+// and every reported id must be one a node can emit under, both directions.
+// `traceNode` runs at construction, so `getNodeLabels()` is the variant's full
+// traceable id set with no execution.
 import { describe, expect, it } from "vitest";
 import { assembleCaseGraphs, type AssemblyDeps } from "./02graphs/caseGraph.js";
 import { EventBus } from "@/core/event-bus.js";
@@ -88,7 +86,7 @@ function buildDeps(
   };
 }
 
-describe("GET /api/graph structure (issue 15 §4)", () => {
+describe("GET /api/graph structure", () => {
   it("reflects a flag-varied topology: the sandwich-off graph has no translation nodes, the sandwich-on graph does", async () => {
     const off = await buildGraphStructure(
       assembleCaseGraphs(buildDeps(), {
@@ -109,8 +107,7 @@ describe("GET /api/graph structure (issue 15 §4)", () => {
     expect(offIds.some((id) => id.includes("translate_diagnosis"))).toBe(false);
     expect(onIds.some((id) => id.includes("translate_diagnosis"))).toBe(true);
 
-    // The sandwich-off topology is a strict subset of the sandwich-on one —
-    // same generation phase, minus the two translation phases.
+    // Sandwich-off = strict subset of sandwich-on (minus translation phases).
     for (const id of offIds) {
       expect(onIds).toContain(id);
     }
@@ -145,10 +142,7 @@ describe("GET /api/graph structure (issue 15 §4)", () => {
   });
 
   it("both directions: every structure node id can emit an event, and every id a node can emit under appears in the structure", async () => {
-    // `assembleCaseGraphs` wraps every node via `traceNode` at *construction*
-    // time (see `nodeWrapper.ts`) — so with this the only variant built in
-    // this test, `getNodeLabels()` already is this topology's complete
-    // traceable node-id set, without running anything.
+    // Only variant built here, so `getNodeLabels()` is its full traceable id set.
     const compiled = assembleCaseGraphs(buildDeps(), {
       translationSandwich: true,
       procedurePreselection: false,
@@ -158,14 +152,11 @@ describe("GET /api/graph structure (issue 15 §4)", () => {
     const structureIds = new Set(structure.nodes.map((n) => n.id));
     const traceableIds = new Set(Object.keys(getNodeLabels()));
 
-    // Direction 1: every structure node id was registered by `traceNode` —
-    // i.e. is a node that can emit an event.
+    // Every structure id was registered by `traceNode`.
     for (const id of structureIds) {
       expect(traceableIds.has(id)).toBe(true);
     }
-    // Direction 2: every id a node can emit under appears in the structure
-    // — a one-directional check alone would pass even if half the graph
-    // were unreachable from the structure endpoint.
+    // Every traceable id appears in structure.
     for (const id of traceableIds) {
       expect(structureIds.has(id)).toBe(true);
     }

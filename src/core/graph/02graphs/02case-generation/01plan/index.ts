@@ -24,30 +24,17 @@ import type { PromptAudience } from "@/core/graph/utils/prompt.js";
 
 const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
 
-/**
- * The plan: an outline and its evaluate ⇄ regenerate loop (#159). Split out
- * of the presentation phase so the pipeline can stop between "the outline
- * exists" and "fields are generated from it" — the plan graph ends here and
- * the case graph starts from an outline handed to it.
- */
+/** Plan: outline plus evaluate ⇄ regenerate loop. Plan graph ends here; case graph starts from a handed-in outline. */
 export const PlanGraphStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
   difficulty: true,
   basisFragments: true,
 }).extend({
-  /**
-   * Plan mode binds the outline and its judge to the request language (the
-   * reviewer reads it as written); normal mode keeps both English. With the
-   * sandwich on, the bound runtime's `languageOverride` keeps them English
-   * either way — plan mode translates the outline instead.
-   */
+  /** Plan mode binds outline and judge to request language; normal mode English. Sandwich on: `languageOverride` keeps English either way; plan mode translates outline instead. */
   mode: RunModeSchema.default("normal"),
   outlineSegments: OutlineSegmentsSchema.default([]),
-  /**
-   * Whether the judge accepted `outlineSegments`. `false` after the loop
-   * ends on its iteration cap — the caller decides what that means.
-   */
+  /** Judge accepted `outlineSegments`. `false` after iteration cap; caller decides. */
   outlineAccepted: z.boolean().default(false),
   /** Iterations remaining before the loop gives up on the judge. */
   outlineEvaluationIterationsRemaining: z
@@ -64,8 +51,7 @@ function audienceOf(state: PlanGraphState): PromptAudience {
 
 type PlanGraphState = z.infer<typeof PlanGraphStateSchema>;
 
-// `.pick()` off this graph's own state schema (issue 17 §1): the write
-// surface is the outline and the judge's verdict, nothing else.
+// `.pick()` off own state schema: write surface = outline and judge verdict only.
 const PlanGraphOutputSchema = PlanGraphStateSchema.pick({
   outlineSegments: true,
   outlineAccepted: true,

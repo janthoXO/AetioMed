@@ -25,19 +25,14 @@ function isNoResponders(error: unknown): boolean {
 }
 
 /**
- * The multi-replica job directory (#145): answers from whichever replica owns
- * the job, over the subjects that replica already answers
- * (`transports/nats/jobResponders.ts`). Ownership is subscription interest,
- * so "no responders" means no replica has the job — unknown — rather than a
- * guess from this process's memory.
+ * Multi-replica job directory: asks the owning replica over subjects
+ * `jobResponders.ts` answers. "No responders" = no replica has job = unknown.
  */
 export function createNatsJobDirectory(nc: NatsConnection): JobDirectory {
   return {
     async watch(jobId): Promise<WatchResult> {
-      // Subscribe **before** asking for the state: a job that finishes
-      // between the two still delivers its `complete` into this
-      // subscription instead of being lost. Events are buffered until the
-      // caller listens.
+      // Subscribe before asking state: a job finishing in between still
+      // delivers `complete` here. Buffered until caller listens.
       const subscription: Subscription = nc.subscribe(progressWildcard(jobId));
       const buffered = createBufferedWatch(() => subscription.unsubscribe());
       (async () => {

@@ -40,16 +40,9 @@ import {
 import { RunModeSchema, type RunMode } from "../models/RunMode.js";
 import type { ModalityRegistries } from "../modality/registry.js";
 
-// No `language` field (issue 09 §2): the outer graphs resolve language
-// before invoke and bind ports to it via `AsyncLocalStorage`
-// (`utils/context.ts`), never via graph state — a narrower state schema is a
-// real, runtime-enforced boundary (subgraph state is filtered), unlike
-// LangGraph's own runtime context, which is not.
+// No `language` field: outer graphs bind ports to language via `AsyncLocalStorage` (`utils/context.ts`), not graph state. Narrower state schema is a runtime-enforced boundary (subgraph state filtered), unlike LangGraph runtime context.
 //
-// The pipeline is two top-level graphs since #159: the **plan graph** ends
-// with an outline, the **case graph** starts from one. The seam between
-// them is where plan mode pauses for a human reviewer, and where the job
-// service checkpoints the outline in both modes.
+// Two top-level graphs: **plan graph** ends with outline, **case graph** starts from one. Plan mode stops at the seam.
 const PlanStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
@@ -57,31 +50,15 @@ const PlanStateSchema = CaseGenerationStateSchema.pick({
   difficulty: true,
   basisFragments: true,
 }).extend({
-  /**
-   * Per-request routing input (issue 12 §3), not ALS: whether the *caller*
-   * actually supplied free text — a diagnosis **name** (rather than only an
-   * `icd`) or any `userInstructions`. `CaseGenerationService` is the only
-   * place that knows this (it performs the ICD→name resolution before the
-   * graph ever runs), so it computes this and passes it in. Graph state,
-   * not ALS, is where this belongs — #120's rule is *branch on what the
-   * caller asked for*, and this is per-request routing input, visible in
-   * the graph's input contract; `language` stays on ALS because it is a
-   * property of the bound ports (see the comment above), not a per-request
-   * routing signal like this one.
-   */
+  /** Per-request routing input, not ALS: caller supplied free text (diagnosis **name**, not only `icd`, or any `userInstructions`). Computed by `CaseGenerationService` before ICD→name resolution. `language` stays on ALS: property of bound ports. */
   callerSuppliedFreeText: z.boolean(),
   mode: RunModeSchema.default("normal"),
-  /**
-   * A plan handed in with the request (#159): when set, the plan graph only
-   * translates the request in and skips planning — see {@link planOrSkip}.
-   */
+  /** Plan handed in with request: plan graph only translates request in, skips planning; see {@link planOrSkip}. */
   outlineSegments: OutlineSegmentsSchema.default([]),
   outlineAccepted: z.boolean().default(false),
 });
 
-// The plan graph hands back everything the case graph needs, in the
-// working language: after translate-in, `diagnosis`/`userInstructions` are
-// English, and they are what the case graph must use.
+// Plan graph hands back everything case graph needs, in working language (English after translate-in).
 const PlanOutputSchema = PlanStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
@@ -104,16 +81,7 @@ const CaseStateSchema = CaseGenerationStateSchema.pick({
 const CaseOutputSchema = CaseStateSchema.pick({ case: true });
 
 /**
- * The translate-**out** edge (after generation): does this *request* need
- * its output translated? (`state.language` no longer exists — the
- * deployer's `TRANSLATION_SANDWICH` flag already decided whether the
- * translation nodes are compiled in at all; this decides, per request,
- * whether to enter them.) Reads `getRequestContext()?.language` off ALS,
- * never off graph state or LangGraph's own runtime context — see the
- * `CaseStateSchema` comment above and `utils/context.ts`. Always runs when
- * the language differs, regardless of provenance: generation always runs in
- * English under the sandwich, so the response must be translated back even
- * for an ICD-only request that skipped translate-**in** below.
+ * Translate-**out** edge (after generation): does this request need output translated? Reads `getRequestContext()?.language` off ALS, never graph state. Fires whenever language differs, regardless of provenance: generation is English under sandwich, so even ICD-only requests translate back.
  */
 function requestNeedsTranslationOut(): "translate" | "skip" {
   const language = getRequestContext()?.language;
@@ -121,13 +89,7 @@ function requestNeedsTranslationOut(): "translate" | "skip" {
 }
 
 /**
- * The translate-**in** edge (before generation): issue 12 §3 fixes a bug
- * here. The old predicate fired on `language !== "English"` alone, so an
- * ICD-only request — whose name is already the catalogue's English name —
- * got "translated" anyway, polluting the translation store with identity
- * entries (`German: { "Diabetes": "Diabetes" }`). Trigger on provenance
- * instead: only enter this phase when the language differs **and** the
- * caller actually supplied free text (`state.callerSuppliedFreeText`).
+ * Translate-**in** edge (before generation): enter only when language differs **and** caller supplied free text (`state.callerSuppliedFreeText`). ICD-only names are already catalogue English; translating would pollute store with identity entries (`German: { "Diabetes": "Diabetes" }`).
  */
 function requestNeedsTranslationIn(state: {
   callerSuppliedFreeText: boolean;
@@ -138,10 +100,7 @@ function requestNeedsTranslationIn(state: {
     : "skip";
 }
 
-/**
- * After translate-in: plan, or — with a plan handed in (#159) — stop, the
- * request's working-language values being all the case graph still needs.
- */
+/** After translate-in: plan, or, with plan handed in, stop; working-language values are all case graph needs. */
 function planOrSkip(state: {
   outlineSegments: OutlineSegments;
 }): "planning_phase" | typeof END {
@@ -152,31 +111,13 @@ function planOrSkip(state: {
 type CaseGraphRepos = Pick<Repos, "anamnesis" | "procedures">;
 
 /**
- * Everything assembly needs that is *not* a flag. `medicalBasisRegistry` is
- * here rather than in `GraphFlags` deliberately: it is fixed per deployment
- * (constructed once in `graph/index.ts` via
- * `medicalBasis/registry.ts`'s `createMedicalBasisRegistry`), so all four
- * flag variants share it — putting it in `GraphFlags` would multiply the
- * variant count by registry configuration. Its *size* still changes the
- * compiled shape (see `02case-generation/index.ts`'s `buildCaseGenerationGraph`),
- * exactly like the two real flags, just driven by a list rather than a
- * boolean and not itself a deployer-facing env flag (see that module's doc
- * comment on `createMedicalBasisRegistry`).
+ * Everything assembly needs that is not a flag. `medicalBasisRegistry` is fixed per deployment (`createMedicalBasisRegistry`), shared by all four flag variants. Its *size* still changes compiled shape (`buildCaseGenerationGraph`).
  */
 export type AssemblyDeps = {
   runtime: GraphRuntime;
   repos: CaseGraphRepos;
   medicalBasisRegistry: MedicalBasisProvider[];
-  /**
-   * The per-field modality registries (issue 21 §4) — in `AssemblyDeps`,
-   * not `GraphFlags`, for exactly `medicalBasisRegistry`'s reason above:
-   * fixed per deployment, shared by all four flag variants. Unlike
-   * `medicalBasisRegistry`, an empty per-field list is a build-time error
-   * rather than an absent node (`EmptyModalityRegistryError`,
-   * `modality/registry.ts`) — the planner always runs for every field
-   * (issue 21 §1), so there is no registry-size topology variance left to
-   * drive.
-   */
+  /** Per-field modality registries. Fixed per deployment, shared by all variants. Empty per-field list is build-time `EmptyModalityRegistryError` (`modality/registry.ts`); planner always runs, so no topology variance. */
   modalityRegistries: ModalityRegistries;
   traceNode: ReturnType<typeof createTraceNode>;
 };
@@ -212,14 +153,7 @@ export function graphVariantKey(flags: GraphFlags): string {
 }
 
 /**
- * The key identifying a compiled *topology*, as opposed to a variant.
- *
- * `PROCEDURE_PRESELECTION` selects a `ProcedureStrategy` adapter; the
- * procedure graph is fixed at three nodes either way (issue 07), so it does
- * not change the shape of anything and does not appear here. Only the
- * translation sandwich does. This is what `exportGraphs.ts` names diagrams
- * by — two topologies, not four — and `caseGraph.test.ts` asserts the
- * premise still holds.
+ * Key identifying compiled *topology*, not variant. `PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter; procedure graph stays three nodes, so it is not in key. Only translation sandwich is. `exportGraphs.ts` names diagrams by it; `caseGraph.test.ts` asserts the premise.
  */
 export function graphTopologyKey(
   flags: GraphFlags
@@ -228,30 +162,15 @@ export function graphTopologyKey(
 }
 
 /**
- * Assemble a compiled top-level case graph for one set of deployer flags.
+ * Assemble compiled top-level case graphs for one set of deployer flags.
  *
- * > **Compile on what the deployer chose; branch on what the caller asked
- * > for.**
+ * > **Compile on what the deployer chose; branch on what the caller asked for.**
  *
- * The next person to touch this will get that backwards, so to be explicit:
- * `TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config
- * and are compiled away — **an absent flag means an absent node**, not a
- * node that is skipped and not an edge that always chooses `skip`. With the
- * sandwich off, the two translation nodes and the two `requestNeedsTranslation*`
- * conditional edges do not exist at all.
+ * `TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config, compiled away: **absent flag = absent node**, not a skipped node. Sandwich off: translation nodes and both `requestNeedsTranslation*` edges do not exist.
  *
- * `generationFlags`, `difficulty` and `language` are per-request and stay
- * runtime branches. That is why, with the sandwich *on*, the two
- * `requestNeedsTranslation*` conditional edges remain: whether this
- * deployment can translate is the deployer's choice, but whether this
- * particular request needs to is the caller's — `language` itself never
- * reaches graph state (see `CaseStateSchema`'s comment); the edges read it
- * off ALS instead. Likewise the conditional edge on the `procedures`
- * generation flag in `02case-generation/index.ts` stays a conditional edge
- * in every variant.
+ * `generationFlags`, `difficulty`, `language` are per-request runtime branches. Sandwich on: both edges remain (deployer chooses whether deployment can translate, caller whether request needs to); they read `language` off ALS. `procedures` conditional edge in `02case-generation/index.ts` stays in every variant.
  *
- * Pure wiring: same `(deps, flags)` gives a structurally identical graph, and
- * nothing here performs I/O.
+ * Pure wiring, no I/O: same `(deps, flags)` gives structurally identical graph.
  */
 export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
   const {
@@ -262,18 +181,13 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
     traceNode,
   } = deps;
 
-  // With the sandwich compiled in, generation always runs in English (issue
-  // 09 §3/§4) — the request's real target language only ever reaches the
-  // translate-out phase below, built from the *unmodified* `runtime`. This
-  // is the one `languageOverride` binding today: see `GraphRuntime`'s doc
-  // comment (`runtime.ts`) and `buildSystemPrompt` (`utils/prompt.ts`),
-  // which is what actually reads it.
+  // Sandwich on: generation runs English (`languageOverride` binding, read by `buildSystemPrompt`); real target
+  // language reaches only translate-out, built from unmodified `runtime`.
   const generationRuntime: GraphRuntime = flags.translationSandwich
     ? { ...runtime, languageOverride: "English" }
     : runtime;
 
-  // Scoped to match the mount names below — see `nodeWrapper.ts`'s
-  // `TraceNodeFn.scope` doc comment (issue 15 §3/§4).
+  // Scoped to match mount names below; see `TraceNodeFn.scope` in `nodeWrapper.ts`.
   const planningPhase = buildPlanningPhaseGraph(
     generationRuntime,
     medicalBasisRegistry,
@@ -290,10 +204,8 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
     traceNode.scope("generation_phase")
   );
 
-  // Each branch is written out in full rather than conditionally chained:
-  // LangGraph accumulates node names into the builder's type parameter, so
-  // a conditionally-extended builder loses the very typing that makes
-  // `addEdge("planning_phase", …)` checkable.
+  // Each branch written out in full, not chained: LangGraph accumulates node names in builder type parameter;
+  // conditional chaining loses `addEdge("planning_phase", …)` typing.
   if (!flags.translationSandwich) {
     return {
       plan: new StateGraph(PlanStateSchema, {
@@ -312,9 +224,7 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
         .addEdge(START, "generation_phase")
         .addEdge("generation_phase", END)
         .compile(),
-      // The sandwich's middle layer (#159) exists only when the sandwich
-      // does: with it off, plan mode generates the outline directly in the
-      // request language, so there is nothing to translate.
+      // Middle layer exists only with sandwich; off, plan mode generates outline directly in request language.
       outlineOut: undefined,
       reviewIn: undefined,
     };
@@ -367,11 +277,8 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
       })
       .addEdge("translation_from_english_phase", END)
       .compile(),
-    // The sandwich's middle layer (#159): the outline out to the reviewer
-    // and their edits back in. Compiled with the sandwich, entered only by
-    // plan-mode requests in a language other than English — never by normal
-    // mode. Built from the unmodified `runtime`: they translate to and from
-    // the request's real language.
+    // Middle layer: outline out to reviewer, edits back in. Compiled with sandwich, entered only by plan-mode
+    // requests in non-English language. Built from unmodified `runtime`: translates to/from real request language.
     outlineOut: buildOutlineTranslationGraph(runtime, traceNode, "out"),
     reviewIn: buildOutlineTranslationGraph(runtime, traceNode, "in"),
   };
@@ -382,25 +289,11 @@ export type CompiledPlanGraph = CompiledCaseGraphs["plan"];
 export type CompiledCaseGraph = CompiledCaseGraphs["case"];
 
 /**
- * Builds every flag variant eagerly, and binds `planCase`/`renderCase` to the one the
- * deployer's config selects. Called once from the composition root
- * (`graph/index.ts`) — and once from `exportGraphs.ts`, with a minimal
- * in-memory runtime, purely to render topologies.
+ * Builds every flag variant eagerly; binds `planCase`/`renderCase` to the one deployer config selects. Called from composition root (`graph/index.ts`) and `exportGraphs.ts` (minimal in-memory runtime, topologies only).
  *
- * **Eager, not lazy.** Lazy compilation would move a possible failure from
- * boot to the first request that happened to need that variant.
+ * Eager so a broken variant fails at boot, not first request. Other three variants give `exportGraphs.ts` and tests one assembly source. Compilation is pure wiring; four is cheap.
  *
- * Only one variant is ever served, so the other three earn their place two
- * other ways: they prove every variant compiles at boot rather than at
- * config-change time, and they give `exportGraphs.ts` and the tests a single
- * source of assembly truth instead of a parallel code path that can drift
- * from what actually runs. Compilation is pure wiring with no I/O, so four
- * is cheap.
- *
- * A useful side effect: because the sandwich-on variants are always built,
- * `getKnownLabels()` collects the translation nodes' labels even on a
- * deployment that has the sandwich off — so `validateCatalogsOrExit` still
- * validates `labelTranslations.yml` against the complete key set.
+ * Sandwich-on variants always built, so `getKnownLabels()` collects translation labels even with sandwich off; `validateCatalogsOrExit` validates `labelTranslations.yml` against the complete key set.
  */
 export function buildCaseGraph(
   runtime: GraphRuntime,
@@ -409,13 +302,8 @@ export function buildCaseGraph(
   repos: CaseGraphRepos,
   medicalBasisRegistry: MedicalBasisProvider[],
   modalityRegistries: ModalityRegistries,
-  // The OTel operator channel's port (issue #141) — optional and
-  // defaulted to the no-op so every existing caller (`exportGraphs.ts`,
-  // every test building a graph directly) is unaffected. The composition
-  // root (`app.ts`) is the only real caller that passes a constructed one,
-  // via `observability/otel.ts`'s `createOtelNodeTracer()`, gated only by
-  // the standard `OTEL_SDK_DISABLED` — a separate channel from labels
-  // (`core/jobEvents/`, #140), which are always on.
+  // OTel operator channel port. Optional, defaults to no-op. Real one comes from `app.ts` via
+  // `observability/otel.ts`'s `createOtelNodeTracer()`, gated by `OTEL_SDK_DISABLED`; independent of labels (`core/jobEvents/`).
   tracer: NodeTracer = noopNodeTracer
 ) {
   const deps: AssemblyDeps = {
@@ -459,16 +347,9 @@ export function buildCaseGraph(
   }
 
   /**
-   * Run the plan graph: translate-in (sandwich on, when needed), the medical
-   * basis, and the outline with its judge loop (#159). Returns the outline
-   * and the working-language inputs the case graph needs.
+   * Run plan graph: translate-in (sandwich on, when needed), medical basis, outline with judge loop. Returns outline and working-language inputs for case graph.
    *
-   * `language` is not threaded into graph state (see `PlanStateSchema`'s
-   * comment above): by the time this runs, `runWithContext` (called by
-   * `caseGenerationService.ts`) has already bound it on ALS, so the
-   * translation edges and every gateway see it via `getRequestContext()`.
-   * `callerSuppliedFreeText` *is* graph state — per-request routing input
-   * the translate-in edge reads directly.
+   * `language` not in graph state: `runWithContext` already bound it on ALS. `callerSuppliedFreeText` is graph state: routing input for translate-in edge.
    */
   async function planCase(opts: PlanCaseInput): Promise<PlanResult> {
     const result = await graphs.plan.invoke(
@@ -516,12 +397,7 @@ export function buildCaseGraph(
     return result.case;
   }
 
-  /**
-   * Translate outline values keyed by segment index (#159): `"out"` from
-   * English to the request language for the reviewer, `"in"` back to
-   * English. `undefined` when the sandwich is compiled out — plan mode then
-   * writes the outline in the request language and never translates it.
-   */
+  /** Translate outline values keyed by segment index: `"out"` English → request language, `"in"` back to English. `undefined` when sandwich compiled out. */
   const translateOutline =
     graphs.outlineOut && graphs.reviewIn
       ? (values: Record<string, string>, direction: "out" | "in") =>
@@ -548,12 +424,7 @@ export type PlanCaseInput = {
   difficulty?: Difficulty | undefined;
   callerSuppliedFreeText: boolean;
   mode?: RunMode | undefined;
-  /**
-   * The plan handed in with the request, in English (#159): planning is
-   * skipped and only translate-in runs, so the result's `outlineSegments`
-   * is this plan and its `diagnosis`/`userInstructions` are in the working
-   * language.
-   */
+  /** Plan handed in with request, in English: planning skipped, only translate-in runs; result's `outlineSegments` is this plan, `diagnosis`/`userInstructions` in working language. */
   outline?: OutlineSegments | undefined;
 };
 

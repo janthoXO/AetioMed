@@ -13,10 +13,7 @@ export type GenerationFlag = z.infer<typeof GenerationFlagSchema>;
 export const AllGenerationFlags: GenerationFlag[] =
   GenerationFlagSchema.options;
 
-/**
- * The fields that make up the patient presentation — everything the blinded
- * procedure solver reasons from (`03procedure/index.ts`'s `presentationOf`).
- */
+/** Patient presentation fields: everything the blinded solver reasons from (`presentationOf`). */
 export const PresentationGenerationFlags: GenerationFlag[] = [
   "patient",
   "chiefComplaint",
@@ -24,31 +21,13 @@ export const PresentationGenerationFlags: GenerationFlag[] = [
 ];
 
 /**
- * `generationFlags: ["procedures"]` alone is a valid request, but the blinded
- * solver cannot work from an empty presentation — it would be handed a
- * patient with no age, no complaint and no history, after the plan and its
- * judge loop had already been paid for.
+ * `["procedures"]` alone is valid, but blinded solver needs a presentation.
+ * Presentation fields generated **internally**, projected out by
+ * {@link projectCaseToFlags}; caller gets only requested fields.
  *
- * So the presentation is generated **internally** and then projected back out
- * of the response by {@link projectCaseToFlags}. The caller gets exactly the
- * fields they asked for; the solver gets exactly the input it gets today.
- *
- * The obvious cheaper alternative — reusing the plan outline as the solver's
- * presentation — is *not* safe. The outline is a tag-delimited markdown
- * skeleton (`graph/outline/segments.ts`, #159) whose fixed procedures
- * section, by `case.aigateway.ts`'s own instruction 4, describes how results
- * should be shaped to reach the diagnosis. Slicing a presentation out of it
- * by heading is a parse whose failure mode is silently leaking that
- * procedures section into the *blinded* solver — destroying the pipeline's
- * core asymmetry while still producing plausible output. Doing it properly
- * means giving the plan a structured, blinded-safe presentation summary,
- * which is a change to the most sensitive prompt in the pipeline and belongs
- * in its own change.
- *
- * The honest cost of the approach taken here: three presentation fields are
- * generated and discarded. That is still strictly less waste than the
- * behaviour it replaces, which paid for the plan *and* its evaluations and
- * then solved against nothing.
+ * Do not reuse the plan outline as presentation: its fixed procedures
+ * section describes how results reach the diagnosis (`case.aigateway.ts`
+ * instruction 4); slicing by heading risks leaking it into the *blinded* solver.
  */
 export function expandFlagsForSolver(
   flags: GenerationFlag[]
@@ -60,10 +39,7 @@ export function expandFlagsForSolver(
   return needsPresentation ? [...flags, ...PresentationGenerationFlags] : flags;
 }
 
-/**
- * Drop any field the caller did not ask for. The flag names are the `Case`
- * keys, so this is a straight key filter — keep it that way.
- */
+/** Drop fields not requested. Flag names are `Case` keys: straight key filter. */
 export function projectCaseToFlags(
   generatedCase: Case,
   flags: GenerationFlag[]

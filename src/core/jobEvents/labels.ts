@@ -4,14 +4,8 @@ import type { Language } from "../graph/models/Language.js";
 import type { JobEventChannel } from "./channel.js";
 
 /**
- * The end-user progress event: one short, already-localized phrase per node
- * execution, keyed by the same `nodeId` `GET /api/graph` reports. `status`
- * lets a progress UI pick an icon (spinner / check / error) without
- * inspecting anything else.
- *
- * It never carries node output. That is what makes it safe to have no size
- * cap and no English-only rule: it is always small, and it is meant for the
- * person who submitted the request.
+ * End-user progress event: one short localized phrase per node execution,
+ * keyed by `nodeId` as in `GET /api/graph`. Never carries node output.
  */
 export type LabelEvent = {
   jobId: string;
@@ -23,9 +17,8 @@ export type LabelEvent = {
 };
 
 /**
- * Localize an English label key into the job's request language, falling
- * back to English. Core (`utils/nodeWrapper.ts`) always emits English; this
- * is the one place that translates it. A missing translation is never fatal.
+ * Localize English label key to request language; falls back to English.
+ * Core emits English; only place that translates.
  */
 export function localizeLabel(
   labels: LabelCatalog,
@@ -37,12 +30,9 @@ export function localizeLabel(
 }
 
 /**
- * Turn the graph's node lifecycle events into localized label events on the
- * job's channel. Called once by the composition root (`app.ts`).
- *
- * Labels carry `started` **and** a terminal status. "The next start implies
- * the previous node finished" is false for this graph: `Send` fans nodes out
- * in parallel, and the blinded-solver loop revisits nodes (#140).
+ * Turn node lifecycle bus events into localized label events on the job's
+ * channel. Emits `started` **and** terminal status: next start does not imply
+ * previous finished (`Send` parallel fan-out, solver loop revisits nodes).
  */
 export function wireLabels(
   bus: EventBus,
@@ -59,8 +49,7 @@ export function wireLabels(
       timestamp: string;
     }) => {
       if (!e.jobId) return;
-      // Every `traceNode()` call site passes a label, but the bus field is
-      // optional. Fall back to the node id rather than publish no label.
+      // Bus `label` optional; fall back to node id.
       const labelKey = e.label ?? e.node;
       channel.publish(e.jobId, "label", {
         jobId: e.jobId,

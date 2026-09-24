@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-// is only loaded when NATS feature is enabled
+// Loaded only when NATS feature enabled
 export const ConfigSchema = z
   .object({
     NATS_URL: z.url().default("nats://localhost:4222"),

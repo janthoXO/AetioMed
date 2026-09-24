@@ -18,21 +18,15 @@ import { invokeLogged } from "./invokeLogged.js";
 import { toSolverMove } from "./solverMove.js";
 
 /**
- * Hard cap on category-scope expansions within a single blinded pick: once
- * reached, `nextStep`'s expand loop passes an empty expandable list, which
- * removes the expand branch from the response schema entirely and forces a
- * pick. Expansions do NOT consume the solver's `iterationsRemaining` budget
- * — that budget bounds diagnostic steps, this cap bounds retrieval within
- * one step.
+ * Max category-scope expansions per blinded pick. At cap, empty expandable
+ * list removes expand branch from schema, forcing a pick. Does not consume
+ * `iterationsRemaining`.
  */
 const MAX_CATEGORY_EXPANSIONS = 2;
 
 /**
- * The `PROCEDURE_PRESELECTION` strategy: a category pick followed by a
- * procedure pick, instead of one call against the full candidate list —
- * small-model-friendly prompting. Selected by
- * `createProcedureStrategy` only when the approved procedure list has real
- * categories to scope against (`strategy/index.ts`).
+ * `PROCEDURE_PRESELECTION` strategy: category pick, then procedure pick.
+ * Selected only when approved list has real categories (`strategy/index.ts`).
  */
 export class CategoryScopedPick implements ProcedureStrategy {
   readonly id = "category-scoped-pick";
@@ -43,18 +37,13 @@ export class CategoryScopedPick implements ProcedureStrategy {
   ) {}
 
   /**
-   * Step 1 (category pick) followed by step 2 (procedure pick scoped to
-   * those categories), returning a result shaped exactly like `DirectPick`'s
-   * so the `blinded_step` node's post-processing doesn't need to know which
-   * strategy produced it.
+   * Category pick, then procedure pick scoped to those categories. Same
+   * result shape as `DirectPick`.
    *
-   * The procedure pick may answer with an "expand" action requesting
-   * additional categories; the loop below unions them into the scope and
-   * retries. The visited set is the local `scope` variable — never the
-   * model's memory — and termination is guaranteed twice: the expand
-   * grammar only admits categories not yet in scope (monotone scope
-   * growth), and once {@link MAX_CATEGORY_EXPANSIONS} is reached the expand
-   * branch is removed from the response schema entirely, forcing a pick.
+   * Procedure pick may "expand" with more categories; loop unions them into
+   * local `scope` and retries. Terminates: expand grammar admits only
+   * out-of-scope categories, and {@link MAX_CATEGORY_EXPANSIONS} removes the
+   * expand branch.
    */
   async nextStep(view: BlindedView): Promise<SolverMove> {
     const { runtime } = this;
@@ -85,7 +74,7 @@ export class CategoryScopedPick implements ProcedureStrategy {
       categoryStep.action !== "categories" ||
       !categoryStep.categories?.length
     ) {
-      // Unexpected shape — let the node's existing fallback handle it.
+      // Unexpected shape; node fallback handles it.
       return toSolverMove({ action: "procedure", procedures: undefined });
     }
 
@@ -135,16 +124,10 @@ export class CategoryScopedPick implements ProcedureStrategy {
   }
 
   /**
-   * Step 1 (category pick) followed by step 2 (confirmatory NAME pick scoped
-   * to those categories), then `planProcedureResults` plans results for
-   * whatever names step 2 picked (issue 21 §7) — the SAME planner
-   * `03procedure/index.ts`'s `result_step` calls, so this ends up three LLM
-   * calls where it used to be two. The bridge is terminal (no retry loop),
-   * so if the category pick comes back empty this falls back to every real
-   * category rather than stalling on an unusable candidate set. Unlike
-   * `nextStep` there is no model-driven expand loop here: the diagnosis is
-   * known, so when the scoped name pick yields nothing the scope is
-   * deterministically widened to all categories in a single retry.
+   * Category pick, confirmatory name pick scoped to those categories, then
+   * `planProcedureResults` (same planner as `result_step`). Terminal: empty
+   * category pick falls back to all categories; empty scoped name pick
+   * retries once with all categories. No model-driven expand loop.
    */
   async bridge(view: OracleView): Promise<PlannedProcedure[]> {
     const { runtime } = this;

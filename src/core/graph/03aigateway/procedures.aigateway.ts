@@ -31,11 +31,9 @@ import type { ModalityProvider, PlannedPart } from "../modality/ports.js";
 // ─── Shared types ─────────────────────────────────────────────────────────────
 
 /**
- * The patient's presentation as seen by the blinded solver — no diagnosis.
- * A **text projection** (issue 11 §4), not the domain `Case` shape: bytes
- * must never reach a prompt, so every prompt builder's parameters are
- * strings. `presentationOf` (`03procedure/index.ts`) is the one place that
- * builds this from a domain `Case`, via `textOf`.
+ * Patient presentation as seen by blinded solver, no diagnosis. Text
+ * projection, not domain `Case`: bytes never reach a prompt. Built only by
+ * `presentationOf` (`03procedure/index.ts`) via `textOf`.
  */
 export type Presentation = {
   patient?: Patient | undefined;
@@ -56,12 +54,9 @@ export type BlindedProcedureStepResult =
     };
 
 /**
- * Result of a category-scoped procedure pick (PROCEDURE_PRESELECTION step 2):
- * either the actual pick, or a request to pull additional categories into
- * scope. The
- * expand action is only offered while the caller still allows it — the
- * grammar constraint restricts it to categories NOT already in scope, so the
- * model can never re-request one it has already seen.
+ * Category-scoped pick result (PROCEDURE_PRESELECTION step 2): the pick, or
+ * request to add categories. Expand offered only while caller allows; grammar
+ * restricts it to categories NOT already in scope.
  */
 export type ScopedProcedurePickResult =
   | {
@@ -78,14 +73,9 @@ export type ScopedProcedurePickResult =
 // ─── Shared prompt sections ───────────────────────────────────────────────────
 
 /**
- * The blinded solver's (and the bridge's) view of a procedure already
- * ordered, projected from `plannedProcedures` (issue 21 §7):
- * `result` is `parts.map(p => p.alt).join("\n\n")`, never the rendered
- * bytes — nothing has been rendered yet, so `alt` (the self-contained
- * clinical-finding statement `planProcedureResults` requires — see its doc
- * comment) is genuinely the only thing there is to reason over. This
- * replaces reading `textOf(p.result)` off a domain `ProcedureResult`, which
- * no longer exists at this point in the loop.
+ * Blinded solver's (and bridge's) view of an ordered procedure, projected from
+ * `plannedProcedures`: `result` is `parts.map(p => p.alt).join("\n\n")`.
+ * Nothing rendered yet, so `alt` (see `planProcedureResults`) is all there is.
  */
 export type PreviousProcedureFinding = {
   name: string;
@@ -98,10 +88,8 @@ function presentationSection(presentation: Presentation) {
 }
 
 /**
- * Renders only `name -> result` for each prior procedure. This is used by
- * both the blinded step and the non-blinded bridge step — it deliberately
- * omits `relevance`, which is a judgment relative to the TRUE diagnosis and
- * would leak it to the blinded solver if ever included here.
+ * Renders `name -> result` per prior procedure, for blinded and bridge steps.
+ * Omits `relevance`: relative to TRUE diagnosis, would leak it to blinded solver.
  */
 function previousProceduresSection(
   previousProcedures: PreviousProcedureFinding[]
@@ -177,15 +165,14 @@ export async function generateBlindedProcedureStep(
     .exclude(previousProcedures.map((p) => p.name));
 
   if (candidates.isEmpty()) {
-    // Every approved procedure has already been ordered — nothing left to
-    // pick; the caller treats an empty pick as "bridge to the diagnosis".
+    // All approved procedures ordered; empty pick means "bridge".
     console.warn(
       "[GenerateBlindedProcedureStep] All approved procedures already ordered — returning empty pick."
     );
     return { action: "procedure", procedures: [] };
   }
 
-  // Internal artifact (issue 09 §3): the blinded solver, English always.
+  // Internal: blinded solver, English always.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "internal",
@@ -245,8 +232,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
 
     const rawResult = await retry(
       async (attempt, previousError) => {
-        // Balanced: this is clinical decision-making, not creative writing —
-        // lower temperature keeps procedure choices focused and output short.
+        // Balanced: clinical decision-making; lower temperature keeps picks focused.
         const res = await runtime.llm
           .for(
             { role: "generator", temperature: "balanced" },
@@ -286,8 +272,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       return rawResult;
     }
 
-    // Reunite grouped/flat names with their category prefix (if any) —
-    // the blinded step's public shape is always a plain `Procedure[]`.
+    // Reattach category prefix; public shape is plain `Procedure[]`.
     return {
       action: "procedure",
       procedures: candidates.assemble(rawResult.procedures),
@@ -313,11 +298,7 @@ export type BlindedCategoryStepResult =
       reasoning?: string | undefined;
     };
 
-/**
- * Same grammar-vs-prompt split as {@link buildStepSchema}: the `categories`
- * restriction is applied to the grammar constraint but not to the schema
- * rendered into the system prompt.
- */
+/** Grammar-vs-prompt split as {@link buildStepSchema}: `categories` restriction in grammar only, not prompt schema. */
 function buildCategoryStepSchema(categories?: string[]) {
   return z.discriminatedUnion("action", [
     z.object({
@@ -338,14 +319,10 @@ function buildCategoryStepSchema(categories?: string[]) {
 }
 
 /**
- * Step 1 of the small-model-friendly split of the blinded procedure pick
- * (enabled via `PROCEDURE_PRESELECTION`, dispatched from the
- * `CategoryScopedPick` strategy adapter): choose the plausibly-relevant
- * procedure categories — over-inclusive, since
- * {@link generateBlindedProcedureStepFromCategories} narrows down to actual
- * procedures next — or commit to a diagnosis. The diagnose handling mirrors
- * {@link generateBlindedProcedureStep} exactly, so the graph node can reuse
- * the same `matchDiagnosis` / ruled-out-diagnoses flow for either path.
+ * Step 1 of blinded pick under `PROCEDURE_PRESELECTION` (`CategoryScopedPick`):
+ * choose plausibly-relevant categories (over-inclusive; next step narrows) or
+ * commit to a diagnosis. Diagnose handling mirrors
+ * {@link generateBlindedProcedureStep} so same `matchDiagnosis` flow applies.
  */
 export async function generateBlindedCategoryStep(
   runtime: GraphRuntime,
@@ -356,16 +333,13 @@ export async function generateBlindedCategoryStep(
   iterationsRemaining?: number,
   context?: RequestContext
 ): Promise<BlindedCategoryStepResult> {
-  // Categories are picked from the duplicate-filtered candidate set: fully
-  // ordered categories vanish from the menu, and the size/sample hints
-  // reflect only the procedures still available to order.
+  // Picked from duplicate-filtered candidates: fully ordered categories vanish; hints reflect remaining only.
   const candidates = runtime.catalogs.procedures
     .candidates()
     .exclude(previousProcedures.map((p) => p.name));
   const categories = candidates.categories();
 
-  // Internal artifact (issue 09 §3): the blinded solver's category pick,
-  // English always.
+  // Internal: blinded category pick, English always.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "internal",
@@ -424,8 +398,7 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
 
     const result: BlindedCategoryStepResult = await retry(
       async (attempt, previousError) => {
-        // Thinking off: the category shortlist is a constrained pick and the
-        // split into two small steps exists precisely to keep each call fast.
+        // Thinking off: constrained pick, keep call fast.
         const res = await runtime.llm
           .for(
             { role: "generator", temperature: "balanced" },
@@ -471,9 +444,8 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
 // ─── generateBlindedProcedureStepFromCategories (preselection: step 2 of 2) ──
 
 /**
- * Assemble the scoped-pick response schema from its optional branches — used
- * for both the grammar constraint and the name-agnostic prompt rendering so
- * the two can never diverge structurally. Same grammar-vs-prompt split as
+ * Assembles scoped-pick response schema from optional branches; used for both
+ * grammar and prompt rendering so they can't diverge. See
  * {@link procedurePickGrammarSchema} / {@link procedurePickPromptSchema}.
  */
 function scopedPickSchema(
@@ -506,21 +478,13 @@ function scopedPickSchema(
 }
 
 /**
- * Step 2 of the small-model-friendly split: pick the actual procedures from
- * within the categories {@link generateBlindedCategoryStep} selected, plus
- * the always-included uncategorized "General" bucket (uncategorized
- * procedures bypass the category filter entirely). Uses the exact same
- * grouped prompt/schema shape as {@link generateBlindedProcedureStep}'s
- * grouped mode — just scoped to fewer categories, so the candidate set a
- * small model has to reason over stays short.
+ * Step 2: pick procedures from categories {@link generateBlindedCategoryStep}
+ * selected plus uncategorized "General" bucket (bypasses category filter).
+ * Same grouped prompt/schema as {@link generateBlindedProcedureStep}, fewer categories.
  *
- * When `expandableCategories` is non-empty the model may instead answer with
- * an "expand" action naming additional categories to pull into scope. The
- * expand branch's grammar is restricted to exactly those categories, so a
- * category already in scope can never be re-requested; the caller loops on
- * expand under a hard cap and passes an empty `expandableCategories` once
- * the cap is reached, which removes the branch from the schema entirely and
- * forces a pick.
+ * Non-empty `expandableCategories` lets model answer "expand" naming extra
+ * categories; grammar restricted to exactly those. Caller loops under a cap,
+ * then passes empty `expandableCategories`, removing the branch and forcing a pick.
  */
 export async function generateBlindedProcedureStepFromCategories(
   runtime: GraphRuntime,
@@ -557,8 +521,7 @@ Every procedure name MUST be an exact name from the provided list, placed under 
 
   const expandRules = `If — and ONLY if — none of the in-scope procedures is clinically appropriate as the next step, respond with action "expand" and name the additional categories you need (exact names from the "Other available categories" section); they will be shown in full next. Otherwise always prefer action "procedures".`;
 
-  // Internal artifact (issue 09 §3): the blinded solver's scoped pick,
-  // English always.
+  // Internal: blinded scoped pick, English always.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "internal",
@@ -620,8 +583,7 @@ ${all.categoryMenu(expandable)}`
   try {
     const raw = await retry(
       async (attempt, previousError) => {
-        // Thinking off: same rationale as the category step — the candidate
-        // set is already scoped, so the pick doesn't need a reasoning phase.
+        // Thinking off: candidates already scoped.
         const res = await runtime.llm
           .for(
             { role: "generator", temperature: "balanced" },
@@ -679,15 +641,9 @@ ${all.categoryMenu(expandable)}`
 // ─── 2. planProcedureResults ──────────────────────────────────────────────────
 
 /**
- * Builds the per-procedure plan schema: `buildCompositionSchema`'s per-unit
- * plan entry (`{ key, requests }`), extended with `relevance` — a procedure
- * result needs both a rendering plan AND a relevance judgment from the same
- * (non-blinded) LLM call, and `buildCompositionSchema` alone has no field for
- * the latter. `unitKeys` is always passed here: a batch's procedure names are
- * already known — chosen by the blinded step, or picked non-blindedly by the
- * bridge (`pickBridgeProcedures`/`pickBridgeProceduresFromCategories` below)
- * — before this is ever called, so this is always the "known unit set" mode
- * `buildCompositionSchema`'s doc comment describes, never the freeform one.
+ * Per-procedure plan schema: `buildCompositionSchema` unit entry
+ * (`{ key, requests }`) plus `relevance`, both from one non-blinded call.
+ * `unitKeys` always passed: procedure names known beforehand, never freeform.
  */
 function buildProcedureResultPlanSchema(
   providers: ModalityProvider<unknown>[],
@@ -712,28 +668,18 @@ function buildProcedureResultPlanSchema(
 }
 
 /**
- * Non-blinded result step: given the patient presentation, the TRUE
- * diagnosis, and a batch of concurrently-scheduled procedures, PLANS a
- * result AND a relevance judgment for each (issue 21 §7) — it no longer
- * generates result text directly. The blinded solver never knows the true
- * diagnosis, so it cannot meaningfully judge relevance (e.g. it would never
- * knowingly order a "contraindicated" procedure) — both `relevance` and the
- * plan are decided here instead. Rendering happens later, once for the
- * whole case, in `render_results` (`03procedure/index.ts`).
+ * Non-blinded result step: given presentation, TRUE diagnosis and a batch of
+ * procedures, PLANS result and `relevance` for each. Blinded solver can't judge
+ * relevance. Rendering later, once, in `render_results` (`03procedure/index.ts`).
  *
- * **The `alt` rule is different here than everywhere else it appears in this
- * codebase, and it is the crux of issue 21 §7's design.** Everywhere else
- * `alt` is a short label, read only once bytes already exist. Here the
- * blinded solver reasons over `alt` and NOTHING else — the bytes do not
- * exist yet — so each `alt` must be a self-contained statement of the
- * clinical finding, not a bare label:
+ * `alt` rule differs here: blinded solver reasons over `alt` ONLY (no bytes
+ * yet), so each `alt` must be a self-contained finding, not a label:
  *
  *   good: "Chest X-ray: consolidation of the left lower lobe with air bronchograms"
  *   bad:  "chest x-ray image"
  *
- * Getting this wrong does not fail any test; it quietly makes the solver
- * unable to solve. See `models/Procedure.ts`'s `PlannedProcedureSchema` doc
- * comment for the same rule at the projection site.
+ * No test catches a bad one; solver just can't solve. See
+ * `PlannedProcedureSchema` in `models/Procedure.ts`.
  */
 export async function planProcedureResults(
   runtime: GraphRuntime,
@@ -748,8 +694,7 @@ export async function planProcedureResults(
   const procedureNames = procedureSteps.map((p) => p.name);
   const schema = buildProcedureResultPlanSchema(providers, procedureNames);
 
-  // User-facing (issue 09 §3): a planned `alt`/instruction both become
-  // user-visible content once rendered.
+  // User-facing: planned `alt`/instruction become user-visible content.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "user-facing",
@@ -812,8 +757,7 @@ ${outline}`
   try {
     const plans = await retry(
       async (attempt, previousError) => {
-        // Balanced: results must follow the blueprint's workup strategy and
-        // stay clinically plausible — specific values, not invention.
+        // Balanced: follow outline's workup strategy, plausible specific values.
         const res = (await runtime.llm
           .for(
             { role: "generator", temperature: "balanced" },
@@ -855,11 +799,8 @@ ${outline}`
       }
     );
 
-    // Merge plans back onto the input steps, matching by "key" (falling back
-    // to positional index — belt-and-braces, since `key` is grammar-pinned to
-    // an exact `z.enum` of `procedureNames` with a matching array length, so
-    // every step should always find its plan). Same merge strategy the old
-    // direct result generator used before this became a planner.
+    // Merge plans onto steps by "key", falling back to index (key is
+    // grammar-pinned to `procedureNames`, so a plan should always be found).
     return procedureSteps.map((step, index) => {
       const match = plans.find((p) => p.key === step.name) ?? plans[index]!;
       return {
@@ -876,18 +817,11 @@ ${outline}`
 
 // ─── 3. Bridge procedure picking ──────────────────────────────────────────────
 //
-// The bridge no longer generates results itself (issue 21 §7): it PICKS
-// confirmatory procedure names — bare `Procedure[]`, exactly the shape
-// `pendingProcedures` already has after a blinded "order" move — and then
-// defers to `planProcedureResults` (the SAME planner `result_step` calls)
-// for relevance and a rendering plan
-// (`03procedure/strategy/directPick.ts`'s `DirectPick.bridge`,
-// `categoryScopedPick.ts`'s `CategoryScopedPick.bridge`). Because picking is
-// now name-only, `ProcedureCandidates.grammar()`/`.assemble()` — already
-// used by the blinded step's own "procedure" action — cover the
-// flat/grouped/freeform cases uniformly, so the bespoke
-// `bareProcedureResultSchema`/`bridgePickGrammarSchema`/`assembleBridgeResults`
-// trio this replaced is gone rather than duplicated.
+// Bridge PICKS confirmatory procedure names (bare `Procedure[]`, same shape
+// as `pendingProcedures` after a blinded "order"), then defers to
+// `planProcedureResults` (same planner as `result_step`) for relevance and
+// rendering plan (`DirectPick.bridge`, `CategoryScopedPick.bridge`).
+// `ProcedureCandidates.grammar()`/`.assemble()` cover flat/grouped/freeform.
 
 function buildBridgePickSchema(procedureFieldSchema: z.ZodTypeAny) {
   return z.object({
@@ -897,12 +831,9 @@ function buildBridgePickSchema(procedureFieldSchema: z.ZodTypeAny) {
 }
 
 /**
- * Non-blinded bridge pick: called when the blinded solver has exhausted its
- * iteration budget without reaching the diagnosis. Picks the remaining
- * confirmatory procedure names that complete the diagnostic pathway to the
- * true diagnosis — `planProcedureResults` plans their results and
- * `render_results` renders them, alongside every other planned procedure,
- * once the case is solved.
+ * Non-blinded bridge pick, for when blinded solver exhausts its budget
+ * without diagnosing. Picks remaining confirmatory procedure names leading to
+ * the true diagnosis; `planProcedureResults` plans, `render_results` renders.
  */
 export async function pickBridgeProcedures(
   runtime: GraphRuntime,
@@ -923,8 +854,7 @@ export async function pickBridgeProcedures(
     return [];
   }
 
-  // Internal (issue 09 §3): a name-only pick, no free text ever reaches the
-  // student from this step — the planning/rendering steps that follow do.
+  // Internal: name-only pick, no free text reaches student from this step.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "internal",
@@ -972,8 +902,7 @@ ${renderSchemaForPrompt(buildBridgePickSchema(candidates.promptSchema()))}`
   try {
     const rawProcedures = await retry(
       async (attempt, previousError) => {
-        // Balanced: confirmatory procedures for a known diagnosis — the most
-        // clinically standard choices are exactly what we want.
+        // Balanced: want the most standard confirmatory procedures.
         const res = await runtime.llm
           .for(
             { role: "generator", temperature: "balanced" },
@@ -1018,11 +947,7 @@ ${renderSchemaForPrompt(buildBridgePickSchema(candidates.promptSchema()))}`
 
 // ─── generateBridgeCategoryStep (PROCEDURE_PRESELECTION: bridge step 1 of 2) ──
 
-/**
- * Same grammar-vs-prompt split as {@link buildCategoryStepSchema}: the
- * `categories` restriction is applied to the grammar constraint but not to
- * the schema rendered into the system prompt.
- */
+/** Grammar-vs-prompt split as {@link buildCategoryStepSchema}: `categories` restriction in grammar only, not prompt schema. */
 function buildBridgeCategoryStepSchema(categories?: string[]) {
   return z.object({
     categories: z
@@ -1035,12 +960,9 @@ function buildBridgeCategoryStepSchema(categories?: string[]) {
 }
 
 /**
- * Step 1 of the small-model-friendly split of the bridge (enabled via
- * `PROCEDURE_PRESELECTION`): unlike the blinded step's category pick, this
- * is non-blinded (the true diagnosis is already known) and has no "diagnose"
- * branch — its
- * only job is narrowing the workup down to a shortlist of categories that
- * plausibly contain the confirmatory procedures, over-inclusive by design.
+ * Step 1 of bridge under `PROCEDURE_PRESELECTION`. Non-blinded, no "diagnose"
+ * branch: shortlist categories plausibly containing confirmatory procedures,
+ * over-inclusive.
  */
 export async function generateBridgeCategoryStep(
   runtime: GraphRuntime,
@@ -1050,16 +972,13 @@ export async function generateBridgeCategoryStep(
   userInstructions?: string,
   context?: RequestContext
 ): Promise<string[]> {
-  // Same duplicate-filtered candidate set as the blinded category step: fully
-  // ordered categories vanish, and size/sample hints reflect remaining
-  // candidates.
+  // Duplicate-filtered candidates, as blinded category step.
   const candidates = runtime.catalogs.procedures
     .candidates()
     .exclude(previousProcedures.map((p) => p.name));
   const categories = candidates.categories();
 
-  // Internal (issue 09 §3): a category shortlist, no free text ever reaches
-  // the student from this step — the second step's results do.
+  // Internal: category shortlist, no free text reaches student.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "internal",
@@ -1151,14 +1070,10 @@ ${renderSchemaForPrompt(buildBridgeCategoryStepSchema())}`
 // ─── pickBridgeProceduresFromCategories (preselection: bridge step 2) ────────
 
 /**
- * Step 2 of the small-model-friendly split of the bridge pick: choose the
- * confirmatory procedure NAMES from within the categories
- * {@link generateBridgeCategoryStep} selected, plus the always-included
- * uncategorized "General" bucket — mirrors
- * {@link generateBlindedProcedureStepFromCategories}'s "procedures" action,
- * minus the expand branch (the diagnosis is already known here, so
- * `CategoryScopedPick.bridge` widens deterministically to all categories on
- * an empty pick instead of looping on a model-driven expand).
+ * Step 2 of bridge: pick confirmatory procedure NAMES from categories
+ * {@link generateBridgeCategoryStep} selected plus "General". Mirrors
+ * {@link generateBlindedProcedureStepFromCategories}, no expand branch:
+ * `CategoryScopedPick.bridge` widens to all categories on empty pick.
  */
 export async function pickBridgeProceduresFromCategories(
   runtime: GraphRuntime,
@@ -1174,14 +1089,14 @@ export async function pickBridgeProceduresFromCategories(
     .exclude(previousProcedures.map((p) => p.name));
 
   if (scoped.isEmpty()) {
-    // Nothing left in scope — the caller widens to all categories and retries.
+    // Nothing in scope; caller widens to all categories and retries.
     console.warn(
       "[PickBridgeProceduresFromCategories] No unordered candidates in the selected categories — returning empty pick."
     );
     return [];
   }
 
-  // Internal (issue 09 §3): a name-only pick, scoped to a category shortlist.
+  // Internal: name-only pick scoped to category shortlist.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "internal",
@@ -1270,18 +1185,13 @@ ${renderSchemaForPrompt(buildBridgePickSchema(scoped.promptSchema()))}`
   }
 }
 
-// ─── procedure-result TEXT rendering (issue 21 §4/§7) ────────────────────────
+// ─── procedure-result TEXT rendering ─────────────────────────────────────────
 
 /**
- * The procedure-result field's TEXT-rendering call: renders an entire batch
- * of planner-authored instructions — potentially spanning every procedure
- * `render_results` (`03procedure/index.ts`) flattened together — in ONE LLM
- * call. The batching is the whole point of `ModalityProvider.render`'s
- * batch-in/batch-out contract (`modality/ports.ts`): a loop of single calls
- * here would defeat the design. Unlike `planProcedureResults`'s `alt`
- * (the diagnostic payload the blinded solver reasons over), this renders
- * whatever instruction the plan supplied — by the time this runs the case is
- * already solved, so there is no blinded view left to protect.
+ * Text rendering for procedure results: whole batch of planner instructions
+ * (all procedures from `render_results`) in ONE LLM call, per
+ * `ModalityProvider.render` batch contract. Renders whatever instruction the
+ * plan supplied; case already solved, no blinded view to protect.
  */
 export async function renderProcedureResultTexts(
   runtime: GraphRuntime,
@@ -1297,7 +1207,7 @@ export async function renderProcedureResultTexts(
       ),
   });
 
-  // User-facing (issue 09 §3): procedure result text is read by the student.
+  // User-facing: student reads result text.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "user-facing",
@@ -1390,8 +1300,7 @@ export async function matchDiagnosis(
   diagnosis: Diagnosis,
   context?: RequestContext
 ): Promise<boolean> {
-  // Internal (issue 09 §3): matchDiagnosis is explicitly named in the
-  // audience split — English always.
+  // Internal: English always.
   const systemPrompt = buildSystemPrompt(
     runtime,
     "internal",

@@ -1,10 +1,5 @@
-// Shared read model (#144). Both transports' read-only endpoints — REST's
-// `GET /api/*` and NATS's request/reply group — must answer with the same
-// payload for the same question, and the way to make that true "by
-// construction" rather than "by remembering to keep two copies in sync" is
-// to have both call the same function. `src/transports/rest/routes/*` and
-// `src/transports/nats/metaService.ts` are protocol translation only: they
-// call one of these accessors and serialize the result onto their own wire.
+// Shared read model: REST `GET /api/*` and NATS request/reply call the same
+// accessors, so both answer identically. Transports only serialize.
 import type { GraphAppContext } from "./graph/appContext.js";
 import { buildGraphStructure, type GraphStructure } from "./graph/structure.js";
 
@@ -16,11 +11,7 @@ export interface ReadModel {
   graph(): Promise<GraphStructure>;
 }
 
-/**
- * Construct once in `app.ts` and hand to both `startRestServer` (via
- * `createRestApp`'s `readModel` option) and `startNatsTransport`. `features`
- * is the same flag set the composition root already parsed from `FEATURES`.
- */
+/** Constructed once in `app.ts`, handed to `startRestServer` and `startNatsTransport`. `features` is the parsed `FEATURES` set. */
 export function createReadModel(
   graph: GraphAppContext,
   features: ReadonlySet<string>

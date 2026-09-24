@@ -55,14 +55,10 @@ const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
    */
   pendingProcedures: z.array(ProcedureSchema).default([]),
   /**
-   * Every procedure decided on so far, planned but not yet rendered (issue
-   * 21 §7): `result_step` and `bridge` are the only writers, `render_results`
-   * is the only reader-and-drain, and `case.procedures` stays EMPTY until
-   * `render_results` writes it — the same single-writer discipline
-   * `translate_merge` uses in the translation phase (issue 12). Every read
-   * that used to go through `state.case.procedures` inside this graph —
-   * the blinded view's `previousProcedures`, the already-ordered exclusion,
-   * the bridge's own view — now goes through this instead.
+   * Procedures decided so far, planned not rendered. Writers: `result_step`,
+   * `bridge`. `render_results` reads, then writes `case.procedures` (empty
+   * until then). Blinded view, already-ordered exclusion and bridge view all
+   * read this, not `case.procedures`.
    */
   plannedProcedures: z.array(PlannedProcedureSchema).default([]),
   /** Diagnoses committed to and ruled out in earlier iterations. */
@@ -71,34 +67,20 @@ const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
 
 type ProcedureGraphState = z.infer<typeof ProcedureGraphStateSchema>;
 
-// This graph is `addNode`'d into `buildCaseGenerationGraph` as
-// `procedure_phase` (issue 17 §1). `.pick()` off this graph's own state
-// schema, not a hand-written duplicate, so the picked `case` channel keeps
-// the identical reducer registration.
+// Mounted as `procedure_phase`. `.pick()` off own state schema so `case` keeps
+// its reducer registration.
 const ProcedureOutputSchema = ProcedureGraphStateSchema.pick({ case: true });
 
 /**
- * The blinded solver's own compiled graph, whose state schema **omits
- * `diagnosis` entirely**. `BlindedView` (`strategy/ports.ts`) already makes
- * passing the diagnosis into the blinded path a compile error — that is the
- * primary defence, and is what actually matters. This compiled child graph
- * is a *runtime* backstop on top of it, not a topology decision: LangGraph
- * filters input against a graph's state schema before it ever reaches a
- * channel (`@langchain/langgraph/dist/pregel/io.js:81`), so a `diagnosis`
- * key would be silently dropped here even if a future edit mistakenly
- * widened `BlindedView` to carry one — the guarantee survives that edit,
- * the type alone would not.
- *
- * It exists for its input schema, not for topology: it is `.invoke()`d
- * directly from inside `blinded_step`, never `addNode`'d, so the compiled
- * procedure graph below still has exactly four nodes.
+ * Blinded solver's child graph; state schema omits `diagnosis`. `BlindedView`
+ * (`strategy/ports.ts`) is the compile-time guard; this is the runtime
+ * backstop: LangGraph drops input keys not in the state schema. `.invoke()`d
+ * from `blinded_step`, never `addNode`'d — exists for its input schema.
  */
 const BlindedSolverStateSchema = z.object({
   presentation: PresentationSchema,
-  // `{name, relevance, result: string}[]` (issue 21 §7), projected from
-  // `plannedProcedures` — never the domain `ProcedureResult[]` this used to
-  // be, since nothing has been rendered yet at this point in the loop. See
-  // `03aigateway/procedures.aigateway.ts`'s `PreviousProcedureFinding`.
+  // Projected from `plannedProcedures`; nothing rendered yet. See
+  // `PreviousProcedureFinding`.
   previousProcedures: z
     .array(
       z.object({
@@ -115,18 +97,11 @@ const BlindedSolverStateSchema = z.object({
   move: z.custom<SolverMove>().optional(),
 });
 
-/**
- * Exported for `index.test.ts` only, to assert the runtime filtering
- * guarantee directly (not just the `BlindedView` type) — production code
- * never calls this outside `buildProcedureGraph`.
- */
+/** Exported for `index.test.ts` only. */
 export function buildBlindedSolverGraph(strategy: ProcedureStrategy) {
   return new StateGraph(BlindedSolverStateSchema, {
     context: RequestContextSchema,
-    // `.invoke()`d directly from `blinded_step`, not `addNode`'d — but the
-    // same rule applies regardless of mount style (issue 17 §1): declare the
-    // write surface explicitly rather than letting it default to the whole
-    // state. `move` is the only field this graph's single node produces.
+    // Write surface declared explicitly; `move` is the only output.
     output: BlindedSolverStateSchema.pick({ move: true }),
   })
     .addNode("solve", async (state, lgRuntime?: Runtime<RequestContext>) => {
@@ -149,12 +124,7 @@ type BlindedSolverGraph = ReturnType<typeof buildBlindedSolverGraph>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/**
- * Extract the presentation slice (no diagnosis, no procedures) from the
- * case, projected to text via `textOf` — bytes must never reach a prompt
- * (issue 11 §4), and `Presentation`'s own fields are `string`, not
- * `ContentPart[]`, so this is the one place that conversion happens.
- */
+/** Presentation slice (no diagnosis, no procedures), text-projected via `textOf`; bytes never reach a prompt. */
 function presentationOf(c: Case): Presentation {
   return {
     ...(c.patient !== undefined && { patient: c.patient }),
@@ -171,15 +141,9 @@ function presentationOf(c: Case): Presentation {
 }
 
 /**
- * Projects `plannedProcedures` into the blinded/bridge view of a prior
- * procedure (issue 21 §7): `result` is `parts.map(p => p.alt).join("\n\n")`
- * — never rendered bytes, since nothing has been rendered yet at this point
- * in the loop. This is the ONE place that projection happens; every reader
- * that used to read `state.case.procedures` inside this graph reads this
- * instead (`blinded_step`'s and `bridge`'s `previousProcedures`, and —
- * transitively, via `.map(p => p.name)` inside the aigateway — the
- * already-ordered exclusion that makes duplicate orders impossible by
- * construction).
+ * Projects `plannedProcedures` to blinded/bridge prior-procedure view:
+ * `result` = parts' `alt` joined, never bytes. Single source for
+ * `previousProcedures` and, via the aigateway, already-ordered exclusion.
  */
 function projectPreviousProcedures(
   plannedProcedures: PlannedProcedure[]
@@ -205,16 +169,10 @@ function userInstructionsForProcedures(
 }
 
 /**
- * Read-and-concat append: returns the full updated planned-procedures array.
- *
- * Safe only because `result_step` and `bridge` are sequential nodes in this
- * graph — each superstep has exactly one writer of `plannedProcedures`, so a
- * read-modify-write on this `LastValue` channel never races another node's
- * write in the same step (issue 17 §2c). That is correct by accident of
- * topology, not by design: if this ever gets fanned out (`Send`, parallel
- * branches), the channel needs a concat reducer instead of `LastValue`, or
- * concurrent writers will silently clobber each other's appends exactly like
- * the bug this issue fixes elsewhere.
+ * Read-and-concat append on a `LastValue` channel. Safe only because
+ * `result_step` and `bridge` are sequential: one writer per superstep. If
+ * fanned out (`Send`, parallel branches), use a concat reducer or appends
+ * clobber each other.
  */
 function appendPlannedProcedures(
   current: PlannedProcedure[] | undefined,
@@ -237,11 +195,7 @@ async function invokeLogged<TInput, TOutput>(
   });
 }
 
-/**
- * Propagates the parent's request context to the child blinded-solver
- * graph's `.invoke()` — the same shape `02graphs/caseGraph.ts`'s
- * `generateCase` uses to invoke the top-level graph.
- */
+/** Propagates parent request context to the child blinded-solver `.invoke()`. */
 function childInvokeConfig(context: RequestContext | undefined) {
   return {
     context: { llmConfig: context?.llmConfig, jobId: context?.jobId },
@@ -275,8 +229,7 @@ function makeBlindedStep(
       state.userInstructions
     );
 
-    // Builds the child input from state — there is no `diagnosis` field to
-    // pass, by construction (see `BlindedSolverStateSchema` above).
+    // No `diagnosis` field to pass, by construction.
     const { move: rawMove } = await blindedSolverGraph.invoke(
       {
         presentation,
@@ -287,8 +240,7 @@ function makeBlindedStep(
       },
       childInvokeConfig(lgRuntime?.context)
     );
-    // Defensive fallback only — the child graph's single node always
-    // returns a move from a well-typed `ProcedureStrategy`.
+    // Defensive fallback only.
     const move: SolverMove = rawMove ?? {
       action: "exhausted",
       reason: "unexpected shape",
@@ -319,10 +271,7 @@ function makeBlindedStep(
       );
     }
 
-    // ── action: exhausted — `reason` distinguishes an empty pick (the
-    // solver had nothing left worth ordering, a clinically sensible reason
-    // to bridge, logged at info) from an unexpected response shape (a real
-    // symptom of a misbehaving model, logged at warn) ──────────────────────
+    // ── action: exhausted — empty pick logs info; unexpected shape (misbehaving model) logs warn ──
     if (move.reason === "unexpected shape") {
       runtime.log.warn(
         `[ProcedureGraph] Blinded step returned unexpected shape — bridging.`
@@ -356,8 +305,7 @@ async function handleDiagnoseAction(
   );
 
   if (matches) {
-    // Nothing has been rendered yet (issue 21 §7) — `render_results` renders
-    // every planned procedure at once, THEN the graph ends.
+    // Nothing rendered yet; `render_results` renders all, then graph ends.
     return new Command({ goto: "render_results" });
   }
 
@@ -390,10 +338,8 @@ function makeResultStep(
       return new Command({ goto: "blinded_step" });
     }
 
-    // PLANS results — does not render them (issue 21 §7). `providers` is not
-    // zod-validatable data, so this is called directly rather than through a
-    // `Tool` wrapper, mirroring the presentation fields' planner gateways
-    // (`chiefComplaint/index.ts`'s `planChiefComplaint`).
+    // Plans results, does not render. `providers` not zod-validatable, so no
+    // `Tool` wrapper.
     const plannedBatch: PlannedProcedure[] = await planProcedureResults(
       runtime,
       presentationOf(state.case),
@@ -448,8 +394,7 @@ function makeBridge(runtime: GraphRuntime, strategy: ProcedureStrategy) {
       state.userInstructions
     );
 
-    // `strategy.bridge()` both picks the confirmatory procedures AND plans
-    // their results (issue 21 §7) — nothing is rendered here either.
+    // `strategy.bridge()` picks confirmatory procedures and plans their results; no rendering.
     const bridgeProcedures = await strategy.bridge({
       presentation,
       diagnosis: state.diagnosis,
@@ -484,13 +429,8 @@ function makeRenderResults(
     state: ProcedureGraphState,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Command> {
-    // Every planned part across EVERY procedure, flattened into one
-    // `ModalityPlan` keyed by INDEX, not name (issue 21 §7): two procedures
-    // can share a name after translation (issue 12's stable-path keying
-    // reasoning applies identically here), and the name is translated
-    // separately. One `renderPlan` call for the whole list is what makes
-    // this cheap — the text provider sees every procedure's instruction in
-    // a single batch and answers in one LLM call.
+    // One `ModalityPlan` for all procedures, keyed by index not name (names
+    // can collide after translation). One `renderPlan` call = one batch, one LLM call.
     const plan: ModalityPlan = Object.fromEntries(
       state.plannedProcedures.map((p, i) => [String(i), p.parts])
     );

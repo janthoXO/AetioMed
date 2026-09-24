@@ -10,31 +10,17 @@ import {
 import type { Config } from "@/core/graph/config.js";
 import type { LlmPort, LlmTemperature } from "@/core/graph/runtime.js";
 
-/**
- * Fixed policy classes, not configuration — see #86 (LLM roles)
- * §1: `LLM_TEMPERATURE` was dead config (every call site went through one of
- * these three fixed values, which always won the merge), so it was deleted
- * rather than made per-role. These values are what each class has always
- * used; this issue only changes *who* is called (role), never *how hot*.
- */
+/** Fixed policy classes, not configuration. */
 const TEMPERATURE_BY_CLASS: Record<LlmTemperature, number> = {
-  /** Judges/evaluations, yes-no decisions, translations, and factual
-   * enumeration where accuracy matters and variety is unwanted. */
+  /** Judges, yes-no decisions, translations, factual enumeration. */
   deterministic: 0.1,
-  /** Grounded structured generation: clinical decision-making and outputs
-   * whose content is already pinned down by an outline/blueprint, where
-   * fidelity beats variety but a little flexibility in wording is useful. */
+  /** Grounded structured generation pinned by an outline; fidelity over variety. */
   balanced: 0.4,
-  /** Open-ended narrative generation (case outlines, patient voice,
-   * demographics) where run-to-run variety is a feature. */
+  /** Open-ended narrative (outlines, patient voice, demographics). */
   creative: 0.7,
 };
 
-/**
- * The concrete `LlmPort` used outside tests: constructs a real LangChain
- * chat model via `getLLM`, closing over the process's per-role default
- * configs (from env) so callers never read a module-scope singleton.
- */
+/** Real `LlmPort`: builds LangChain chat models via `getLLM` from per-role default configs. */
 export function createLlmPort(defaultConfig: Config): LlmPort {
   return {
     for(opts, llmConfig) {
@@ -49,11 +35,8 @@ export function createLlmPort(defaultConfig: Config): LlmPort {
 }
 
 /**
- * Get an LLM instance for the given role's default config (undefined under
- * `ALLOW_LLMS`, where every field must come from `llmConfig`), overridden by
- * `llmConfig`. Callers no longer read a module-scope config singleton — the
- * default comes from whatever `LlmPort` (see `runtime.ts`) they were built
- * against, which is what makes this injectable/fakeable in tests.
+ * LLM for role default config (undefined under `ALLOW_LLMS`: all fields then
+ * come from `llmConfig`), overridden by `llmConfig`.
  */
 function getLLM(
   roleConfig: Partial<LLMConfig> | undefined,
@@ -126,9 +109,8 @@ function getLLM(
         };
       }
 
-      // vLLM-style OpenAI-compatible servers toggle the thinking phase via
-      // the chat template (verified against Morpheus; not an official OpenAI
-      // parameter, which ignores unknown body fields).
+      // vLLM-style servers toggle thinking via chat template; not an official
+      // OpenAI param (ignored there).
       if (fullConfig.enableThinking !== undefined) {
         openAIConfig.modelKwargs = {
           chat_template_kwargs: {

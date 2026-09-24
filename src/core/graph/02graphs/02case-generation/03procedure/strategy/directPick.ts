@@ -16,13 +16,10 @@ import { invokeLogged } from "./invokeLogged.js";
 import { toSolverMove } from "./solverMove.js";
 
 /**
- * Today's un-split path: one LLM call against the full candidate list per
- * blinded step. The bridge is two calls now instead of one (issue 21 §7):
- * `pickBridgeProcedures` picks confirmatory names, then `planProcedureResults`
- * — the SAME planner `03procedure/index.ts`'s `result_step` calls — plans
- * their results. The default strategy whenever `PROCEDURE_PRESELECTION` is
- * unset, or the approved procedure list has no real categories to scope
- * against (see `strategy/index.ts`).
+ * Default strategy: one LLM call against full candidate list per blinded
+ * step. Bridge: `pickBridgeProcedures` for names, then `planProcedureResults`
+ * (same planner as `result_step`). Used when `PROCEDURE_PRESELECTION` unset
+ * or list has no categories (`strategy/index.ts`).
  */
 export class DirectPick implements ProcedureStrategy {
   readonly id = "direct-pick";

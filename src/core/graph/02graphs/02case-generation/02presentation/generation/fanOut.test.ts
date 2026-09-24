@@ -1,17 +1,7 @@
-// Regression test for issue 17's reported crash: a default request
-// (`generationFlags` including both `chiefComplaint` and `anamnesis`) fanned
-// `chief_complaint_generate` and `anamnesis_generate` out in parallel via
-// `Send`. Both are compiled subgraphs, and a compiled subgraph writes back
-// its ENTIRE state schema unless it declares an explicit `output` — so
-// without one, the parent's `diagnosis`, `userInstructions` and `outline`
-// channels each received two values in the same superstep. All three are
-// `LastValue`, which accepts exactly one, so LangGraph threw
-// `INVALID_CONCURRENT_GRAPH_UPDATE` (`InvalidUpdateError`). This builds a
-// small parent graph mirroring `buildFieldGenerationSends`'s exact Send
-// payload and mounts the REAL `buildChiefComplaintGraph`/
-// `buildAnamnesisGraph` — not fakes — so a fix that merely stops the throw
-// by dropping a write (rather than keeping both subgraphs' `case` output)
-// cannot pass this test.
+// Compiled subgraph writes back ENTIRE state unless `output` declared. Parallel `Send` fan-out of
+// `chief_complaint_generate`/`anamnesis_generate` would give `diagnosis`, `userInstructions`, `outline` (`LastValue`)
+// two values per superstep -> `INVALID_CONCURRENT_GRAPH_UPDATE`. Mounts REAL subgraphs under a parent mirroring
+// `buildFieldGenerationSends`'s payload, so dropping a write can't pass.
 import { describe, expect, it } from "vitest";
 import z from "zod";
 import { END, Send, START, StateGraph } from "@langchain/langgraph";
@@ -87,7 +77,7 @@ function textProvider(): ModalityProvider<unknown> {
   };
 }
 
-describe("chief_complaint_generate + anamnesis_generate fanned out together (issue 17 §0)", () => {
+describe("chief_complaint_generate + anamnesis_generate fanned out together", () => {
   it("resolves and yields both chiefComplaint and anamnesis, instead of throwing INVALID_CONCURRENT_GRAPH_UPDATE", async () => {
     const llm = makeQueuedLlmPort({
       generator: [
@@ -178,7 +168,7 @@ describe("chief_complaint_generate + anamnesis_generate fanned out together (iss
   });
 });
 
-describe("chief_complaint_generate + anamnesis_generate fan-out labels (#140)", () => {
+describe("chief_complaint_generate + anamnesis_generate fan-out labels", () => {
   it("emits a paired started/terminal label for every node, seen from both fan-out branches", async () => {
     const llm = makeQueuedLlmPort({
       generator: [
@@ -303,13 +293,9 @@ describe("chief_complaint_generate + anamnesis_generate fan-out labels (#140)", 
   });
 });
 
-describe("case_fan_in (issue 17 §2a)", () => {
+describe("case_fan_in", () => {
   it("writes nothing — a join point produces no update", () => {
-    // It used to be `passthrough`, echoing the entire incoming state as its
-    // update (a write to every channel); now it is a plain join with
-    // nothing left to contribute, since `patient_generate`/
-    // `chief_complaint_generate`/`anamnesis_generate` have already written
-    // `case` themselves.
+    // `case_fan_in` is a plain join returning `{}`; field nodes already wrote `case`.
     expect(caseFanIn()).toEqual({});
   });
 });

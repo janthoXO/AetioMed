@@ -26,8 +26,7 @@ describe("unmappableLanguages", () => {
   });
 
   it("names a configured language the table does not recognise", () => {
-    // A deployer-invented/unsupported language name (issue 10 §4): it never
-    // wins step 2 of the ladder, but startup only warns, never fails.
+    // Unsupported language name: never wins step 2, startup only warns.
     expect(unmappableLanguages(["English", "Klingon"])).toEqual(["Klingon"]);
   });
 });

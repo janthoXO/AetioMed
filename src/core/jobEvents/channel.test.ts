@@ -1,6 +1,4 @@
-// #139 — the per-job event channel is core-owned and adapters subscribe to
-// it. These pin down its lifecycle directly, with no transport involved.
-// Teardown is driven, never slept through (issue 15 §2).
+// Channel lifecycle, no transport involved. Teardown driven, never slept through.
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   BACKSTOP_MS,
@@ -123,7 +121,7 @@ describe("job event channel — state and duplicates", () => {
   });
 });
 
-describe("job event channel — peek (#145)", () => {
+describe("job event channel — peek", () => {
   it("active job → {state: active}", () => {
     const channel = createJobEventChannel();
     channel.open("job");
@@ -149,19 +147,17 @@ describe("job event channel — peek (#145)", () => {
     const channel = createJobEventChannel();
     channel.open("job");
     channel.close("job", { status: "done" });
-    // The job had no subscribers at close, so it already tore down into a
-    // tombstone. A peek must not re-open or hold a subscription — it stays
-    // a tombstone, not an active job with one listener.
+    // No subscribers at close, so already a tombstone. Peek must not hold a
+    // subscription.
     expect(channel.peek("job")).toMatchObject({ state: "terminal" });
     expect(channel.peek("job")).toMatchObject({ state: "terminal" });
     channel.publish("job", "label", label("job", "started"));
-    // No listener was ever added by peek, so nothing to have received it —
-    // this just confirms publish is a no-op post-close, unaffected by peek.
+    // Publish is a no-op post-close, unaffected by peek.
     expect(channel.peek("job")).toMatchObject({ state: "terminal" });
   });
 });
 
-describe("job event channel — reopening a jobId (#159)", () => {
+describe("job event channel — reopening a jobId", () => {
   it("a jobId whose last outcome was 'planned' can be opened again", () => {
     const channel = createJobEventChannel();
     channel.open("job");
@@ -200,7 +196,7 @@ describe("job event channel — reopening a jobId (#159)", () => {
   });
 });
 
-describe("job event channel — deterministic teardown (issue 15 §2)", () => {
+describe("job event channel — deterministic teardown", () => {
   it("releases a terminal job the moment its last subscriber leaves", () => {
     const channel = createJobEventChannel();
     channel.open("job");
@@ -215,8 +211,7 @@ describe("job event channel — deterministic teardown (issue 15 §2)", () => {
     expect(channel.state("job")).toBe("terminal");
 
     second.unsubscribe();
-    // Released, but remembered as a tombstone — still `terminal`, not
-    // `unknown`.
+    // Released but tombstoned: `terminal`, not `unknown`.
     expect(channel.state("job")).toBe("terminal");
   });
 
@@ -240,8 +235,7 @@ describe("job event channel — deterministic teardown (issue 15 §2)", () => {
     channel.close("job", { status: "done" });
 
     vi.advanceTimersByTime(BACKSTOP_MS);
-    // The hung subscriber is detached: the tombstone answers now, and it
-    // expires on its own schedule.
+    // Hung subscriber detached; tombstone answers, expires on own schedule.
     vi.advanceTimersByTime(TOMBSTONE_MS);
     expect(channel.state("job")).toBe("unknown");
     expect(received.map((e) => e.type)).toEqual(["complete"]);

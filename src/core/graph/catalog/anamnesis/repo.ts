@@ -23,23 +23,15 @@ export interface AnamnesisRepo {
     englishToTarget: Record<AnamnesisCategory, AnamnesisCategory>,
     language: ForeignLanguage
   ): void;
-  /**
-   * Resolve the effective anamnesis category list.
-   *
-   * - If a static default list is configured (Rules 2 & 3) it is returned.
-   * - Otherwise `undefined` is returned and the LLM may invent categories
-   *   freely.
-   */
+  /** Effective category list; `undefined` = freeform, LLM invents categories. */
   getEffectiveCategoryList(): AnamnesisCategory[] | undefined;
 }
 
 const SOURCE = "anamnesisCategories";
 
 /**
- * Syncs `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml`
- * (under `catalogDir`) into `dbHandle`'s embedded database, then exposes the
- * effective category list and translation lookups. All I/O happens here,
- * not at import time.
+ * Syncs `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` into
+ * `dbHandle`, exposes category list and translation lookups. I/O here, not at import.
  */
 export function createAnamnesisRepo(
   dbHandle: DbHandle,

@@ -64,17 +64,17 @@ export async function generateCaseOutline(
   const { userInstructions, feedback, previousOutline } = opts;
   const audience = opts.audience ?? "internal";
   const anamnesisCategories = runtime.catalogs.anamnesis.list();
-  const skeleton = outlineSkeleton({ anamnesisCategories });
-
-  const structure = anamnesisCategories
-    ? skeleton.map((heading) => `${FIXED_OPEN}${heading}${FIXED_CLOSE}`)
-    : [
-        ...skeleton.map((heading) =>
-          heading === "## Procedures"
-            ? `${FIXED_OPEN}### <intake category name>${FIXED_CLOSE}   (one per anamnesis category you choose, before Procedures)\n${FIXED_OPEN}${heading}${FIXED_CLOSE}`
-            : `${FIXED_OPEN}${heading}${FIXED_CLOSE}`
-        ),
-      ];
+  // Freeform: one placeholder where the LLM-named category headings go.
+  const placeholder = "<intake category name>";
+  const structure = outlineSkeleton({
+    anamnesisCategories: anamnesisCategories ?? [placeholder],
+  }).map(
+    (heading) =>
+      `${FIXED_OPEN}${heading}${FIXED_CLOSE}` +
+      (!anamnesisCategories && heading === `### ${placeholder}`
+        ? "   (one per anamnesis category you choose)"
+        : "")
+  );
 
   // Internal (English) by default; caller may bind request language.
   const systemPrompt = buildSystemPrompt(

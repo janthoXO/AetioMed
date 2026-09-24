@@ -12,3 +12,4 @@ export {
 } from "./render.js";
 export { createMedicalBasisRegistry, resolveAllFragments } from "./registry.js";
 export { createUmlsSymptomProvider } from "./providers/umlsSymptoms.js";
+export { createLlmSymptomProvider } from "./providers/llmSymptoms.js";

@@ -57,10 +57,8 @@ const MARKER = "TOTALLY-UNIQUE-FRAGMENT-CONTENT-MARKER";
 
 const fragments: BasisFragment[] = [
   {
-    sourceId: "umls-symptoms",
-    label: "Typical symptoms",
+    source: "Typical symptoms (UMLS database)",
     content: MARKER,
-    retrievedAt: "2024-01-01T00:00:00.000Z",
   },
 ];
 

@@ -58,7 +58,11 @@ function fakeTextProvider(): ModalityProvider<unknown> {
 
 function buildDeps(
   medicalBasisRegistry: MedicalBasisProvider[] = [
-    { id: "fake-basis", fetch: async () => [] },
+    {
+      id: "fake-basis",
+      description: "fake basis",
+      fetch: async () => undefined,
+    },
   ],
   modalityRegistries: ModalityRegistries = {
     chiefComplaint: [fakeTextProvider()],
@@ -151,7 +155,7 @@ describe("phase-level graphs — output surface", () => {
     expect([...graph.outputChannels].sort()).toEqual(["case"]);
   });
 
-  it("planning_phase (buildPlanningPhaseGraph) writes back the outline, the verdict and the basis — never `case`", async () => {
+  it("planning_phase (buildPlanningPhaseGraph) writes back the outline and the verdict — never `case`", async () => {
     const deps = buildDeps();
     const graph = buildPlanningPhaseGraph(
       deps.runtime,
@@ -159,7 +163,6 @@ describe("phase-level graphs — output surface", () => {
       deps.traceNode
     );
     expect([...graph.outputChannels].sort()).toEqual([
-      "basisFragments",
       "outlineAccepted",
       "outlineSegments",
     ]);

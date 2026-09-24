@@ -82,27 +82,6 @@ class StaticProcedureCatalog implements ProcedureCatalog {
     return new ProcedureCandidatesImpl(this.resolveMode(), this.effectiveList);
   }
 
-  /**
-   * Scope the grouped procedure map down to the selected categories, plus the
-   * always-included uncategorized bucket (uncategorized procedures bypass the
-   * category filter entirely). Always returns a GROUPED candidate set, even
-   * when the requested categories match nothing — a scoped pick's grammar
-   * shape must not silently degrade to freeform/flat.
-   */
-  scope(categories: string[]): ProcedureCandidates {
-    const scoped = new Map<string, ProcedureName[]>();
-    for (const category of categories) {
-      const names = this.groupedMap.get(category);
-      if (names?.length) scoped.set(category, names);
-    }
-    const general = this.groupedMap.get(UNCATEGORIZED_CATEGORY);
-    if (general?.length) scoped.set(UNCATEGORIZED_CATEGORY, general);
-    return new ProcedureCandidatesImpl(
-      { kind: "grouped", grouped: scoped },
-      this.effectiveList
-    );
-  }
-
   private resolveMode(): ProcedurePickMode {
     if (this.effectiveList === undefined) return { kind: "freeform" };
 

@@ -50,11 +50,11 @@ export type SolverMove =
   | { action: "exhausted"; reason: string };
 
 /**
- * Procedure-selection strategy: `DirectPick` or `CategoryScopedPick`.
- * Selected once at assembly by `createProcedureStrategy`.
+ * Procedure-selection strategy. `DirectPick` is the only implementation,
+ * constructed directly at assembly.
  */
 export interface ProcedureStrategy {
-  /** "direct-pick" | "category-scoped-pick" — for logs and tests. */
+  /** "direct-pick" — for logs and tests. */
   readonly id: string;
   nextStep(view: BlindedView): Promise<SolverMove>;
   /**

@@ -9,7 +9,7 @@ import {
 import { run } from "@mermaid-js/mermaid-cli";
 import {
   buildCaseGraph,
-  graphTopologyKey,
+  graphVariantKey,
 } from "@/core/graph/02graphs/caseGraph.js";
 import { createMedicalBasisRegistry } from "@/core/graph/medicalBasis/registry.js";
 import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
@@ -81,7 +81,6 @@ const minimalConfig: Config = {
     translator: minimalLlmRole,
   },
   allowedLlms: undefined,
-  PROCEDURE_PRESELECTION: false,
   TRANSLATION_SANDWICH: true,
   LANGUAGES: ["English", "German"],
   LANGUAGE_AUTO_DETECT: false,
@@ -170,12 +169,10 @@ function wrap(steps: [string, AnyNode][]) {
 
 const humanReview: AnyNode = () => ({});
 
-// Two topologies, not four: `PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter, so preselection variants
-// render identically. `graphTopologyKey` is authority; `caseGraph.test.ts` asserts it.
 for (const translationSandwich of [false, true]) {
-  const flags = { translationSandwich, procedurePreselection: false };
+  const flags = { translationSandwich };
   const { plan, case: caseGraph, outlineOut, reviewIn } = getCaseGraphs(flags);
-  const name = graphTopologyKey(flags);
+  const name = graphVariantKey(flags);
 
   // Second call re-enters `plan` too (translate-in only, planning skipped); not drawn twice.
   const planMode: [string, AnyNode][] =

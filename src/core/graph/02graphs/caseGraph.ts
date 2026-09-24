@@ -10,7 +10,7 @@ import {
   buildPlanningPhaseGraph,
 } from "./02case-generation/index.js";
 import { CaseGenerationStateSchema } from "./02case-generation/state.js";
-import { createProcedureStrategy } from "./02case-generation/03procedure/strategy/index.js";
+import { DirectPick } from "./02case-generation/03procedure/strategy/index.js";
 import { buildCaseTranslationFromEnglishGraph } from "./03case-translation-from-english/index.js";
 import type { Language } from "../models/Language.js";
 import type { Difficulty } from "../models/Difficulty.js";
@@ -106,7 +106,7 @@ function planOrSkip(state: {
 type CaseGraphRepos = Pick<Repos, "anamnesis" | "procedures">;
 
 /**
- * Everything assembly needs that is not a flag. `medicalBasisRegistry` is fixed per deployment (`createMedicalBasisRegistry`), shared by all four flag variants. Its *size* still changes compiled shape (`buildCaseGenerationGraph`).
+ * Everything assembly needs that is not a flag. `medicalBasisRegistry` is fixed per deployment (`createMedicalBasisRegistry`), shared by both flag variants. Its *size* still changes compiled shape (`buildCaseGenerationGraph`).
  */
 export type AssemblyDeps = {
   runtime: GraphRuntime;
@@ -118,39 +118,23 @@ export type AssemblyDeps = {
 };
 
 /**
- * The deployer's topology choices. Both are compiled away — see
+ * The deployer's topology choice. Compiled away — see
  * {@link assembleCaseGraph}'s rule.
  */
 export type GraphFlags = {
   translationSandwich: boolean;
-  procedurePreselection: boolean;
 };
 
 /**
- * All four flag combinations, derived rather than hand-listed so a fifth can
- * never be constructed and a third flag cannot be forgotten here.
+ * Both `translationSandwich` values, derived rather than hand-listed so a
+ * second flag cannot be forgotten here.
  */
-export const ALL_GRAPH_FLAGS: readonly GraphFlags[] = [false, true].flatMap(
-  (translationSandwich) =>
-    [false, true].map((procedurePreselection) => ({
-      translationSandwich,
-      procedurePreselection,
-    }))
+export const ALL_GRAPH_FLAGS: readonly GraphFlags[] = [false, true].map(
+  (translationSandwich) => ({ translationSandwich })
 );
 
-/** Activated flags, sorted, `+`-joined; `"none"` when none are set. */
-export function graphVariantKey(flags: GraphFlags): string {
-  const active = [
-    ...(flags.procedurePreselection ? ["procedure-preselection"] : []),
-    ...(flags.translationSandwich ? ["translation-sandwich"] : []),
-  ].sort();
-  return active.length > 0 ? active.join("+") : "none";
-}
-
-/**
- * Key identifying compiled *topology*, not variant. `PROCEDURE_PRESELECTION` swaps a `ProcedureStrategy` adapter; procedure graph stays four nodes, so it is not in key. Only translation sandwich is. `exportGraphs.ts` names diagrams by it; `caseGraph.test.ts` asserts the premise.
- */
-export function graphTopologyKey(
+/** `"translation-sandwich"` when the flag is set, else `"none"`. */
+export function graphVariantKey(
   flags: GraphFlags
 ): "none" | "translation-sandwich" {
   return flags.translationSandwich ? "translation-sandwich" : "none";
@@ -161,7 +145,7 @@ export function graphTopologyKey(
  *
  * > **Compile on what the deployer chose; branch on what the caller asked for.**
  *
- * `TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config, compiled away: **absent flag = absent node**, not a skipped node. Sandwich off: translation nodes and both `requestNeedsTranslation*` edges do not exist.
+ * `TRANSLATION_SANDWICH` is deployment config, compiled away: **absent flag = absent node**, not a skipped node. Sandwich off: translation nodes and both `requestNeedsTranslation*` edges do not exist.
  *
  * `generationFlags`, `difficulty`, `language` are per-request runtime branches. Sandwich on: both edges remain (deployer chooses whether deployment can translate, caller whether request needs to); they read `language` off ALS. `procedures` conditional edge in `02case-generation/index.ts` stays in every variant.
  *
@@ -190,11 +174,7 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
   );
   const generationPhase = buildCaseGenerationGraph(
     generationRuntime,
-    createProcedureStrategy(
-      generationRuntime,
-      flags.procedurePreselection,
-      modalityRegistries.procedureResult
-    ),
+    new DirectPick(generationRuntime, modalityRegistries.procedureResult),
     modalityRegistries,
     traceNode.scope("generation_phase")
   );
@@ -286,7 +266,7 @@ export type CompiledCaseGraph = CompiledCaseGraphs["case"];
 /**
  * Builds every flag variant eagerly; binds `planCase`/`renderCase` to the one deployer config selects. Called from composition root (`graph/index.ts`) and `exportGraphs.ts` (minimal in-memory runtime, topologies only).
  *
- * Eager so a broken variant fails at boot, not first request. Other three variants give `exportGraphs.ts` and tests one assembly source. Compilation is pure wiring; four is cheap.
+ * Eager so a broken variant fails at boot, not first request. The other variant gives `exportGraphs.ts` and tests one assembly source. Compilation is pure wiring; two is cheap.
  *
  * Sandwich-on variants always built, so `getKnownLabels()` collects translation labels even with sandwich off; `validateCatalogsOrExit` validates `labelTranslations.yml` against the complete key set.
  */
@@ -319,7 +299,7 @@ export function buildCaseGraph(
   function getCaseGraphs(flags: GraphFlags): CompiledCaseGraphs {
     const graphs = variants.get(graphVariantKey(flags));
     if (!graphs) {
-      // Unreachable: `ALL_GRAPH_FLAGS` is derived from the same two booleans.
+      // Unreachable: `ALL_GRAPH_FLAGS` is derived from the same boolean.
       throw new Error(
         `No compiled graph variant for flags "${graphVariantKey(flags)}"`
       );
@@ -329,7 +309,6 @@ export function buildCaseGraph(
 
   const graphs = getCaseGraphs({
     translationSandwich: config.TRANSLATION_SANDWICH,
-    procedurePreselection: config.PROCEDURE_PRESELECTION,
   });
 
   /** LangGraph's invoke options for the request bound on ALS. */

@@ -7,7 +7,7 @@ import z from "zod";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { buildProcedureGraph, buildBlindedSolverGraph } from "./index.js";
 import {
-  createProcedureStrategy,
+  DirectPick,
   type BlindedView,
   type OracleView,
   type ProcedureStrategy,
@@ -372,45 +372,29 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
     expect(bridgeViews).toHaveLength(1);
   });
 
-  it("has exactly four nodes under both PROCEDURE_PRESELECTION values, render_results is terminal, and both strategies produce the same node set", async () => {
-    // Categorized so `createProcedureStrategy` is free to pick either path.
-    const categorizedCatalog = new InMemoryProcedureCatalog([
-      "Lab: CBC",
-      "Imaging: CT chest",
-    ]);
-    const runtime = buildFakeRuntime(makeQueuedLlmPort({}), categorizedCatalog);
+  it("has exactly four nodes, render_results is terminal", async () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
     const traceNode = createTraceNode(new EventBus());
     const { provider } = makeRecordingTextProvider();
 
-    const directStrategy = createProcedureStrategy(runtime, false, [provider]);
-    const scopedStrategy = createProcedureStrategy(runtime, true, [provider]);
+    const strategy = new DirectPick(runtime, [provider]);
+    expect(strategy.id).toBe("direct-pick");
 
-    expect(directStrategy.id).toBe("direct-pick");
-    expect(scopedStrategy.id).toBe("category-scoped-pick");
+    const graph = buildProcedureGraph(runtime, strategy, [provider], traceNode);
 
-    const graphOf = (strategy: ProcedureStrategy) =>
-      buildProcedureGraph(runtime, strategy, [provider], traceNode);
+    const { nodes, edges } = await graph.getGraphAsync();
+    const nodeNames = Object.keys(nodes)
+      .filter((n) => n !== "__start__" && n !== "__end__")
+      .sort();
 
-    const nodesOf = async (strategy: ProcedureStrategy) => {
-      const { nodes } = await graphOf(strategy).getGraphAsync();
-      return Object.keys(nodes)
-        .filter((n) => n !== "__start__" && n !== "__end__")
-        .sort();
-    };
-
-    const directNodes = await nodesOf(directStrategy);
-    const scopedNodes = await nodesOf(scopedStrategy);
-
-    expect(directNodes).toEqual([
+    expect(nodeNames).toEqual([
       "blinded_step",
       "bridge",
       "render_results",
       "result_step",
     ]);
-    expect(scopedNodes).toEqual(directNodes);
 
     // `render_results` is terminal: its only outgoing edge is `END`.
-    const { edges } = await graphOf(directStrategy).getGraphAsync();
     const fromRenderResults = edges.filter(
       (e) => e.source === "render_results"
     );
@@ -484,16 +468,5 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
     expect(result).not.toHaveProperty("diagnosis");
     expect(nextStepViews).toHaveLength(1);
     expect(nextStepViews[0]).not.toHaveProperty("diagnosis");
-  });
-
-  it("createProcedureStrategy falls back to DirectPick when PROCEDURE_PRESELECTION is set but the catalogue has no categories", () => {
-    // No "Category: Name" prefixes ⇒ categories() is empty.
-    const flatCatalog = new InMemoryProcedureCatalog(["CBC", "CT chest"]);
-    const runtime = buildFakeRuntime(makeQueuedLlmPort({}), flatCatalog);
-    const { provider } = makeRecordingTextProvider();
-
-    const strategy = createProcedureStrategy(runtime, true, [provider]);
-
-    expect(strategy.id).toBe("direct-pick");
   });
 });

@@ -37,8 +37,6 @@ function excludeOrderedFromGrouped(
   return filtered;
 }
 
-const CATEGORY_MENU_SAMPLE_SIZE = 3;
-
 export class ProcedureCandidatesImpl implements ProcedureCandidates {
   constructor(
     readonly mode: ProcedurePickMode,
@@ -86,13 +84,6 @@ export class ProcedureCandidatesImpl implements ProcedureCandidates {
       case "grouped":
         return this.mode.grouped.size === 0;
     }
-  }
-
-  categories(): string[] {
-    if (this.mode.kind !== "grouped") return [];
-    return [...this.mode.grouped.keys()].filter(
-      (category) => category !== UNCATEGORIZED_CATEGORY
-    );
   }
 
   /**
@@ -170,31 +161,6 @@ ${this.mode.names.map((n) => `- ${n}`).join("\n")}`
 ${renderForPrompt(Object.fromEntries(this.mode.grouped))}`
         );
     }
-  }
-
-  /**
-   * Renders one line per real category with a size hint and a few sample
-   * procedure names, so a category-level pick is informed rather than
-   * name-only. Expects an already duplicate-filtered grouped map, so fully
-   * ordered categories disappear from the menu. When `only` is given, renders
-   * just those categories instead of every real category in the set.
-   */
-  categoryMenu(only?: string[]): string {
-    const grouped =
-      this.mode.kind === "grouped"
-        ? this.mode.grouped
-        : new Map<string, ProcedureName[]>();
-    const entries: [string, ProcedureName[]][] = only
-      ? only.map((category) => [category, grouped.get(category) ?? []])
-      : [...grouped.entries()];
-    return entries
-      .filter(([category]) => category !== UNCATEGORIZED_CATEGORY)
-      .map(([category, names]) => {
-        const sample = names.slice(0, CATEGORY_MENU_SAMPLE_SIZE).join(", ");
-        const more = names.length > CATEGORY_MENU_SAMPLE_SIZE ? ", …" : "";
-        return `- ${category} (${names.length} procedures) — e.g. ${sample}${more}`;
-      })
-      .join("\n");
   }
 
   /**

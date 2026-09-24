@@ -1,6 +1,18 @@
 %%{init: {'flowchart': {'curve': 'linear'}}}%%
 graph TD;
 	__start__([<p>__start__</p>]):::first
+	translation_to_english_phase___start__(<p>__start__</p>)
+	translation_to_english_phase_translate_diagnosis(translate_diagnosis)
+	translation_to_english_phase_translate_user_instructions(translate_user_instructions)
+	translation_to_english_phase___end__(<p>__end__</p>)
+	planning_phase_basis_resolve(basis_resolve)
+	planning_phase_outline_phase_case_outline_generate(case_outline_generate)
+	planning_phase_outline_phase_outline_evaluate(outline_evaluate)
+	planning_phase_outline_phase_outline_regenerate(outline_regenerate)
+	planning_phase_outline_phase___end__(<p>__end__</p>)
+	outline_translation_out(outline_translation_out)
+	human_review(human_review)
+	outline_translation_in(outline_translation_in)
 	generation_phase_presentation_phase___start__(<p>__start__</p>)
 	generation_phase_presentation_phase_patient_generate(patient_generate)
 	generation_phase_presentation_phase_chief_complaint_generate_plan_content(plan_content)
@@ -18,10 +30,29 @@ graph TD;
 	translation_from_english_phase_translate_rest(translate_rest)
 	translation_from_english_phase_translate_merge(translate_merge)
 	__end__([<p>__end__</p>]):::last
-	__start__ --> generation_phase_presentation_phase___start__;
-	translation_from_english_phase_translate_merge --> __end__;
+	translation_to_english_phase___end__ -.-> planning_phase_basis_resolve;
 	generation_phase_procedure_phase_render_results -. &nbsp;translate&nbsp; .-> translation_from_english_phase___start__;
-	generation_phase_procedure_phase_render_results -. &nbsp;skip&nbsp; .-> __end__;
+	__start__ --> translation_to_english_phase___start__;
+	translation_from_english_phase_translate_merge --> __end__;
+	human_review --> outline_translation_in;
+	outline_translation_in --> generation_phase_presentation_phase___start__;
+	outline_translation_out --> human_review;
+	planning_phase_outline_phase___end__ --> outline_translation_out;
+	subgraph translation_to_english_phase
+	translation_to_english_phase___start__ --> translation_to_english_phase_translate_diagnosis;
+	translation_to_english_phase___start__ --> translation_to_english_phase_translate_user_instructions;
+	translation_to_english_phase_translate_diagnosis --> translation_to_english_phase___end__;
+	translation_to_english_phase_translate_user_instructions --> translation_to_english_phase___end__;
+	end
+	subgraph planning_phase
+	subgraph outline_phase
+	planning_phase_outline_phase_case_outline_generate --> planning_phase_outline_phase_outline_evaluate;
+	planning_phase_outline_phase_outline_evaluate -.-> planning_phase_outline_phase_outline_regenerate;
+	planning_phase_outline_phase_outline_evaluate -.-> planning_phase_outline_phase___end__;
+	planning_phase_outline_phase_outline_regenerate -.-> planning_phase_outline_phase_outline_evaluate;
+	end
+	planning_phase_basis_resolve --> planning_phase_outline_phase_case_outline_generate;
+	end
 	subgraph generation_phase
 	subgraph presentation_phase
 	subgraph chief_complaint_generate

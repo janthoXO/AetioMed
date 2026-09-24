@@ -29,10 +29,7 @@ import type { GraphRuntime } from "../runtime.js";
 import type { Config } from "../config.js";
 import type { EventBus } from "../../event-bus.js";
 import type { Repos } from "../repos.js";
-import type {
-  BasisFragment,
-  MedicalBasisProvider,
-} from "../medicalBasis/ports.js";
+import type { MedicalBasisProvider } from "../medicalBasis/ports.js";
 import {
   OutlineSegmentsSchema,
   type OutlineSegments,
@@ -48,7 +45,6 @@ const PlanStateSchema = CaseGenerationStateSchema.pick({
   userInstructions: true,
   generationFlags: true,
   difficulty: true,
-  basisFragments: true,
 }).extend({
   /** Per-request routing input, not ALS: caller supplied free text (diagnosis **name**, not only `icd`, or any `userInstructions`). Computed by `CaseGenerationService` before ICD→name resolution. `language` stays on ALS: property of bound ports. */
   callerSuppliedFreeText: z.boolean(),
@@ -62,7 +58,6 @@ const PlanStateSchema = CaseGenerationStateSchema.pick({
 const PlanOutputSchema = PlanStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
-  basisFragments: true,
   outlineSegments: true,
   outlineAccepted: true,
 });
@@ -368,7 +363,6 @@ export function buildCaseGraph(
     return {
       diagnosis: result.diagnosis,
       userInstructions: result.userInstructions,
-      basisFragments: result.basisFragments,
       outlineSegments: result.outlineSegments,
       outlineAccepted: result.outlineAccepted,
     };
@@ -432,7 +426,6 @@ export type PlanResult = {
   /** Working language: English after translate-in (sandwich on). */
   diagnosis: Diagnosis;
   userInstructions?: UserInstructions | undefined;
-  basisFragments: BasisFragment[];
   outlineSegments: OutlineSegments;
   /** `false` when the judge loop ended on its iteration cap. */
   outlineAccepted: boolean;

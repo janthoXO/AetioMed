@@ -29,24 +29,11 @@ function escapeFenceDelimiters(content: string): string {
   );
 }
 
-/** Metadata is as untrusted as content: delimiter escaping plus newline flattening (else a multi-line `label` could close the fence). */
-function metaValue(value: string): string {
-  return escapeFenceDelimiters(value).replace(/[\r\n]+/g, " ");
-}
-
+// `source` is a provider's own `description` (code, not third-party data): no escaping needed.
 function renderFragment(fragment: BasisFragment): string {
-  const meta = [
-    `source: ${metaValue(fragment.sourceId)}`,
-    `label: ${metaValue(fragment.label)}`,
-    `retrievedAt: ${metaValue(fragment.retrievedAt)}`,
-    fragment.licence ? `licence: ${metaValue(fragment.licence)}` : undefined,
-  ]
-    .filter((line): line is string => !!line)
-    .join("\n");
-
   return [
     BASIS_FRAGMENT_OPEN,
-    meta,
+    `source: ${fragment.source}`,
     "---",
     escapeFenceDelimiters(fragment.content),
     BASIS_FRAGMENT_CLOSE,

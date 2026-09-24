@@ -71,7 +71,6 @@ function fakeGraph(
       return {
         diagnosis: input.diagnosis,
         userInstructions: input.userInstructions,
-        basisFragments: [],
         outlineSegments: input.outline ?? OUTLINE,
         outlineAccepted: input.outline ? true : (opts.accepted ?? true),
       };

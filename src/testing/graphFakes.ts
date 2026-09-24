@@ -22,7 +22,6 @@ export function planAndRenderFrom(generateCase: GenerateCaseFn): GraphFake {
       return {
         diagnosis: opts.diagnosis,
         userInstructions: opts.userInstructions,
-        basisFragments: [],
         outlineAccepted: true,
         outlineSegments: [
           { fixed: false, text: "" },

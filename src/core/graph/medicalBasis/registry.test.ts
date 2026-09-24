@@ -3,11 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import { createMedicalBasisRegistry, resolveAllFragments } from "./registry.js";
 import { renderMedicalBasisSection } from "./render.js";
-import type {
-  BasisFragment,
-  BasisQuery,
-  MedicalBasisProvider,
-} from "./ports.js";
+import type { BasisQuery, MedicalBasisProvider } from "./ports.js";
 import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
@@ -20,15 +16,6 @@ const query: BasisQuery = {
   difficulty: "medium",
 };
 
-function fragment(sourceId: string, content = sourceId): BasisFragment {
-  return {
-    sourceId,
-    label: sourceId,
-    content,
-    retrievedAt: "2024-01-01T00:00:00.000Z",
-  };
-}
-
 function fakeLog() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn() };
 }
@@ -39,12 +26,14 @@ function makeStaggeredProvider(opts: {
   delayMs: number;
   throws?: boolean;
   hangsUntilAborted?: boolean;
+  returns?: string | undefined;
 }): MedicalBasisProvider {
   return {
     id: opts.id,
+    description: opts.id,
     async fetch(_query, context) {
       if (opts.hangsUntilAborted) {
-        return new Promise<BasisFragment[]>((_resolve, reject) => {
+        return new Promise<string | undefined>((_resolve, reject) => {
           context?.signal?.addEventListener("abort", () => {
             reject(new Error("aborted"));
           });
@@ -52,7 +41,7 @@ function makeStaggeredProvider(opts: {
       }
       await new Promise((r) => setTimeout(r, opts.delayMs));
       if (opts.throws) throw new Error(`${opts.id} blew up`);
-      return [fragment(opts.id)];
+      return opts.returns ?? opts.id;
     },
   };
 }
@@ -61,16 +50,18 @@ describe("resolveAllFragments", () => {
   it("calls every provider and concatenates their fragments", async () => {
     const a: MedicalBasisProvider = {
       id: "a",
-      fetch: async () => [fragment("a")],
+      description: "a",
+      fetch: async () => "a",
     };
     const b: MedicalBasisProvider = {
       id: "b",
-      fetch: async () => [fragment("b")],
+      description: "b",
+      fetch: async () => "b",
     };
 
     const result = await resolveAllFragments([a, b], query, fakeLog());
 
-    expect(result.map((f) => f.sourceId)).toEqual(["a", "b"]);
+    expect(result.map((f) => f.source)).toEqual(["a", "b"]);
 
     const rendered = renderMedicalBasisSection(result) ?? "";
     expect(rendered).toContain("source: a");
@@ -88,7 +79,7 @@ describe("resolveAllFragments", () => {
     );
 
     // If this were completion order, "fast" would land first.
-    expect(result.map((f) => f.sourceId)).toEqual(["slow", "fast"]);
+    expect(result.map((f) => f.source)).toEqual(["slow", "fast"]);
   });
 
   it("logs and skips a provider that throws — the other provider's fragment still lands", async () => {
@@ -99,15 +90,38 @@ describe("resolveAllFragments", () => {
     });
     const good: MedicalBasisProvider = {
       id: "good",
-      fetch: async () => [fragment("good")],
+      description: "good",
+      fetch: async () => "good",
     };
     const log = fakeLog();
 
     const result = await resolveAllFragments([throwing, good], query, log);
 
-    expect(result.map((f) => f.sourceId)).toEqual(["good"]);
+    expect(result.map((f) => f.source)).toEqual(["good"]);
     expect(log.error).toHaveBeenCalledTimes(1);
     expect(log.error.mock.calls[0][0]).toContain("bad");
+  });
+
+  it("a provider returning undefined, or only whitespace, produces no fragment", async () => {
+    const nothing: MedicalBasisProvider = {
+      id: "nothing",
+      description: "nothing",
+      fetch: async () => undefined,
+    };
+    const blank: MedicalBasisProvider = {
+      id: "blank",
+      description: "blank",
+      fetch: async () => "  ",
+    };
+
+    const result = await resolveAllFragments(
+      [nothing, blank],
+      query,
+      fakeLog()
+    );
+
+    expect(result).toEqual([]);
+    expect(renderMedicalBasisSection(result)).toBeUndefined();
   });
 
   it("hands the provider the whole RequestContext, not just its signal", async () => {
@@ -115,9 +129,10 @@ describe("resolveAllFragments", () => {
     const seen: (RequestContext | undefined)[] = [];
     const recorder: MedicalBasisProvider = {
       id: "recorder",
+      description: "recorder",
       fetch: async (_query, context) => {
         seen.push(context);
-        return [fragment("recorder")];
+        return "recorder";
       },
     };
     const context: RequestContext = {
@@ -157,7 +172,7 @@ describe("resolveAllFragments", () => {
 });
 
 describe("createMedicalBasisRegistry", () => {
-  it("returns exactly the UMLS symptom provider today", () => {
+  it("returns UMLS symptoms then LLM symptoms, in that order", () => {
     const symptomsRepo: SymptomsRepo = {
       SymptomsRelatedToDiagnosisIcd: () => [],
       getCachedSymptoms: () => undefined,
@@ -181,7 +196,9 @@ describe("createMedicalBasisRegistry", () => {
 
     const registry = createMedicalBasisRegistry({ runtime, symptomsRepo });
 
-    expect(registry).toHaveLength(1);
-    expect(registry[0].id).toBe("umls-symptoms");
+    expect(registry.map((p) => p.id)).toEqual([
+      "umls-symptoms",
+      "llm-symptoms",
+    ]);
   });
 });

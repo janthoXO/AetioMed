@@ -58,14 +58,13 @@ const PlanningPhaseStateSchema = PlanGraphStateSchema.extend(
 const PlanningPhaseOutputSchema = PlanningPhaseStateSchema.pick({
   outlineSegments: true,
   outlineAccepted: true,
-  basisFragments: true,
 });
 
 const CaseGenerationOutputSchema = CaseGenerationStateSchema.pick({
   case: true,
 });
 
-/** Resolve medical basis, then plan and judge outline. Ends with outline and verdict, no case fields. `basisFragments` written back for reuse on revision. */
+/** Resolve medical basis, then plan and judge outline. Ends with outline and verdict, no case fields. */
 export function buildPlanningPhaseGraph(
   runtime: GraphRuntime,
   medicalBasisRegistry: MedicalBasisProvider[],

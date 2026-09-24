@@ -39,7 +39,11 @@ function fakeTextProvider(): ModalityProvider<unknown> {
 
 function buildDeps(
   medicalBasisRegistry: MedicalBasisProvider[] = [
-    { id: "fake-basis", fetch: async () => [] },
+    {
+      id: "fake-basis",
+      description: "fake basis",
+      fetch: async () => undefined,
+    },
   ],
   modalityRegistries: ModalityRegistries = {
     chiefComplaint: [fakeTextProvider()],

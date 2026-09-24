@@ -1,14 +1,23 @@
 import fs from "node:fs";
 import { load as parseYaml } from "js-yaml";
-import { TranslationMappingSchema } from "./translationStore.js";
+import {
+  TranslationMappingSchema,
+  type TranslationMapping,
+} from "./translationStore.js";
 
 /**
  * Read a translations YAML (`{ Language: { EnglishTerm: Translation } }`) into
  * its raw map. Bypasses `syncSource` and the hash cache: runs every boot.
  * `yamlFile` must be absolute. Returns `{}` if missing, unparseable or wrongly shaped.
+ * `parse` overrides the default flat-shape parse, for a domain whose YAML is
+ * structured differently (e.g. procedures' tree) — see `createTranslationStore`.
  */
 export function readDeclaredTranslations(
-  yamlFile: string
+  yamlFile: string,
+  parse: (parsed: unknown) => TranslationMapping | undefined = (parsed) => {
+    const result = TranslationMappingSchema.safeParse(parsed);
+    return result.success ? result.data : undefined;
+  }
 ): Record<string, Record<string, string> | undefined> {
   if (!fs.existsSync(yamlFile)) {
     return {};
@@ -34,15 +43,15 @@ export function readDeclaredTranslations(
     return {};
   }
 
-  const result = TranslationMappingSchema.safeParse(parsed);
-  if (!result.success) {
+  const mapping = parse(parsed);
+  if (!mapping) {
     console.warn(
       `[predefinedList] ${yamlFile} did not match expected translation shape, skipping key extraction.`
     );
     return {};
   }
 
-  return result.data;
+  return mapping;
 }
 
 /**

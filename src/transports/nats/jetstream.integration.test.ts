@@ -365,7 +365,12 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
           byIcd: () => undefined,
           all: () => [{ icd: "1A00", name: "Cholera" }],
         },
-        procedures: { list: () => ["Chest X-ray", "CBC"] },
+        procedures: {
+          tree: () => ({
+            categories: [],
+            procedures: [{ name: "Chest X-ray" }, { name: "CBC" }],
+          }),
+        },
       },
       llm: { for: vi.fn() },
     } as unknown as GraphAppContext["runtime"],

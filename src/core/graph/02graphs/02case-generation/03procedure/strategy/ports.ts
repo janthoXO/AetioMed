@@ -2,10 +2,8 @@ import type {
   Presentation,
   PreviousProcedureFinding,
 } from "@/core/graph/03aigateway/procedures.aigateway.js";
-import type {
-  PlannedProcedure,
-  Procedure,
-} from "@/core/graph/models/Procedure.js";
+import type { PlannedProcedure } from "@/core/graph/models/Procedure.js";
+import type { ProcedureRef } from "@/core/graph/models/ProcedureTree.js";
 import type { Diagnosis } from "@/core/graph/models/Diagnosis.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 
@@ -41,7 +39,11 @@ export type OracleView = {
  * Enforced in adapters via `solverMove.ts`, not the node.
  */
 export type SolverMove =
-  | { action: "order"; procedures: Procedure[]; reasoning?: string | undefined }
+  | {
+      action: "order";
+      procedures: ProcedureRef[];
+      reasoning?: string | undefined;
+    }
   | {
       action: "diagnose";
       diagnosisName: string;

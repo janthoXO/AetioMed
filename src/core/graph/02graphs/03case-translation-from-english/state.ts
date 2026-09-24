@@ -7,7 +7,8 @@ import { registry } from "@langchain/langgraph/zod";
 
 /** Catalog-backed translations of controlled vocabulary. Written only by `translate_defined`; kept off `case`. */
 export const DefinedTranslationsSchema = z.object({
-  procedureNames: z.record(z.string(), z.string()),
+  /** `nodeKey(path) -> translated segment name`, for categories and procedures. */
+  procedureNodes: z.record(z.string(), z.string()),
   anamnesisCategories: z.record(z.string(), z.string()),
 });
 export type DefinedTranslations = z.infer<typeof DefinedTranslationsSchema>;
@@ -36,7 +37,7 @@ export const CaseTranslationFromEnglishStateSchema = z.object({
 
   /** Written only by `translate_defined`: catalog lookups (per-key locked LLM fill on miss) for `procedures[].name`, `anamnesis[].category`. Never overwritten by rest pass. */
   definedTranslations: DefinedTranslationsSchema.default({
-    procedureNames: {},
+    procedureNodes: {},
     anamnesisCategories: {},
   }),
 

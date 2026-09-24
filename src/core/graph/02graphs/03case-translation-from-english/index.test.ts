@@ -13,6 +13,7 @@ import {
   type ContentPart,
 } from "@/core/graph/models/ContentPart.js";
 import type { Case } from "@/core/graph/models/Case.js";
+import { nodeKey } from "@/core/graph/models/ProcedureTree.js";
 import type { GraphRuntime, LlmPort } from "@/core/graph/runtime.js";
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
 import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
@@ -26,10 +27,11 @@ function fixtureTextPart(alt: string): ContentPart {
 }
 
 function fakeRepos(opts: {
-  procedureNames?: Record<string, string>;
+  /** `nodeKey(path) -> translated segment name`. */
+  procedureTranslations?: Record<string, string>;
   categories?: Record<string, string>;
 }): { anamnesis: AnamnesisRepo; procedures: ProceduresRepo } {
-  const procedureNames = opts.procedureNames ?? {};
+  const procedureTranslations = opts.procedureTranslations ?? {};
   const categories = opts.categories ?? {};
   return {
     anamnesis: {
@@ -40,9 +42,9 @@ function fakeRepos(opts: {
     },
     procedures: {
       translationsFile: "",
-      getProcedureNameTranslationFromEnglish: (n) => procedureNames[n],
-      saveProcedureNameTranslation: () => {},
-      getEffectiveProcedureList: () => undefined,
+      getProcedureTranslation: (key) => procedureTranslations[key],
+      saveProcedureTranslations: () => {},
+      getProcedureTree: () => undefined,
     },
   };
 }
@@ -71,13 +73,17 @@ function baseCase(): Case {
     anamnesis: [
       { category: "History", answer: [fixtureTextPart("No prior illness.")] },
     ],
-    procedures: [
-      {
-        name: "Chest X-ray",
-        relevance: "obligatory",
-        result: [fixtureTextPart("Infiltrate in right lower lobe.")],
-      },
-    ],
+    procedures: {
+      procedures: [
+        {
+          name: "Chest X-ray",
+          order: 0,
+          relevance: "obligatory",
+          result: [fixtureTextPart("Infiltrate in right lower lobe.")],
+        },
+      ],
+      categories: [],
+    },
   };
 }
 
@@ -149,7 +155,7 @@ describe("buildCaseTranslationFromEnglishGraph — output surface", () => {
 describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
   it("procedures[].name comes out as EXACTLY the catalogue's cached term, never a rest-pass paraphrase", async () => {
     const repos = fakeRepos({
-      procedureNames: { "Chest X-ray": "Röntgen-Thorax" },
+      procedureTranslations: { [nodeKey(["Chest X-ray"])]: "Röntgen-Thorax" },
       categories: { History: "Anamnese" },
     });
     // Rest pass LLM translates all it is handed, but cannot see procedure names/categories (`caseTextMap` omits them).
@@ -165,13 +171,13 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
 
     const result = await invoke(runtime, repos);
 
-    expect(result.case.procedures?.[0]?.name).toBe("Röntgen-Thorax");
+    expect(result.case.procedures?.procedures[0]?.name).toBe("Röntgen-Thorax");
     expect(result.case.anamnesis?.[0]?.category).toBe("Anamnese");
   });
 
   it("makes zero LLM calls for names/categories when the catalogue covers everything", async () => {
     const repos = fakeRepos({
-      procedureNames: { "Chest X-ray": "Röntgen-Thorax" },
+      procedureTranslations: { [nodeKey(["Chest X-ray"])]: "Röntgen-Thorax" },
       categories: { History: "Anamnese" },
     });
     let calls = 0;
@@ -218,7 +224,7 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
     );
 
     const repos = fakeRepos({
-      procedureNames: { "Chest X-ray": "Röntgen-Thorax" },
+      procedureTranslations: { [nodeKey(["Chest X-ray"])]: "Röntgen-Thorax" },
       categories: { History: "Anamnese" },
     });
     const runtime = fakeRuntime({
@@ -288,7 +294,7 @@ describe("translateMerge — order-independence by construction", () => {
   it("is insensitive to which of the two channels was 'computed' first: applying them in either order to build state yields an identical merged case", () => {
     const theCase = baseCase();
     const definedTranslations = {
-      procedureNames: { "Chest X-ray": "Röntgen-Thorax" },
+      procedureNodes: { [nodeKey(["Chest X-ray"])]: "Röntgen-Thorax" },
       anamnesisCategories: { History: "Anamnese" },
     };
     const restTranslations = {
@@ -322,7 +328,7 @@ describe("translateMerge — order-independence by construction", () => {
       diagnosis: { name: "Pneumonia" },
       generationFlags: ["procedures"],
       case: theCase,
-      definedTranslations: { procedureNames: {}, anamnesisCategories: {} },
+      definedTranslations: { procedureNodes: {}, anamnesisCategories: {} },
       restTranslations,
     } as never);
     const bothAfterRestFirst = translateMerge({
@@ -338,7 +344,9 @@ describe("translateMerge — order-independence by construction", () => {
     // "was defined applied before rest", only the two channels' final
     // values.
     expect(bothAfterRestFirst.case).toEqual(bothAfterDefinedFirst.case);
-    expect(definedFirst.case.procedures?.[0]?.name).toBe("Röntgen-Thorax");
+    expect(definedFirst.case.procedures?.procedures[0]?.name).toBe(
+      "Röntgen-Thorax"
+    );
     expect(bothAfterDefinedFirst.case.chiefComplaint?.[0]?.alt).toBe(
       "Toux depuis trois jours."
     );

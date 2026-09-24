@@ -71,6 +71,7 @@ export const TranslationMappingSchema = z.partialRecord(
   z.string(),
   z.record(z.string(), z.string())
 );
+export type TranslationMapping = z.infer<typeof TranslationMappingSchema>;
 
 /** Minimal deferred-promise helper, local to this file on purpose. */
 interface Deferred<T> {
@@ -97,6 +98,12 @@ export function createTranslationStore(
     /** Retry policy for runtime fills — overridable so tests don't wait out real backoff. */
     retries?: number;
     retryBaseDelayMs?: number;
+    /**
+     * How to turn the parsed YAML into `{ Language: { englishKey: translated } }`.
+     * Defaults to `TranslationMappingSchema.safeParse`'s flat shape; a domain whose
+     * YAML is structured differently (e.g. procedures' tree) supplies its own.
+     */
+    parse?: (parsed: unknown) => TranslationMapping | undefined;
   }
 ): TranslationStore {
   const domain = opts.name;
@@ -216,9 +223,15 @@ export function createTranslationStore(
 
   if (opts.yamlFile) {
     const yamlFile = opts.yamlFile;
+    const parse =
+      opts.parse ??
+      ((parsed: unknown) => {
+        const result = TranslationMappingSchema.safeParse(parsed);
+        return result.success ? result.data : undefined;
+      });
     const synced = dbHandle.syncSource(domain, yamlFile, (parsed) => {
-      const result = TranslationMappingSchema.safeParse(parsed);
-      if (!result.success) {
+      const mapping = parse(parsed);
+      if (!mapping) {
         console.warn(
           `[${domain} Store] Could not parse ${yamlFile}, skipping sync.`
         );
@@ -226,8 +239,8 @@ export function createTranslationStore(
       }
 
       const rows: Row[] = [];
-      for (const lang of Object.keys(result.data) as ForeignLanguage[]) {
-        const translations = result.data[lang];
+      for (const lang of Object.keys(mapping) as ForeignLanguage[]) {
+        const translations = mapping[lang];
         if (!translations) continue;
         for (const [english, translated] of Object.entries(translations)) {
           rows.push({ domain, lang, english, translated });

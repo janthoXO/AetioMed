@@ -122,10 +122,11 @@ const minimalAnamnesisRepo: AnamnesisRepo = {
 };
 
 const minimalProceduresRepo: ProceduresRepo = {
+  catalogueFile: "",
   translationsFile: "",
-  getProcedureNameTranslationFromEnglish: () => undefined,
-  saveProcedureNameTranslation: () => {},
-  getEffectiveProcedureList: () => undefined,
+  getProcedureTranslation: () => undefined,
+  saveProcedureTranslations: () => {},
+  getProcedureTree: () => undefined,
 };
 
 // Mirrors the composition root (`graph/index.ts`): the registry always has

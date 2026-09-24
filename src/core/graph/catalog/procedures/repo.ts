@@ -1,37 +1,43 @@
 import z from "zod";
-import { asc, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import type { DbHandle } from "../../persistence/db.js";
 import { predefinedItem } from "../../persistence/schema.js";
-import { resolvePredefinedList } from "../../persistence/predefinedList.js";
-import {
-  type ProcedureName,
-  ProcedureNameSchema,
-} from "../../models/Procedure.js";
 import { type ForeignLanguage } from "../../models/Language.js";
 import { createTranslationStore } from "../../persistence/translationStore.js";
 import { catalogFile } from "../../persistence/paths.js";
+import {
+  leafCount,
+  procedureTreeSchema,
+  type ProcedureTree,
+} from "../../models/ProcedureTree.js";
+import { flattenProcedureTranslations } from "./translations.js";
+
+export type ProcedureCatalogueTree = ProcedureTree<{ name: string }>;
 
 export interface ProceduresRepo {
+  /** Absolute path of the catalogue YAML, for the startup catalogue validator. */
+  readonly catalogueFile: string;
   /** Absolute path of the translations YAML, for the startup catalogue validator. */
   readonly translationsFile: string;
-  /** Get the translation of a procedure from English to the target language. */
-  getProcedureNameTranslationFromEnglish(
-    procedureName: ProcedureName,
+  /** Get a node's (category or procedure) translation from English to the target language. */
+  getProcedureTranslation(
+    key: string,
     language: ForeignLanguage
-  ): ProcedureName | undefined;
-  saveProcedureNameTranslation(
-    englishToTarget: Record<ProcedureName, ProcedureName>,
+  ): string | undefined;
+  saveProcedureTranslations(
+    byNodeKey: Record<string, string>,
     language: ForeignLanguage
   ): void;
-  /** Effective procedure name list; `undefined` = freeform, LLM invents names. */
-  getEffectiveProcedureList(): ProcedureName[] | undefined;
+  /** The catalogue tree; `undefined` = freeform, LLM invents names. */
+  getProcedureTree(): ProcedureCatalogueTree | undefined;
 }
 
 const SOURCE = "procedures";
+const TreeSchema = procedureTreeSchema(z.object({ name: z.string().min(1) }));
 
 /**
  * Syncs `procedures.yml` / `proceduresTranslations.yml` into `dbHandle`, exposes
- * list and translation lookups. I/O here, not at import.
+ * tree and translation lookups. I/O here, not at import.
  */
 export function createProceduresRepo(
   dbHandle: DbHandle,
@@ -43,12 +49,13 @@ export function createProceduresRepo(
   );
 
   /**
-   * Procedure name translations from English to other languages.
-   * e.g. { German: { "Blood Test": "Bluttest", ... } }
+   * Node (category/procedure) translations from English to other languages,
+   * keyed by `nodeKey(pathIncludingOwnName)`.
    */
   const store = createTranslationStore(dbHandle, {
     name: "Procedures",
     yamlFile: translationsFile,
+    parse: flattenProcedureTranslations,
   });
 
   function syncPredefinedProcedures() {
@@ -56,38 +63,30 @@ export function createProceduresRepo(
       SOURCE,
       catalogFile(catalogDir, "procedures.yml"),
       (parsed) => {
-        const procedureEntries = z
-          .object({
-            procedures: ProcedureNameSchema.array(),
-          })
-          .safeParse(parsed);
-
-        if (!procedureEntries.success) {
+        const result = TreeSchema.safeParse(parsed);
+        if (!result.success) {
           console.error(
             "[Procedure] Failed to load predefined procedures from YAML"
           );
           return;
         }
 
-        // Plain read-only ordered list (no runtime additions) - full replace.
         dbHandle.db
           .delete(predefinedItem)
           .where(eq(predefinedItem.source, SOURCE))
           .run();
 
-        const rows = procedureEntries.data.procedures.map(
-          (value, position) => ({
+        dbHandle.db
+          .insert(predefinedItem)
+          .values({
             source: SOURCE,
-            position,
-            value,
+            position: 0,
+            value: JSON.stringify(result.data),
           })
-        );
-        for (const batch of dbHandle.chunk(rows)) {
-          dbHandle.db.insert(predefinedItem).values(batch).run();
-        }
+          .run();
 
         console.info(
-          `[Procedure] Synced ${procedureEntries.data.procedures.length} predefined procedures from YAML`
+          `[Procedure] Synced ${leafCount(result.data)} predefined procedures from YAML`
         );
       }
     );
@@ -97,33 +96,40 @@ export function createProceduresRepo(
     }
   }
 
-  function loadPredefinedProcedures(): ProcedureName[] | undefined {
-    const rows = dbHandle.db
+  function loadProcedureTree(): ProcedureCatalogueTree | undefined {
+    const row = dbHandle.db
       .select({ value: predefinedItem.value })
       .from(predefinedItem)
       .where(eq(predefinedItem.source, SOURCE))
-      .orderBy(asc(predefinedItem.position))
-      .all();
-    return rows.length ? rows.map((row) => row.value) : undefined;
+      .get();
+    if (!row) return undefined;
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(row.value);
+    } catch {
+      return undefined;
+    }
+    const result = TreeSchema.safeParse(parsed);
+    if (!result.success) return undefined;
+    return leafCount(result.data) > 0 ? result.data : undefined;
   }
 
   syncPredefinedProcedures();
 
-  const predefinedProcedureNames: ProcedureName[] | undefined =
-    resolvePredefinedList({
-      defaults: loadPredefinedProcedures(),
-    });
+  const procedureTree = loadProcedureTree();
 
   return {
+    catalogueFile: catalogFile(catalogDir, "procedures.yml"),
     translationsFile,
-    getProcedureNameTranslationFromEnglish(procedureName, language) {
-      return store.getFromEnglish(procedureName, language);
+    getProcedureTranslation(key, language) {
+      return store.getFromEnglish(key, language);
     },
-    saveProcedureNameTranslation(englishToTarget, language) {
-      store.save(englishToTarget, language);
+    saveProcedureTranslations(byNodeKey, language) {
+      store.save(byNodeKey, language);
     },
-    getEffectiveProcedureList() {
-      return predefinedProcedureNames;
+    getProcedureTree() {
+      return procedureTree;
     },
   };
 }

@@ -75,10 +75,11 @@ function buildDeps(
     getEffectiveCategoryList: () => undefined,
   };
   const procedures: ProceduresRepo = {
+    catalogueFile: "",
     translationsFile: "",
-    getProcedureNameTranslationFromEnglish: () => undefined,
-    saveProcedureNameTranslation: () => {},
-    getEffectiveProcedureList: () => undefined,
+    getProcedureTranslation: () => undefined,
+    saveProcedureTranslations: () => {},
+    getProcedureTree: () => undefined,
   };
 
   return {

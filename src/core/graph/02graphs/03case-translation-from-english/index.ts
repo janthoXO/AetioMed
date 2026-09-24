@@ -11,6 +11,7 @@ import {
   createTranslationFromEnglishTools,
   caseTextMap,
   applyCaseTextTranslations,
+  translateProcedureTree,
 } from "./tools.js";
 import type { DefinedTranslations } from "./state.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
@@ -18,6 +19,7 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
 import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import type { Case } from "@/core/graph/models/Case.js";
+import { nodeKey, nodePaths } from "@/core/graph/models/ProcedureTree.js";
 import { GenerationError } from "@/core/graph/errors/AppError.js";
 
 /** Read off ALS, not graph state. Phase only entered when a non-English language is bound; absent = bug. */
@@ -47,9 +49,14 @@ function makeTranslateDefined(
     );
 
     const categories = state.case.anamnesis?.map((a) => a.category) ?? [];
-    const procedureNames = state.case.procedures?.map((p) => p.name) ?? [];
+    const procedureNodes = state.case.procedures
+      ? nodePaths(state.case.procedures).map((path) => ({
+          key: nodeKey(path),
+          name: path[path.length - 1]!,
+        }))
+      : [];
 
-    const [anamnesisCategories, procedureNameTranslations] = await Promise.all([
+    const [anamnesisCategories, procedureNodeTranslations] = await Promise.all([
       categories.length
         ? tools.translateAnamnesisCategoriesFromEnglish.invoke(
             { categories, language },
@@ -57,9 +64,9 @@ function makeTranslateDefined(
             lgRuntime?.context
           )
         : Promise.resolve({}),
-      procedureNames.length
-        ? tools.translateProcedureNamesFromEnglish.invoke(
-            { procedureNames, language },
+      procedureNodes.length
+        ? tools.translateProcedureNodesFromEnglish.invoke(
+            { procedureNodes, language },
             runtime,
             lgRuntime?.context
           )
@@ -68,7 +75,7 @@ function makeTranslateDefined(
 
     const definedTranslations: DefinedTranslations = {
       anamnesisCategories,
-      procedureNames: procedureNameTranslations,
+      procedureNodes: procedureNodeTranslations,
     };
 
     return { definedTranslations };
@@ -105,7 +112,7 @@ function makeTranslateRest(
 export function translateMerge(
   state: CaseTranslationFromEnglishState
 ): Pick<CaseTranslationFromEnglishState, "case"> {
-  const { anamnesisCategories, procedureNames } = state.definedTranslations;
+  const { anamnesisCategories, procedureNodes } = state.definedTranslations;
   const altFields = applyCaseTextTranslations(
     state.case,
     state.restTranslations
@@ -121,10 +128,11 @@ export function translateMerge(
       })),
     }),
     ...(state.case.procedures && {
-      procedures: state.case.procedures.map((p, i) => ({
-        ...altFields.procedures![i]!,
-        name: procedureNames[p.name] ?? p.name,
-      })),
+      procedures: translateProcedureTree(
+        state.case.procedures,
+        procedureNodes,
+        state.restTranslations
+      ),
     }),
   };
 

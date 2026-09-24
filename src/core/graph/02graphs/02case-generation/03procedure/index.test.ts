@@ -130,6 +130,7 @@ function fixturePlannedProcedure(
   finding: string
 ): PlannedProcedure {
   return {
+    path: [],
     name,
     relevance,
     parts: [
@@ -202,8 +203,8 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
 
     const { strategy, nextStepViews, bridgeViews } = makeScriptedStrategy({
       nextSteps: [
-        { action: "order", procedures: [{ name: "CBC" }] },
-        { action: "order", procedures: [{ name: "CT chest" }] },
+        { action: "order", procedures: [{ path: [], name: "CBC" }] },
+        { action: "order", procedures: [{ path: [], name: "CT chest" }] },
         { action: "diagnose", diagnosisName: "Pneumonia" },
       ],
     });
@@ -213,7 +214,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
       case: {},
     });
 
-    expect(result.case.procedures?.map((p) => p.name)).toEqual([
+    expect(result.case.procedures?.procedures.map((p) => p.name)).toEqual([
       "CBC",
       "CT chest",
     ]);
@@ -222,11 +223,60 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
     // Already-ordered exclusion reads `plannedProcedures`: second view carries
     // CBC's finding as `alt`, not bytes.
     expect(nextStepViews[1]?.previousProcedures).toEqual([
-      { name: "CBC", relevance: "obligatory", result: "WBC 11k" },
+      { path: [], name: "CBC", relevance: "obligatory", result: "WBC 11k" },
     ]);
     // One `render` call for whole list: both instructions in one batch.
     expect(calls).toHaveLength(1);
     expect(calls[0]).toHaveLength(2);
+  });
+
+  it("render_results: two procedures under the same category from different rounds merge into one category node, ordered 0 and 1", async () => {
+    const llm = makeQueuedLlmPort({
+      generator: [
+        planResponse(
+          "Cardiology › Resting ECG",
+          "obligatory",
+          "Normal sinus rhythm"
+        ),
+        planResponse(
+          "Cardiology › Stress ECG",
+          "optional",
+          "No ischemic changes"
+        ),
+      ],
+      judge: [JSON.stringify({ matches: true })],
+    });
+    const runtime = buildFakeRuntime(llm);
+    const { provider } = makeRecordingTextProvider();
+
+    const { strategy } = makeScriptedStrategy({
+      nextSteps: [
+        {
+          action: "order",
+          procedures: [{ path: ["Cardiology"], name: "Resting ECG" }],
+        },
+        {
+          action: "order",
+          procedures: [{ path: ["Cardiology"], name: "Stress ECG" }],
+        },
+        { action: "diagnose", diagnosisName: "Pneumonia" },
+      ],
+    });
+
+    const result = await buildGraph(runtime, strategy, [provider]).invoke({
+      diagnosis: { name: "Pneumonia" },
+      case: {},
+    });
+
+    const procedures = result.case.procedures!;
+    expect(procedures.procedures).toEqual([]);
+    expect(procedures.categories).toHaveLength(1);
+    const cardiology = procedures.categories[0]!;
+    expect(cardiology.name).toBe("Cardiology");
+    expect(cardiology.procedures.map((p) => [p.name, p.order])).toEqual([
+      ["Resting ECG", 0],
+      ["Stress ECG", 1],
+    ]);
   });
 
   it("emits a paired started/terminal label for every node, blinded_step revisited 3x, result_step 2x", async () => {
@@ -242,8 +292,8 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
 
     const { strategy } = makeScriptedStrategy({
       nextSteps: [
-        { action: "order", procedures: [{ name: "CBC" }] },
-        { action: "order", procedures: [{ name: "CT chest" }] },
+        { action: "order", procedures: [{ path: [], name: "CBC" }] },
+        { action: "order", procedures: [{ path: [], name: "CT chest" }] },
         { action: "diagnose", diagnosisName: "Pneumonia" },
       ],
     });
@@ -327,7 +377,9 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
 
     expect(nextStepViews).toHaveLength(0);
     expect(bridgeViews).toHaveLength(1);
-    expect(result.case.procedures?.map((p) => p.name)).toEqual(["Biopsy"]);
+    expect(result.case.procedures?.procedures.map((p) => p.name)).toEqual([
+      "Biopsy",
+    ]);
   });
 
   it("a wrong diagnosis is appended to ruledOutDiagnoses and is visible on the next nextStep call", async () => {
@@ -426,7 +478,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
 
     const { strategy } = makeScriptedStrategy({
       nextSteps: [
-        { action: "order", procedures: [{ name: "CBC" }] },
+        { action: "order", procedures: [{ path: [], name: "CBC" }] },
         { action: "diagnose", diagnosisName: "Pneumonia" },
       ],
     });
@@ -437,8 +489,10 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
       { diagnosis: { name: "Pneumonia" }, case: {} },
       { streamMode: "values" }
     )) {
-      const typed = chunk as { case?: { procedures?: unknown[] } };
-      seenProcedureCounts.push(typed.case?.procedures?.length ?? 0);
+      const typed = chunk as {
+        case?: { procedures?: { procedures: unknown[] } };
+      };
+      seenProcedureCounts.push(typed.case?.procedures?.procedures.length ?? 0);
     }
 
     // Every superstep before the last has no rendered procedures yet...

@@ -73,8 +73,9 @@ const pick = new SystemOnePick(
   runtime,
   {
     port: createSystemOnePort({ url, model }),
-    pickThreshold: Number(process.env.SYSTEM_ONE_PICK_THRESHOLD ?? 0.5),
+    pickMass: Number(process.env.SYSTEM_ONE_PICK_MASS ?? 0.8),
     pickMax: Number(process.env.SYSTEM_ONE_PICK_MAX ?? 3),
+    maxOptions: Number(process.env.SYSTEM_ONE_MAX_OPTIONS ?? 20),
   },
   {} as ProcedureStrategy
 );

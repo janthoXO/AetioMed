@@ -11,27 +11,29 @@ vi.mock("@typesafe-ai/sdk", async (orig) => ({
 import { createSystemOnePort } from "./systemOne.js";
 
 describe("createSystemOnePort", () => {
-  it("chunks 130 questions into 64/64/2, merges answers, forwards max_len", async () => {
-    systemOne.mockImplementation(async (req) => ({
-      answers: Object.fromEntries(
-        Object.keys(req.questions).map((k) => [k, { noul: Number(k) / 1000 }])
-      ),
-    }));
-    const questions = Object.fromEntries(
-      Array.from({ length: 130 }, (_, i) => [String(i), `q${i}?`])
-    );
+  it("sends one choice question 'pick' over the options, forwards max_len, returns probabilities", async () => {
+    systemOne.mockResolvedValue({
+      answers: {
+        pick: {
+          type: "choice",
+          choice: "b",
+          confidence: 0.7,
+          probabilities: { a: 0.3, b: 0.7 },
+        },
+      },
+    });
     const port = createSystemOnePort({
       url: "http://x",
       model: "m",
       maxLen: 7,
     });
-    const out = await port.noul("state", questions);
+    const out = await port.choice("state", "which?", ["a", "b"]);
 
-    expect(
-      systemOne.mock.calls.map(([r]) => Object.keys(r.questions).length)
-    ).toEqual([64, 64, 2]);
-    expect(systemOne.mock.calls.every(([r]) => r.max_len === 7)).toBe(true);
-    expect(Object.keys(out)).toHaveLength(130);
-    expect(out["129"]).toBe(0.129);
+    const req = systemOne.mock.calls[0]![0];
+    expect(Object.keys(req.questions)).toEqual(["pick"]);
+    expect(req.questions.pick.type).toBe("choice");
+    expect(req.questions.pick.criteria).toEqual({ a: null, b: null });
+    expect(req.max_len).toBe(7);
+    expect(out).toEqual({ a: 0.3, b: 0.7 });
   });
 });

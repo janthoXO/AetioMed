@@ -40,7 +40,7 @@ export async function planAnamnesis(
   const categories = runtime.catalogs.anamnesis.list();
   const schema = buildCompositionSchema(providers, categories);
 
-  // User-facing: planned `alt`/instruction become user-visible content.
+  // User-facing: planned `alt` becomes user-visible content via the renderer.
   const systemPrompt = buildSystemPrompt(
     language,
     section(
@@ -55,7 +55,7 @@ Your current task is to plan how the Anamnesis (medical history) facts from the 
 - Plan exactly one content unit per required intake form category, keyed by that category's exact name.
 - Use ONLY the facts specified in the outline. Do not invent symptoms, history items, medications, or details beyond the outline; your job is voice, format and rendering choice.
 - Prefer a single request against the "text" provider carrying each category's whole answer, unless another available provider would clearly add value.
-- Each request's "alt" is the complete content of that part: every fact the rendered part states, written out in full, in the patient voice above. Later diagnostic steps read ONLY "alt", never the rendered part, so a fact missing from "alt" does not exist for them. The provider's input must convey exactly the same facts; the provider renders it verbatim and never invents facts.
+- Each request's "alt" is the complete content of that part: every fact the rendered part states, written out in full, in the patient voice above. Later diagnostic steps read ONLY "alt", never the rendered part, so a fact missing from "alt" does not exist for them. The provider renders "alt" into the final wording and never invents facts; give the "text" provider an empty input object.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
 
@@ -131,21 +131,21 @@ ${renderSchemaForPrompt(schema)}`
 }
 
 /**
- * Text rendering for anamnesis: whole batch of planner instructions (all
+ * Text rendering for anamnesis: whole batch of planned `alt`s (all
  * categories) in ONE LLM call, per `ModalityProvider.render` batch contract.
  */
 export async function renderAnamnesisTexts(
   runtime: GraphRuntime,
   language: Language | undefined,
-  instructions: string[],
+  contents: string[],
   context?: RequestContext
 ): Promise<string[]> {
   const schema = z.object({
     texts: z
       .array(z.string().min(1))
-      .length(instructions.length)
+      .length(contents.length)
       .describe(
-        "Rendered patient-voice text, one per instruction, in the same order"
+        "Rendered patient-voice text, one per content, in the same order"
       ),
   });
 
@@ -154,14 +154,14 @@ export async function renderAnamnesisTexts(
     section(
       "Role",
       `You are an AI generating data for a medical training simulator.
-You will be given one or more instructions, each fully describing one anamnesis answer to render in the PATIENT's own voice, as if filling out an intake form. Render EXACTLY what each instruction says — you do not decide clinical facts, only wording.`
+You will be given one or more contents, each the complete facts of one anamnesis answer to render in the PATIENT's own voice, as if filling out an intake form. Render EXACTLY those facts — you do not decide clinical facts, only wording. A content may be written in a different language than the one you write in; render its meaning.`
     ),
 
     section(
       "Requirements",
       `- Write in the PATIENT's subjective voice, layman's terms, personal tone (e.g., "My chest feels heavy" instead of "Patient presents with angina").
-- Render each instruction into its own text; invent nothing beyond what the instruction states.
-- Return exactly ${instructions.length} text(s), in the same order as the instructions.
+- Render each content into its own text; invent nothing beyond what the content states.
+- Return exactly ${contents.length} text(s), in the same order as the contents.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
 
@@ -174,10 +174,8 @@ ${renderSchemaForPrompt(schema)}`
 
   const userPrompt = buildPrompt(
     section(
-      "Instructions to render",
-      instructions
-        .map((instruction, i) => `### ${i + 1}\n${instruction}`)
-        .join("\n\n")
+      "Contents to render",
+      contents.map((content, i) => `### ${i + 1}\n${content}`).join("\n\n")
     )
   );
 

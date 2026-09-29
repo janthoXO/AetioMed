@@ -61,7 +61,10 @@ export async function renderPlan(
       }
       try {
         const buffers = await provider.render(
-          providerSlots.map((slot) => slot.request.input),
+          providerSlots.map((slot) => ({
+            input: slot.request.input,
+            alt: slot.request.alt,
+          })),
           ctx ?? {}
         );
         providerSlots.forEach((slot, i) => {

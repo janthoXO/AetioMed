@@ -1,4 +1,4 @@
-import { boundLanguage } from "@/core/graph/shared/prompt/prompt.js";
+import { requestLanguage } from "@/core/graph/shared/prompt/prompt.js";
 import z from "zod";
 import { encodeText } from "@/core/graph/shared/domain/ContentPart.js";
 import {
@@ -8,7 +8,8 @@ import {
 import { renderProcedureResultTexts } from "./results.gateway.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 
-const TextInputSchema = z.object({ instruction: z.string().min(1) });
+/** Empty: the text provider renders the part's `alt`. */
+const TextInputSchema = z.object({});
 
 /**
  * Procedure-result registry: one text provider, thin adapter over
@@ -23,13 +24,13 @@ export function createProcedureResultProviders(
       id: "text",
       mime: "text/plain",
       description:
-        "Plain clinical procedure-result text, rendered from a self-contained natural-language instruction.",
+        "Plain clinical procedure-result text, rendered from the part's alt (no input needed: pass {}).",
       inputSchema: TextInputSchema,
       render: async (batch, context) => {
         const texts = await renderProcedureResultTexts(
           runtime,
-          boundLanguage(runtime),
-          batch.map((item) => item.instruction),
+          requestLanguage(),
+          batch.map((item) => item.alt),
           context
         );
         return texts.map(encodeText);

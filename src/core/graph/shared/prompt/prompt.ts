@@ -38,6 +38,11 @@ export function buildSystemPrompt(
   return buildPrompt(...parts, directive);
 }
 
+/** Request's target language (ALS). Renderers write bytes in it always, sandwich or not (#192). */
+export function requestLanguage(): Language | undefined {
+  return getRequestContext()?.language;
+}
+
 /**
  * Language a user-facing prompt writes in: the runtime's override (sandwich on binds "English" for
  * planners), else the request language bound on ALS.

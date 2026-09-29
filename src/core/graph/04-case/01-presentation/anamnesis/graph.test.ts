@@ -54,21 +54,21 @@ function buildFakeRuntime(
   };
 }
 
-/** Counts calls and echoes each instruction back as its own rendered text. */
+/** Counts calls and echoes each part's alt back as its own rendered text. */
 function makeCountingTextProvider(): {
   provider: ModalityProvider<unknown>;
-  calls: { instruction: string }[][];
+  calls: { input: object; alt: string }[][];
 } {
-  const calls: { instruction: string }[][] = [];
+  const calls: { input: object; alt: string }[][] = [];
   const provider: ModalityProvider<unknown> = {
     id: "text",
     mime: "text/plain",
     description: "test text provider",
-    inputSchema: z.object({ instruction: z.string().min(1) }),
+    inputSchema: z.object({}),
     render: async (batch) => {
-      const typed = batch as { instruction: string }[];
+      const typed = batch as { input: object; alt: string }[];
       calls.push(typed);
-      return typed.map((b) => new TextEncoder().encode(b.instruction));
+      return typed.map((b) => new TextEncoder().encode(b.alt));
     },
   };
   return { provider, calls };
@@ -124,7 +124,7 @@ describe("anamnesisGraph", () => {
               requests: [
                 {
                   provider: "text",
-                  input: { instruction: "None." },
+                  input: {},
                   alt: "None.",
                 },
               ],
@@ -133,7 +133,7 @@ describe("anamnesisGraph", () => {
               requests: [
                 {
                   provider: "text",
-                  input: { instruction: "Fever." },
+                  input: {},
                   alt: "Fever.",
                 },
               ],
@@ -168,7 +168,7 @@ describe("anamnesisGraph", () => {
     );
   });
 
-  it("batches every category's instructions into ONE render call — the token-efficiency property this design exists for", async () => {
+  it("batches every category's alts into ONE render call — the token-efficiency property this design exists for", async () => {
     const { provider, calls } = makeCountingTextProvider();
     const llm = makeQueuedLlmPort({
       generator: [
@@ -178,7 +178,7 @@ describe("anamnesisGraph", () => {
               requests: [
                 {
                   provider: "text",
-                  input: { instruction: "Fever." },
+                  input: {},
                   alt: "Fever.",
                 },
               ],
@@ -187,7 +187,7 @@ describe("anamnesisGraph", () => {
               requests: [
                 {
                   provider: "text",
-                  input: { instruction: "None." },
+                  input: {},
                   alt: "None.",
                 },
               ],
@@ -211,8 +211,8 @@ describe("anamnesisGraph", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual([
-      { instruction: "Fever." },
-      { instruction: "None." },
+      { input: {}, alt: "Fever." },
+      { input: {}, alt: "None." },
     ]);
   });
 
@@ -224,8 +224,8 @@ describe("anamnesisGraph", () => {
       inputSchema: z.unknown(),
       render: async (batch) => {
         await new Promise((r) => setTimeout(r, 20));
-        return (batch as string[]).map((v) =>
-          new TextEncoder().encode(`slow:${v}`)
+        return (batch as { input: string }[]).map((v) =>
+          new TextEncoder().encode(`slow:${v.input}`)
         );
       },
     };
@@ -235,7 +235,9 @@ describe("anamnesisGraph", () => {
       description: "fast",
       inputSchema: z.unknown(),
       render: async (batch) =>
-        (batch as string[]).map((v) => new TextEncoder().encode(`fast:${v}`)),
+        (batch as { input: string }[]).map((v) =>
+          new TextEncoder().encode(`fast:${v.input}`)
+        ),
     };
 
     const llm = makeQueuedLlmPort({

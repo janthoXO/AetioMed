@@ -41,7 +41,7 @@ export async function planChiefComplaint(
 ): Promise<ModalityPlan> {
   const schema = buildCompositionSchema(providers, [CHIEF_COMPLAINT_UNIT_KEY]);
 
-  // User-facing: planned `alt`/instruction become user-visible content.
+  // User-facing: planned `alt` becomes user-visible content via the renderer.
   const systemPrompt = buildSystemPrompt(
     language,
     section(
@@ -56,7 +56,7 @@ Your current task is to plan how the Chief Complaint facts from the provided Cas
 - Use ONLY the facts specified in the outline (chief complaint, demographics, symptom timeline). Do not add clinical facts not present in the outline.
 - Plan exactly one content unit, keyed "${CHIEF_COMPLAINT_UNIT_KEY}".
 - Prefer a single request against the "text" provider carrying the whole chief complaint, unless another available provider would clearly add value.
-- Each request's "alt" is the complete content of that part: every fact the rendered part states, written out in full, in the clinical-chart voice above. Later diagnostic steps read ONLY "alt", never the rendered part, so a fact missing from "alt" does not exist for them. The provider's input must convey exactly the same facts; the provider renders it verbatim and never invents facts.
+- Each request's "alt" is the complete content of that part: every fact the rendered part states, written out in full, in the clinical-chart voice above. Later diagnostic steps read ONLY "alt", never the rendered part, so a fact missing from "alt" does not exist for them. The provider renders "alt" into the final wording and never invents facts; give the "text" provider an empty input object.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
 
@@ -123,22 +123,22 @@ ${renderSchemaForPrompt(schema)}`
 }
 
 /**
- * Text rendering for chief complaint: whole batch of planner instructions in
+ * Text rendering for chief complaint: whole batch of planned `alt`s in
  * ONE LLM call, per `ModalityProvider.render` batch contract. Renders exactly
  * what given, invents nothing.
  */
 export async function renderChiefComplaintTexts(
   runtime: GraphRuntime,
   language: Language | undefined,
-  instructions: string[],
+  contents: string[],
   context?: RequestContext
 ): Promise<string[]> {
   const schema = z.object({
     texts: z
       .array(z.string().min(1))
-      .length(instructions.length)
+      .length(contents.length)
       .describe(
-        "Rendered chief complaint text, one per instruction, in the same order"
+        "Rendered chief complaint text, one per content, in the same order"
       ),
   });
 
@@ -147,14 +147,14 @@ export async function renderChiefComplaintTexts(
     section(
       "Role",
       `You are an expert attending physician documenting a patient's presentation for a medical training simulator.
-You will be given one or more instructions, each fully describing one chief complaint text to render. Render EXACTLY what each instruction says — you do not decide clinical facts, only wording.`
+You will be given one or more contents, each the complete facts of one chief complaint text to render. Render EXACTLY those facts — you do not decide clinical facts, only wording. A content may be written in a different language than the one you write in; render its meaning.`
     ),
 
     section(
       "Requirements",
       `- Write in clinical-chart voice: concise, objective clinical language and standard medical terminology (e.g., "acute onset dyspnea" instead of "shortness of breath").
-- Render each instruction into its own text; invent nothing beyond what the instruction states.
-- Return exactly ${instructions.length} text(s), in the same order as the instructions.
+- Render each content into its own text; invent nothing beyond what the content states.
+- Return exactly ${contents.length} text(s), in the same order as the contents.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
 
@@ -167,10 +167,8 @@ ${renderSchemaForPrompt(schema)}`
 
   const userPrompt = buildPrompt(
     section(
-      "Instructions to render",
-      instructions
-        .map((instruction, i) => `### ${i + 1}\n${instruction}`)
-        .join("\n\n")
+      "Contents to render",
+      contents.map((content, i) => `### ${i + 1}\n${content}`).join("\n\n")
     )
   );
 

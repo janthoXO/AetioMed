@@ -1,5 +1,5 @@
 // Compiled subgraph writes back ENTIRE state unless `output` declared. Parallel `Send` fan-out of
-// `chief_complaint_generate`/`anamnesis_generate` would give `diagnosis`, `userInstructions`, `outline` (`LastValue`)
+// `chief_complaint_phase`/`anamnesis_phase` would give `diagnosis`, `userInstructions`, `outline` (`LastValue`)
 // two values per superstep -> `INVALID_CONCURRENT_GRAPH_UPDATE`. Mounts REAL subgraphs under a parent mirroring
 // `buildFieldGenerationSends`'s payload, so dropping a write can't pass.
 import { chatModelLlmPort } from "@/adapters/ai/llm.js";
@@ -76,11 +76,11 @@ function textProvider(): ModalityProvider<unknown> {
   };
 }
 
-describe("chief_complaint_generate + anamnesis_generate fanned out together", () => {
+describe("chief_complaint_phase + anamnesis_phase fanned out together", () => {
   it("resolves and yields both chiefComplaint and anamnesis, instead of throwing INVALID_CONCURRENT_GRAPH_UPDATE", async () => {
     const llm = makeQueuedLlmPort({
       generator: [
-        // chief_complaint_generate's plan_content
+        // chief_complaint_phase's plan_content
         JSON.stringify({
           plans: {
             chiefComplaint: {
@@ -94,7 +94,7 @@ describe("chief_complaint_generate + anamnesis_generate fanned out together", ()
             },
           },
         }),
-        // anamnesis_generate's plan_content
+        // anamnesis_phase's plan_content
         JSON.stringify({
           plans: {
             History: {
@@ -120,35 +120,35 @@ describe("chief_complaint_generate + anamnesis_generate fanned out together", ()
       context: RequestContextSchema,
     })
       .addNode(
-        "chief_complaint_generate",
+        "chief_complaint_phase",
         buildChiefComplaintGraph(
           runtime,
           registry,
-          traceNode.scope("chief_complaint_generate")
+          traceNode.scope("chief_complaint_phase")
         )
       )
       .addNode(
-        "anamnesis_generate",
+        "anamnesis_phase",
         buildAnamnesisGraph(
           runtime,
           registry,
-          traceNode.scope("anamnesis_generate")
+          traceNode.scope("anamnesis_phase")
         )
       )
       .addConditionalEdges(START, (state) => [
-        new Send("chief_complaint_generate", {
+        new Send("chief_complaint_phase", {
           diagnosis: state.diagnosis,
           outline: state.outline,
           userInstructions: state.userInstructions,
         }),
-        new Send("anamnesis_generate", {
+        new Send("anamnesis_phase", {
           diagnosis: state.diagnosis,
           outline: state.outline,
           userInstructions: state.userInstructions,
         }),
       ])
-      .addEdge("chief_complaint_generate", END)
-      .addEdge("anamnesis_generate", END)
+      .addEdge("chief_complaint_phase", END)
+      .addEdge("anamnesis_phase", END)
       .compile();
 
     const result = (await parent.invoke({
@@ -165,7 +165,7 @@ describe("chief_complaint_generate + anamnesis_generate fanned out together", ()
   });
 });
 
-describe("chief_complaint_generate + anamnesis_generate fan-out labels", () => {
+describe("chief_complaint_phase + anamnesis_phase fan-out labels", () => {
   it("emits a paired started/terminal label for every node, seen from both fan-out branches", async () => {
     const llm = makeQueuedLlmPort({
       generator: [
@@ -215,35 +215,35 @@ describe("chief_complaint_generate + anamnesis_generate fan-out labels", () => {
       context: RequestContextSchema,
     })
       .addNode(
-        "chief_complaint_generate",
+        "chief_complaint_phase",
         buildChiefComplaintGraph(
           runtime,
           registry,
-          traceNode.scope("chief_complaint_generate")
+          traceNode.scope("chief_complaint_phase")
         )
       )
       .addNode(
-        "anamnesis_generate",
+        "anamnesis_phase",
         buildAnamnesisGraph(
           runtime,
           registry,
-          traceNode.scope("anamnesis_generate")
+          traceNode.scope("anamnesis_phase")
         )
       )
       .addConditionalEdges(START, (state) => [
-        new Send("chief_complaint_generate", {
+        new Send("chief_complaint_phase", {
           diagnosis: state.diagnosis,
           outline: state.outline,
           userInstructions: state.userInstructions,
         }),
-        new Send("anamnesis_generate", {
+        new Send("anamnesis_phase", {
           diagnosis: state.diagnosis,
           outline: state.outline,
           userInstructions: state.userInstructions,
         }),
       ])
-      .addEdge("chief_complaint_generate", END)
-      .addEdge("anamnesis_generate", END)
+      .addEdge("chief_complaint_phase", END)
+      .addEdge("anamnesis_phase", END)
       .compile();
 
     await runWithContext(
@@ -281,10 +281,10 @@ describe("chief_complaint_generate + anamnesis_generate fan-out labels", () => {
     }
 
     const nodeIds = [...byNode.keys()];
-    expect(nodeIds.some((id) => id.includes("chief_complaint_generate"))).toBe(
+    expect(nodeIds.some((id) => id.includes("chief_complaint_phase"))).toBe(
       true
     );
-    expect(nodeIds.some((id) => id.includes("anamnesis_generate"))).toBe(true);
+    expect(nodeIds.some((id) => id.includes("anamnesis_phase"))).toBe(true);
   });
 });
 

@@ -53,17 +53,15 @@ function buildFakeRuntime(llm: LlmPort): GraphRuntime {
   };
 }
 
-/** The one production-shaped provider: batch-in, batch-out, `{instruction}` input. */
+/** The one production-shaped provider: batch-in, batch-out, renders from `alt`. */
 function textProvider(id = "text"): ModalityProvider<unknown> {
   return {
     id,
     mime: "text/plain",
     description: "test text provider",
-    inputSchema: z.object({ instruction: z.string().min(1) }),
+    inputSchema: z.object({}),
     render: async (batch) =>
-      (batch as { instruction: string }[]).map((b) =>
-        new TextEncoder().encode(b.instruction)
-      ),
+      (batch as { alt: string }[]).map((b) => new TextEncoder().encode(b.alt)),
   };
 }
 
@@ -75,8 +73,8 @@ function imageProvider(): ModalityProvider<unknown> {
     description: "test image provider",
     inputSchema: z.object({ prompt: z.string().min(1) }),
     render: async (batch) =>
-      (batch as { prompt: string }[]).map((b) =>
-        new TextEncoder().encode(`img:${b.prompt}`)
+      (batch as { input: { prompt: string } }[]).map((b) =>
+        new TextEncoder().encode(`img:${b.input.prompt}`)
       ),
   };
 }
@@ -154,7 +152,7 @@ describe("chiefComplaintGraph — single-provider registry", () => {
               requests: [
                 {
                   provider: "text",
-                  input: { instruction: "Acute dyspnea." },
+                  input: {},
                   alt: "Acute dyspnea.",
                 },
               ],
@@ -198,7 +196,7 @@ describe("chiefComplaintGraph — single-provider registry", () => {
               requests: [
                 {
                   provider: "text",
-                  input: { instruction: "irrelevant to this fake provider" },
+                  input: {},
                   alt: "Broken right leg.",
                 },
               ],
@@ -241,8 +239,8 @@ describe("chiefComplaintGraph — multi-provider registry: planned order, not co
       inputSchema: z.unknown(),
       render: async (batch) => {
         await new Promise((r) => setTimeout(r, 30));
-        return (batch as string[]).map((v) =>
-          new TextEncoder().encode(`slow:${v}`)
+        return (batch as { input: string }[]).map((v) =>
+          new TextEncoder().encode(`slow:${v.input}`)
         );
       },
     };
@@ -252,7 +250,9 @@ describe("chiefComplaintGraph — multi-provider registry: planned order, not co
       description: "fast",
       inputSchema: z.unknown(),
       render: async (batch) =>
-        (batch as string[]).map((v) => new TextEncoder().encode(`fast:${v}`)),
+        (batch as { input: string }[]).map((v) =>
+          new TextEncoder().encode(`fast:${v.input}`)
+        ),
     };
 
     const llm = makeQueuedLlmPort({

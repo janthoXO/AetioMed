@@ -21,8 +21,8 @@ function makeCountingTextProvider(): {
     inputSchema: z.unknown(),
     render: async (batch) => {
       calls.push(batch);
-      return (batch as { instruction: string }[]).map((b) =>
-        new TextEncoder().encode(b.instruction)
+      return (batch as { alt: string }[]).map((b) =>
+        new TextEncoder().encode(b.alt)
       );
     },
   };
@@ -45,14 +45,14 @@ describe("renderPlan — batching", () => {
 
     expect(calls).toHaveLength(1);
     expect(calls[0]).toEqual([
-      { instruction: "fever" },
-      { instruction: "none" },
+      { input: { instruction: "fever" }, alt: "Fever." },
+      { input: { instruction: "none" }, alt: "None." },
     ]);
     expect(
       new TextDecoder().decode(result["Current Symptoms"]![0]!.value)
-    ).toBe("fever");
+    ).toBe("Fever.");
     expect(new TextDecoder().decode(result["Past Illnesses"]![0]!.value)).toBe(
-      "none"
+      "None."
     );
     expect(result["Current Symptoms"]![0]!.alt).toBe("Fever.");
   });
@@ -67,8 +67,8 @@ describe("renderPlan — planned order, not completion order", () => {
       inputSchema: z.unknown(),
       render: async (batch) => {
         await new Promise((r) => setTimeout(r, 30));
-        return (batch as string[]).map((v) =>
-          new TextEncoder().encode(`slow:${v}`)
+        return (batch as { input: string }[]).map((v) =>
+          new TextEncoder().encode(`slow:${v.input}`)
         );
       },
     };
@@ -78,7 +78,9 @@ describe("renderPlan — planned order, not completion order", () => {
       description: "fast",
       inputSchema: z.unknown(),
       render: async (batch) =>
-        (batch as string[]).map((v) => new TextEncoder().encode(`fast:${v}`)),
+        (batch as { input: string }[]).map((v) =>
+          new TextEncoder().encode(`fast:${v.input}`)
+        ),
     };
 
     const plan: ModalityPlan = {

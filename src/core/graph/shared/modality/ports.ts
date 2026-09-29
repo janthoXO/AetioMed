@@ -34,7 +34,10 @@ export interface ModalityProvider<I = unknown> {
   readonly mime: string;
   readonly description: string;
   readonly inputSchema: z.ZodType<I>;
-  render(batch: I[], ctx: RenderContext): Promise<Uint8Array<ArrayBuffer>[]>;
+  render(
+    batch: { input: I; alt: string }[],
+    ctx: RenderContext
+  ): Promise<Uint8Array<ArrayBuffer>[]>;
 }
 
 /**
@@ -50,7 +53,12 @@ export function defineModalityProvider<I>(
     mime: spec.mime,
     description: spec.description,
     inputSchema: spec.inputSchema as z.ZodType<unknown>,
-    render: (batch, ctx) =>
-      spec.render(spec.inputSchema.array().parse(batch), ctx),
+    render: (batch, ctx) => {
+      const inputs = spec.inputSchema.array().parse(batch.map((b) => b.input));
+      return spec.render(
+        batch.map((b, i) => ({ input: inputs[i]!, alt: b.alt })),
+        ctx
+      );
+    },
   };
 }

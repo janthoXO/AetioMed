@@ -4,15 +4,7 @@ import {
   mapTree,
   nodeKey,
 } from "@/core/graph/shared/domain/ProcedureTree.js";
-import {
-  encodeText,
-  type ContentPart,
-} from "@/core/graph/shared/domain/ContentPart.js";
-
-/** Rendered prose of a `text/plain` part. */
-function decodeText(part: ContentPart): string {
-  return new TextDecoder().decode(part.value);
-}
+import type { ContentPart } from "@/core/graph/shared/domain/ContentPart.js";
 
 /**
  * Every `ContentPart[]` field on `Case` with its path prefix (see
@@ -45,49 +37,34 @@ function contentPartFields(
   return fields;
 }
 
-/** `.alt` translated always; `text/plain` also gets `.text` -> `value` via `encodeText`. Missing key falls back to original. */
+/** Only `.alt` is translated; `value` is already in the target language (renderers write it) and passes through byte-identical. Missing key falls back to original. */
 function translateParts(
   prefix: string,
   parts: ContentPart[],
   translations: Record<string, string>
 ): ContentPart[] {
-  return parts.map((part, i) => {
-    const translatedAlt = translations[`${prefix}.${i}.alt`] ?? part.alt;
-    if (part.type !== "text/plain") {
-      return { ...part, alt: translatedAlt };
-    }
-    const translatedText =
-      translations[`${prefix}.${i}.text`] ?? decodeText(part);
-    return {
-      type: "text/plain",
-      value: encodeText(translatedText),
-      alt: translatedAlt,
-    };
-  });
+  return parts.map((part, i) => ({
+    ...part,
+    alt: translations[`${prefix}.${i}.alt`] ?? part.alt,
+  }));
 }
 
 /**
- * Flat keyed map of every `ContentPart` text fragment in case; sole input of rest pass. Keys: `chiefComplaint.0.alt`, `anamnesis.2.answer.0.text`, `procedures.1.result.3.alt`.
- *
- * Every part gives `.alt`; `text/*` part also gives `.text` (decoded prose). Non-text `value` bytes never reach map or prompt.
- *
- * `.alt` and `.text` currently equal for text parts (same string); duplication expected. They diverge when `alt` differs from rendered prose.
+ * Flat keyed map of every `ContentPart` `alt` in case; sole input of rest pass. Keys: `chiefComplaint.0.alt`, `anamnesis.2.answer.0.alt`, `procedures.1.result.3.alt`.
+ * `value` never reaches the map: renderers already wrote it in the target language (#192).
  */
 export function caseTextMap(c: Case): Record<string, string> {
   const map: Record<string, string> = {};
   for (const { prefix, parts } of contentPartFields(c)) {
     parts.forEach((part, i) => {
       map[`${prefix}.${i}.alt`] = part.alt;
-      if (part.type === "text/plain") {
-        map[`${prefix}.${i}.text`] = decodeText(part);
-      }
     });
   }
   return map;
 }
 
 /**
- * Apply translated `caseTextMap` onto content-part fields. `text/plain` part: `.text` -> `value` (via `encodeText`), `.alt` -> `alt`, independently. Other MIME: `value` byte-identical, only `alt` translated. Missing key falls back to original. Part count and order preserved.
+ * Apply translated `caseTextMap` onto content-part fields: `alt` translated, `value` byte-identical for every MIME. Missing key falls back to original. Part count and order preserved.
  *
  * Returns only `chiefComplaint`/`anamnesis`; `patient` and `anamnesis[].category`
  * untouched here (caller applies `definedTranslations`). `procedures` is

@@ -33,10 +33,7 @@ import { buildCaseTranslationToEnglishGraph } from "@/core/graph/01-translate-in
 import { DrillDownPick } from "@/core/graph/04-case/02-procedures/solver/drillDownPick.js";
 import { taggedOutlineFixture } from "@/core/graph/shared/outline/fixtures.js";
 
-const TRANSLATION_NODES = [
-  "translation_to_english_phase",
-  "translation_from_english_phase",
-];
+const TRANSLATION_NODES = ["translate_in_phase", "translate_out_phase"];
 
 /** The one production-shaped provider: batch-in, batch-out, `{instruction}` input. */
 function fakeTextProvider(): ModalityProvider<unknown> {
@@ -122,7 +119,7 @@ describe("phase-level graphs — output surface", () => {
     expect([...graph.outputChannels].sort()).toEqual(["case"]);
   });
 
-  it("generation_phase (buildCaseGenerationGraph) writes back only `case`", async () => {
+  it("case_phase (buildCaseGenerationGraph) writes back only `case`", async () => {
     const deps = buildDeps();
     const strategy = new DrillDownPick(deps.runtime, []);
     const graph = buildCaseGenerationGraph(
@@ -134,7 +131,7 @@ describe("phase-level graphs — output surface", () => {
     expect([...graph.outputChannels].sort()).toEqual(["case"]);
   });
 
-  it("planning_phase (buildPlanningPhaseGraph) writes back the outline and the verdict — never `case`", async () => {
+  it("plan_phase (buildPlanningPhaseGraph) writes back the outline and the verdict — never `case`", async () => {
     const deps = buildDeps();
     const graph = buildPlanningPhaseGraph(
       deps.runtime,
@@ -147,7 +144,7 @@ describe("phase-level graphs — output surface", () => {
     ]);
   });
 
-  it("translation_to_english_phase (buildCaseTranslationToEnglishGraph) writes back `diagnosis` and `userInstructions`, not `case`", async () => {
+  it("translate_in_phase (buildCaseTranslationToEnglishGraph) writes back `diagnosis` and `userInstructions`, not `case`", async () => {
     const deps = buildDeps();
     const graph = buildCaseTranslationToEnglishGraph(
       deps.runtime,
@@ -260,8 +257,8 @@ describe("assembleCaseGraphs", () => {
     for (const f of ALL_GRAPH_FLAGS) {
       const ids = await allNodeIds(assembleCaseGraphs(buildDeps(), f));
       expect(
-        ids.some((id) => id.includes("procedure_phase")),
-        `procedure_phase missing from variant "${graphVariantKey(f)}"`
+        ids.some((id) => id.includes("procedures_phase")),
+        `procedures_phase missing from variant "${graphVariantKey(f)}"`
       ).toBe(true);
     }
   });
@@ -381,14 +378,12 @@ describe("language routing reads ALS, never graph state", () => {
 
   it("a German request bound on ALS enters the translate-to-English phase", async () => {
     const nodes = await startedNodes({ alsLanguage: "German" });
-    expect(nodes).toContain("translation_to_english_phase:translate_diagnosis");
+    expect(nodes).toContain("translate_in_phase:translate_diagnosis");
   });
 
   it("an English (default) request bound on ALS enters neither translation phase", async () => {
     const nodes = await startedNodes({ alsLanguage: undefined });
-    expect(nodes).not.toContain(
-      "translation_to_english_phase:translate_diagnosis"
-    );
+    expect(nodes).not.toContain("translate_in_phase:translate_diagnosis");
   });
 
   it("a `language` key on the invoke input has no effect — only ALS is read", async () => {
@@ -398,9 +393,7 @@ describe("language routing reads ALS, never graph state", () => {
       alsLanguage: undefined,
       stateLanguage: "German",
     });
-    expect(nodes).not.toContain(
-      "translation_to_english_phase:translate_diagnosis"
-    );
+    expect(nodes).not.toContain("translate_in_phase:translate_diagnosis");
   });
 });
 
@@ -431,9 +424,7 @@ describe("translate-in trigger reads provenance, not just language", () => {
       "German"
     );
 
-    expect(started).toContain(
-      "translation_to_english_phase:translate_diagnosis"
-    );
+    expect(started).toContain("translate_in_phase:translate_diagnosis");
   });
 
   it("an ICD-only German request (no free text) skips translate-to-English entirely and writes no identity translations", async () => {
@@ -472,9 +463,7 @@ describe("translate-in trigger reads provenance, not just language", () => {
       "German"
     );
 
-    expect(started).not.toContain(
-      "translation_to_english_phase:translate_diagnosis"
-    );
+    expect(started).not.toContain("translate_in_phase:translate_diagnosis");
     // Assert on translation store itself, not mock call counts: predicate must not pollute it with
     // identity entries like `German: { "Influenza": "Influenza" }`.
     expect(saveTranslations).not.toHaveBeenCalled();

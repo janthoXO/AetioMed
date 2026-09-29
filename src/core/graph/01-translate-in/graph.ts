@@ -68,7 +68,7 @@ function makeTranslateUserInstructions(runtime: GraphRuntime) {
   };
 }
 
-// Mounted as `translation_to_english_phase`. Output `.pick()`ed off own state schema: `diagnosis`, `userInstructions`. `generationFlags` input only.
+// Mounted as `translate_in_phase`. Output `.pick()`ed off own state schema: `diagnosis`, `userInstructions`. `generationFlags` input only.
 const TranslationToEnglishOutputSchema =
   CaseTranslationToEnglishStateSchema.pick({
     diagnosis: true,

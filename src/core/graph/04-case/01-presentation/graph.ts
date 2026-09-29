@@ -68,7 +68,7 @@ function buildFieldGenerationSends(
   }
   if (state.generationFlags.includes("chiefComplaint")) {
     sends.push(
-      new Send("chief_complaint_generate", {
+      new Send("chief_complaint_phase", {
         diagnosis: state.diagnosis,
         outline: state.outline,
         userInstructions: filterUserInstructions(state.userInstructions, [
@@ -80,7 +80,7 @@ function buildFieldGenerationSends(
   }
   if (state.generationFlags.includes("anamnesis")) {
     sends.push(
-      new Send("anamnesis_generate", {
+      new Send("anamnesis_phase", {
         diagnosis: state.diagnosis,
         outline: state.outline,
         userInstructions: filterUserInstructions(state.userInstructions, [
@@ -126,7 +126,7 @@ function makeGeneratePatient(runtime: GraphRuntime) {
   };
 }
 
-// `chief_complaint_generate`/`anamnesis_generate` are compiled subgraphs (`ContentPart[]` fields). `procedures[].result` is produced in procedure phase.
+// `chief_complaint_phase`/`anamnesis_phase` are compiled subgraphs (`ContentPart[]` fields). `procedures[].result` is produced in procedure phase.
 
 // ─── graph ────────────────────────────────────────────────────────────────────
 
@@ -155,20 +155,20 @@ export function buildFieldGenerationGraph(
       )
       // Subgraphs mounted directly, not `traceNode`-wrapped; each traces its own nodes.
       .addNode(
-        "chief_complaint_generate",
+        "chief_complaint_phase",
         // Scoped to match mount name; see `TraceNodeFn.scope` in `nodeWrapper.ts`.
         buildChiefComplaintGraph(
           runtime,
           modalityRegistries.chiefComplaint,
-          traceNode.scope("chief_complaint_generate")
+          traceNode.scope("chief_complaint_phase")
         )
       )
       .addNode(
-        "anamnesis_generate",
+        "anamnesis_phase",
         buildAnamnesisGraph(
           runtime,
           modalityRegistries.anamnesis,
-          traceNode.scope("anamnesis_generate")
+          traceNode.scope("anamnesis_phase")
         )
       )
       .addNode(
@@ -178,12 +178,12 @@ export function buildFieldGenerationGraph(
 
       .addConditionalEdges(START, buildFieldGenerationSends, [
         "patient_generate",
-        "chief_complaint_generate",
-        "anamnesis_generate",
+        "chief_complaint_phase",
+        "anamnesis_phase",
       ])
       .addEdge("patient_generate", "case_fan_in")
-      .addEdge("chief_complaint_generate", "case_fan_in")
-      .addEdge("anamnesis_generate", "case_fan_in")
+      .addEdge("chief_complaint_phase", "case_fan_in")
+      .addEdge("anamnesis_phase", "case_fan_in")
       .addEdge("case_fan_in", END)
       .compile()
   );

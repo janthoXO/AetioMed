@@ -79,7 +79,7 @@ describe("OTel signals end to end — real SDK, no mocks", () => {
     const bus = new EventBus();
     const traceNode = createTraceNode(bus, nodeTracer);
     const wrapped = traceNode(
-      "chief_complaint_generate",
+      "chief_complaint_phase",
       async () => ({
         chiefComplaint: [
           { type: "text/plain", value: encodeText("hello"), alt: "greeting" },

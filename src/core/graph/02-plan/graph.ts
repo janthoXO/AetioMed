@@ -49,7 +49,7 @@ function makeResolveMedicalBasis(
 
 // ─── graphs ───────────────────────────────────────────────────────────────────
 
-// Both phases mounted in top-level graphs: `planning_phase` in plan graph, `generation_phase` in case graph. `.pick()` off phase state schema.
+// Both phases mounted in top-level graphs: `plan_phase` in plan graph, `case_phase` in case graph. `.pick()` off phase state schema.
 const PlanningPhaseStateSchema = PlanGraphStateSchema.extend(
   CaseGenerationStateSchema.pick({ generationFlags: true }).shape
 );

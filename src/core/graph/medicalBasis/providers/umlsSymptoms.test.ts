@@ -1,7 +1,7 @@
 // UMLS-only provider: joined names when data exists, `undefined` otherwise. Never calls the LLM, never touches the cache.
 import { describe, expect, it } from "vitest";
 import { createUmlsSymptomProvider } from "./umlsSymptoms.js";
-import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
+import type { SymptomsRepo } from "@/core/graph/medicalBasis/ports.js";
 import type { Symptom } from "@/core/graph/models/Symptom.js";
 import type { BasisQuery } from "../ports.js";
 

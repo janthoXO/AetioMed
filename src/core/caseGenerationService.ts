@@ -19,7 +19,6 @@ import {
   type OutlineSegments,
 } from "./graph/outline/segments.js";
 import type { LanguageDetector } from "./languageDetection/port.js";
-import { createTinyldDetector } from "./languageDetection/tinyldDetector.js";
 import { resolveLanguage } from "./languageDetection/resolveLanguage.js";
 
 export type CaseGenerationResultError = {
@@ -154,6 +153,8 @@ function indexed(texts: string[]): Record<string, string> {
   return Object.fromEntries(texts.map((text, i) => [String(i), text]));
 }
 
+const NO_DETECTOR: LanguageDetector = { detect: () => undefined };
+
 export function createCaseGenerationService(
   graph: GraphAppContext,
   bus: EventBus,
@@ -161,13 +162,12 @@ export function createCaseGenerationService(
   opts: {
     /** Bounds generations across every transport. */
     maxConcurrent?: number;
-    // Injectable for tests; default `tinyld` detector, built here so nothing
-    // runs at import time.
+    // Injectable; composition root passes tinyld. Absent = no opinion (step 2 skipped).
     detector?: LanguageDetector;
     now?: () => number;
   } = {}
 ): CaseGenerationService {
-  const detector = opts.detector ?? createTinyldDetector();
+  const detector = opts.detector ?? NO_DETECTOR;
   const limiter = createLimiter(
     opts.maxConcurrent ?? DEFAULT_MAX_CONCURRENT_GENERATIONS
   );

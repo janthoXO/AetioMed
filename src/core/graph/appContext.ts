@@ -1,6 +1,5 @@
 import type { Config } from "./config.js";
 import type { GraphRuntime } from "./runtime.js";
-import type { DbHandle } from "./persistence/db.js";
 import type { Case } from "./models/Case.js";
 import type { Diagnosis } from "./models/Diagnosis.js";
 import type { GenerationFlag } from "./models/GenerationFlags.js";
@@ -37,8 +36,6 @@ export type GenerateCaseFn = (opts: {
 export interface GraphAppContext {
   config: Config;
   runtime: GraphRuntime;
-  /** For `app.ts` only: registered as last shutdown closer. Transports must not touch it. */
-  db: DbHandle;
   /** Run plan graph only: outline + judge loop, plus working-language inputs the case graph needs. */
   planCase: (opts: PlanCaseInput) => Promise<PlanResult>;
   /** Run the case graph only, from an outline {@link planCase} produced. */

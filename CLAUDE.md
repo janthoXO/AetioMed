@@ -52,14 +52,16 @@ This is a backend-only repository (no frontend lives here). Node >= 24.21, pnpm.
 
 ### Composition Root
 
-There is no plugin/extension framework — `createApp()` in `src/core/app.ts` constructs
+There is no plugin/extension framework — `createApp()` in `src/app.ts` constructs
 everything explicitly, in order:
 
 1. parses `FEATURES` and the graph config from `process.env`
-2. resolves `CATALOG_DIR` / `CACHE_DIR` (`persistence/paths.ts` — pure functions taking the
-   environment as an argument; nothing under `src/core/graph/` reads `process.env`)
-3. `initGraph()` builds the repos (`repos.ts`'s `createRepos`), the `GraphRuntime`, and the
-   compiled graph, then validates the catalogues
+2. resolves `CATALOG_DIR` / `CACHE_DIR` (`adapters/persistence/paths.ts` — pure functions taking
+   the environment as an argument; nothing under `src/core/` reads `process.env`) and builds the
+   adapters: repos (`adapters/repos.ts`'s `createRepos`), the LLM port (`adapters/ai/llm.ts`),
+   the `Yaml*` catalogs (`adapters/catalog/index.ts`)
+3. `initGraph()` (`src/core/graph/index.ts`) takes those ports, builds the `GraphRuntime` and the
+   compiled graph; `createApp()` then validates the catalogues (`validateCatalogsOrExit`)
 4. `createCaseGenerationService(graph, bus, jobEvents, opts)` — `opts` is just the shared
    generation limiter's size (`maxConcurrent`, `MAX_CONCURRENT_GENERATIONS`); the service is
    stateless between calls (#159), so there is nothing else to wire in here
@@ -74,6 +76,16 @@ closes everything it started in the **reverse** of construction order — REST, 
 the DB last — bounded by a 5-second deadline (`src/shutdown.ts`'s `installSignalHandlers`,
 wired up by `src/index.ts`). No module under `src/core/graph/` or `src/transports/` registers
 a process signal handler any more; each returns a closer instead.
+
+**Core is a clean hexagon (#188).** `src/core/` holds domain logic and ports only; every I/O
+adapter lives under `src/adapters/` — `ai/` (LangChain chat-model factory), `catalog/<domain>/`
+(repos plus `Yaml*`/`InMemory*` port adapters, startup validation), `persistence/` (SQLite,
+Drizzle, translation store), `symptoms/`, `language/` (tinyld), `repos.ts` — and only
+`src/app.ts` wires them in. `importBoundary.test.ts` fails on any core production module that
+imports `@/adapters`, `@/app`, `fs`/`path`, `node:sqlite`, `drizzle-orm`, `tinyld` or a LangChain
+provider package. `@langchain/core` is still allowed until the LLM port stops leaking its types
+(#190); `@langchain/langgraph` stays for good — it is the engine graphs are written in, not an
+I/O adapter.
 
 **`GraphRuntime`** (`src/core/graph/runtime.ts`) is the single seam graph construction goes
 through: the LLM port, the four catalogs, a logger and a clock. It is captured by **closure
@@ -277,31 +289,25 @@ model's pick back into `ProcedureRef[]`, dropping anything outside the tree. Fre
 catalogue) is unchanged: the model invents names, refs come back with `path: []`.
 
 `src/core/graph/catalog/` owns the catalogue concept behind ports (`ProcedureCatalog`,
-`AnamnesisCatalog`, `LabelCatalog`, `DiagnosisCatalog` in `ports.ts`). Each domain is its own
-vertical slice — `catalog/<domain>/` (`procedures/`, `anamnesis/`, `labels/`, `diagnosis/`) —
-holding both that domain's repo (`repo.ts`) and its port adapters (`catalog.ts`: a `Yaml*`
-adapter over the repo instance and an `InMemory*` adapter for tests), re-exported from the
-slice's `index.ts`. `catalog/index.ts` composes all four `Yaml*` adapters into the
-`GraphRuntime["catalogs"]` bundle (`createYamlCatalogs(repos)`) from an already-constructed
-`Repos` (see `repos.ts` below).
+`AnamnesisCatalog`, `LabelCatalog`, `DiagnosisCatalog` in `ports.ts`). The adapters live in
+`src/adapters/catalog/<domain>/` (`procedures/`, `anamnesis/`, `labels/`, `diagnosis/`), each
+holding that domain's repo (`repo.ts`) and its port adapters (`catalog.ts`: a `Yaml*` adapter
+over the repo instance and an `InMemory*` adapter for tests and `scripts/exportGraphs.ts`),
+re-exported from the slice's `index.ts`. `adapters/catalog/index.ts` composes all four `Yaml*`
+adapters into the `GraphRuntime["catalogs"]` bundle (`createYamlCatalogs(repos)`).
 
-`procedures/index.ts` and `anamnesis/index.ts` export their repo alongside their catalog —
-not just the port adapter — because the from-English translation graph
-(`02graphs/03case-translation-from-english/`) and `scripts/exportGraphs.ts` still bypass the
-`ProcedureCatalog`/`AnamnesisCatalog` port to reach translation accessors
-(`getProcedureTranslation`/`saveProcedureTranslations`, keyed by `nodeKey(path)` — shared by
-categories and procedures since sibling uniqueness makes the key space unambiguous —
-`getAnamnesisCategoryTranslationFromEnglish`/`saveAnamnesisCategoryTranslations`) that the
-port doesn't expose. `labels/` and `diagnosis/` export their repo too, but only so the
-composition root can construct it — no other module reaches past their port. Issue #89
-collapses this to a single entry point.
+Nothing in core reaches past a port (#188). The translation accessors translate-out needs are on
+the ports themselves: `ProcedureCatalog.translation`/`saveTranslations` (keyed by
+`nodeKey(path)` — shared by categories and procedures since sibling uniqueness makes the key
+space unambiguous) and `AnamnesisCatalog.fromEnglish`/`saveTranslations`, next to
+`DiagnosisCatalog.toEnglish`/`saveTranslations`.
 
-`ProcedureCandidates` (`catalog/procedures/candidates.ts`) is where flat-vs-grouped
+`ProcedureCandidates` (`catalog/candidates.ts`, stays in core: it is domain logic) is where flat-vs-grouped
 presentation, category scoping, exclusion of already-ordered procedures, the literal-union
 grammar and `"Category: Name"` reassembly live — the AI gateway only calls `render()`,
 `grammar()` and `assemble()`.
 
-`startupValidation.ts` checks every translation file against its base catalogue at startup
+`adapters/catalog/startupValidation.ts` checks every translation file against its base catalogue at startup
 and exits non-zero naming every offending key, with a Levenshtein suggestion. **Diagnosis is
 exempt** — its store is also an input index for user-supplied diagnosis names, so keys
 outside the curated catalogue are legitimate. Validation runs after graph construction
@@ -474,9 +480,9 @@ with no edges of its own.
 
 ### AI Gateway Layer
 
-`src/core/graph/03aigateway/` contains one file per generated field (case, symptoms, patient, chiefComplaint, anamnesis, outlineEvaluation, procedures, diagnosis, labels, plus `translate.helper.ts`). Each gateway builds prompts, calls `runtime.llm.for({ role, temperature }, context?.llmConfig)` (from `src/core/graph/runtime.ts`, implemented in `src/core/graph/utils/llm.ts`), and wraps calls with `retry()`.
+`src/core/graph/03aigateway/` contains one file per generated field (case, symptoms, patient, chiefComplaint, anamnesis, outlineEvaluation, procedures, diagnosis, labels, plus `translate.helper.ts`). Each gateway builds prompts, calls `runtime.llm.for({ role, temperature }, context?.llmConfig)` (from `src/core/graph/runtime.ts`, implemented in `src/adapters/ai/llm.ts`), and wraps calls with `retry()`.
 
-**LLM roles** (`LlmPort.for`, `src/core/graph/runtime.ts`) model two independent dimensions per call: `role` (`generator` | `judge` | `translator` — each independently configurable, e.g. a small local model generating against a stronger judge) and `temperature` (a fixed policy class, not configuration: `deterministic` = 0.1, `balanced` = 0.4, `creative` = 0.7, read from `utils/llm.ts`). Every call site's role/temperature pairing is fixed by what it does, not by config. Judges (`outlineEvaluation.aigateway.ts`, `matchDiagnosis` in `procedures.aigateway.ts`) and translators (`diagnosis.aigateway.ts`, `translate.helper.ts`, the from-English translation tools) are the two roles that diverge from `generator`, which is everything else, including `generateSymptomsOneShot` (clinical content generation, not translation).
+**LLM roles** (`LlmPort.for`, `src/core/graph/runtime.ts`) model two independent dimensions per call: `role` (`generator` | `judge` | `translator` — each independently configurable, e.g. a small local model generating against a stronger judge) and `temperature` (a fixed policy class, not configuration: `deterministic` = 0.1, `balanced` = 0.4, `creative` = 0.7, read from `adapters/ai/llm.ts`). Every call site's role/temperature pairing is fixed by what it does, not by config. Judges (`outlineEvaluation.aigateway.ts`, `matchDiagnosis` in `procedures.aigateway.ts`) and translators (`diagnosis.aigateway.ts`, `translate.helper.ts`, the from-English translation tools) are the two roles that diverge from `generator`, which is everything else, including `generateSymptomsOneShot` (clinical content generation, not translation).
 
 The underlying adapter supports three providers: `ollama`, `google`, `openai` (the `openai` provider also serves OpenAI-compatible endpoints via `LLM_URL`). Provider/model come from env — a general `LLM_PROVIDER`/`LLM_MODEL` plus optional per-role `LLM_GENERATOR_*`/`LLM_JUDGE_*`/`LLM_TRANSLATOR_*` overrides, each field falling back individually to the general value — or from a per-request `llmConfig` passed via `RequestContext` (AsyncLocalStorage), which applies uniformly to all three roles. The `ALLOW_LLMS` feature flag enables per-request LLM selection from an allowlist (`ALLOWED_LLMS=ollama:llama3.1,google:gemini-2.0-flash`); when set, no global LLM (and no per-role default) is configured and requests must supply `llmConfig` (exposed via `GET /api/allowedLlms`). Temperature is never part of `llmConfig`'s effective behavior — it is always the call site's fixed class.
 
@@ -688,21 +694,21 @@ rendering to a post-translation phase is then a _move_, not a rewrite. Do not co
 
 ### Repo Layer (embedded SQLite via Drizzle)
 
-The data layer is organized as vertical slices rather than one `repo/` directory. Shared
-SQLite infrastructure lives in `src/core/graph/persistence/`; each catalogue domain's repo
-lives inside its own slice under `src/core/graph/catalog/<domain>/repo.ts`; the symptoms
-cache is its own slice, `src/core/graph/symptoms/`; and `src/core/graph/repos.ts` composes
+The data layer lives entirely under `src/adapters/` (#188), organized as vertical slices rather
+than one `repo/` directory. Shared SQLite infrastructure lives in `adapters/persistence/`; each
+catalogue domain's repo lives inside its own slice under `adapters/catalog/<domain>/repo.ts`;
+the symptoms cache is its own slice, `adapters/symptoms/`; and `adapters/repos.ts` composes
 all of them into one `Repos` bundle. All of it backs lookups/caches with an embedded SQLite
 DB at `data/cache/aetiomed.db` (`node:sqlite`, WAL; Drizzle ORM, migrations in `drizzle/`,
 config in `drizzle.config.ts`).
 
 **Every repo module exports a `createXxx(...)` factory and performs no I/O on import** —
-`src/core/graph/repos.test.ts` enforces that by importing `persistence/db.ts`, every
+`src/adapters/repos.test.ts` enforces that by importing `persistence/db.ts`, every
 `catalog/<domain>/repo.ts`, `symptoms/repo.ts` and `repos.ts` itself and asserting neither
 `fs.mkdirSync` nor a catalogue-file `fs.readFileSync` fired. `createRepos()` in `repos.ts`
 constructs them once, from `createApp()`.
 
-`src/core/graph/persistence/`:
+`src/adapters/persistence/`:
 
 - `db.ts` — `createDb(cacheDir)` opens the DB and runs migrations; `syncSource()` re-ingests a YAML file only when its sha256 changed (fingerprints in `_meta`, keyed on the domain name so moving `CATALOG_DIR` does not invalidate the cache)
 - `schema.ts` — tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`
@@ -710,11 +716,11 @@ constructs them once, from `createApp()`.
 - `paths.ts` — `resolveCatalogDir`/`resolveCacheDir` (`CATALOG_DIR`/`CACHE_DIR` resolution) and `catalogFile()`
 - `predefinedList.ts` — reads a translations YAML file directly (bypassing `syncSource`'s hash cache) for startup validation
 
-`src/core/graph/catalog/<domain>/repo.ts` (`diagnosis/`, `procedures/`, `anamnesis/`,
+`src/adapters/catalog/<domain>/repo.ts` (`diagnosis/`, `procedures/`, `anamnesis/`,
 `labels/`) — each syncs its YAML source(s) and exposes lookups. **Catalogue lists are
 language-independent**; only the translation accessors take a language.
 
-`src/core/graph/symptoms/repo.ts` — static UMLS floor from `diagnosis_symptoms.json` + LLM-symptom cache with TTL (`SYMPTOM_CACHE_TTL_DAYS`)
+`src/adapters/symptoms/repo.ts` — static UMLS floor (behind `SymptomsRepo`, `medicalBasis/ports.ts`) from `diagnosis_symptoms.json` + LLM-symptom cache with TTL (`SYMPTOM_CACHE_TTL_DAYS`)
 
 There is no job repo (#159): the generator is stateless between calls, so nothing about a job
 is ever written to the embedded database — see "Composition Root" above.
@@ -728,8 +734,8 @@ is ever written to the embedded database — see "Composition Root" above.
 
 `02graphs/` and `03aigateway/` keep their numbers because the numbers encode pipeline order —
 graphs call into the gateway, not the reverse. There used to be a `03repo/` alongside them;
-it is gone, deliberately unnumbered in its replacement (`persistence/`, `catalog/<domain>/`,
-`symptoms/`, `repos.ts`) rather than renumbered, because `03repo/` was a layer _label_, not a
+it is gone, deliberately unnumbered in its replacement (now `src/adapters/` — #188) rather than
+renumbered, because `03repo/` was a layer _label_, not a
 pipeline step, and that layer no longer exists as one directory — the number would no longer
 mean anything. Read the inconsistency as a decision, not an oversight.
 
@@ -738,7 +744,7 @@ mean anything. Read the inconsistency as a decision, not an oversight.
 step any more — it is a registry of zero or more providers (see the Case Generation Pipeline
 section above), and a number would no longer mean anything.
 
-Plus unnumbered `catalog/`, `persistence/`, `symptoms/`, `medicalBasis/`, `modality/`, `repos.ts`,
+Plus unnumbered `catalog/` (ports only), `medicalBasis/`, `modality/`,
 `models/` (Zod domain models), `utils/`, `errors/`, `config.ts`.
 
 ### REST Layer
@@ -1100,7 +1106,7 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
   a per-field record of strings, concatenated into one blob for detection; text under ~30
   characters is too short for n-gram detection and skips straight to step 4.
 
-  The detector is `tinyld` (`languageDetection/tinyldDetector.ts`), wrapped behind a
+  The detector is `tinyld` (`src/adapters/language/tinyldDetector.ts`, passed in by `createApp()`), wrapped behind a
   `LanguageDetector` port (`languageDetection/port.ts`) so it is fakeable in tests and swappable
   later — offline, TypeScript-native, and `detectAll()` returns an explicit
   `{ lang, accuracy }[]` distribution (`accuracy` reads directly as this port's confidence)
@@ -1136,7 +1142,7 @@ audience, ...sections)` (`utils/prompt.ts`, next to `buildPrompt`) is the one se
 | `NATS_URL`                                                            | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                             |
 | `NATS_USER` / `NATS_PASSWORD`                                         | `nats` / `nats`         |                                                                                                                                                                                                  |
 | `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS (`src/core/concurrency.ts`'s shared limiter). Excess requests queue; a queued job is still cancellable. See Request Context below    |
-| `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `symptoms/repo.ts`)                                                                                                                                   |
+| `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `adapters/symptoms/repo.ts`)                                                                                                                          |
 | `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
 | `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var. `"true"` (that literal only) skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | —                       | Standard OTel vars, read by the OTLP trace/log exporters themselves — no plumbing in this repo; any one set selects the `"otlp"` exporter mode (`selectExporterMode`)                            |

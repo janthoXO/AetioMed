@@ -1,5 +1,5 @@
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
+import type { SymptomsRepo } from "@/core/graph/medicalBasis/ports.js";
 import { generateSymptomsOneShot } from "@/core/graph/03aigateway/symptoms.aigateway.js";
 import type { MedicalBasisProvider } from "../ports.js";
 

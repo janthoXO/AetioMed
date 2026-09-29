@@ -1,6 +1,6 @@
 import type { Diagnosis } from "../models/Diagnosis.js";
 import { PatientSchema, type Patient } from "../models/Patient.js";
-import { handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../errors/AppError.js";
 import {
   buildPrompt,
   buildSystemPrompt,

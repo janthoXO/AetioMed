@@ -113,3 +113,48 @@ describe("import boundary — src/core/graph/ never imports tracing/transports/o
     expect(offenses).toEqual([]);
   });
 });
+
+// Hexagon (#188): core is I/O-free. Every adapter (SQLite, filesystem, LLM
+// providers, tinyld) lives under `src/adapters/`, wired only by `src/app.ts`.
+// `@langchain/core` and `@langchain/langgraph` stay allowed for now.
+describe("import boundary — src/core/ never imports adapters or I/O packages", () => {
+  it("has no offending specifiers in production modules", () => {
+    const CORE_DIR = fileURLToPath(new URL("../", import.meta.url));
+    const files = listTsFiles(CORE_DIR).filter(
+      (file) => !file.endsWith(".test.ts")
+    );
+    expect(files.length).toBeGreaterThan(0);
+
+    const EXACT = new Set([
+      "fs",
+      "node:fs",
+      "path",
+      "node:path",
+      "node:sqlite",
+      "tinyld",
+    ]);
+    const PREFIXES = [
+      "@/adapters",
+      "@/app",
+      "drizzle-orm",
+      "@langchain/ollama",
+      "@langchain/openai",
+      "@langchain/google",
+    ];
+    const offenses: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      for (const specifier of specifiersOf(source)) {
+        if (
+          EXACT.has(specifier) ||
+          /(^|\/)adapters\//.test(specifier) ||
+          PREFIXES.some((prefix) => specifier.startsWith(prefix))
+        ) {
+          offenses.push(`${file}: ${specifier}`);
+        }
+      }
+    }
+
+    expect(offenses).toEqual([]);
+  });
+});

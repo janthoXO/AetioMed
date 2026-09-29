@@ -52,9 +52,9 @@ import {
   type JobDirectory,
   type JobEventChannel,
 } from "@/core/jobEvents/index.js";
-import { selectJobDirectory } from "@/core/app.js";
+import { selectJobDirectory } from "@/app.js";
 import { wireLabels } from "@/core/jobEvents/labels.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { EventBus } from "@/core/event-bus.js";
 import { getRequestContext } from "@/core/graph/utils/context.js";

@@ -2,7 +2,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { ChatOllama } from "@langchain/ollama";
 import { ConfigSchema } from "./config.js";
-import { createLlmPort } from "./utils/llm.js";
+import { createLlmPort } from "@/adapters/ai/llm.js";
 import { LLM_ROLES } from "./runtime.js";
 
 describe("ConfigSchema — LLM role resolution", () => {

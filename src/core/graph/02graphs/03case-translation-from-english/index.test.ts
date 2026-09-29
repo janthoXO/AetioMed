@@ -15,8 +15,12 @@ import {
 import type { Case } from "@/core/graph/models/Case.js";
 import { nodeKey } from "@/core/graph/models/ProcedureTree.js";
 import type { GraphRuntime, LlmPort } from "@/core/graph/runtime.js";
-import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
-import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
+import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
+import type {
+  AnamnesisCatalog,
+  ProcedureCatalog,
+} from "@/core/graph/catalog/ports.js";
 import { runWithContext } from "@/core/graph/utils/context.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { EventBus } from "@/core/event-bus.js";
@@ -26,27 +30,16 @@ function fixtureTextPart(alt: string): ContentPart {
   return { type: "text/plain", value: encodeText(alt), alt };
 }
 
-function fakeRepos(opts: {
+function fakeCatalogs(opts: {
   /** `nodeKey(path) -> translated segment name`. */
   procedureTranslations?: Record<string, string>;
   categories?: Record<string, string>;
-}): { anamnesis: AnamnesisRepo; procedures: ProceduresRepo } {
-  const procedureTranslations = opts.procedureTranslations ?? {};
-  const categories = opts.categories ?? {};
-  return {
-    anamnesis: {
-      translationsFile: "",
-      getAnamnesisCategoryTranslationFromEnglish: (c) => categories[c],
-      saveAnamnesisCategoryTranslations: () => {},
-      getEffectiveCategoryList: () => undefined,
-    },
-    procedures: {
-      translationsFile: "",
-      getProcedureTranslation: (key) => procedureTranslations[key],
-      saveProcedureTranslations: () => {},
-      getProcedureTree: () => undefined,
-    },
-  };
+}): { anamnesis: AnamnesisCatalog; procedures: ProcedureCatalog } {
+  const anamnesis = new InMemoryAnamnesisCatalog();
+  anamnesis.saveTranslations(opts.categories ?? {}, "German");
+  const procedures = new InMemoryProcedureCatalog();
+  procedures.saveTranslations(opts.procedureTranslations ?? {}, "German");
+  return { anamnesis, procedures };
 }
 
 /** An LLM serving one scripted JSON response, regardless of role/prompt. */
@@ -89,12 +82,11 @@ function baseCase(): Case {
 
 async function invoke(
   runtime: GraphRuntime,
-  repos: { anamnesis: AnamnesisRepo; procedures: ProceduresRepo },
+  catalogs: { anamnesis: AnamnesisCatalog; procedures: ProcedureCatalog },
   overrides: { case?: Case } = {}
 ) {
   const graph = buildCaseTranslationFromEnglishGraph(
-    runtime,
-    repos,
+    { ...runtime, catalogs: { ...runtime.catalogs, ...catalogs } },
     createTraceNode(new EventBus())
   );
   return runWithContext(
@@ -127,7 +119,7 @@ describe("byte fidelity across the parallel fan-out", () => {
       "chiefComplaint.0.alt": "ein Röntgenbild",
     });
 
-    const result = await invoke(runtime, fakeRepos({}), {
+    const result = await invoke(runtime, fakeCatalogs({}), {
       case: {
         chiefComplaint: [{ type: "image/png", value: bytes, alt: "an x-ray" }],
       },
@@ -142,10 +134,8 @@ describe("byte fidelity across the parallel fan-out", () => {
 
 describe("buildCaseTranslationFromEnglishGraph — output surface", () => {
   it("writes back only `case`, not definedTranslations/restTranslations", () => {
-    const repos = fakeRepos({});
     const graph = buildCaseTranslationFromEnglishGraph(
       fakeRuntime({}),
-      repos,
       createTraceNode(new EventBus())
     );
     expect([...graph.outputChannels].sort()).toEqual(["case"]);
@@ -154,7 +144,7 @@ describe("buildCaseTranslationFromEnglishGraph — output surface", () => {
 
 describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
   it("procedures[].name comes out as EXACTLY the catalogue's cached term, never a rest-pass paraphrase", async () => {
-    const repos = fakeRepos({
+    const catalogs = fakeCatalogs({
       procedureTranslations: { [nodeKey(["Chest X-ray"])]: "Röntgen-Thorax" },
       categories: { History: "Anamnese" },
     });
@@ -169,14 +159,14 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
       "procedures.0.result.0.text": "Infiltrat dans le lobe inférieur droit.",
     });
 
-    const result = await invoke(runtime, repos);
+    const result = await invoke(runtime, catalogs);
 
     expect(result.case.procedures?.procedures[0]?.name).toBe("Röntgen-Thorax");
     expect(result.case.anamnesis?.[0]?.category).toBe("Anamnese");
   });
 
   it("makes zero LLM calls for names/categories when the catalogue covers everything", async () => {
-    const repos = fakeRepos({
+    const catalogs = fakeCatalogs({
       procedureTranslations: { [nodeKey(["Chest X-ray"])]: "Röntgen-Thorax" },
       categories: { History: "Anamnese" },
     });
@@ -209,7 +199,7 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
       clock: () => new Date("2024-01-01T00:00:00.000Z"),
     } as unknown as GraphRuntime;
 
-    await invoke(runtime, repos);
+    await invoke(runtime, catalogs);
 
     // The one call is the rest pass's — names/categories were fully
     // cache-served, no LLM call attributable to them.
@@ -223,7 +213,7 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
       completed.push({ node: e.node, result: e.result })
     );
 
-    const repos = fakeRepos({
+    const catalogs = fakeCatalogs({
       procedureTranslations: { [nodeKey(["Chest X-ray"])]: "Röntgen-Thorax" },
       categories: { History: "Anamnese" },
     });
@@ -236,8 +226,7 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
       "procedures.0.result.0.text": "Infiltrat.",
     });
     const graph = buildCaseTranslationFromEnglishGraph(
-      runtime,
-      repos,
+      { ...runtime, catalogs: { ...runtime.catalogs, ...catalogs } },
       createTraceNode(bus)
     );
 
@@ -264,7 +253,7 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
   it("a multi-part field survives translation with its part count and order intact", async () => {
     // Cache the one category so `translate_defined` needs no LLM call of
     // its own — this test's fake LLM is scripted for the rest pass only.
-    const repos = fakeRepos({ categories: { History: "Anamnese" } });
+    const catalogs = fakeCatalogs({ categories: { History: "Anamnese" } });
     const runtime = fakeRuntime({
       "anamnesis.0.answer.0.alt": "Premier.",
       "anamnesis.0.answer.0.text": "Premier.",
@@ -280,7 +269,7 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
       ],
     };
 
-    const result = await invoke(runtime, repos, { case: multiPartCase });
+    const result = await invoke(runtime, catalogs, { case: multiPartCase });
 
     expect(result.case.anamnesis?.[0]?.answer).toHaveLength(2);
     expect(result.case.anamnesis?.[0]?.answer.map((p) => p.alt)).toEqual([

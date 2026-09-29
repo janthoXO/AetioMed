@@ -1,6 +1,6 @@
 import z from "zod";
 import { retry } from "../utils/retry.js";
-import { handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../errors/AppError.js";
 import {
   buildPrompt,
   section,

@@ -13,7 +13,7 @@ import type {
  * graph-assembly time, not node signatures or LangGraph runtime context.
  *
  * `llm` has two independent dimensions: *role* (generator/judge/translator,
- * each configurable) and *temperature* (fixed policy class, see `utils/llm.ts`).
+ * each configurable) and *temperature* (fixed policy class, see `adapters/ai/llm.ts`).
  */
 export interface GraphRuntime {
   llm: LlmPort;
@@ -40,7 +40,7 @@ export interface GraphRuntime {
 export const LLM_ROLES = ["generator", "judge", "translator"] as const;
 export type LlmRole = (typeof LLM_ROLES)[number];
 
-/** Policy classes, not configuration. See `utils/llm.ts` for the values. */
+/** Policy classes, not configuration. See `adapters/ai/llm.ts` for the values. */
 export type LlmTemperature = "deterministic" | "balanced" | "creative";
 
 /** "Call the model for this role/temperature" — the one thing every LLM caller needs. */

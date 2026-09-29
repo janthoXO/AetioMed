@@ -1,4 +1,4 @@
-import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
+import type { SymptomsRepo } from "@/core/graph/medicalBasis/ports.js";
 import type { MedicalBasisProvider } from "../ports.js";
 
 /** UMLS symptoms for the diagnosis's ICD code. Nothing without an ICD code or UMLS data; never generated content. */

@@ -18,15 +18,13 @@ import { createAnamnesisProviders } from "@/core/graph/02graphs/02case-generatio
 import { createProcedureResultProviders } from "@/core/graph/02graphs/02case-generation/03procedure/providers.js";
 import { EventBus } from "@/core/event-bus.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
-import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
-import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.js";
+import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import { createLogger } from "@/core/graph/utils/logger.js";
 import type { Config } from "@/core/graph/config.js";
-import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
-import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
-import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
+import type { SymptomsRepo } from "@/core/graph/medicalBasis/ports.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyNode = any;
@@ -106,27 +104,12 @@ const minimalRuntime: GraphRuntime = {
   clock: () => new Date(),
 };
 
-// No-op stand-ins: never called while exporting topology, so none of these
+// No-op stand-in: never called while exporting topology, so it does not
 // touch the filesystem or the embedded database.
 const minimalSymptomsRepo: SymptomsRepo = {
   SymptomsRelatedToDiagnosisIcd: () => [],
   getCachedSymptoms: () => undefined,
   saveCachedSymptoms: () => {},
-};
-
-const minimalAnamnesisRepo: AnamnesisRepo = {
-  translationsFile: "",
-  getAnamnesisCategoryTranslationFromEnglish: () => undefined,
-  saveAnamnesisCategoryTranslations: () => {},
-  getEffectiveCategoryList: () => undefined,
-};
-
-const minimalProceduresRepo: ProceduresRepo = {
-  catalogueFile: "",
-  translationsFile: "",
-  getProcedureTranslation: () => undefined,
-  saveProcedureTranslations: () => {},
-  getProcedureTree: () => undefined,
 };
 
 // Mirrors the composition root (`graph/index.ts`): the registry always has
@@ -148,10 +131,6 @@ const { getCaseGraphs } = buildCaseGraph(
   minimalRuntime,
   new EventBus(),
   minimalConfig,
-  {
-    anamnesis: minimalAnamnesisRepo,
-    procedures: minimalProceduresRepo,
-  },
   medicalBasisRegistry,
   modalityRegistries
 );

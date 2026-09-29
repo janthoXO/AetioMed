@@ -8,7 +8,7 @@ import { type CaseTranslationFromEnglishState } from "./state.js";
 import { type Runtime } from "@langchain/langgraph";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import {
-  createTranslationFromEnglishTools,
+  translationFromEnglishTools,
   caseTextMap,
   applyCaseTextTranslations,
   translateProcedureTree,
@@ -16,8 +16,6 @@ import {
 import type { DefinedTranslations } from "./state.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
-import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import { nodeKey, nodePaths } from "@/core/graph/models/ProcedureTree.js";
 import { GenerationError } from "@/core/graph/errors/AppError.js";
@@ -36,7 +34,7 @@ function requiredTargetLanguage(): string {
 /** "Defined" pass: catalog dictionary lookups (per-key locked LLM fill on miss) for `procedures[].name` and `anamnesis[].category`. Writes ONLY `definedTranslations`, never `case`. */
 function makeTranslateDefined(
   runtime: GraphRuntime,
-  tools: ReturnType<typeof createTranslationFromEnglishTools>
+  tools: typeof translationFromEnglishTools
 ) {
   return async function translateDefined(
     state: CaseTranslationFromEnglishState,
@@ -85,7 +83,7 @@ function makeTranslateDefined(
 /** "Rest" pass: one LLM call over every `ContentPart` text fragment (`alt`, plus decoded prose for text parts), keyed by stable path (`caseTextMap`). Writes ONLY `restTranslations`. Never sees `value` bytes, procedure names, categories. */
 function makeTranslateRest(
   runtime: GraphRuntime,
-  tools: ReturnType<typeof createTranslationFromEnglishTools>
+  tools: typeof translationFromEnglishTools
 ) {
   return async function translateRest(
     state: CaseTranslationFromEnglishState,
@@ -145,10 +143,9 @@ const TranslationFromEnglishOutputSchema =
 
 export function buildCaseTranslationFromEnglishGraph(
   runtime: GraphRuntime,
-  repos: { anamnesis: AnamnesisRepo; procedures: ProceduresRepo },
   traceNode: ReturnType<typeof createTraceNode>
 ) {
-  const tools = createTranslationFromEnglishTools(repos);
+  const tools = translationFromEnglishTools;
 
   return (
     new StateGraph(CaseTranslationFromEnglishStateSchema, {

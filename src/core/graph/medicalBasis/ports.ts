@@ -7,6 +7,8 @@ import {
   DifficultySchema,
   type Difficulty,
 } from "@/core/graph/models/Difficulty.js";
+import type { Symptom } from "@/core/graph/models/Symptom.js";
+import type { ICDCode } from "@/core/graph/models/Diagnosis.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 
 /** Provider input: diagnosis, difficulty, user instructions only. No outline, flags or language. */
@@ -52,4 +54,19 @@ export interface MedicalBasisProvider {
     query: BasisQuery,
     context?: RequestContext
   ): Promise<string | undefined>;
+}
+
+export interface SymptomsRepo {
+  SymptomsRelatedToDiagnosisIcd(icdCode: ICDCode): Symptom[];
+  /**
+   * Return the cached LLM-generated symptoms for `icdCode`, or `undefined`
+   * if there is no entry or it is older than the TTL (a miss, requiring
+   * regeneration).
+   */
+  getCachedSymptoms(icdCode: ICDCode, nowMs?: number): Symptom[] | undefined;
+  /**
+   * Upsert the LLM-generated symptoms for `icdCode`, refreshing `updatedAt`
+   * so the TTL window restarts from this write.
+   */
+  saveCachedSymptoms(icdCode: ICDCode, symptoms: Symptom[]): void;
 }

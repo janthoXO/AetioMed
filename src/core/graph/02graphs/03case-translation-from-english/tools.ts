@@ -2,8 +2,6 @@ import z from "zod";
 import { generateAnamnesisCategoriesFromEnglish } from "@/core/graph/03aigateway/anamnesis.aigateway.js";
 import { generateProceduresFromEnglish } from "@/core/graph/03aigateway/procedures.aigateway.js";
 import { translateRecordKeyed } from "@/core/graph/03aigateway/translate.helper.js";
-import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
-import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import { AnamnesisCategorySchema } from "@/core/graph/models/Anamnesis.js";
 import type { AnamnesisCategory } from "@/core/graph/models/Anamnesis.js";
@@ -22,49 +20,41 @@ const TranslateAnamnesisCategoriesFromEnglishInputSchema = z.object({
   language: z.string(),
 });
 
-/** Translation lookups live on repos, not the minimal `ProcedureCatalog`/`AnamnesisCatalog` ports; tools built from repos, closed over at assembly time. */
-export function createTranslateAnamnesisCategoriesFromEnglish(
-  anamnesisRepo: AnamnesisRepo
-): Tool<
+export const translateAnamnesisCategoriesFromEnglish: Tool<
   z.infer<typeof TranslateAnamnesisCategoriesFromEnglishInputSchema>,
   Record<AnamnesisCategory, AnamnesisCategory>
-> {
-  return {
-    name: "translate_anamnesis_categories_from_english",
-    description:
-      "Translate anamnesis category names from English to the target language, using a cache.",
-    inputSchema: TranslateAnamnesisCategoriesFromEnglishInputSchema,
-    invoke: async ({ categories, language }, runtime, context) => {
-      const translations: Record<AnamnesisCategory, AnamnesisCategory> = {};
-      const missing: AnamnesisCategory[] = [];
+> = {
+  name: "translate_anamnesis_categories_from_english",
+  description:
+    "Translate anamnesis category names from English to the target language, using a cache.",
+  inputSchema: TranslateAnamnesisCategoriesFromEnglishInputSchema,
+  invoke: async ({ categories, language }, runtime, context) => {
+    const translations: Record<AnamnesisCategory, AnamnesisCategory> = {};
+    const missing: AnamnesisCategory[] = [];
 
-      for (const category of categories) {
-        const cached = anamnesisRepo.getAnamnesisCategoryTranslationFromEnglish(
-          category,
-          language
-        );
-        if (cached) {
-          translations[category] = cached;
-        } else {
-          missing.push(category);
-        }
+    for (const category of categories) {
+      const cached = runtime.catalogs.anamnesis.fromEnglish(category, language);
+      if (cached) {
+        translations[category] = cached;
+      } else {
+        missing.push(category);
       }
+    }
 
-      if (missing.length > 0) {
-        const generated = await generateAnamnesisCategoriesFromEnglish(
-          runtime,
-          missing,
-          language,
-          context
-        );
-        Object.assign(translations, generated);
-        anamnesisRepo.saveAnamnesisCategoryTranslations(generated, language);
-      }
+    if (missing.length > 0) {
+      const generated = await generateAnamnesisCategoriesFromEnglish(
+        runtime,
+        missing,
+        language,
+        context
+      );
+      Object.assign(translations, generated);
+      runtime.catalogs.anamnesis.saveTranslations(generated, language);
+    }
 
-      return translations;
-    },
-  };
-}
+    return translations;
+  },
+};
 
 // ─── translate_procedure_nodes_from_english ────────────────────────────────────
 
@@ -80,51 +70,45 @@ const TranslateProcedureNodesFromEnglishInputSchema = z.object({
 });
 
 /** Translation lookups are keyed by `nodeKey(path)`, shared by categories and procedures. */
-export function createTranslateProcedureNodesFromEnglish(
-  proceduresRepo: ProceduresRepo
-): Tool<
+export const translateProcedureNodesFromEnglish: Tool<
   z.infer<typeof TranslateProcedureNodesFromEnglishInputSchema>,
   Record<string, string>
-> {
-  return {
-    name: "translate_procedure_nodes_from_english",
-    description:
-      "Translate procedure catalogue node names (categories and procedures) from English to the target language, using a cache.",
-    inputSchema: TranslateProcedureNodesFromEnglishInputSchema,
-    invoke: async ({ procedureNodes, language }, runtime, context) => {
-      const translations: Record<string, string> = {};
-      const missing: { key: string; name: string }[] = [];
+> = {
+  name: "translate_procedure_nodes_from_english",
+  description:
+    "Translate procedure catalogue node names (categories and procedures) from English to the target language, using a cache.",
+  inputSchema: TranslateProcedureNodesFromEnglishInputSchema,
+  invoke: async ({ procedureNodes, language }, runtime, context) => {
+    const translations: Record<string, string> = {};
+    const missing: { key: string; name: string }[] = [];
 
-      for (const node of procedureNodes) {
-        const cached = proceduresRepo.getProcedureTranslation(
-          node.key,
-          language
-        );
-        if (cached !== undefined) {
-          translations[node.key] = cached;
-        } else {
-          missing.push(node);
-        }
+    for (const node of procedureNodes) {
+      const cached = runtime.catalogs.procedures.translation(
+        node.key,
+        language
+      );
+      if (cached !== undefined) {
+        translations[node.key] = cached;
+      } else {
+        missing.push(node);
       }
+    }
 
-      if (missing.length > 0) {
-        const byNodeKey = Object.fromEntries(
-          missing.map((n) => [n.key, n.name])
-        );
-        const generated = await generateProceduresFromEnglish(
-          runtime,
-          byNodeKey,
-          language,
-          context
-        );
-        Object.assign(translations, generated);
-        proceduresRepo.saveProcedureTranslations(generated, language);
-      }
+    if (missing.length > 0) {
+      const byNodeKey = Object.fromEntries(missing.map((n) => [n.key, n.name]));
+      const generated = await generateProceduresFromEnglish(
+        runtime,
+        byNodeKey,
+        language,
+        context
+      );
+      Object.assign(translations, generated);
+      runtime.catalogs.procedures.saveTranslations(generated, language);
+    }
 
-      return translations;
-    },
-  };
-}
+    return translations;
+  },
+};
 
 // ─── translate_rest_values ────────────────────────────────────────────────────
 
@@ -281,15 +265,8 @@ export const translateRestValues: Tool<
     }),
 };
 
-export function createTranslationFromEnglishTools(repos: {
-  anamnesis: AnamnesisRepo;
-  procedures: ProceduresRepo;
-}) {
-  return {
-    translateAnamnesisCategoriesFromEnglish:
-      createTranslateAnamnesisCategoriesFromEnglish(repos.anamnesis),
-    translateProcedureNodesFromEnglish:
-      createTranslateProcedureNodesFromEnglish(repos.procedures),
-    translateRestValues,
-  } as const;
-}
+export const translationFromEnglishTools = {
+  translateAnamnesisCategoriesFromEnglish,
+  translateProcedureNodesFromEnglish,
+  translateRestValues,
+} as const;

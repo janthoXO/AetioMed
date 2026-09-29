@@ -2,13 +2,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { createLlmSymptomProvider } from "./llmSymptoms.js";
-import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
+import type { SymptomsRepo } from "@/core/graph/medicalBasis/ports.js";
 import type { Symptom } from "@/core/graph/models/Symptom.js";
 import type { GraphRuntime, LlmPort } from "@/core/graph/runtime.js";
-import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
-import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
-import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.js";
+import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import type { BasisQuery } from "../ports.js";
 
 function makeFakeSymptomsRepo(opts: {

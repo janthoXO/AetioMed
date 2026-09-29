@@ -1,5 +1,5 @@
 import "dotenv/config";
-import { createApp } from "./core/app.js";
+import { createApp } from "./app.js";
 import { installSignalHandlers } from "./shutdown.js";
 
 createApp()

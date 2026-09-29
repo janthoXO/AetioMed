@@ -15,7 +15,7 @@ import {
   refLabel,
   type ProcedureTree,
 } from "./ProcedureTree.js";
-import { ProcedureCandidatesImpl } from "../catalog/procedures/candidates.js";
+import { ProcedureCandidatesImpl } from "../catalog/candidates.js";
 
 const catalogue: ProcedureTree<{ name: string }> = {
   procedures: [{ name: "Blood pressure" }],

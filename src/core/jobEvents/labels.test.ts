@@ -4,7 +4,7 @@
 import { describe, expect, it } from "vitest";
 import { EventBus } from "@/core/event-bus.js";
 import { createJobEventChannel, type JobEvent } from "./channel.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { runWithContext } from "@/core/graph/utils/context.js";
 import { wireLabels, type LabelEvent } from "./labels.js";

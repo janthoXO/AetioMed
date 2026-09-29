@@ -86,7 +86,7 @@ export async function planProcedureResults(
   const procedureLabels = procedureSteps.map(refLabel);
   const schema = buildProcedureResultPlanSchema(providers, procedureLabels);
 
-  // User-facing: planned `alt`/instruction become user-visible content.
+  // User-facing: planned `alt` becomes user-visible content via the renderer.
   const systemPrompt = buildSystemPrompt(
     language,
     section(
@@ -99,7 +99,7 @@ These procedures were chosen by a separate, BLINDED solver who does not know the
     section(
       "Rules",
       `- Provide exactly one plan entry per procedure in the batch, keyed by its exact label.
-- Each plan's "alt" MUST be a self-contained statement of the clinical finding, not a bare label — a later step renders bytes from "alt" alone, without seeing anything else you produced. Write "Chest X-ray: consolidation of the left lower lobe with air bronchograms", not "chest x-ray image".
+- Each plan's "alt" MUST be a self-contained statement of the clinical finding, not a bare label — a later step renders bytes from "alt" alone, without seeing anything else you produced; give the "text" provider an empty input object. Write "Chest X-ray: consolidation of the left lower lobe with air bronchograms", not "chest x-ray image".
 - Each finding must be clinically consistent with the true diagnosis. Use specific, realistic medical findings (e.g., exact lab values, imaging descriptions). Keep each finding concise (1–3 sentences).
 - Prefer a single request against the "text" provider per procedure, unless another available provider would clearly add value.
 - Judge "relevance" relative to the TRUE diagnosis, not the blinded solver's reasoning:
@@ -199,23 +199,23 @@ ${outline}`
 // ─── procedure-result TEXT rendering ─────────────────────────────────────────
 
 /**
- * Text rendering for procedure results: whole batch of planner instructions
+ * Text rendering for procedure results: whole batch of planned `alt`s
  * (all procedures from `render_results`) in ONE LLM call, per
- * `ModalityProvider.render` batch contract. Renders whatever instruction the
+ * `ModalityProvider.render` batch contract. Renders whatever `alt` the
  * plan supplied; case already solved, no blinded view to protect.
  */
 export async function renderProcedureResultTexts(
   runtime: GraphRuntime,
   language: Language | undefined,
-  instructions: string[],
+  contents: string[],
   context?: RequestContext
 ): Promise<string[]> {
   const schema = z.object({
     texts: z
       .array(z.string().min(1))
-      .length(instructions.length)
+      .length(contents.length)
       .describe(
-        "Rendered procedure-result text, one per instruction, in the same order"
+        "Rendered procedure-result text, one per content, in the same order"
       ),
   });
 
@@ -225,14 +225,14 @@ export async function renderProcedureResultTexts(
     section(
       "Role",
       `You are a medical simulator rendering procedure results for a clinical training simulator.
-You will be given one or more instructions, each fully describing one procedure result to render. Render EXACTLY what each instruction says — you do not decide clinical facts, only wording.`
+You will be given one or more contents, each the complete facts of one procedure result to render. Render EXACTLY those facts — you do not decide clinical facts, only wording. A content may be written in a different language than the one you write in; render its meaning.`
     ),
 
     section(
       "Rules",
       `- Use specific, professional medical terminology.
-- Render each instruction into its own text; invent nothing beyond what the instruction states.
-- Return exactly ${instructions.length} text(s), in the same order as the instructions.
+- Render each content into its own text; invent nothing beyond what the content states.
+- Return exactly ${contents.length} text(s), in the same order as the contents.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
 
@@ -245,10 +245,8 @@ ${renderSchemaForPrompt(schema)}`
 
   const userPrompt = buildPrompt(
     section(
-      "Instructions to render",
-      instructions
-        .map((instruction, i) => `### ${i + 1}\n${instruction}`)
-        .join("\n\n")
+      "Contents to render",
+      contents.map((content, i) => `### ${i + 1}\n${content}`).join("\n\n")
     )
   );
 

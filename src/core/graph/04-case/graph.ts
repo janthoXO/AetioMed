@@ -22,14 +22,14 @@ export function buildCaseGenerationGraph(
   const presentationPhase = buildFieldGenerationGraph(
     runtime,
     modalityRegistries,
-    // Scoped to match `"presentation_phase"`/`"procedure_phase"` mount names; see `TraceNodeFn.scope`.
+    // Scoped to match `"presentation_phase"`/`"procedures_phase"` mount names; see `TraceNodeFn.scope`.
     traceNode.scope("presentation_phase")
   );
   const procedurePhase = buildProcedureGraph(
     runtime,
     procedureStrategy,
     modalityRegistries.procedureResult,
-    traceNode.scope("procedure_phase")
+    traceNode.scope("procedures_phase")
   );
 
   const gotoProcedureOrEnd = (state: { generationFlags: string[] }) =>
@@ -40,12 +40,12 @@ export function buildCaseGenerationGraph(
     output: CaseGenerationOutputSchema,
   })
     .addNode("presentation_phase", presentationPhase)
-    .addNode("procedure_phase", procedurePhase)
+    .addNode("procedures_phase", procedurePhase)
     .addEdge(START, "presentation_phase")
     .addConditionalEdges("presentation_phase", gotoProcedureOrEnd, {
-      generate: "procedure_phase",
+      generate: "procedures_phase",
       skip: END,
     })
-    .addEdge("procedure_phase", END)
+    .addEdge("procedures_phase", END)
     .compile();
 }

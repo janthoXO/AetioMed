@@ -138,7 +138,7 @@ export function translateMerge(
   return { case: mergedCase };
 }
 
-// Mounted as `translation_from_english_phase`. `.pick()` off own state schema: `case` only. `definedTranslations`/`restTranslations` are internal scratch, never written back.
+// Mounted as `translate_out_phase`. `.pick()` off own state schema: `case` only. `definedTranslations`/`restTranslations` are internal scratch, never written back.
 const TranslationFromEnglishOutputSchema =
   CaseTranslationFromEnglishStateSchema.pick({ case: true });
 

@@ -41,7 +41,7 @@ export const CaseTranslationFromEnglishStateSchema = z.object({
     anamnesisCategories: {},
   }),
 
-  /** Written only by `translate_rest`: one LLM pass over every `ContentPart` text fragment, keyed by path (`caseTextMap`). `translate_merge` applies `.text` to `value` and `.alt` to `alt` for `text/plain` parts; other parts' `value` stays byte-identical. */
+  /** Written only by `translate_rest`: one LLM pass over every `ContentPart` `alt`, keyed by path (`caseTextMap`). `translate_merge` applies it to `alt`; every `value` stays byte-identical (already target language). */
   restTranslations: z.record(z.string(), z.string()).default({}),
 });
 

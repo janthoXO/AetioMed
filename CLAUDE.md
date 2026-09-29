@@ -243,7 +243,7 @@ They differ in audience, content, language and gate:
 
 Both channels key a node by its **LangGraph node id** (`nodeId`, matching `GET /api/graph`
 below), which is the qualified path LangGraph itself uses for a nested node (e.g.
-`generation_phase:presentation_phase:chief_complaint_generate:plan_content`), not the bare
+`case_phase:presentation_phase:chief_complaint_phase:plan_content`), not the bare
 name passed to `traceNode` — two different subgraphs reuse bare names like `plan_content` and
 `render_parts`, so `TraceNodeFn.scope()` (`nodeWrapper.ts`) threads the same qualification
 LangGraph computes at every point a compiled subgraph is mounted (issue 15 §3/§4, still true).
@@ -326,8 +326,8 @@ from one. The seam between them is where a plan-mode call stops and hands the ou
 one into the other in the same call. With `TRANSLATION_SANDWICH` on:
 
 - **plan graph**: `01-translate-in/` (mounted at `START`, conditional — see
-  below) → `planning_phase` (mounts `02-plan/02-outline/`'s outline ⇄ judge loop; see below)
-- **case graph**: `generation_phase` (mounts the field fan-out and procedures; see below) →
+  below) → `plan_phase` (mounts `02-plan/02-outline/`'s outline ⇄ judge loop; see below)
+- **case graph**: `case_phase` (mounts the field fan-out and procedures; see below) →
   `05-translate-out/` (conditional on the response actually needing translation)
 
 `01-translate-in/` translates `diagnosis.name` and, alongside it, every
@@ -366,18 +366,18 @@ graph state or LangGraph's own runtime context — by the time either entry poin
 actually read. `callerSuppliedFreeText` **is** threaded into the plan graph's state — see the
 Language section below for why the two differ.
 
-**`planning_phase`** (`buildPlanningPhaseGraph`, `02-plan/graph.ts` / `04-case/graph.ts`) runs up to two
+**`plan_phase`** (`buildPlanningPhaseGraph`, `02-plan/graph.ts` / `04-case/graph.ts`) runs up to two
 steps — the first compiled in only when the medical-basis registry is non-empty:
 
 - **`basis_resolve`** — runs first, and only when the medical-basis registry (`src/core/graph/02-plan/01-basis/`) is non-empty: an absent registry means an absent node, not a node that runs and does nothing. The registry is a plain list built once in the composition root (`graph/index.ts`'s `createMedicalBasisRegistry`), **not** a second compile-time flag — its _size_ decides whether `basis_resolve` is compiled in, the same rule `assemble.ts` applies to `TRANSLATION_SANDWICH`. Every registered `MedicalBasisProvider` (`02-plan/01-basis/ports.ts`) returns plain text, or nothing when it has none for this query (not rendered), and is run concurrently; their fragments are concatenated in **registry order** (not completion order) — there is no LLM call spent deciding which source to use; a throwing provider is logged and skipped, a hanging one is bounded by the request's abort signal. `02-plan/01-basis/render.ts` renders the concatenated fragments into one "Medical basis" section of the plan's **user** message only (never the system message), each fragment fenced and headed by the provider's `description` alone — the fence delimiters are escaped if they appear inside a fragment's own content, so a fragment can never close its own fence early. The registry is `umlsSymptoms.ts` then `llmSymptoms.ts`: `umlsSymptoms.ts` is UMLS-only — a static symptom floor per ICD code, nothing else — and `llmSymptoms.ts` is its fallback, running only when UMLS has nothing for the ICD code, cache-aside (skips the LLM on a fresh cache hit).
 - **`outline_phase`** (mounts `02-plan/02-outline/`'s `buildPlanGraph`) — generates the tag-delimited outline (see "Outline segments" below), then a combined evaluate ⇄ revise `Command` loop (max 2 iterations, `outline_evaluate`/`outline_regenerate`) judging obviousness AND clinical consistency in one LLM call. On the iteration cap, the loop ends with `outlineAccepted: false` rather than looping forever — what that means is the caller's call: normal mode throws `OutlineNotAcceptedError` (a behaviour change, #159 — it used to render anyway), plan mode shows the outline to the reviewer regardless, with no marker, and lets them judge consistency themselves. `languageOf(state, runtime)` binds the outline and its judge prompts to the request language (`boundLanguage(runtime)`) only in plan mode; normal mode passes no language (English) — independent of the sandwich, which controls the case-generation runtime's `languageOverride`, not this phase's audience.
 
-**`generation_phase`** (`buildCaseGenerationGraph`, `02-plan/graph.ts` / `04-case/graph.ts`) takes an
+**`case_phase`** (`buildCaseGenerationGraph`, `02-plan/graph.ts` / `04-case/graph.ts`) takes an
 outline as **input** (no outline generation happens here any more — that moved to
-`planning_phase` above) and runs up to two phases:
+`plan_phase` above) and runs up to two phases:
 
-- **`presentation_phase`** — `04-case/01-presentation/` fans the outline straight out via `Send` to `patient_generate` / `chief_complaint_generate` / `anamnesis_generate` (gated per `generationFlags`), joining at `case_fan_in`. There is no post-fan-out consistency check — that judgment already happened on the outline, in `planning_phase`, before any field exists. `chief_complaint_generate` and `anamnesis_generate` are **compiled subgraphs** (`chiefComplaint/index.ts`, `anamnesis/index.ts`), not function nodes — see "Modality Planning and Rendering" below for their internal `plan_content → render_parts` shape. `patient_generate` stays a plain function node: `patient` is not a `ContentPart[]` field (it stayed a structured `Patient` object through issue 11), so there is nothing for a modality provider to render — the `Send` payload (`{ diagnosis, outline, userInstructions }`) is identical across all three targets either way, whether the target is a function or a compiled subgraph.
-- **Subgraph output schemas (issue 17).** A compiled subgraph mounted with `addNode` writes back its **entire state schema** by default, not just the channels its nodes actually touched. `chief_complaint_generate` and `anamnesis_generate` are `Send`-fanned out in parallel above, so both writing back the whole state made their shared `diagnosis`/`userInstructions`/`outline` `LastValue` channels each receive two values in one superstep — `INVALID_CONCURRENT_GRAPH_UPDATE` on every default request. The rule: **a compiled subgraph's state schema is its input surface; its `output` schema is its write surface, and the write surface must be declared explicitly** — every `addNode`'d or `.invoke()`d subgraph in `02graphs/` gets an `output` built with `.pick()` off that graph's own state schema (never a hand-written duplicate, so the picked channel keeps the identical reducer registration). `chiefComplaintGraph`/`anamnesisGraph` output `{ case }`; `presentation_phase` (`buildFieldGenerationGraph`) outputs `{ case }` only now (#159 — it used to also output `outline`, when `04-case/02-procedures/`'s `result_step` still read it out of `generation_phase`'s own state; the outline reaches `renderCase` as a plain string input instead); `outline_phase` (`buildPlanGraph`) outputs `{ outlineSegments, outlineAccepted }`, and `planning_phase` around it outputs the same `{ outlineSegments, outlineAccepted }`; `procedure_phase`/`generation_phase`/`translation_from_english_phase` output `{ case }`; `translation_to_english_phase` outputs `{ diagnosis, userInstructions }`, since translating those two is its entire job; the blinded solver's child graph (`.invoke()`d, not mounted) outputs `{ move }`. `case_fan_in` used to be `passthrough` (echoing the whole incoming state as its "update"); a join point produces no update, so it is now a node returning `{}`.
+- **`presentation_phase`** — `04-case/01-presentation/` fans the outline straight out via `Send` to `patient_generate` / `chief_complaint_phase` / `anamnesis_phase` (gated per `generationFlags`), joining at `case_fan_in`. There is no post-fan-out consistency check — that judgment already happened on the outline, in `plan_phase`, before any field exists. `chief_complaint_phase` and `anamnesis_phase` are **compiled subgraphs** (`chiefComplaint/index.ts`, `anamnesis/index.ts`), not function nodes — see "Modality Planning and Rendering" below for their internal `plan_content → render_parts` shape. `patient_generate` stays a plain function node: `patient` is not a `ContentPart[]` field (it stayed a structured `Patient` object through issue 11), so there is nothing for a modality provider to render — the `Send` payload (`{ diagnosis, outline, userInstructions }`) is identical across all three targets either way, whether the target is a function or a compiled subgraph.
+- **Subgraph output schemas (issue 17).** A compiled subgraph mounted with `addNode` writes back its **entire state schema** by default, not just the channels its nodes actually touched. `chief_complaint_phase` and `anamnesis_phase` are `Send`-fanned out in parallel above, so both writing back the whole state made their shared `diagnosis`/`userInstructions`/`outline` `LastValue` channels each receive two values in one superstep — `INVALID_CONCURRENT_GRAPH_UPDATE` on every default request. The rule: **a compiled subgraph's state schema is its input surface; its `output` schema is its write surface, and the write surface must be declared explicitly** — every `addNode`'d or `.invoke()`d subgraph in `02graphs/` gets an `output` built with `.pick()` off that graph's own state schema (never a hand-written duplicate, so the picked channel keeps the identical reducer registration). `chiefComplaintGraph`/`anamnesisGraph` output `{ case }`; `presentation_phase` (`buildFieldGenerationGraph`) outputs `{ case }` only now (#159 — it used to also output `outline`, when `04-case/02-procedures/`'s `result_step` still read it out of `case_phase`'s own state; the outline reaches `renderCase` as a plain string input instead); `outline_phase` (`buildPlanGraph`) outputs `{ outlineSegments, outlineAccepted }`, and `plan_phase` around it outputs the same `{ outlineSegments, outlineAccepted }`; `procedures_phase`/`case_phase`/`translate_out_phase` output `{ case }`; `translate_in_phase` outputs `{ diagnosis, userInstructions }`, since translating those two is its entire job; the blinded solver's child graph (`.invoke()`d, not mounted) outputs `{ move }`. `case_fan_in` used to be `passthrough` (echoing the whole incoming state as its "update"); a join point produces no update, so it is now a node returning `{}`.
 - **`04-case/02-procedures/`** — only when the `procedures` flag is set. A **blinded solver** loop (max 6 iterations) with 4 nodes: `blinded_step` orders procedures without knowing the true diagnosis, `result_step` _plans_ their results non-blinded (issue 21 — nothing renders inside the loop; see "Modality Planning and Rendering" below), and the terminal `render_results` renders every procedure's parts in one grouped pass and is the only node that writes `case.procedures`; when the solver commits to a diagnosis, an LLM judge checks the match (loop continues with `ruledOutDiagnoses` on mismatch). On exhaustion, a `bridge` node generates confirmatory procedures for the true diagnosis. The approved catalogue is presented (and picked) as its category tree: the pick grammar mirrors the tree (`{ procedures?: [...], categories?: { "<name>": <same shape> } }`), for both the blinded pick and the (non-blinded) bridge pick. Procedure selection is a `ProcedureStrategy` port (`04-case/02-procedures/solver/`: `ports.ts`, `drillDownPick.ts`) — `blinded_step` and `bridge` call `strategy.nextStep()` / `strategy.bridge()`; `DrillDownPick` (the only implementation; the port stays as the graph tests' seam for fake strategies) is constructed directly at graph-assembly time. It picks in one call when fewer than `MAX_PICK_CANDIDATES` (255) procedures are left; otherwise `drillDown` narrows first, one `selectProcedureLevel` call per level: the model keeps whole categories (shown with size and sample names) and single procedures, kept procedures stay, kept categories open one level deeper, until the pool is under the threshold or nothing is left to open — then the pick runs over that pool. Only the first call of a blinded step may diagnose (the level selection when there is one, else the pick), and never before the first batch has been ordered: a correct first-step guess would otherwise end the loop with `case.procedures` empty. The bridge narrows the same way with the diagnosis known. Known ceiling: a single category with ≥ 255 direct procedures still produces an oversized level. The blinded step's own compiled child graph (built once, invoked — not added as a node — from inside `blinded_step`) has a state schema that structurally omits `diagnosis`: the `BlindedView` type already makes passing it a compile error, and the child graph is a runtime backstop on top of that (LangGraph filters input against a graph's state schema before it reaches a channel). `matchDiagnosis` stays in the parent node, outside the blinded path, since it's an oracle call. Additional guard: already-ordered procedures are excluded from every candidate list/grammar (duplicate orders are impossible by construction).
 
 ### Outline segments
@@ -564,13 +564,11 @@ category/name from any other value. Fixed by disjointness, not by reordering: `t
 over a flat, keyed map of every `ContentPart.alt` in the case — built by
 `05-translate-out/gateway.ts`'s `caseTextMap`, keyed by stable **path** rather than
 by name, so translating a procedure's name can never collide with translating its result) run in
-parallel and write to their own state channels, never to `case`. Since issue 21 made `alt` and
-`value` independent, the map carries **two keys per part**: `chiefComplaint.0.alt` for every
-part, and `chiefComplaint.0.text` for `text/*` parts only — the decoded prose, which is now the
-content rather than a duplicate of the label. `translate_merge` is the only node that applies
-both maps to `case`: a text part takes the translated prose into `value` and the translated
-label into `alt`; any other part's `value` passes through byte-identical, translating only
-`alt`. Because only text reaches this prompt, and it is joined into a small keyed JSON object
+parallel and write to their own state channels, never to `case`. The map carries **one key per
+part**, `chiefComplaint.0.alt`: renderers already write `value` in the target language (#192),
+so translate-out translates only `alt` (the exposed, screen-reader text) and every part's
+`value` passes through byte-identical, whatever its MIME. `translate_merge` is the only node
+that applies both maps to `case`. Because only text reaches this prompt, and it is joined into a small keyed JSON object
 rather than the whole case (patient object, procedure names, enums and all), the rest pass's
 payload stays small — see issue 12's PR for a representative measurement. This is also
 what unblocks issue 13: per-part translation survives a multi-part field, where the old
@@ -604,10 +602,19 @@ interface ModalityProvider<I = unknown> {
   readonly id: string; // discriminant in the planner's grammar
   readonly mime: string; // fixed per provider; the registry owns it, never the plan
   readonly description: string; // shown to the planner
-  readonly inputSchema: z.ZodType<I>; // { instruction } | { bodyPart, finding, … }
-  render(batch: I[], ctx: RenderContext): Promise<Uint8Array<ArrayBuffer>[]>;
+  readonly inputSchema: z.ZodType<I>; // {} (text) | { bodyPart, finding, … }
+  render(
+    batch: { input: I; alt: string }[],
+    ctx: RenderContext
+  ): Promise<Uint8Array<ArrayBuffer>[]>;
 }
 ```
+
+**Every provider gets `{ input, alt }` and chooses what to use (#192).** Text providers define
+an empty `inputSchema` and render the part's `alt` in their field's voice — so `alt` is the one
+source of facts for both the solver and the human reader, and cannot drift from the rendered
+text. A future provider may define a rich typed input and ignore `alt` completely. A provider
+may **read** `alt`, never author it.
 
 **Batch in, batch out**, one buffer per input in input order — that is what lets a provider
 choose its own splitting: the anamnesis text provider makes **one** LLM call for every category
@@ -681,13 +688,13 @@ solver just stops being able to solve.
 `alt`, and machines read nothing else, so the blinded solver and bridge keep working even when
 no provider produces text.
 
-**Known limitation, recorded rather than fixed (issue 13 §6):** rendering runs before
-translate-out, so with the sandwich on a modality is rendered from an **English** instruction
-and its bytes are never translated — only `alt` and, for text parts, the decoded prose are
-(issue 12, extended in issue 21 §8). Fine for plain text; not fine for a future image with
-burnt-in annotations, speech, or any rendering where meaning lives in the bytes. The migration
-path stays open only because planning and rendering are distinct nodes in every field — moving
-rendering to a post-translation phase is then a _move_, not a rewrite. Do not collapse them.
+**Rendering writes the target language directly (#192), so bytes are never translated.**
+Renderers take `requestLanguage()` (the request's target language, sandwich or not) while
+planners write `alt` in the working language, so an image with burnt-in annotations, speech, or
+any rendering where meaning lives in the bytes comes out right without a post-render
+translation. That resolves issue 13 §6. The render prompt is mixed-language with the sandwich
+on (English `alt`, target-language output) — accepted. Planning and rendering stay distinct
+nodes in every field; do not collapse them.
 
 ### Repo Layer (embedded SQLite via Drizzle)
 
@@ -732,22 +739,25 @@ file viewer shows the pipeline top to bottom; siblings that run in parallel
 because there is no order to encode.
 
 ```
-01-translate-in/          translation_to_english_phase
-02-plan/                  planning_phase
+01-translate-in/          translate_in_phase
+02-plan/                  plan_phase
   01-basis/               basis_resolve: medical-basis registry and its providers
   02-outline/             outline_phase
 03-outline-translation/   outlineOut / reviewIn (plan mode, between plan and case)
-04-case/                  generation_phase
+04-case/                  case_phase
   01-presentation/        presentation_phase (+ patient.gateway.ts)
-    chief-complaint/  anamnesis/
-  02-procedures/          procedure_phase (+ results/match gateways)
+    chief-complaint/  anamnesis/   chief_complaint_phase, anamnesis_phase
+  02-procedures/          procedures_phase (+ results/match gateways)
     solver/               blinded child graph, drill-down strategy
-05-translate-out/         translation_from_english_phase
+05-translate-out/         translate_out_phase
 shared/                   only what 2+ slices import
   domain/  modality/  outline/  prompt/  translation/  caseGenerationState.ts
 ```
 
-Directory names do not equal LangGraph node ids yet (renamed in #192). A slice never imports a
+A mounted subgraph's node id is its directory name without the number, kebab → snake, plus
+`_phase` (`04-case/` ↔ `case_phase`, `chief-complaint/` ↔ `chief_complaint_phase`, #192); the
+suffix is not decoration — LangGraph rejects a node named like a state channel, and `case` is
+one. Plain function nodes keep verb names (`basis_resolve`, `patient_generate`). A slice never imports a
 sibling top-level slice — `importBoundary.test.ts` enforces it; anything two slices need moves to
 `shared/`. A model imported by one slice lives in that slice (`01-basis/symptom.ts`,
 `02-outline/outlineEvaluation.ts`), not in `shared/domain/`. Outside the slices: `assemble.ts`
@@ -1071,11 +1081,9 @@ language`), so the choice is visible at every call site instead of hidden in the
   `assembleCaseGraph` builds the generation phase from a runtime with
   `languageOverride: "English"` (`GraphRuntime.languageOverride`, `runtime.ts`), which
   `boundLanguage` prefers over the ambient ALS language. That is a compile-time binding (one per
-  compiled variant), not a per-request branch. **Exception, true today:** the modality providers
-  are built in `initGraph` from the base runtime, not the generation runtime, so the text
-  renderers already write in the request language while the planners' `alt` is English —
-  translate-out then re-translates that text. #192 makes this the rule and drops the redundant
-  pass.
+  compiled variant), not a per-request branch. It binds the internal calls and the planners
+  (so `alt` is English); renderers are exempt by design and always write the target language
+  (`requestLanguage()`, see "Modality Planning and Rendering").
 - **Non-sandwich mode's known gap.** With the sandwich off, free-text fields (chief complaint,
   anamnesis answers, procedure result text) are generated natively in the
   target language via the directive above. **Controlled vocabulary stays English**:

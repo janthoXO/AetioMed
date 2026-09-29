@@ -74,7 +74,7 @@ const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
 
 type ProcedureGraphState = z.infer<typeof ProcedureGraphStateSchema>;
 
-// Mounted as `procedure_phase`. `.pick()` off own state schema so `case` keeps
+// Mounted as `procedures_phase`. `.pick()` off own state schema so `case` keeps
 // its reducer registration.
 const ProcedureOutputSchema = ProcedureGraphStateSchema.pick({ case: true });
 

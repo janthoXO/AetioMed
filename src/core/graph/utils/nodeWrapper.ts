@@ -80,7 +80,7 @@ export interface TraceNodeFn {
  * localizes per job.
  *
  * `.scope()`: LangGraph reports nested nodes by colon-joined path (e.g.
- * `generation_phase:presentation_phase:chief_complaint_generate:generate_content`),
+ * `case_phase:presentation_phase:chief_complaint_phase:generate_content`),
  * and bare names repeat across subgraphs. Every module mounting a compiled
  * subgraph via `.addNode(name, subgraph)` must pass `traceNode.scope(name)`
  * into that subgraph's builder so ids match.

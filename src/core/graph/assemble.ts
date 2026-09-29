@@ -101,8 +101,8 @@ function requestNeedsTranslationIn(state: {
 /** After translate-in: plan, or, with plan handed in, stop; working-language values are all case graph needs. */
 function planOrSkip(state: {
   outlineSegments: OutlineSegments;
-}): "planning_phase" | typeof END {
-  return state.outlineSegments.length > 0 ? END : "planning_phase";
+}): "plan_phase" | typeof END {
+  return state.outlineSegments.length > 0 ? END : "plan_phase";
 }
 
 /**
@@ -163,34 +163,34 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
   const planningPhase = buildPlanningPhaseGraph(
     generationRuntime,
     medicalBasisRegistry,
-    traceNode.scope("planning_phase")
+    traceNode.scope("plan_phase")
   );
   const generationPhase = buildCaseGenerationGraph(
     generationRuntime,
     new DrillDownPick(generationRuntime, modalityRegistries.procedureResult),
     modalityRegistries,
-    traceNode.scope("generation_phase")
+    traceNode.scope("case_phase")
   );
 
   // Each branch written out in full, not chained: LangGraph accumulates node names in builder type parameter;
-  // conditional chaining loses `addEdge("planning_phase", …)` typing.
+  // conditional chaining loses `addEdge("plan_phase", …)` typing.
   if (!flags.translationSandwich) {
     return {
       plan: new StateGraph(PlanStateSchema, {
         context: RequestContextSchema,
         output: PlanOutputSchema,
       })
-        .addNode("planning_phase", planningPhase)
-        .addConditionalEdges(START, planOrSkip, ["planning_phase", END])
-        .addEdge("planning_phase", END)
+        .addNode("plan_phase", planningPhase)
+        .addConditionalEdges(START, planOrSkip, ["plan_phase", END])
+        .addEdge("plan_phase", END)
         .compile(),
       case: new StateGraph(CaseStateSchema, {
         context: RequestContextSchema,
         output: CaseOutputSchema,
       })
-        .addNode("generation_phase", generationPhase)
-        .addEdge(START, "generation_phase")
-        .addEdge("generation_phase", END)
+        .addNode("case_phase", generationPhase)
+        .addEdge(START, "case_phase")
+        .addEdge("case_phase", END)
         .compile(),
       // Middle layer exists only with sandwich; off, plan mode generates outline directly in request language.
       outlineOut: undefined,
@@ -204,45 +204,45 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
       output: PlanOutputSchema,
     })
       .addNode(
-        "translation_to_english_phase",
+        "translate_in_phase",
         buildCaseTranslationToEnglishGraph(
           runtime,
-          traceNode.scope("translation_to_english_phase")
+          traceNode.scope("translate_in_phase")
         )
       )
-      .addNode("planning_phase", planningPhase)
+      .addNode("plan_phase", planningPhase)
       .addConditionalEdges(
         START,
         (state) =>
           requestNeedsTranslationIn(state) === "translate"
-            ? "translation_to_english_phase"
+            ? "translate_in_phase"
             : planOrSkip(state),
-        ["translation_to_english_phase", "planning_phase", END]
+        ["translate_in_phase", "plan_phase", END]
       )
-      .addConditionalEdges("translation_to_english_phase", planOrSkip, [
-        "planning_phase",
+      .addConditionalEdges("translate_in_phase", planOrSkip, [
+        "plan_phase",
         END,
       ])
-      .addEdge("planning_phase", END)
+      .addEdge("plan_phase", END)
       .compile(),
     case: new StateGraph(CaseStateSchema, {
       context: RequestContextSchema,
       output: CaseOutputSchema,
     })
-      .addNode("generation_phase", generationPhase)
+      .addNode("case_phase", generationPhase)
       .addNode(
-        "translation_from_english_phase",
+        "translate_out_phase",
         buildCaseTranslationFromEnglishGraph(
           runtime,
-          traceNode.scope("translation_from_english_phase")
+          traceNode.scope("translate_out_phase")
         )
       )
-      .addEdge(START, "generation_phase")
-      .addConditionalEdges("generation_phase", requestNeedsTranslationOut, {
-        translate: "translation_from_english_phase",
+      .addEdge(START, "case_phase")
+      .addConditionalEdges("case_phase", requestNeedsTranslationOut, {
+        translate: "translate_out_phase",
         skip: END,
       })
-      .addEdge("translation_from_english_phase", END)
+      .addEdge("translate_out_phase", END)
       .compile(),
     // Middle layer: outline out to reviewer, edits back in. Compiled with sandwich, entered only by plan-mode
     // requests in non-English language. Built from unmodified `runtime`: translates to/from real request language.

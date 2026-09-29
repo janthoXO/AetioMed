@@ -4,7 +4,18 @@ import { ProcedureCandidatesImpl } from "@/core/graph/catalog/procedures/candida
 import type { LevelItem } from "@/core/graph/catalog/ports.js";
 import type { LevelSelection } from "@/core/graph/03aigateway/procedures.aigateway.js";
 import type { ProcedureTree } from "@/core/graph/models/ProcedureTree.js";
-import { drillDown, MAX_PICK_CANDIDATES } from "./drillDownPick.js";
+import { FakeListChatModel } from "@langchain/core/utils/testing";
+import type { BaseMessage } from "@langchain/core/messages";
+import type { GraphRuntime } from "@/core/graph/runtime.js";
+import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.js";
+import {
+  drillDown,
+  DrillDownPick,
+  MAX_PICK_CANDIDATES,
+} from "./drillDownPick.js";
 
 function procs(prefix: string, n: number) {
   return Array.from({ length: n }, (_, i) => ({ name: `${prefix}${i}` }));
@@ -119,5 +130,87 @@ describe("ProcedureCandidates.levelItems / narrow", () => {
       [["Lab", "Serology"]]
     );
     expect(narrowed.size()).toBe(51);
+  });
+});
+
+/** Records every call's messages; replies from `responses` in order. */
+class CapturingChatModel extends FakeListChatModel {
+  calls: BaseMessage[][] = [];
+  override async _generate(
+    ...args: Parameters<FakeListChatModel["_generate"]>
+  ) {
+    this.calls.push(args[0]);
+    return super._generate(...args);
+  }
+}
+
+describe("DrillDownPick.nextStep", () => {
+  function pickWith(model: CapturingChatModel) {
+    const runtime: GraphRuntime = {
+      llm: { for: () => model },
+      catalogs: {
+        procedures: new InMemoryProcedureCatalog({
+          procedures: [{ name: "Vitals" }, { name: "HbA1c" }],
+          categories: [],
+        }),
+        anamnesis: new InMemoryAnamnesisCatalog(),
+        labels: new InMemoryLabelCatalog(),
+        diagnosis: new InMemoryDiagnosisCatalog(),
+      },
+      log: { info() {}, warn() {}, error() {} },
+      clock: () => new Date("2024-01-01T00:00:00.000Z"),
+    };
+    return new DrillDownPick(runtime, []);
+  }
+
+  const view = {
+    presentation: { chiefComplaint: "Polyuria and polydipsia" },
+    ruledOutDiagnoses: [],
+    iterationsRemaining: 6,
+  };
+
+  it("does not offer a diagnosis before the first batch, so a workup always has procedures", async () => {
+    const model = new CapturingChatModel({
+      responses: [
+        JSON.stringify({
+          action: "procedure",
+          procedures: { procedures: ["HbA1c"] },
+        }),
+      ],
+    });
+    const move = await pickWith(model).nextStep({
+      ...view,
+      previousProcedures: [],
+    });
+    expect(move).toMatchObject({
+      action: "order",
+      procedures: [{ path: [], name: "HbA1c" }],
+    });
+    expect(
+      model.calls[0]!.map((m) => String(m.content)).join("\n")
+    ).not.toContain('"diagnose"');
+  });
+
+  it("offers a diagnosis once something has been ordered", async () => {
+    const model = new CapturingChatModel({
+      responses: [
+        JSON.stringify({ action: "diagnose", diagnosisName: "Diabetes" }),
+      ],
+    });
+    const move = await pickWith(model).nextStep({
+      ...view,
+      previousProcedures: [
+        {
+          path: [],
+          name: "HbA1c",
+          relevance: "obligatory",
+          result: "HbA1c 8.1 %",
+        },
+      ],
+    });
+    expect(move).toMatchObject({
+      action: "diagnose",
+      diagnosisName: "Diabetes",
+    });
   });
 });

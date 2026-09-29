@@ -24,7 +24,7 @@ export function buildUnitPlanSchema(providers: ModalityProvider<unknown>[]) {
         .string()
         .min(1)
         .describe(
-          "Plain text describing exactly what this part should convey — the provider renders it, so it must be self-contained"
+          "The complete content of this part, every fact it states — later steps read only this, never the rendered part"
         ),
     })
   );

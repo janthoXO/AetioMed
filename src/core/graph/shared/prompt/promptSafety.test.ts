@@ -7,8 +7,8 @@
 // assertions prove nothing.
 import { describe, expect, it } from "vitest";
 import {
+  altOf,
   encodeText,
-  textOf,
   type ContentPart,
 } from "@/core/graph/shared/domain/ContentPart.js";
 import { buildPrompt, renderForPrompt, section } from "./prompt.js";
@@ -52,11 +52,11 @@ describe("bytes never reach a prompt", () => {
     expect(looksLikeByteDump(leaked)).toBe(true);
   });
 
-  it("textOf-derived prompt sections carry only alt text", () => {
+  it("altOf-derived prompt sections carry only alt text", () => {
     const rendered = buildPrompt(
       section(
         "Procedures ordered so far (with results)",
-        `1. Chest X-ray -> ${textOf(mixedParts)}`
+        `1. Chest X-ray -> ${altOf(mixedParts)}`
       )
     );
 
@@ -64,8 +64,8 @@ describe("bytes never reach a prompt", () => {
     expect(rendered).toContain("PA chest radiograph");
   });
 
-  it("a text-projected Presentation renders through renderForPrompt with no bytes", () => {
-    // Mirrors `Presentation` from `presentationOf` (03procedure/index.ts): all strings via `textOf`.
+  it("an alt-projected Presentation renders through renderForPrompt with no bytes", () => {
+    // Mirrors `Presentation` from `presentationOf` (04-case/02-procedures/graph.ts): all strings via `altOf`.
     const presentation = {
       patient: {
         name: "Jane",
@@ -74,8 +74,8 @@ describe("bytes never reach a prompt", () => {
         weight: 60,
         gender: "female" as const,
       },
-      chiefComplaint: textOf([fixtureTextPart("Cough for three days.")]),
-      anamnesis: [{ category: "History", answer: textOf(mixedParts) }],
+      chiefComplaint: altOf([fixtureTextPart("Cough for three days.")]),
+      anamnesis: [{ category: "History", answer: altOf(mixedParts) }],
     };
 
     const rendered = renderForPrompt(presentation);

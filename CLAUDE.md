@@ -207,7 +207,7 @@ They differ in audience, content, language and gate:
   `NodeTracer`/`NodeSpan` port (`core/graph/utils/nodeWrapper.ts`) — the same
   port-owned-by-core/adapter-lives-outside inversion `core/jobEvents/` uses for labels.
 - **OTel logs — the node's output** (issue #141). `NodeSpan.setOutput(output)` hands the
-  adapter the node's already-sanitized result (bytes projected to text — `sanitizeForTrace`,
+  adapter the node's already-sanitized result (every `ContentPart` reduced to `{ type, bytes }` — `sanitizeForTrace`,
   `core/graph/utils/traceSanitize.ts`); on `end()`, if an output was set, the adapter emits one
   correlated **log record** (`Logger.emit`, `@opentelemetry/api-logs`) whose `context` carries
   the span (`trace.setSpan`), so a backend joins the two by `trace_id`/`span_id` — before
@@ -218,8 +218,10 @@ They differ in audience, content, language and gate:
   attribute values in the low kilobytes and truncate/drop past it (case outlines are large
   markdown — that failure is silent), and billing is per-attribute; the logs signal takes a
   body of arbitrary size and is exactly what a correlated "node output" message is. No span
-  attribute may ever carry output text — `ContentPart[]` fields are always projected through
-  `textOf` first, so raw bytes never reach either signal.
+  attribute may ever carry output text. A `ContentPart` reaches a log only as
+  `{ type, bytes: value.byteLength }` (#191) — no raw bytes, no rendered text, and no `alt`
+  (the planner nodes and `translate_rest` already log it); to see what a renderer produced, read
+  the API response, which carries every `value` in full.
 - **Exporter selection — no dedicated flag** (`selectExporterMode`, `observability/otel.ts`):
   `OTEL_SDK_DISABLED === "true"` (that literal only) → nothing constructed at all; else any of
   `OTEL_EXPORTER_OTLP_ENDPOINT`/`_TRACES_ENDPOINT`/`_LOGS_ENDPOINT` set → `BatchSpanProcessor`
@@ -497,7 +499,7 @@ contribute to a field:
 type ContentPart = {
   type: string; // MIME type
   value: Uint8Array; // the rendered artifact
-  alt: string; // plain text: a short description of what this part conveys
+  alt: string; // plain text: the part's full content, in the working language
 };
 ```
 
@@ -506,22 +508,19 @@ _compose_ one field value — **not** a list of alternative renditions to choose
 is meaningful, and an empty array is never a valid field value (`.min(1)` on the schema): a
 field that exists has at least one part, a field that does not exist is absent.
 
-**`alt` and `value` are independent, with different authors (issue 21).** `value` is the
-rendered artifact and `alt` is a short description of what it conveys; neither is derived from
-the other, and `textPart()` — the old constructor that asserted `value === utf8(alt)` — is
-gone, replaced by `encodeText()` for the `value` half alone. **`alt` is authored by the
-planner, never by a provider**, and that is a safety property rather than a stylistic one:
-`textOf()` feeds the blinded solver, `matchDiagnosis` and the plan judge, so a provider that
-could author `alt` could inject facts into the solver's view.
-
-**`textOf(parts)` is still the only path from content parts to a prompt, but it is now
-MIME-dispatched.** `textOfPart` looks a part's `type` up in a `const` table in
-`ContentPart.ts` — one row today, `text/*` → UTF-8 decode `value` — and falls back to `alt`
-for anything with no row. For a text part the prose lives in `value`, so reading `alt` would
-return the label instead of the content; for an image part the bytes mean nothing to a prompt,
-so `alt` is the projection. Add a row (e.g. `application/pdf`) rather than a runtime
-registration API: this repo deleted its extension system in #115 and a mutable global registry
-of extractors would rebuild exactly that shape.
+**`alt` and `value` have different authors and different readers (issue 21, #191).** `alt` is
+the part's **complete content in the working language** (English with the sandwich on, the
+request language without) — every fact the part states, written out in full, not a label —
+and it is the **only** thing machines read: `altOf(parts)` (`ContentPart.ts`, the parts' `alt`s
+joined) is the one path from content parts to a prompt, for every MIME, used by
+`presentationOf` and the prior-procedure projection the blinded solver and bridge reason over.
+`value` is the rendered artifact for humans and never reaches a prompt. **`alt` is authored by
+the planner, never by a provider**, and that is a safety property rather than a stylistic one:
+a provider that could author `alt` could inject facts into the solver's view. The planners'
+prompts say so explicitly ("later diagnostic steps read ONLY alt"). There is no MIME-dispatched
+text extraction any more (`textOf`/`textOfPart`/`TEXT_EXTRACTORS` are gone, #191): one rule
+for every field, and the solver reads the working language even when the rendered bytes are in
+the target language.
 
 Prompt builders take `string`, never `ContentPart[]`; the `Presentation` type in
 `04-case/02-procedures/prompt.ts` is a text projection built by `presentationOf`
@@ -538,7 +537,7 @@ as `Object` and a plain-edge-dispatched node as `Uint8Array`. Both translation p
 therefore fan out with **plain edges**, which hand each node the same full channel state
 without serialising it; `buildFieldGenerationSends` stays a legitimate `Send` precisely
 because its per-target payload (`{ diagnosis, outline, userInstructions }`) is text only. Fix
-this at the seam, never with a repair on read — a normaliser inside `textOfPart` leaves the
+this at the seam, never with a repair on read — a normaliser on the read side leaves the
 part corrupt everywhere else while looking fixed.
 
 **The LLM never emits bytes.** A planner emits render requests and a text provider emits
@@ -679,8 +678,8 @@ air bronchograms"), never a bare label ("chest x-ray image"). No test catches a 
 solver just stops being able to solve.
 
 **An image-only registry is still safe by construction:** every part carries the planner's
-`alt`, and `textOfPart` falls back to `alt` for any non-text MIME, so the plan judge,
-`matchDiagnosis` and the blinded solver keep working even when no provider produces text.
+`alt`, and machines read nothing else, so the blinded solver and bridge keep working even when
+no provider produces text.
 
 **Known limitation, recorded rather than fixed (issue 13 §6):** rendering runs before
 translate-out, so with the sandwich on a modality is rendered from an **English** instruction
@@ -1055,13 +1054,13 @@ Concretely:
   checkpoints, so anything resumable (F09) must rebuild `language` from the original request
   rather than expect it to survive a resume.
 - **Explicit language per call (#190).** A gateway that writes user-visible text (chief
-  complaint and anamnesis planners/renderers, patient, procedure-result planner/renderer, the
+  complaint and anamnesis planners/renderers, procedure-result planner/renderer, the
   outline in plan mode) takes a `language` parameter and builds its system prompt with
   `buildSystemPrompt(language, ...sections)` (`shared/prompt/prompt.ts`), which appends the
   language directive as the system message's final line (never the user message, so it stays
   inside the stable prefix and doesn't disturb prompt caching) when `language` is set and not
   English. Internal reasoning calls (the plan in normal mode, the plan judge, the blinded solver,
-  `matchDiagnosis`, the symptom/basis provider) use plain `buildPrompt` and take no language —
+  `matchDiagnosis`, the symptom/basis provider, and the patient — `Patient` holds no free text, only numbers, an enum and a name, #191) use plain `buildPrompt` and take no language —
   English in both sandwich modes, which keeps the generation core language-agnostic. The caller
   decides: nodes and providers pass `boundLanguage(runtime)` (`runtime.languageOverride ?? ALS
 language`), so the choice is visible at every call site instead of hidden in the prompt builder.
@@ -1078,7 +1077,7 @@ language`), so the choice is visible at every call site instead of hidden in the
   translate-out then re-translates that text. #192 makes this the rule and drops the redundant
   pass.
 - **Non-sandwich mode's known gap.** With the sandwich off, free-text fields (chief complaint,
-  anamnesis answers, procedure result text, patient narrative) are generated natively in the
+  anamnesis answers, procedure result text) are generated natively in the
   target language via the directive above. **Controlled vocabulary stays English**:
   `procedures[].name` and `anamnesis[].category` are literal-union grammar picks from the
   English catalogue (issue 01's Rule 4 deletion made catalogue reads language-independent), so

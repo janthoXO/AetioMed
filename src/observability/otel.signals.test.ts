@@ -74,7 +74,7 @@ describe("OTel signals end to end — real SDK, no mocks", () => {
     expect(log.spanContext?.spanId).toBe(span.spanContext().spanId);
   });
 
-  it("a ContentPart's bytes never reach the log body, only its decoded/alt text", async () => {
+  it("a ContentPart reaches the log body as { type, bytes } only: no bytes, no alt, no text", async () => {
     const { logExporter, nodeTracer } = setup();
     const bus = new EventBus();
     const traceNode = createTraceNode(bus, nodeTracer);
@@ -82,7 +82,7 @@ describe("OTel signals end to end — real SDK, no mocks", () => {
       "chief_complaint_generate",
       async () => ({
         chiefComplaint: [
-          { type: "text/plain", value: encodeText("hello"), alt: "hello" },
+          { type: "text/plain", value: encodeText("hello"), alt: "greeting" },
         ],
       }),
       "Generating chief complaint"
@@ -92,9 +92,9 @@ describe("OTel signals end to end — real SDK, no mocks", () => {
 
     const logs = logExporter.getFinishedLogRecords();
     expect(logs).toHaveLength(1);
-    const body = String(logs[0]!.body);
-    expect(body).toContain("hello");
-    expect(body).not.toContain('"0":');
+    expect(JSON.parse(String(logs[0]!.body))).toEqual({
+      chiefComplaint: [{ type: "text/plain", bytes: 5 }],
+    });
   });
 
   it("an output over the 50 KB cap becomes a truncated marker in both the log body and its attribute", async () => {

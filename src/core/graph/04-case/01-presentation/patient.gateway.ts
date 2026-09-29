@@ -1,4 +1,3 @@
-import type { Language } from "@/core/graph/shared/domain/Language.js";
 import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
 import {
   PatientSchema,
@@ -6,7 +5,6 @@ import {
 } from "@/core/graph/shared/domain/Patient.js";
 import {
   buildPrompt,
-  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
   summarizeValidationError,
@@ -17,15 +15,13 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 
 export async function generatePatient(
   runtime: GraphRuntime,
-  language: Language | undefined,
   diagnosis: Diagnosis, // provided by the user
   outline: string,
   userInstructions?: string, // provided by the user | undefined
   context?: RequestContext
 ): Promise<Patient> {
-  // User-facing: student reads patient file (e.g. name).
-  const systemPrompt = buildSystemPrompt(
-    language,
+  // Internal (English): no free text left in `Patient`, only numbers, an enum and a name.
+  const systemPrompt = buildPrompt(
     section(
       "Role",
       `You are an expert medical educator authoring a realistic clinical patient file for a medical training simulator.

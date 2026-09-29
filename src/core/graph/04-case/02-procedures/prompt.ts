@@ -13,7 +13,7 @@ import type { Patient } from "@/core/graph/shared/domain/Patient.js";
 /**
  * Patient presentation as seen by blinded solver, no diagnosis. Text
  * projection, not domain `Case`: bytes never reach a prompt. Built only by
- * `presentationOf` (`graph.ts`) via `textOf`.
+ * `presentationOf` (`graph.ts`) via `altOf`.
  */
 export type Presentation = {
   patient?: Patient | undefined;

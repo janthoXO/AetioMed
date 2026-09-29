@@ -1,20 +1,20 @@
 import {
   AllGenerationFlags,
   GenerationFlagSchema,
-} from "@/core/graph/models/GenerationFlags.js";
-import { ICDCodeSchema } from "@/core/graph/models/Diagnosis.js";
-import { makeLanguageSchema } from "@/core/graph/models/Language.js";
-import { DifficultySchema } from "@/core/graph/models/Difficulty.js";
+} from "@/core/graph/shared/domain/GenerationFlags.js";
+import { ICDCodeSchema } from "@/core/graph/shared/domain/Diagnosis.js";
+import { makeLanguageSchema } from "@/core/graph/shared/domain/Language.js";
+import { DifficultySchema } from "@/core/graph/shared/domain/Difficulty.js";
 import { z } from "zod/v4";
-import { UserInstructionsSchema } from "@/core/graph/models/UserInstructions.js";
+import { UserInstructionsSchema } from "@/core/graph/shared/domain/UserInstructions.js";
 import type { Config } from "@/core/graph/config.js";
-import { LLMConfigSchema } from "@/core/graph/models/LLMConfig.js";
+import { LLMConfigSchema } from "@/core/graph/shared/domain/LLMConfig.js";
 import { JobIdSchema } from "./JobId.js";
-import { RunModeSchema } from "@/core/graph/models/RunMode.js";
+import { RunModeSchema } from "@/core/graph/shared/domain/RunMode.js";
 import {
   isCanonicalShape,
   OutlineSegmentsSchema,
-} from "@/core/graph/outline/segments.js";
+} from "@/core/graph/shared/outline/segments.js";
 
 /**
  * Request schema depends on configured `LANGUAGES` and global LLM (`config.llm`),

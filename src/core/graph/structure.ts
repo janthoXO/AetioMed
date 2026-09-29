@@ -1,6 +1,6 @@
 // Compiled topology of the served variant plus each node's English label key.
 // Served as `GET /api/graph` (REST) and `meta.graph` (NATS); always on.
-import type { CompiledCaseGraphs } from "./02graphs/caseGraph.js";
+import type { CompiledCaseGraphs } from "./assemble.js";
 import { getNodeLabels } from "./utils/nodeWrapper.js";
 
 /** One node of the compiled graph, as reported to a client. */

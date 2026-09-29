@@ -1,16 +1,19 @@
 import type { EventBus } from "../event-bus.js";
-import type { Case } from "./models/Case.js";
-import type { Language } from "./models/Language.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
+import type { Language } from "@/core/graph/shared/domain/Language.js";
 import { ConfigSchema, type Config } from "./config.js";
-import { buildCaseGraph } from "./02graphs/caseGraph.js";
-import { createMedicalBasisRegistry } from "./medicalBasis/registry.js";
-import type { ModalityRegistries } from "./modality/registry.js";
-import { createChiefComplaintProviders } from "./02graphs/02case-generation/02presentation/generation/chiefComplaint/providers.js";
-import { createAnamnesisProviders } from "./02graphs/02case-generation/02presentation/generation/anamnesis/providers.js";
-import { createProcedureResultProviders } from "./02graphs/02case-generation/03procedure/providers.js";
+import { buildCaseGraph } from "./assemble.js";
+import { createMedicalBasisRegistry } from "@/core/graph/02-plan/01-basis/registry.js";
+import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
+import { createChiefComplaintProviders } from "@/core/graph/04-case/01-presentation/chief-complaint/providers.js";
+import { createAnamnesisProviders } from "@/core/graph/04-case/01-presentation/anamnesis/providers.js";
+import { createProcedureResultProviders } from "@/core/graph/04-case/02-procedures/providers.js";
 import { createLogger } from "./utils/logger.js";
 import { LLM_ROLES, type GraphRuntime, type LlmPort } from "./runtime.js";
-import type { SymptomsRepo } from "./medicalBasis/ports.js";
+import type {
+  SymptomCache,
+  UmlsSymptomFloor,
+} from "@/core/graph/02-plan/01-basis/ports.js";
 import type { GraphAppContext } from "./appContext.js";
 import type { NodeTracer } from "./utils/nodeWrapper.js";
 
@@ -72,11 +75,12 @@ export function initGraph(opts: {
   config: Config;
   llm: LlmPort;
   catalogs: GraphRuntime["catalogs"];
-  symptomsRepo: SymptomsRepo;
+  umlsFloor: UmlsSymptomFloor;
+  symptomCache: SymptomCache;
   /** OTel port from `observability/otel.ts`'s `createOtelNodeTracer()`. Pass `noopNodeTracer` for silence. */
   tracer: NodeTracer;
 }): GraphAppContext {
-  const { bus, config, llm, catalogs, symptomsRepo, tracer } = opts;
+  const { bus, config, llm, catalogs, umlsFloor, symptomCache, tracer } = opts;
 
   const runtime: GraphRuntime = {
     llm,
@@ -89,7 +93,8 @@ export function initGraph(opts: {
   // `[umlsSymptomProvider]`.
   const medicalBasisRegistry = createMedicalBasisRegistry({
     runtime,
-    symptomsRepo,
+    umlsFloor,
+    symptomCache,
   });
 
   // Per-field modality registries; each field's providers come from its own

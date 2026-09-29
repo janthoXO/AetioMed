@@ -1,6 +1,6 @@
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { LLMConfig } from "./models/LLMConfig.js";
-import type { Language } from "./models/Language.js";
+import type { LLMConfig } from "@/core/graph/shared/domain/LLMConfig.js";
+import type { Language } from "@/core/graph/shared/domain/Language.js";
 import type {
   AnamnesisCatalog,
   ProcedureCatalog,

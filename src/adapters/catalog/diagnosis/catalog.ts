@@ -1,5 +1,8 @@
-import type { Diagnosis, ICDCode } from "@/core/graph/models/Diagnosis.js";
-import type { ForeignLanguage } from "@/core/graph/models/Language.js";
+import type {
+  Diagnosis,
+  ICDCode,
+} from "@/core/graph/shared/domain/Diagnosis.js";
+import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import type { DiagnosisRepo } from "./repo.js";
 import type { DiagnosisCatalog } from "@/core/graph/catalog/ports.js";
 

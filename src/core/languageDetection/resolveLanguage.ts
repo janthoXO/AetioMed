@@ -1,5 +1,5 @@
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import type { UserInstructions } from "@/core/graph/models/UserInstructions.js";
+import type { UserInstructions } from "@/core/graph/shared/domain/UserInstructions.js";
 import type { LanguageDetector } from "./port.js";
 import { mapIsoToLanguage } from "./mapping.js";
 import { detectLanguageViaLlm } from "./llmFallback.js";

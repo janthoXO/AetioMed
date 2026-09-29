@@ -1,17 +1,17 @@
 import type { Config } from "./config.js";
 import type { GraphRuntime } from "./runtime.js";
-import type { Case } from "./models/Case.js";
-import type { Diagnosis } from "./models/Diagnosis.js";
-import type { GenerationFlag } from "./models/GenerationFlags.js";
-import type { UserInstructions } from "./models/UserInstructions.js";
-import type { Language } from "./models/Language.js";
-import type { Difficulty } from "./models/Difficulty.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
+import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
+import type { GenerationFlag } from "@/core/graph/shared/domain/GenerationFlags.js";
+import type { UserInstructions } from "@/core/graph/shared/domain/UserInstructions.js";
+import type { Language } from "@/core/graph/shared/domain/Language.js";
+import type { Difficulty } from "@/core/graph/shared/domain/Difficulty.js";
 import type {
   CompiledCaseGraphs,
   PlanCaseInput,
   PlanResult,
   RenderCaseInput,
-} from "./02graphs/caseGraph.js";
+} from "./assemble.js";
 
 export type { PlanCaseInput, PlanResult, RenderCaseInput };
 

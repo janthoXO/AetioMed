@@ -3,7 +3,7 @@
 // `traceNode` runs at construction, so `getNodeLabels()` is the variant's full
 // traceable id set with no execution.
 import { describe, expect, it } from "vitest";
-import { assembleCaseGraphs, type AssemblyDeps } from "./02graphs/caseGraph.js";
+import { assembleCaseGraphs, type AssemblyDeps } from "./assemble.js";
 import { EventBus } from "@/core/event-bus.js";
 import {
   createTraceNode,
@@ -15,10 +15,10 @@ import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js
 import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
-import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
+import type { MedicalBasisProvider } from "@/core/graph/02-plan/01-basis/ports.js";
 import z from "zod";
-import type { ModalityProvider } from "@/core/graph/modality/ports.js";
-import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
+import type { ModalityProvider } from "@/core/graph/shared/modality/ports.js";
+import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
 import { buildGraphStructure } from "./structure.js";
 
 /** The one production-shaped provider: batch-in, batch-out, `{instruction}` input. */

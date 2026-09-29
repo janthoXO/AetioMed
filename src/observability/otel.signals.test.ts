@@ -17,7 +17,7 @@ import { createNodeTracer } from "./otel.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { EventBus } from "@/core/event-bus.js";
 import { runWithContext } from "@/core/graph/utils/context.js";
-import { encodeText } from "@/core/graph/models/ContentPart.js";
+import { encodeText } from "@/core/graph/shared/domain/ContentPart.js";
 
 function setup() {
   const spanExporter = new InMemorySpanExporter();

@@ -6,8 +6,8 @@ import { resolvePredefinedList } from "../../persistence/predefinedList.js";
 import {
   type AnamnesisCategory,
   AnamnesisCategorySchema,
-} from "@/core/graph/models/Anamnesis.js";
-import { type ForeignLanguage } from "@/core/graph/models/Language.js";
+} from "@/core/graph/shared/domain/Anamnesis.js";
+import { type ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import { createTranslationStore } from "../../persistence/translationStore.js";
 import { catalogFile } from "../../persistence/paths.js";
 

@@ -26,7 +26,7 @@ import { getRequestContext } from "@/core/graph/utils/context.js";
 import { AppError } from "@/core/graph/errors/AppError.js";
 import { CaseGenerationResponseSchema } from "@/api/index.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
-import type { Case } from "@/core/graph/models/Case.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
 import { planAndRenderFrom } from "@/testing/graphFakes.js";
 import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 

@@ -1,4 +1,4 @@
-import type { ForeignLanguage } from "@/core/graph/models/Language.js";
+import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { LabelsRepo } from "./repo.js";
 import type { LabelCatalog } from "@/core/graph/catalog/ports.js";

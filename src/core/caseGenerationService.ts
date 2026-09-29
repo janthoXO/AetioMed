@@ -2,22 +2,22 @@ import type { EventBus } from "./event-bus.js";
 import type { JobEventChannel, JobOutcome } from "./jobEvents/index.js";
 import { createLimiter, type Release } from "./concurrency.js";
 import type { GraphAppContext } from "./graph/appContext.js";
-import type { Case } from "./graph/models/Case.js";
-import type { Language } from "./graph/models/Language.js";
-import type { RunMode } from "./graph/models/RunMode.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
+import type { Language } from "@/core/graph/shared/domain/Language.js";
+import type { RunMode } from "@/core/graph/shared/domain/RunMode.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
 import { runWithContext } from "./graph/utils/context.js";
 import { AppError, OutlineNotAcceptedError } from "./graph/errors/AppError.js";
 import {
   expandFlagsForSolver,
   projectCaseToFlags,
-} from "./graph/models/GenerationFlags.js";
+} from "@/core/graph/shared/domain/GenerationFlags.js";
 import {
   checkSkeleton,
   joinOutline,
   restoreSkeletonHeadings,
   type OutlineSegments,
-} from "./graph/outline/segments.js";
+} from "@/core/graph/shared/outline/segments.js";
 import type { LanguageDetector } from "./languageDetection/port.js";
 import { resolveLanguage } from "./languageDetection/resolveLanguage.js";
 

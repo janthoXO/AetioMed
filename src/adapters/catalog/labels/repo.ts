@@ -1,4 +1,4 @@
-import { type ForeignLanguage } from "@/core/graph/models/Language.js";
+import { type ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { DbHandle } from "../../persistence/db.js";
 import { createTranslationStore } from "../../persistence/translationStore.js";

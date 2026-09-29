@@ -6,7 +6,7 @@ import {
   duplicateSiblings,
   nodeKey,
   nodePaths,
-} from "@/core/graph/models/ProcedureTree.js";
+} from "@/core/graph/shared/domain/ProcedureTree.js";
 import { flattenProcedureTranslations } from "./procedures/translations.js";
 import {
   findUnknownKeys,
@@ -69,7 +69,7 @@ function loadCatalogueSpecs(repos: Repos): CatalogueSpec[] {
       baseKeys: everyDiagnosisKey(repos),
       translations: readDeclaredTranslations(repos.diagnosis.translationsFile),
       // Exempt from the unknown-key rule: diagnosis store is also an input index.
-      // `getDiagnosisTranslationToEnglish` (02graphs/01case-translation-to-english/tools.ts)
+      // `getDiagnosisTranslationToEnglish` (01-translate-in/gateway.ts)
       // normalises user-supplied names to English, so keys outside the curated
       // `diagnosis.yml` are legitimate. `diagnosis.yml` is a curated subset,
       // `diagnosisTranslations.yml` the full ICD-11 extraction; enforcing would flag ~1500 terms.

@@ -82,7 +82,8 @@ export async function createApp(): Promise<{
     config: graphConfig,
     llm: createLlmPort(graphConfig),
     catalogs: createYamlCatalogs(repos),
-    symptomsRepo: repos.symptoms,
+    umlsFloor: repos.umlsFloor,
+    symptomCache: repos.symptomCache,
     tracer: otel.tracer,
   });
   // Must run after graph construction: labels' base key set is

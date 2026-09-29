@@ -6,11 +6,11 @@ import { createCaseGenerationService } from "@/core/caseGenerationService.js";
 import { createJobEventChannel } from "@/core/jobEvents/index.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import { AppError } from "@/core/graph/errors/AppError.js";
-import type { Case } from "@/core/graph/models/Case.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
 import {
   encodeText,
   type ContentPart,
-} from "@/core/graph/models/ContentPart.js";
+} from "@/core/graph/shared/domain/ContentPart.js";
 import type { LanguageDetector } from "@/core/languageDetection/port.js";
 import { planAndRenderFrom } from "@/testing/graphFakes.js";
 import type { GenerateCaseFn } from "@/core/graph/appContext.js";

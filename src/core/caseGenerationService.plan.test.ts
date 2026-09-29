@@ -16,7 +16,7 @@ import type {
 import {
   joinOutline,
   type OutlineSegments,
-} from "@/core/graph/outline/segments.js";
+} from "@/core/graph/shared/outline/segments.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
 
 // Valid English skeleton (five fixed sections); `checkSkeleton` accepts.

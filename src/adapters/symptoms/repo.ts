@@ -1,12 +1,18 @@
-import { SymptomSchema, type Symptom } from "@/core/graph/models/Symptom.js";
-import { ICDCodeSchema } from "@/core/graph/models/Diagnosis.js";
+import {
+  SymptomSchema,
+  type Symptom,
+} from "@/core/graph/02-plan/01-basis/symptom.js";
+import { ICDCodeSchema } from "@/core/graph/shared/domain/Diagnosis.js";
 import fs from "fs";
 import z from "zod";
 import { eq } from "drizzle-orm";
 import type { DbHandle } from "../persistence/db.js";
 import { symptomCache } from "../persistence/schema.js";
 import { catalogFile } from "../persistence/paths.js";
-import type { SymptomsRepo } from "@/core/graph/medicalBasis/ports.js";
+import type {
+  SymptomCache,
+  UmlsSymptomFloor,
+} from "@/core/graph/02-plan/01-basis/ports.js";
 
 const SymptomMapSchema = z.record(
   ICDCodeSchema,
@@ -40,25 +46,32 @@ function preloadDiagnosisAnamnesisMap(
 
 /**
  * Loads the static UMLS symptom floor (`data/diagnosis_symptoms.json`, a
- * ~2.6 MB JSON parse) and wires up the cache-aside store for LLM-generated
- * additions. All I/O happens here, not at import time.
- *
- * `symptomCacheTtlDays` is resolved by the composition root from
- * `SYMPTOM_CACHE_TTL_DAYS` (default 30) — this module never reads the
- * process environment itself.
+ * ~2.6 MB JSON parse). All I/O happens here, not at import time.
  */
-export function createSymptomsRepo(
-  dbHandle: DbHandle,
-  catalogDir: string,
-  symptomCacheTtlDays: number
-): SymptomsRepo {
+export function createUmlsSymptomFloor(catalogDir: string): UmlsSymptomFloor {
   const symptomMap = preloadDiagnosisAnamnesisMap(catalogDir);
-  const ttlMs = symptomCacheTtlDays * 24 * 60 * 60 * 1000;
 
   return {
     SymptomsRelatedToDiagnosisIcd(icdCode) {
       return symptomMap[icdCode]?.symptoms || [];
     },
+  };
+}
+
+/**
+ * Cache-aside store for LLM-generated symptoms.
+ *
+ * `symptomCacheTtlDays` is resolved by the composition root from
+ * `SYMPTOM_CACHE_TTL_DAYS` (default 30) — this module never reads the
+ * process environment itself.
+ */
+export function createSymptomCache(
+  dbHandle: DbHandle,
+  symptomCacheTtlDays: number
+): SymptomCache {
+  const ttlMs = symptomCacheTtlDays * 24 * 60 * 60 * 1000;
+
+  return {
     getCachedSymptoms(icdCode, nowMs = Date.now()) {
       const row = dbHandle.db
         .select()

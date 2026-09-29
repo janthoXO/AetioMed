@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   encodeText,
   type ContentPart,
-} from "@/core/graph/models/ContentPart.js";
+} from "@/core/graph/shared/domain/ContentPart.js";
 import { buildTracePayload, sanitizeForTrace } from "./tracePayload.js";
 
 /** Fixture builder: part whose `alt` equals its decoded `value`. */

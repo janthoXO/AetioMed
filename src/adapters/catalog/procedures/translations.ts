@@ -1,5 +1,5 @@
 import z from "zod";
-import { nodeKey } from "@/core/graph/models/ProcedureTree.js";
+import { nodeKey } from "@/core/graph/shared/domain/ProcedureTree.js";
 import type { TranslationMapping } from "../../persistence/translationStore.js";
 
 const LeafTranslationSchema = z.object({

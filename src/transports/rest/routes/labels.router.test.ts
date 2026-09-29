@@ -19,7 +19,7 @@ import { createCaseGenerationService } from "@/core/caseGenerationService.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import createLabelsRouter from "./labels.router.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
-import type { Case } from "@/core/graph/models/Case.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
 import { planAndRenderFrom } from "@/testing/graphFakes.js";
 import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 

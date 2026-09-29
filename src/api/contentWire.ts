@@ -6,15 +6,15 @@ import { z } from "zod";
 import {
   encodeText,
   type ContentPart,
-} from "@/core/graph/models/ContentPart.js";
-import { PatientSchema } from "@/core/graph/models/Patient.js";
-import { ProcedureRelevanceSchema } from "@/core/graph/models/Procedure.js";
+} from "@/core/graph/shared/domain/ContentPart.js";
+import { PatientSchema } from "@/core/graph/shared/domain/Patient.js";
+import { ProcedureRelevanceSchema } from "@/core/graph/shared/domain/Procedure.js";
 import {
   procedureTreeSchema,
   mapTree,
   refLabel,
-} from "@/core/graph/models/ProcedureTree.js";
-import { CaseSchema, type Case } from "@/core/graph/models/Case.js";
+} from "@/core/graph/shared/domain/ProcedureTree.js";
+import { CaseSchema, type Case } from "@/core/graph/shared/domain/Case.js";
 
 function isTextMime(type: string): boolean {
   return type.startsWith("text/");

@@ -16,7 +16,7 @@ import {
   validateCatalogsOrExit,
   type CatalogueSpec,
 } from "@/adapters/catalog/startupValidation.js";
-import { nodeKey } from "@/core/graph/models/ProcedureTree.js";
+import { nodeKey } from "@/core/graph/shared/domain/ProcedureTree.js";
 import type { Repos } from "@/adapters/repos.js";
 
 describe("findMissingLanguages", () => {

@@ -4,7 +4,7 @@ import { EventBus } from "@/core/event-bus.js";
 import { createTraceNode, getNodeLabels } from "./nodeWrapper.js";
 import type { NodeSpan, NodeTracer } from "./nodeWrapper.js";
 import { runWithContext } from "./context.js";
-import type { LLMConfig } from "@/core/graph/models/LLMConfig.js";
+import type { LLMConfig } from "@/core/graph/shared/domain/LLMConfig.js";
 
 function fakeTracer() {
   const spans: {

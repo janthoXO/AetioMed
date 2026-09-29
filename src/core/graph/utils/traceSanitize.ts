@@ -4,7 +4,7 @@ import {
   textOf,
   textOfPart,
   type ContentPart,
-} from "@/core/graph/models/ContentPart.js";
+} from "@/core/graph/shared/domain/ContentPart.js";
 
 function isContentPart(value: unknown): value is ContentPart {
   return (

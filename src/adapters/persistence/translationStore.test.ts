@@ -4,7 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { and, eq } from "drizzle-orm";
-import type { ForeignLanguage } from "@/core/graph/models/Language.js";
+import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import { createDb, type DbHandle } from "@/adapters/persistence/db.js";
 import { createTranslationStore } from "@/adapters/persistence/translationStore.js";
 import { translation } from "@/adapters/persistence/schema.js";

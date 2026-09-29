@@ -6,8 +6,8 @@ import {
   ICDCodeSchema,
   type ICDCode,
   type Diagnosis,
-} from "@/core/graph/models/Diagnosis.js";
-import { type ForeignLanguage } from "@/core/graph/models/Language.js";
+} from "@/core/graph/shared/domain/Diagnosis.js";
+import { type ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import { createTranslationStore } from "../../persistence/translationStore.js";
 import { catalogFile } from "../../persistence/paths.js";
 

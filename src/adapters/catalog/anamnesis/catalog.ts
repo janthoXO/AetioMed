@@ -1,5 +1,5 @@
-import type { AnamnesisCategory } from "@/core/graph/models/Anamnesis.js";
-import type { ForeignLanguage } from "@/core/graph/models/Language.js";
+import type { AnamnesisCategory } from "@/core/graph/shared/domain/Anamnesis.js";
+import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import type { AnamnesisRepo } from "./repo.js";
 import type { AnamnesisCatalog } from "@/core/graph/catalog/ports.js";
 

@@ -1,6 +1,6 @@
 import type { EventBus } from "../event-bus.js";
 import type { LabelCatalog } from "../graph/catalog/ports.js";
-import type { Language } from "../graph/models/Language.js";
+import type { Language } from "@/core/graph/shared/domain/Language.js";
 import type { JobEventChannel } from "./channel.js";
 
 /**

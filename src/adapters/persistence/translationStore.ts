@@ -1,8 +1,8 @@
 import z from "zod";
 import { and, eq, inArray, sql } from "drizzle-orm";
-import type { ForeignLanguage } from "@/core/graph/models/Language.js";
+import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
-import { retry } from "@/core/graph/utils/retry.js";
+import { retry } from "@/core/graph/shared/prompt/retry.js";
 import type { DbHandle } from "./db.js";
 import { translation } from "./schema.js";
 

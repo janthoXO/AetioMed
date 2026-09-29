@@ -9,8 +9,8 @@ import {
 import {
   encodeText,
   type ContentPart,
-} from "@/core/graph/models/ContentPart.js";
-import type { Case } from "@/core/graph/models/Case.js";
+} from "@/core/graph/shared/domain/ContentPart.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
 
 afterEach(() => {});
 

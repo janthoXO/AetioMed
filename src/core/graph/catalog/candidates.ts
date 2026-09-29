@@ -1,13 +1,16 @@
 import z from "zod";
-import { section } from "../utils/prompt.js";
-import { ProcedureSchema, type Procedure } from "../models/Procedure.js";
+import { section } from "@/core/graph/shared/prompt/prompt.js";
+import {
+  ProcedureSchema,
+  type Procedure,
+} from "@/core/graph/shared/domain/Procedure.js";
 import {
   filterTree,
   leafCount,
   leaves,
   refKey,
   type ProcedureRef,
-} from "../models/ProcedureTree.js";
+} from "@/core/graph/shared/domain/ProcedureTree.js";
 import type {
   LevelItem,
   ProcedureCandidates,

@@ -1,6 +1,6 @@
 import type { ProceduresRepo } from "./repo.js";
 import { ProcedureCandidatesImpl } from "@/core/graph/catalog/candidates.js";
-import type { ForeignLanguage } from "@/core/graph/models/Language.js";
+import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import type {
   ProcedureCandidates,
   ProcedureCatalog,

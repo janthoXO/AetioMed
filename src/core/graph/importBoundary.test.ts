@@ -3,6 +3,7 @@
 // core-owned ports (`EventBus`, `core/jobEvents/`, `NodeTracer`/`NodeSpan`).
 // Plain source scan (not eslint) so it runs in `pnpm test` and lists all offenders.
 import { readdirSync, readFileSync } from "node:fs";
+import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -155,6 +156,41 @@ describe("import boundary — src/core/ never imports adapters or I/O packages",
       }
     }
 
+    expect(offenses).toEqual([]);
+  });
+});
+
+const SLICE_RE = /^\d{2}-[a-z-]+$/;
+
+/** Top-level numbered slice a specifier lands in, if any (alias or relative). */
+function sliceOf(file: string, specifier: string): string | undefined {
+  let target: string;
+  if (specifier.startsWith("@/core/graph/")) {
+    target = specifier.slice("@/core/graph/".length);
+  } else if (specifier.startsWith(".")) {
+    target = relative(GRAPH_DIR, resolve(dirname(file), specifier));
+  } else {
+    return undefined;
+  }
+  const top = target.split(sep).join("/").split("/")[0];
+  return top !== undefined && SLICE_RE.test(top) ? top : undefined;
+}
+
+describe("slice boundary — numbered slices never import each other", () => {
+  it("has no import into a different top-level numbered slice", () => {
+    const offenses: string[] = [];
+    for (const file of listTsFiles(GRAPH_DIR)) {
+      if (file.endsWith(".test.ts")) continue;
+      const own = relative(GRAPH_DIR, file).split(sep)[0];
+      if (own === undefined || !SLICE_RE.test(own)) continue;
+      const source = readFileSync(file, "utf8");
+      for (const specifier of specifiersOf(source)) {
+        const target = sliceOf(file, specifier);
+        if (target !== undefined && target !== own) {
+          offenses.push(`${file}: ${specifier}`);
+        }
+      }
+    }
     expect(offenses).toEqual([]);
   });
 });

@@ -1,8 +1,14 @@
 import type z from "zod";
-import type { AnamnesisCategory } from "../models/Anamnesis.js";
-import type { ProcedureRef, ProcedureTree } from "../models/ProcedureTree.js";
-import type { Diagnosis, ICDCode } from "../models/Diagnosis.js";
-import type { ForeignLanguage } from "../models/Language.js";
+import type { AnamnesisCategory } from "@/core/graph/shared/domain/Anamnesis.js";
+import type {
+  ProcedureRef,
+  ProcedureTree,
+} from "@/core/graph/shared/domain/ProcedureTree.js";
+import type {
+  Diagnosis,
+  ICDCode,
+} from "@/core/graph/shared/domain/Diagnosis.js";
+import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import type { RequestContext } from "../utils/context.js";
 
 /** Catalogue shape: procedures under categories of any depth. */
@@ -67,7 +73,7 @@ export interface AnamnesisCatalog {
 /**
  * Trace node label translations, as consumed by `utils/nodeWrapper.ts`
  * (synchronous per-label lookup on the trace hot path) and
- * `02graphs/caseGraph.ts` (batch warm-up before generation starts).
+ * `assemble.ts` (batch warm-up before generation starts).
  */
 export interface LabelCatalog {
   /** Synchronous lookup of a label's cached translation, or `undefined` if uncached. */
@@ -91,7 +97,7 @@ export interface LabelCatalog {
 
 /**
  * Predefined ICD-11 diagnoses and their translations, as consumed by
- * `02graphs/01case-translation-to-english/tools.ts`, `catalog/diagnosis/repo.ts`'s
+ * `01-translate-in/gateway.ts`, `catalog/diagnosis/repo.ts`'s
  * other consumers and the `/diagnosis` REST route.
  */
 export interface DiagnosisCatalog {

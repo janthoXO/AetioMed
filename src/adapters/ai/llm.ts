@@ -6,7 +6,7 @@ import { ModelUnreachableError } from "@/core/graph/errors/AppError.js";
 import {
   LLMConfigSchema,
   type LLMConfig,
-} from "@/core/graph/models/LLMConfig.js";
+} from "@/core/graph/shared/domain/LLMConfig.js";
 import type { Config } from "@/core/graph/config.js";
 import type { LlmPort, LlmTemperature } from "@/core/graph/runtime.js";
 

@@ -2,14 +2,14 @@ import z from "zod";
 import { eq } from "drizzle-orm";
 import type { DbHandle } from "../../persistence/db.js";
 import { predefinedItem } from "../../persistence/schema.js";
-import { type ForeignLanguage } from "@/core/graph/models/Language.js";
+import { type ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import { createTranslationStore } from "../../persistence/translationStore.js";
 import { catalogFile } from "../../persistence/paths.js";
 import {
   leafCount,
   procedureTreeSchema,
   type ProcedureTree,
-} from "@/core/graph/models/ProcedureTree.js";
+} from "@/core/graph/shared/domain/ProcedureTree.js";
 import { flattenProcedureTranslations } from "./translations.js";
 
 export type ProcedureCatalogueTree = ProcedureTree<{ name: string }>;

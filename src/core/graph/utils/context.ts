@@ -2,8 +2,8 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import {
   LLMConfigSchema,
   type LLMConfig,
-} from "@/core/graph/models/LLMConfig.js";
-import type { Language } from "@/core/graph/models/Language.js";
+} from "@/core/graph/shared/domain/LLMConfig.js";
+import type { Language } from "@/core/graph/shared/domain/Language.js";
 import z from "zod";
 
 /**

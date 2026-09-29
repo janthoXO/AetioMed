@@ -7,15 +7,12 @@ import {
   type CompiledGraph,
 } from "@langchain/langgraph";
 import { run } from "@mermaid-js/mermaid-cli";
-import {
-  buildCaseGraph,
-  graphVariantKey,
-} from "@/core/graph/02graphs/caseGraph.js";
-import { createMedicalBasisRegistry } from "@/core/graph/medicalBasis/registry.js";
-import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
-import { createChiefComplaintProviders } from "@/core/graph/02graphs/02case-generation/02presentation/generation/chiefComplaint/providers.js";
-import { createAnamnesisProviders } from "@/core/graph/02graphs/02case-generation/02presentation/generation/anamnesis/providers.js";
-import { createProcedureResultProviders } from "@/core/graph/02graphs/02case-generation/03procedure/providers.js";
+import { buildCaseGraph, graphVariantKey } from "@/core/graph/assemble.js";
+import { createMedicalBasisRegistry } from "@/core/graph/02-plan/01-basis/registry.js";
+import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
+import { createChiefComplaintProviders } from "@/core/graph/04-case/01-presentation/chief-complaint/providers.js";
+import { createAnamnesisProviders } from "@/core/graph/04-case/01-presentation/anamnesis/providers.js";
+import { createProcedureResultProviders } from "@/core/graph/04-case/02-procedures/providers.js";
 import { EventBus } from "@/core/event-bus.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
@@ -24,7 +21,10 @@ import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import { createLogger } from "@/core/graph/utils/logger.js";
 import type { Config } from "@/core/graph/config.js";
-import type { SymptomsRepo } from "@/core/graph/medicalBasis/ports.js";
+import type {
+  SymptomCache,
+  UmlsSymptomFloor,
+} from "@/core/graph/02-plan/01-basis/ports.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type AnyNode = any;
@@ -106,8 +106,10 @@ const minimalRuntime: GraphRuntime = {
 
 // No-op stand-in: never called while exporting topology, so it does not
 // touch the filesystem or the embedded database.
-const minimalSymptomsRepo: SymptomsRepo = {
+const minimalUmlsFloor: UmlsSymptomFloor = {
   SymptomsRelatedToDiagnosisIcd: () => [],
+};
+const minimalSymptomCache: SymptomCache = {
   getCachedSymptoms: () => undefined,
   saveCachedSymptoms: () => {},
 };
@@ -117,7 +119,8 @@ const minimalSymptomsRepo: SymptomsRepo = {
 // `basis_resolve` exactly as a real deployment's graph would.
 const medicalBasisRegistry = createMedicalBasisRegistry({
   runtime: minimalRuntime,
-  symptomsRepo: minimalSymptomsRepo,
+  umlsFloor: minimalUmlsFloor,
+  symptomCache: minimalSymptomCache,
 });
 
 // Mirrors composition root: one text provider per field. Planner always runs, so registry size never changes topology.

@@ -212,7 +212,7 @@ Only runs when the `procedures` flag is set. This is a **blinded solver loop**, 
 
 The loop works like this:
 
-1. **Blinded step.** A simulated attending physician sees _only_ the patient presentation and the results of procedures ordered so far. It never sees the diagnosis. It either orders the next batch of mutually independent procedures, or commits to a diagnosis. It is given its remaining step budget as explicit pressure to converge rather than order exhaustively.
+1. **Blinded step.** A simulated attending physician sees _only_ the patient presentation and the results of procedures ordered so far. It never sees the diagnosis. It either orders the next batch of mutually independent procedures, or commits to a diagnosis — never before its first batch, so every workup has procedures even when the presentation is textbook. It is given its remaining step budget as explicit pressure to converge rather than order exhaustively.
 
 2. **Result step.** Knowing the true diagnosis _and_ the outline's workup strategy, this plans realistic results for the ordered batch, plus a `relevance` judgment (`obligatory` / `optional` / `contraindicated`) measured against the true diagnosis. Relevance is deliberately decided here and never by the blinded solver — the solver cannot judge whether a test was contraindicated for a diagnosis it doesn't know. Results then flow back to the blinded step. They are only planned inside the loop; every procedure's result is rendered once, after the workup is final.
 

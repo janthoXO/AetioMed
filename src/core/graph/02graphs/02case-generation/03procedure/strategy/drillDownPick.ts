@@ -88,7 +88,9 @@ export class DrillDownPick implements ProcedureStrategy {
     let candidates = runtime.catalogs.procedures
       .candidates()
       .exclude(view.previousProcedures);
-    let allowDiagnose = true;
+    // No diagnosis before the first batch: a correct guess ends the loop, and
+    // a workup nothing was ordered in leaves `case.procedures` empty.
+    let allowDiagnose = view.previousProcedures.length > 0;
 
     if (needsNarrowing(candidates)) {
       const narrowed = await drillDown(candidates, (items, first) =>
@@ -103,7 +105,7 @@ export class DrillDownPick implements ProcedureStrategy {
               ruledOutDiagnoses: view.ruledOutDiagnoses,
               userInstructions: view.userInstructions,
               iterationsRemaining: view.iterationsRemaining,
-              allowDiagnose: first,
+              allowDiagnose: first && allowDiagnose,
             },
             items,
             view.context

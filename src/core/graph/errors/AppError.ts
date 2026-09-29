@@ -47,19 +47,3 @@ export class OutlineNotAcceptedError extends AppError {
     super(message, "OUTLINE_NOT_ACCEPTED", 500, details);
   }
 }
-
-export function handleLangchainError(error: Error): never {
-  if (error instanceof Error) {
-    if (
-      error.message.includes("fetch failed") ||
-      error.message.includes("ECONNREFUSED")
-    ) {
-      throw new ModelUnreachableError(
-        "Ollama service is unreachable. Is it running?",
-        error.message
-      );
-    }
-  }
-
-  throw error;
-}

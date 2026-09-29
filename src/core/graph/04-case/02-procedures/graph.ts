@@ -26,7 +26,10 @@ import { matchDiagnosis } from "./match.gateway.js";
 import { invokeLogged } from "./solver/invokeLogged.js";
 import { buildBlindedSolverGraph } from "./solver/graph.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
-import { renderUserInstructions } from "@/core/graph/shared/prompt/prompt.js";
+import {
+  renderUserInstructions,
+  boundLanguage,
+} from "@/core/graph/shared/prompt/prompt.js";
 import { planProcedureResults } from "./results.gateway.js";
 import type { Presentation, PreviousProcedureFinding } from "./prompt.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
@@ -282,6 +285,7 @@ function makeResultStep(
     // `Tool` wrapper.
     const plannedBatch: PlannedProcedure[] = await planProcedureResults(
       runtime,
+      boundLanguage(runtime),
       presentationOf(state.case),
       state.diagnosis,
       pending,

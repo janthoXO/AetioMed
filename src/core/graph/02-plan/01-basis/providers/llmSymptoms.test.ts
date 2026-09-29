@@ -1,4 +1,5 @@
 // LLM fallback for `umls-symptoms`: only runs when UMLS has nothing for the ICD code; cache-aside.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it, vi } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { createLlmSymptomProvider } from "./llmSymptoms.js";
@@ -33,11 +34,9 @@ function makeFakeSymptomsRepo(opts: {
 
 /** Throws immediately: proves zero-LLM-call paths. */
 function makeThrowingLlmPort(): LlmPort {
-  return {
-    for() {
-      throw new Error("llmSymptoms.test: the LLM must not be called here.");
-    },
-  };
+  return chatModelLlmPort(() => {
+    throw new Error("llmSymptoms.test: the LLM must not be called here.");
+  });
 }
 
 function makeQueuedLlmPort(responses: string[]): {
@@ -47,16 +46,14 @@ function makeQueuedLlmPort(responses: string[]): {
   const queue = [...responses];
   let calls = 0;
   return {
-    llm: {
-      for() {
-        calls++;
-        const response = queue.shift();
-        if (response === undefined) {
-          throw new Error("llmSymptoms.test: no more scripted responses.");
-        }
-        return new FakeListChatModel({ responses: [response] });
-      },
-    },
+    llm: chatModelLlmPort(() => {
+      calls++;
+      const response = queue.shift();
+      if (response === undefined) {
+        throw new Error("llmSymptoms.test: no more scripted responses.");
+      }
+      return new FakeListChatModel({ responses: [response] });
+    }),
     callCount: () => calls,
   };
 }

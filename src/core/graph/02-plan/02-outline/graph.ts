@@ -23,7 +23,7 @@ import {
   joinOutline,
 } from "@/core/graph/shared/outline/segments.js";
 import { RunModeSchema } from "@/core/graph/shared/domain/RunMode.js";
-import type { PromptAudience } from "@/core/graph/shared/prompt/prompt.js";
+import { boundLanguage } from "@/core/graph/shared/prompt/prompt.js";
 
 const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
 
@@ -47,9 +47,9 @@ export const PlanGraphStateSchema = CaseGenerationStateSchema.pick({
   outlineFeedback: z.array(z.string()).default([]),
 });
 
-/** `"user-facing"` binds the outline prompts to the request language. */
-function audienceOf(state: PlanGraphState): PromptAudience {
-  return state.mode === "plan" ? "user-facing" : "internal";
+/** Plan mode binds the outline prompts to the request language; normal mode leaves them English. */
+function languageOf(state: PlanGraphState, runtime: GraphRuntime) {
+  return state.mode === "plan" ? boundLanguage(runtime) : undefined;
 }
 
 type PlanGraphState = z.infer<typeof PlanGraphStateSchema>;
@@ -72,7 +72,7 @@ function makeGenerateCaseOutline(runtime: GraphRuntime) {
       state.difficulty,
       {
         userInstructions: renderUserInstructions(state.userInstructions),
-        audience: audienceOf(state),
+        language: languageOf(state, runtime),
       },
       lgRuntime?.context
     ).catch((error) => {
@@ -106,7 +106,7 @@ function makeOutlineEvaluate(runtime: GraphRuntime) {
       state.difficulty,
       renderUserInstructions(state.userInstructions),
       lgRuntime?.context,
-      audienceOf(state)
+      languageOf(state, runtime)
     ).catch((error) => {
       runtime.log.error(`[PlanGraph] Error evaluating outline: ${error}`);
       throw error;
@@ -145,7 +145,7 @@ function makeOutlineRegenerate(runtime: GraphRuntime) {
         userInstructions: renderUserInstructions(state.userInstructions),
         feedback: state.outlineFeedback,
         previousOutline: state.outlineSegments,
-        audience: audienceOf(state),
+        language: languageOf(state, runtime),
       },
       lgRuntime?.context
     ).catch((error) => {

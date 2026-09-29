@@ -1,5 +1,6 @@
 // Plan mode's outline translation: two single-node graphs. Tests drive compiled graphs
 // (`buildOutlineTranslationGraph`) with fake LLM; style of `03case-translation-from-english/index.test.ts`.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {
@@ -21,12 +22,10 @@ function fakeRuntime(response: Record<string, string>): {
 } {
   const calls = { count: 0 };
   const runtime = {
-    llm: {
-      for: () => {
-        calls.count++;
-        return new FakeListChatModel({ responses: [JSON.stringify(response)] });
-      },
-    } as unknown as LlmPort,
+    llm: chatModelLlmPort(() => {
+      calls.count++;
+      return new FakeListChatModel({ responses: [JSON.stringify(response)] });
+    }) as unknown as LlmPort,
     catalogs: {
       procedures: undefined,
       anamnesis: undefined,

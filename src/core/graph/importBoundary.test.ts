@@ -117,7 +117,7 @@ describe("import boundary — src/core/graph/ never imports tracing/transports/o
 
 // Hexagon (#188): core is I/O-free. Every adapter (SQLite, filesystem, LLM
 // providers, tinyld) lives under `src/adapters/`, wired only by `src/app.ts`.
-// `@langchain/core` and `@langchain/langgraph` stay allowed for now.
+// `@langchain/core` is adapter-only too (the `LlmPort` hides it); `@langchain/langgraph` stays allowed: engine.
 describe("import boundary — src/core/ never imports adapters or I/O packages", () => {
   it("has no offending specifiers in production modules", () => {
     const CORE_DIR = fileURLToPath(new URL("../", import.meta.url));
@@ -138,6 +138,7 @@ describe("import boundary — src/core/ never imports adapters or I/O packages",
       "@/adapters",
       "@/app",
       "drizzle-orm",
+      "@langchain/core",
       "@langchain/ollama",
       "@langchain/openai",
       "@langchain/google",

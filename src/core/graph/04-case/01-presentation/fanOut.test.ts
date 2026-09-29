@@ -2,6 +2,7 @@
 // `chief_complaint_generate`/`anamnesis_generate` would give `diagnosis`, `userInstructions`, `outline` (`LastValue`)
 // two values per superstep -> `INVALID_CONCURRENT_GRAPH_UPDATE`. Mounts REAL subgraphs under a parent mirroring
 // `buildFieldGenerationSends`'s payload, so dropping a write can't pass.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it } from "vitest";
 import z from "zod";
 import { END, Send, START, StateGraph } from "@langchain/langgraph";
@@ -35,18 +36,16 @@ function makeQueuedLlmPort(
     judge: [...(responses.judge ?? [])],
     translator: [...(responses.translator ?? [])],
   };
-  return {
-    for(opts) {
-      const queue = queues[opts.role];
-      if (!queue || queue.length === 0) {
-        throw new Error(
-          `Unexpected LLM call for role "${opts.role}" — the test did not script one.`
-        );
-      }
-      const response = queue.shift() as string;
-      return new FakeListChatModel({ responses: [response] });
-    },
-  };
+  return chatModelLlmPort((opts) => {
+    const queue = queues[opts.role];
+    if (!queue || queue.length === 0) {
+      throw new Error(
+        `Unexpected LLM call for role "${opts.role}" — the test did not script one.`
+      );
+    }
+    const response = queue.shift() as string;
+    return new FakeListChatModel({ responses: [response] });
+  });
 }
 
 function buildFakeRuntime(llm: LlmPort): GraphRuntime {

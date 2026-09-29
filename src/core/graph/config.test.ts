@@ -1,6 +1,7 @@
 // Env passed as argument to `ConfigSchema.parse`; `process.env` never mutated.
 import { describe, expect, it, vi } from "vitest";
-import type { ChatOllama } from "@langchain/ollama";
+import { ChatOllama } from "@langchain/ollama";
+import { z } from "zod";
 import { ConfigSchema } from "./config.js";
 import { createLlmPort } from "@/adapters/ai/llm.js";
 import { LLM_ROLES } from "./runtime.js";
@@ -92,20 +93,29 @@ describe("ConfigSchema — LLM role resolution", () => {
     expect(config.llm).toBeUndefined();
   });
 
-  it("under ALLOW_LLMS, a request llmConfig drives all three roles", () => {
+  it("under ALLOW_LLMS, a request llmConfig drives all three roles", async () => {
     const config = ConfigSchema.parse({
       FEATURES: "ALLOW_LLMS",
       ALLOWED_LLMS: "ollama:llama3.1",
     });
 
+    const models: string[] = [];
+    vi.spyOn(ChatOllama.prototype, "withStructuredOutput").mockImplementation(
+      function (this: ChatOllama) {
+        models.push(this.model);
+        return { invoke: async () => ({}) } as never;
+      }
+    );
     const port = createLlmPort(config);
     for (const role of LLM_ROLES) {
-      const chat = port.for(
+      await port.structured(
         { role, temperature: "deterministic" },
-        { provider: "ollama", model: "llama3.1" }
-      ) as ChatOllama;
-      expect(chat.model).toBe("llama3.1");
+        { system: "s", user: "u" },
+        z.object({}),
+        { llmConfig: { provider: "ollama", model: "llama3.1" } }
+      );
     }
+    expect(models).toEqual(["llama3.1", "llama3.1", "llama3.1"]);
   });
 });
 

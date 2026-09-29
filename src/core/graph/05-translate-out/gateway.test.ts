@@ -1,5 +1,6 @@
 // Covers the catalogue-backed `translate*FromEnglish` functions (cache-first) and
 // `translateRestValues`'s prompt safety; see `gateway.ts`.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it, vi } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { caseTextMap } from "./caseText.js";
@@ -20,9 +21,7 @@ import { renderForPrompt } from "@/core/graph/shared/prompt/prompt.js";
 
 function fakeRuntime(responses: string[]): GraphRuntime {
   return {
-    llm: {
-      for: () => new FakeListChatModel({ responses }),
-    },
+    llm: chatModelLlmPort(() => new FakeListChatModel({ responses })),
     catalogs: {
       procedures: undefined,
       anamnesis: undefined,
@@ -52,11 +51,9 @@ const unusedCandidates = () => {
 /** Throws if the LLM is ever invoked — proves a zero-LLM-call cache hit. */
 function throwingRuntime(): GraphRuntime {
   return {
-    llm: {
-      for: () => {
-        throw new Error("Unexpected LLM call — the test scripted zero.");
-      },
-    },
+    llm: chatModelLlmPort(() => {
+      throw new Error("Unexpected LLM call — the test scripted zero.");
+    }),
     log: { info() {}, warn() {}, error() {} },
     clock: () => new Date("2024-01-01T00:00:00.000Z"),
   } as unknown as GraphRuntime;

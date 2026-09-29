@@ -1,4 +1,5 @@
 // Drives compiled `chiefComplaintGraph` directly (no Send, filesystem, real LLM); fake `LlmPort` throws on anything unscripted.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it } from "vitest";
 import z from "zod";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
@@ -26,18 +27,16 @@ function makeQueuedLlmPort(
     judge: [...(responses.judge ?? [])],
     translator: [...(responses.translator ?? [])],
   };
-  return {
-    for(opts) {
-      const queue = queues[opts.role];
-      if (!queue || queue.length === 0) {
-        throw new Error(
-          `Unexpected LLM call for role "${opts.role}" — the test did not script one.`
-        );
-      }
-      const response = queue.shift() as string;
-      return new FakeListChatModel({ responses: [response] });
-    },
-  };
+  return chatModelLlmPort((opts) => {
+    const queue = queues[opts.role];
+    if (!queue || queue.length === 0) {
+      throw new Error(
+        `Unexpected LLM call for role "${opts.role}" — the test did not script one.`
+      );
+    }
+    const response = queue.shift() as string;
+    return new FakeListChatModel({ responses: [response] });
+  });
 }
 
 function buildFakeRuntime(llm: LlmPort): GraphRuntime {

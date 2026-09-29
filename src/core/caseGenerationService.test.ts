@@ -32,7 +32,7 @@ function fakeGraph(
       catalogs: {
         diagnosis: { byIcd: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     ...planAndRenderFrom(generateCase),
   };
@@ -373,11 +373,11 @@ describe("CaseGenerationService — language resolution", () => {
   it("does not make an LLM call when auto-detect is on but the LLM fallback is off", async () => {
     const generateCase = vi.fn(async () => fullCase);
     const detector = fakeDetector({ iso: "de", confidence: 0.1 });
-    const forSpy = vi.fn();
+    const structuredSpy = vi.fn();
     const graph = fakeGraph(generateCase, { LANGUAGE_AUTO_DETECT: true });
     graph.runtime = {
       ...graph.runtime,
-      llm: { for: forSpy },
+      llm: { structured: structuredSpy },
     } as GraphAppContext["runtime"];
     const service = createCaseGenerationService(
       graph,
@@ -394,7 +394,7 @@ describe("CaseGenerationService — language resolution", () => {
       },
     });
 
-    expect(forSpy).not.toHaveBeenCalled();
+    expect(structuredSpy).not.toHaveBeenCalled();
   });
 
   it("echoes the resolved language on a successful result", async () => {

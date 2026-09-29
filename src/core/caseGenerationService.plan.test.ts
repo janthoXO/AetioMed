@@ -64,7 +64,7 @@ function fakeGraph(
         diagnosis: { byIcd: () => undefined },
         anamnesis: { list: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     async planCase(input: PlanCaseInput) {
       planCalls.push(input);

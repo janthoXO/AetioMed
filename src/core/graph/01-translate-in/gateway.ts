@@ -6,7 +6,6 @@ import {
   renderSchemaForPrompt,
   section,
 } from "@/core/graph/shared/prompt/prompt.js";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import { translateRecordKeyed } from "@/core/graph/shared/translation/translate.js";
 import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
@@ -46,16 +45,12 @@ ${renderSchemaForPrompt(responseSchema)}`
     `[GenerateDiagnosisToEnglish] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
   );
 
-  const response = await runtime.llm
-    .for(
-      { role: "translator", temperature: "deterministic" },
-      context?.llmConfig
-    )
-    .withStructuredOutput(responseSchema)
-    .invoke(
-      [new SystemMessage(systemPrompt), new HumanMessage(userPrompt)],
-      context?.signal !== undefined ? { signal: context.signal } : undefined
-    );
+  const response = await runtime.llm.structured(
+    { role: "translator", temperature: "deterministic" },
+    { system: systemPrompt, user: userPrompt },
+    responseSchema,
+    context
+  );
 
   console.debug(
     `[GenerateDiagnosisToEnglish] Generated diagnosis translation:\n${response.diagnosis}`

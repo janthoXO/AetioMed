@@ -5,7 +5,10 @@ import {
   RequestContextSchema,
   type RequestContext,
 } from "@/core/graph/utils/context.js";
-import { renderUserInstructions } from "@/core/graph/shared/prompt/prompt.js";
+import {
+  renderUserInstructions,
+  boundLanguage,
+} from "@/core/graph/shared/prompt/prompt.js";
 import {
   PlannedPartSchema,
   type ModalityProvider,
@@ -46,6 +49,7 @@ function makePlanContent(
   ): Promise<Pick<ChiefComplaintGraphState, "plan">> {
     const plan = await planChiefComplaint(
       runtime,
+      boundLanguage(runtime),
       state.diagnosis,
       state.outline,
       providers,

@@ -1,9 +1,9 @@
+import type { Language } from "@/core/graph/shared/domain/Language.js";
 import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
 import {
   PatientSchema,
   type Patient,
 } from "@/core/graph/shared/domain/Patient.js";
-import { handleLangchainError } from "@/core/graph/errors/AppError.js";
 import {
   buildPrompt,
   buildSystemPrompt,
@@ -13,11 +13,11 @@ import {
 } from "@/core/graph/shared/prompt/prompt.js";
 import { retry } from "@/core/graph/shared/prompt/retry.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 
 export async function generatePatient(
   runtime: GraphRuntime,
+  language: Language | undefined,
   diagnosis: Diagnosis, // provided by the user
   outline: string,
   userInstructions?: string, // provided by the user | undefined
@@ -25,8 +25,7 @@ export async function generatePatient(
 ): Promise<Patient> {
   // User-facing: student reads patient file (e.g. name).
   const systemPrompt = buildSystemPrompt(
-    runtime,
-    "user-facing",
+    language,
     section(
       "Role",
       `You are an expert medical educator authoring a realistic clinical patient file for a medical training simulator.
@@ -62,29 +61,19 @@ ${renderSchemaForPrompt(PatientSchema)}`
   try {
     const patient: Patient = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await runtime.llm
-          .for(
-            { role: "generator", temperature: "creative" },
-            context?.llmConfig
-          )
-          .withStructuredOutput(PatientSchema)
-          .invoke(
-            [
-              new SystemMessage(systemPrompt),
-              new HumanMessage(
-                userPrompt +
-                  (previousError
-                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
-                    : "")
-              ),
-            ],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch((error) => {
-            handleLangchainError(error);
-          });
+        const result = await runtime.llm.structured(
+          { role: "generator", temperature: "creative" },
+          {
+            system: systemPrompt,
+            user:
+              userPrompt +
+              (previousError
+                ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+                : ""),
+          },
+          PatientSchema,
+          context
+        );
 
         console.debug(
           `[GeneratePatientFromOutline] [Attempt ${attempt}] LLM raw Response:\n`,

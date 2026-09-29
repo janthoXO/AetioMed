@@ -1,4 +1,5 @@
 // Assembly is pure wiring: minimal runtime and in-memory catalogs, no LLM/filesystem/SQLite; same stand-ins as `exportGraphs.ts`.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it, vi } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {
@@ -67,11 +68,9 @@ function buildDeps(
 ): AssemblyDeps {
   const bus = new EventBus();
   const runtime: GraphRuntime = {
-    llm: {
-      for() {
-        throw new Error("caseGraph.test: assembly must never call the LLM.");
-      },
-    },
+    llm: chatModelLlmPort(() => {
+      throw new Error("caseGraph.test: assembly must never call the LLM.");
+    }),
     catalogs: {
       procedures: new InMemoryProcedureCatalog(),
       anamnesis: new InMemoryAnamnesisCatalog(),
@@ -165,18 +164,16 @@ describe("plan graph — outline and judge loop", () => {
   function scriptedRuntime(generator: string[], judge: string[]): GraphRuntime {
     const bus = new EventBus();
     return {
-      llm: {
-        for(opts) {
-          const queue = opts.role === "judge" ? judge : generator;
-          const response = queue.shift();
-          if (response === undefined) {
-            throw new Error(
-              `Unexpected LLM call for role "${opts.role}" — not scripted.`
-            );
-          }
-          return new FakeListChatModel({ responses: [response] });
-        },
-      },
+      llm: chatModelLlmPort((opts) => {
+        const queue = opts.role === "judge" ? judge : generator;
+        const response = queue.shift();
+        if (response === undefined) {
+          throw new Error(
+            `Unexpected LLM call for role "${opts.role}" — not scripted.`
+          );
+        }
+        return new FakeListChatModel({ responses: [response] });
+      }),
       catalogs: {
         procedures: new InMemoryProcedureCatalog(),
         anamnesis: new InMemoryAnamnesisCatalog(),

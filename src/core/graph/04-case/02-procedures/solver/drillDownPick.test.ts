@@ -1,4 +1,5 @@
 // `drillDown` against a real candidate tree and a scripted `select`: which levels are shown, what is kept, when it stops.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it, vi } from "vitest";
 import { ProcedureCandidatesImpl } from "@/core/graph/catalog/candidates.js";
 import type { LevelItem } from "@/core/graph/catalog/ports.js";
@@ -147,7 +148,7 @@ class CapturingChatModel extends FakeListChatModel {
 describe("DrillDownPick.nextStep", () => {
   function pickWith(model: CapturingChatModel) {
     const runtime: GraphRuntime = {
-      llm: { for: () => model },
+      llm: chatModelLlmPort(() => model),
       catalogs: {
         procedures: new InMemoryProcedureCatalog({
           procedures: [{ name: "Vitals" }, { name: "HbA1c" }],

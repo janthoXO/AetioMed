@@ -14,7 +14,10 @@ import {
 import type { PickNested } from "@/core/graph/utils/pickNested.js";
 import { generatePatient as generatePatientGateway } from "./patient.gateway.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
-import { renderUserInstructions } from "@/core/graph/shared/prompt/prompt.js";
+import {
+  renderUserInstructions,
+  boundLanguage,
+} from "@/core/graph/shared/prompt/prompt.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
 import { buildChiefComplaintGraph } from "@/core/graph/04-case/01-presentation/chief-complaint/graph.js";
@@ -110,6 +113,7 @@ function makeGeneratePatient(runtime: GraphRuntime) {
     runtime.log.info(`[GenerationGraph] Generating patient…`);
     const patient = await generatePatientGateway(
       runtime,
+      boundLanguage(runtime),
       state.diagnosis,
       state.outline,
       renderUserInstructions(state.userInstructions),

@@ -153,7 +153,7 @@ export function graphVariantKey(
 export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
   const { runtime, medicalBasisRegistry, modalityRegistries, traceNode } = deps;
 
-  // Sandwich on: generation runs English (`languageOverride` binding, read by `buildSystemPrompt`); real target
+  // Sandwich on: generation runs English (`languageOverride` binding, read by `boundLanguage`); real target
   // language reaches only translate-out, built from unmodified `runtime`.
   const generationRuntime: GraphRuntime = flags.translationSandwich
     ? { ...runtime, languageOverride: "English" }

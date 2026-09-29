@@ -48,7 +48,7 @@ function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
         diagnosis: { byIcd: () => undefined },
         anamnesis: { list: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     ...planAndRenderFrom(generateCase),
     graphs: {

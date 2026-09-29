@@ -2,6 +2,7 @@
 // Proves passes write disjoint channels, `translate_merge` is only writer of `case`, completion order irrelevant.
 //
 // Rest pass map carries `.alt`/`.text` keys per part (`tools.ts`'s `caseTextMap`); scripted LLM responses keyed accordingly.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import {
@@ -45,10 +46,9 @@ function fakeCatalogs(opts: {
 /** An LLM serving one scripted JSON response, regardless of role/prompt. */
 function fakeRuntime(restResponse: Record<string, string>): GraphRuntime {
   return {
-    llm: {
-      for: () =>
-        new FakeListChatModel({ responses: [JSON.stringify(restResponse)] }),
-    } as unknown as LlmPort,
+    llm: chatModelLlmPort(
+      () => new FakeListChatModel({ responses: [JSON.stringify(restResponse)] })
+    ) as unknown as LlmPort,
     catalogs: {
       procedures: undefined,
       anamnesis: undefined,
@@ -172,23 +172,21 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
     });
     let calls = 0;
     const runtime: GraphRuntime = {
-      llm: {
-        for: () => {
-          calls++;
-          return new FakeListChatModel({
-            responses: [
-              JSON.stringify({
-                "chiefComplaint.0.alt": "Toux.",
-                "chiefComplaint.0.text": "Toux.",
-                "anamnesis.0.answer.0.alt": "Rien.",
-                "anamnesis.0.answer.0.text": "Rien.",
-                "procedures.0.result.0.alt": "Infiltrat.",
-                "procedures.0.result.0.text": "Infiltrat.",
-              }),
-            ],
-          });
-        },
-      } as unknown as LlmPort,
+      llm: chatModelLlmPort(() => {
+        calls++;
+        return new FakeListChatModel({
+          responses: [
+            JSON.stringify({
+              "chiefComplaint.0.alt": "Toux.",
+              "chiefComplaint.0.text": "Toux.",
+              "anamnesis.0.answer.0.alt": "Rien.",
+              "anamnesis.0.answer.0.text": "Rien.",
+              "procedures.0.result.0.alt": "Infiltrat.",
+              "procedures.0.result.0.text": "Infiltrat.",
+            }),
+          ],
+        });
+      }) as unknown as LlmPort,
       catalogs: {
         procedures: undefined,
         anamnesis: undefined,

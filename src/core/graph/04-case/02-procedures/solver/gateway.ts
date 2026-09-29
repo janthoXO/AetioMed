@@ -1,9 +1,7 @@
 import { retry } from "@/core/graph/shared/prompt/retry.js";
 import z from "zod";
-import { handleLangchainError } from "@/core/graph/errors/AppError.js";
 import {
   buildPrompt,
-  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
 } from "@/core/graph/shared/prompt/prompt.js";
@@ -12,7 +10,6 @@ import {
   refLabel,
   type ProcedureRef,
 } from "@/core/graph/shared/domain/ProcedureTree.js";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type {
@@ -127,9 +124,7 @@ export async function generateBlindedProcedureStep(
   }
 
   // Internal: blinded solver, English always.
-  const systemPrompt = buildSystemPrompt(
-    runtime,
-    "internal",
+  const systemPrompt = buildPrompt(
     section("Role", BLINDED_ROLE),
 
     section(
@@ -175,24 +170,15 @@ ${renderSchemaForPrompt(buildStepSchema(candidates.promptSchema(), allowDiagnose
     const rawResult = await retry(
       async (attempt, previousError) => {
         // Balanced: clinical decision-making; lower temperature keeps picks focused.
-        const res = await runtime.llm
-          .for(
-            { role: "generator", temperature: "balanced" },
-            context?.llmConfig
-          )
-          .withStructuredOutput(StepSchema)
-          .invoke(
-            [
-              new SystemMessage(systemPrompt),
-              new HumanMessage(userPrompt + errorFeedback(previousError)),
-            ],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch((error) => {
-            handleLangchainError(error);
-          });
+        const res = await runtime.llm.structured(
+          { role: "generator", temperature: "balanced" },
+          {
+            system: systemPrompt,
+            user: userPrompt + errorFeedback(previousError),
+          },
+          StepSchema,
+          context
+        );
 
         console.debug(
           `[GenerateBlindedProcedureStep] [Attempt ${attempt}] Response:\n`,
@@ -303,9 +289,7 @@ export async function selectProcedureLevel(
 
   const narrowing = `The approved procedure catalogue is too large to show at once, so it is narrowed level by level. Choose the categories that contain procedures you may want to order now, and any single procedures listed directly. You then see the full contents of the chosen categories and pick exact procedures from them — anything you do not choose here is unavailable for this step, so be inclusive, but leave out clearly irrelevant areas.`;
 
-  const systemPrompt = buildSystemPrompt(
-    runtime,
-    "internal",
+  const systemPrompt = buildPrompt(
     section(
       "Role",
       view.mode === "blinded"
@@ -360,19 +344,15 @@ ${renderSchemaForPrompt(
 
   const raw = await retry(
     async (attempt, previousError) => {
-      const res = (await runtime.llm
-        .for({ role: "generator", temperature: "balanced" }, context?.llmConfig)
-        .withStructuredOutput(schema)
-        .invoke(
-          [
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt + errorFeedback(previousError)),
-          ],
-          context?.signal !== undefined ? { signal: context.signal } : undefined
-        )
-        .catch((error) => {
-          handleLangchainError(error);
-        })) as
+      const res = (await runtime.llm.structured(
+        { role: "generator", temperature: "balanced" },
+        {
+          system: systemPrompt,
+          user: userPrompt + errorFeedback(previousError),
+        },
+        schema,
+        context
+      )) as
         | { action: "select"; items: string[]; reasoning?: string }
         | { action: "diagnose"; diagnosisName: string; reasoning?: string };
       console.debug(
@@ -438,9 +418,7 @@ export async function pickBridgeProcedures(
   }
 
   // Internal: name-only pick, no free text reaches student from this step.
-  const systemPrompt = buildSystemPrompt(
-    runtime,
-    "internal",
+  const systemPrompt = buildPrompt(
     section(
       "Role",
       `You are an expert attending physician completing a diagnostic workup for a medical training simulator.
@@ -486,24 +464,15 @@ ${renderSchemaForPrompt(buildBridgePickSchema(candidates.promptSchema()))}`
     const rawProcedures = await retry(
       async (attempt, previousError) => {
         // Balanced: want the most standard confirmatory procedures.
-        const res = await runtime.llm
-          .for(
-            { role: "generator", temperature: "balanced" },
-            context?.llmConfig
-          )
-          .withStructuredOutput(PickSchema)
-          .invoke(
-            [
-              new SystemMessage(systemPrompt),
-              new HumanMessage(userPrompt + errorFeedback(previousError)),
-            ],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch((error) => {
-            handleLangchainError(error);
-          });
+        const res = await runtime.llm.structured(
+          { role: "generator", temperature: "balanced" },
+          {
+            system: systemPrompt,
+            user: userPrompt + errorFeedback(previousError),
+          },
+          PickSchema,
+          context
+        );
 
         console.debug(
           `[PickBridgeProcedures] [Attempt ${attempt}] Response:\n`,

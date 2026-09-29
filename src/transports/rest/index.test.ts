@@ -28,7 +28,7 @@ function fakeGraph(): GraphAppContext {
       catalogs: {
         diagnosis: { byIcd: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     ...planAndRenderFrom(vi.fn()),
     graphs: {

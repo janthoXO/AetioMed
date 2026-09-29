@@ -12,6 +12,7 @@ import { buildCaseGenerationGraph } from "@/core/graph/04-case/graph.js";
 import { buildPlanningPhaseGraph } from "@/core/graph/02-plan/graph.js";
 import { CaseGenerationStateSchema } from "@/core/graph/shared/caseGenerationState.js";
 import { DrillDownPick } from "@/core/graph/04-case/02-procedures/solver/drillDownPick.js";
+import { SystemOnePick } from "@/core/graph/04-case/02-procedures/solver/systemOnePick.js";
 import { buildCaseTranslationFromEnglishGraph } from "@/core/graph/05-translate-out/graph.js";
 import type { Language } from "@/core/graph/shared/domain/Language.js";
 import type { Difficulty } from "@/core/graph/shared/domain/Difficulty.js";
@@ -165,9 +166,15 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
     medicalBasisRegistry,
     traceNode.scope("plan_phase")
   );
+  const llmPick = new DrillDownPick(
+    generationRuntime,
+    modalityRegistries.procedureResult
+  );
   const generationPhase = buildCaseGenerationGraph(
     generationRuntime,
-    new DrillDownPick(generationRuntime, modalityRegistries.procedureResult),
+    runtime.systemOne
+      ? new SystemOnePick(generationRuntime, runtime.systemOne, llmPick)
+      : llmPick,
     modalityRegistries,
     traceNode.scope("case_phase")
   );

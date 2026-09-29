@@ -49,11 +49,11 @@ export type SolverMove =
   | { action: "exhausted"; reason: string };
 
 /**
- * Procedure-selection strategy. `DrillDownPick` is the only implementation,
- * constructed directly at assembly.
+ * Procedure-selection strategy: `DrillDownPick` (LLM), or `SystemOnePick`
+ * when `runtime.systemOne` is set. Chosen directly at assembly.
  */
 export interface ProcedureStrategy {
-  /** "drill-down-pick" — for logs and tests. */
+  /** "drill-down-pick" | "system-one-pick" — for logs and tests. */
   readonly id: string;
   nextStep(view: BlindedView): Promise<SolverMove>;
   /**

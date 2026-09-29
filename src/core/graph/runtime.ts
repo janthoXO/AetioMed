@@ -41,22 +41,26 @@ export interface GraphRuntime {
    */
   systemOne?: {
     port: SystemOnePort;
-    /** A candidate is ordered when its P(yes) ≥ this. */
-    pickThreshold: number;
-    /** At most this many procedures per batch, highest P first. */
+    /** Keep the top-ranked options until their probabilities sum to this (nucleus). */
+    pickMass: number;
+    /** At most this many categories per level and procedures per batch. */
     pickMax: number;
+    /** Narrow the catalogue until a pick offers fewer options than this. */
+    maxOptions: number;
   };
 }
 
 /**
  * System One model: typed questions answered in one parallel pass, no text
- * generation. Only `noul` (P(yes)) is used so far.
+ * generation. Only `choice` is used: per-option `noul` proved not to
+ * discriminate between options (#202).
  */
 export interface SystemOnePort {
-  /** P(yes) per question key, for yes/no `questions` asked about `state`. */
-  noul(
+  /** Probability per option (summing to 1) that it is the answer to `instructions` about `state`. */
+  choice(
     state: string,
-    questions: Record<string, string>,
+    instructions: string,
+    options: string[],
     context?: RequestContext
   ): Promise<Record<string, number>>;
 }

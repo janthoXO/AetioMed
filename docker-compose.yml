@@ -61,8 +61,9 @@ services:
       - SYSTEM_ONE_MODEL=${SYSTEM_ONE_MODEL:-multilingual}
       - SYSTEM_ONE_API_KEY
       - SYSTEM_ONE_MAX_LEN
-      - SYSTEM_ONE_PICK_THRESHOLD
+      - SYSTEM_ONE_PICK_MASS
       - SYSTEM_ONE_PICK_MAX
+      - SYSTEM_ONE_MAX_OPTIONS
 
       # ─── OpenTelemetry ───────────────────────────────────────────────
       - OTEL_SDK_DISABLED

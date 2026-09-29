@@ -1,6 +1,6 @@
 import type { GraphRuntime, Logger } from "@/core/graph/runtime.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
-import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
+import type { SymptomsRepo } from "@/core/graph/medicalBasis/ports.js";
 import { createUmlsSymptomProvider } from "./providers/umlsSymptoms.js";
 import { createLlmSymptomProvider } from "./providers/llmSymptoms.js";
 import type {

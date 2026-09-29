@@ -1,7 +1,7 @@
 import z from "zod";
 import type { AnamnesisCategory } from "../models/Anamnesis.js";
 import type { Language } from "../models/Language.js";
-import { handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../errors/AppError.js";
 import {
   buildPrompt,
   buildSystemPrompt,

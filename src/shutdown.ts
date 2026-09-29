@@ -1,5 +1,5 @@
 /**
- * One ordered, bounded shutdown owned by composition root (`core/app.ts`).
+ * One ordered, bounded shutdown owned by composition root (`app.ts`).
  * Only place turning a process signal into a `shutdown()` call; nothing else
  * registers signal handlers (a sync `process.exit` in one would skip the rest).
  */

@@ -7,8 +7,8 @@ import {
   caseTextMap,
   applyCaseTextTranslations,
   translateProcedureTree,
-  createTranslateProcedureNodesFromEnglish,
-  createTranslateAnamnesisCategoriesFromEnglish,
+  translateProcedureNodesFromEnglish,
+  translateAnamnesisCategoriesFromEnglish,
   translateRestValues,
 } from "./tools.js";
 import {
@@ -19,8 +19,10 @@ import {
 import { nodeKey } from "@/core/graph/models/ProcedureTree.js";
 import type { Case } from "@/core/graph/models/Case.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
-import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
+import type {
+  AnamnesisCatalog,
+  ProcedureCatalog,
+} from "@/core/graph/catalog/ports.js";
 import { looksLikeByteDump } from "@/core/graph/utils/promptSafety.test.js";
 import { renderForPrompt } from "@/core/graph/utils/prompt.js";
 
@@ -44,6 +46,21 @@ function fakeRuntime(responses: string[]): GraphRuntime {
     clock: () => new Date("2024-01-01T00:00:00.000Z"),
   } as unknown as GraphRuntime;
 }
+
+/** Runtime whose `catalogs` are just the given fakes. */
+function withCatalogs(
+  runtime: GraphRuntime,
+  catalogs: {
+    procedures?: ProcedureCatalog;
+    anamnesis?: AnamnesisCatalog;
+  }
+): GraphRuntime {
+  return { ...runtime, catalogs } as unknown as GraphRuntime;
+}
+
+const unusedCandidates = () => {
+  throw new Error("unused");
+};
 
 /** Throws if the LLM is ever invoked — proves a zero-LLM-call cache hit. */
 function throwingRuntime(): GraphRuntime {
@@ -285,17 +302,16 @@ describe("translateRestValues — no bytes reach the prompt", () => {
 
 describe("translateProcedureNodesFromEnglish — cache-first, unchanged", () => {
   it("makes zero LLM calls when every node is already cached, and returns the exact cached term", async () => {
-    const repo: ProceduresRepo = {
-      catalogueFile: "",
-      translationsFile: "",
-      getProcedureTranslation: (key) =>
+    const catalog: ProcedureCatalog = {
+      tree: () => undefined,
+      candidates: unusedCandidates,
+      translation: (key) =>
         key === nodeKey(["Cardiology", "Chest X-ray"])
           ? "Röntgen-Thorax"
           : undefined,
-      saveProcedureTranslations: vi.fn(),
-      getProcedureTree: () => undefined,
+      saveTranslations: vi.fn(),
     };
-    const tool = createTranslateProcedureNodesFromEnglish(repo);
+    const tool = translateProcedureNodesFromEnglish;
 
     const result = await tool.invoke(
       {
@@ -307,7 +323,7 @@ describe("translateProcedureNodesFromEnglish — cache-first, unchanged", () => 
         ],
         language: "German",
       },
-      throwingRuntime()
+      withCatalogs(throwingRuntime(), { procedures: catalog })
     );
 
     // Exactly catalogue's target-language term; must not be overwritten by free-text LLM output
@@ -315,25 +331,27 @@ describe("translateProcedureNodesFromEnglish — cache-first, unchanged", () => 
     expect(result).toEqual({
       [nodeKey(["Cardiology", "Chest X-ray"])]: "Röntgen-Thorax",
     });
-    expect(repo.saveProcedureTranslations).not.toHaveBeenCalled();
+    expect(catalog.saveTranslations).not.toHaveBeenCalled();
   });
 
   it("calls the LLM once for the missing nodes and caches only those", async () => {
     const saved: Record<string, string>[] = [];
-    const repo: ProceduresRepo = {
-      catalogueFile: "",
-      translationsFile: "",
-      getProcedureTranslation: (key) =>
+    const catalog: ProcedureCatalog = {
+      tree: () => undefined,
+      candidates: unusedCandidates,
+      translation: (key) =>
         key === nodeKey(["Cardiology"]) ? "Kardiologie" : undefined,
-      saveProcedureTranslations: (map) => saved.push(map),
-      getProcedureTree: () => undefined,
+      saveTranslations: (map) => void saved.push(map),
     };
-    const tool = createTranslateProcedureNodesFromEnglish(repo);
-    const runtime = fakeRuntime([
-      JSON.stringify({
-        [nodeKey(["Cardiology", "Chest X-ray"])]: "Röntgen-Thorax",
-      }),
-    ]);
+    const tool = translateProcedureNodesFromEnglish;
+    const runtime = withCatalogs(
+      fakeRuntime([
+        JSON.stringify({
+          [nodeKey(["Cardiology", "Chest X-ray"])]: "Röntgen-Thorax",
+        }),
+      ]),
+      { procedures: catalog }
+    );
 
     const result = await tool.invoke(
       {
@@ -361,22 +379,21 @@ describe("translateProcedureNodesFromEnglish — cache-first, unchanged", () => 
 
 describe("translateAnamnesisCategoriesFromEnglish — cache-first, unchanged", () => {
   it("makes zero LLM calls when every category is already cached", async () => {
-    const repo: AnamnesisRepo = {
-      translationsFile: "",
-      getAnamnesisCategoryTranslationFromEnglish: (category) =>
+    const catalog: AnamnesisCatalog = {
+      list: () => undefined,
+      fromEnglish: (category) =>
         category === "History" ? "Anamnese" : undefined,
-      saveAnamnesisCategoryTranslations: vi.fn(),
-      getEffectiveCategoryList: () => undefined,
+      saveTranslations: vi.fn(),
     };
-    const tool = createTranslateAnamnesisCategoriesFromEnglish(repo);
+    const tool = translateAnamnesisCategoriesFromEnglish;
 
     const result = await tool.invoke(
       { categories: ["History"], language: "German" },
-      throwingRuntime()
+      withCatalogs(throwingRuntime(), { anamnesis: catalog })
     );
 
     expect(result).toEqual({ History: "Anamnese" });
-    expect(repo.saveAnamnesisCategoryTranslations).not.toHaveBeenCalled();
+    expect(catalog.saveTranslations).not.toHaveBeenCalled();
   });
 });
 

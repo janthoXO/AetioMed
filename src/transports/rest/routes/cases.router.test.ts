@@ -16,7 +16,7 @@ import {
   type JobEventChannel,
 } from "@/core/jobEvents/index.js";
 import { wireLabels } from "@/core/jobEvents/labels.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import {
   createCaseGenerationService,
   type CaseGenerationService,

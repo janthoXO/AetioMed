@@ -28,7 +28,6 @@ import {
 import type { GraphRuntime } from "../runtime.js";
 import type { Config } from "../config.js";
 import type { EventBus } from "../../event-bus.js";
-import type { Repos } from "../repos.js";
 import type { MedicalBasisProvider } from "../medicalBasis/ports.js";
 import {
   OutlineSegmentsSchema,
@@ -102,15 +101,11 @@ function planOrSkip(state: {
   return state.outlineSegments.length > 0 ? END : "planning_phase";
 }
 
-/** The repos the case graph's phases need. */
-type CaseGraphRepos = Pick<Repos, "anamnesis" | "procedures">;
-
 /**
  * Everything assembly needs that is not a flag. `medicalBasisRegistry` is fixed per deployment (`createMedicalBasisRegistry`), shared by both flag variants. Its *size* still changes compiled shape (`buildCaseGenerationGraph`).
  */
 export type AssemblyDeps = {
   runtime: GraphRuntime;
-  repos: CaseGraphRepos;
   medicalBasisRegistry: MedicalBasisProvider[];
   /** Per-field modality registries. Fixed per deployment, shared by all variants. Empty per-field list is build-time `EmptyModalityRegistryError` (`modality/registry.ts`); planner always runs, so no topology variance. */
   modalityRegistries: ModalityRegistries;
@@ -152,13 +147,7 @@ export function graphVariantKey(
  * Pure wiring, no I/O: same `(deps, flags)` gives structurally identical graph.
  */
 export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
-  const {
-    runtime,
-    repos,
-    medicalBasisRegistry,
-    modalityRegistries,
-    traceNode,
-  } = deps;
+  const { runtime, medicalBasisRegistry, modalityRegistries, traceNode } = deps;
 
   // Sandwich on: generation runs English (`languageOverride` binding, read by `buildSystemPrompt`); real target
   // language reaches only translate-out, built from unmodified `runtime`.
@@ -241,7 +230,6 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
         "translation_from_english_phase",
         buildCaseTranslationFromEnglishGraph(
           runtime,
-          { anamnesis: repos.anamnesis, procedures: repos.procedures },
           traceNode.scope("translation_from_english_phase")
         )
       )
@@ -274,7 +262,6 @@ export function buildCaseGraph(
   runtime: GraphRuntime,
   bus: EventBus,
   config: Config,
-  repos: CaseGraphRepos,
   medicalBasisRegistry: MedicalBasisProvider[],
   modalityRegistries: ModalityRegistries,
   // OTel operator channel port. Optional, defaults to no-op. Real one comes from `app.ts` via
@@ -283,7 +270,6 @@ export function buildCaseGraph(
 ) {
   const deps: AssemblyDeps = {
     runtime,
-    repos,
     medicalBasisRegistry,
     modalityRegistries,
     traceNode: createTraceNode(bus, tracer),

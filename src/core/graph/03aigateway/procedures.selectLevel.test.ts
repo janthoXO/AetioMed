@@ -5,10 +5,10 @@ import type { BaseMessage } from "@langchain/core/messages";
 import { selectProcedureLevel } from "./procedures.aigateway.js";
 import type { GraphRuntime } from "../runtime.js";
 import type { LevelItem } from "../catalog/ports.js";
-import { InMemoryProcedureCatalog } from "../catalog/procedures/index.js";
-import { InMemoryAnamnesisCatalog } from "../catalog/anamnesis/index.js";
-import { InMemoryLabelCatalog } from "../catalog/labels/index.js";
-import { InMemoryDiagnosisCatalog } from "../catalog/diagnosis/index.js";
+import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 
 /** Replies with `responses` in order; records every call's messages. */
 class CapturingChatModel extends FakeListChatModel {

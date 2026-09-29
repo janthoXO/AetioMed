@@ -1,16 +1,16 @@
 // `drillDown` against a real candidate tree and a scripted `select`: which levels are shown, what is kept, when it stops.
 import { describe, expect, it, vi } from "vitest";
-import { ProcedureCandidatesImpl } from "@/core/graph/catalog/procedures/candidates.js";
+import { ProcedureCandidatesImpl } from "@/core/graph/catalog/candidates.js";
 import type { LevelItem } from "@/core/graph/catalog/ports.js";
 import type { LevelSelection } from "@/core/graph/03aigateway/procedures.aigateway.js";
 import type { ProcedureTree } from "@/core/graph/models/ProcedureTree.js";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import type { BaseMessage } from "@langchain/core/messages";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
-import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
-import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.js";
+import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import {
   drillDown,
   DrillDownPick,

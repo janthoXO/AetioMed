@@ -4,12 +4,12 @@ import type { RequestContext } from "@/core/graph/utils/context.js";
 import { createMedicalBasisRegistry, resolveAllFragments } from "./registry.js";
 import { renderMedicalBasisSection } from "./render.js";
 import type { BasisQuery, MedicalBasisProvider } from "./ports.js";
-import type { SymptomsRepo } from "@/core/graph/symptoms/repo.js";
+import type { SymptomsRepo } from "@/core/graph/medicalBasis/ports.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
-import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
-import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.js";
+import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 
 const query: BasisQuery = {
   diagnosis: { name: "Influenza", icd: "1E32" },

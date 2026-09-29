@@ -13,6 +13,13 @@ export interface ProcedureCatalog {
   tree(): ProcedureCatalogTree | undefined;
   /** The full candidate set. */
   candidates(): ProcedureCandidates;
+  /** Cached translation of one catalogue node (category or procedure), keyed by `nodeKey(path)`. */
+  translation(nodeKey: string, lang: ForeignLanguage): string | undefined;
+  /** Persist `nodeKey -> translated name` for `lang`. */
+  saveTranslations(
+    byNodeKey: Record<string, string>,
+    lang: ForeignLanguage
+  ): void;
 }
 
 /** One entry of a selection level: a whole category, or a single procedure. */
@@ -45,6 +52,16 @@ export interface ProcedureCandidates {
 
 export interface AnamnesisCatalog {
   list(): AnamnesisCategory[] | undefined;
+  /** Cached translation of an English category name into `lang`. */
+  fromEnglish(
+    category: AnamnesisCategory,
+    lang: ForeignLanguage
+  ): AnamnesisCategory | undefined;
+  /** Persist `english -> translated` category names for `lang`. */
+  saveTranslations(
+    englishToTarget: Record<AnamnesisCategory, AnamnesisCategory>,
+    lang: ForeignLanguage
+  ): void;
 }
 
 /**

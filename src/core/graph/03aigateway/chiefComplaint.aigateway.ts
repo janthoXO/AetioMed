@@ -1,5 +1,5 @@
 import z from "zod";
-import { handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../errors/AppError.js";
 import {
   buildPrompt,
   buildSystemPrompt,

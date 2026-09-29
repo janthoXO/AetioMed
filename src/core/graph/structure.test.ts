@@ -11,12 +11,10 @@ import {
 } from "@/core/graph/utils/nodeWrapper.js";
 import { createLogger } from "@/core/graph/utils/logger.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
-import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
-import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.js";
-import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
-import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
+import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
 import z from "zod";
 import type { ModalityProvider } from "@/core/graph/modality/ports.js";
@@ -68,23 +66,8 @@ function buildDeps(
     clock: () => new Date("2024-01-01T00:00:00.000Z"),
   };
 
-  const anamnesis: AnamnesisRepo = {
-    translationsFile: "",
-    getAnamnesisCategoryTranslationFromEnglish: () => undefined,
-    saveAnamnesisCategoryTranslations: () => {},
-    getEffectiveCategoryList: () => undefined,
-  };
-  const procedures: ProceduresRepo = {
-    catalogueFile: "",
-    translationsFile: "",
-    getProcedureTranslation: () => undefined,
-    saveProcedureTranslations: () => {},
-    getProcedureTree: () => undefined,
-  };
-
   return {
     runtime,
-    repos: { anamnesis, procedures },
     medicalBasisRegistry,
     modalityRegistries,
     traceNode: createTraceNode(bus),

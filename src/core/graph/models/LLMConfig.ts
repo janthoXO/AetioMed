@@ -1,6 +1,6 @@
 import z from "zod";
 
-/** Per-call model selection. **No** temperature: fixed policy class from call site (`LlmPort.for`, `utils/llm.ts`). */
+/** Per-call model selection. **No** temperature: fixed policy class from call site (`LlmPort.for`, `adapters/ai/llm.ts`). */
 export const LLMConfigSchema = z.object({
   provider: z.enum(["ollama", "google", "openai"]),
   model: z.string(),

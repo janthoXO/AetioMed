@@ -1,6 +1,6 @@
 import { SymptomSchema, type Symptom } from "../models/Symptom.js";
 import type { Diagnosis } from "../models/Diagnosis.js";
-import { handleLangchainError } from "../utils/llm.js";
+import { handleLangchainError } from "../errors/AppError.js";
 import {
   buildPrompt,
   buildSystemPrompt,

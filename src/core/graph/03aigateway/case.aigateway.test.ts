@@ -7,10 +7,10 @@ import type { ChatResult } from "@langchain/core/outputs";
 import { generateCaseOutline } from "./case.aigateway.js";
 import { runWithContext } from "../utils/context.js";
 import type { GraphRuntime, LlmPort } from "../runtime.js";
-import { InMemoryProcedureCatalog } from "../catalog/procedures/index.js";
-import { InMemoryAnamnesisCatalog } from "../catalog/anamnesis/index.js";
-import { InMemoryLabelCatalog } from "../catalog/labels/index.js";
-import { InMemoryDiagnosisCatalog } from "../catalog/diagnosis/index.js";
+import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import type { BasisFragment } from "../medicalBasis/ports.js";
 import { taggedOutlineFixture } from "../outline/fixtures.js";
 

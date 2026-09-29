@@ -21,7 +21,7 @@ import {
   refLabel,
 } from "@/core/graph/shared/domain/ProcedureTree.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
-import { textOf } from "@/core/graph/shared/domain/ContentPart.js";
+import { altOf } from "@/core/graph/shared/domain/ContentPart.js";
 import { matchDiagnosis } from "./match.gateway.js";
 import { invokeLogged } from "./solver/invokeLogged.js";
 import { buildBlindedSolverGraph } from "./solver/graph.js";
@@ -82,17 +82,17 @@ type BlindedSolverGraph = ReturnType<typeof buildBlindedSolverGraph>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Presentation slice (no diagnosis, no procedures), text-projected via `textOf`; bytes never reach a prompt. */
+/** Presentation slice (no diagnosis, no procedures), projected to `alt` (`altOf`); bytes never reach a prompt. */
 function presentationOf(c: Case): Presentation {
   return {
     ...(c.patient !== undefined && { patient: c.patient }),
     ...(c.chiefComplaint !== undefined && {
-      chiefComplaint: textOf(c.chiefComplaint),
+      chiefComplaint: altOf(c.chiefComplaint),
     }),
     ...(c.anamnesis !== undefined && {
       anamnesis: c.anamnesis.map((a) => ({
         category: a.category,
-        answer: textOf(a.answer),
+        answer: altOf(a.answer),
       })),
     }),
   };
@@ -110,7 +110,7 @@ function projectPreviousProcedures(
     path: p.path,
     name: p.name,
     relevance: p.relevance,
-    result: p.parts.map((part) => part.alt).join("\n\n"),
+    result: altOf(p.parts),
   }));
 }
 

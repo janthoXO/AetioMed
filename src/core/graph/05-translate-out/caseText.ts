@@ -6,9 +6,13 @@ import {
 } from "@/core/graph/shared/domain/ProcedureTree.js";
 import {
   encodeText,
-  textOfPart,
   type ContentPart,
 } from "@/core/graph/shared/domain/ContentPart.js";
+
+/** Rendered prose of a `text/plain` part. */
+function decodeText(part: ContentPart): string {
+  return new TextDecoder().decode(part.value);
+}
 
 /**
  * Every `ContentPart[]` field on `Case` with its path prefix (see
@@ -53,7 +57,7 @@ function translateParts(
       return { ...part, alt: translatedAlt };
     }
     const translatedText =
-      translations[`${prefix}.${i}.text`] ?? textOfPart(part);
+      translations[`${prefix}.${i}.text`] ?? decodeText(part);
     return {
       type: "text/plain",
       value: encodeText(translatedText),
@@ -65,7 +69,7 @@ function translateParts(
 /**
  * Flat keyed map of every `ContentPart` text fragment in case; sole input of rest pass. Keys: `chiefComplaint.0.alt`, `anamnesis.2.answer.0.text`, `procedures.1.result.3.alt`.
  *
- * Every part gives `.alt`; `text/*` part also gives `.text` (decoded prose via `textOfPart`). Non-text `value` bytes never reach map or prompt.
+ * Every part gives `.alt`; `text/*` part also gives `.text` (decoded prose). Non-text `value` bytes never reach map or prompt.
  *
  * `.alt` and `.text` currently equal for text parts (same string); duplication expected. They diverge when `alt` differs from rendered prose.
  */
@@ -75,7 +79,7 @@ export function caseTextMap(c: Case): Record<string, string> {
     parts.forEach((part, i) => {
       map[`${prefix}.${i}.alt`] = part.alt;
       if (part.type === "text/plain") {
-        map[`${prefix}.${i}.text`] = textOfPart(part);
+        map[`${prefix}.${i}.text`] = decodeText(part);
       }
     });
   }

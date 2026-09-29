@@ -8,7 +8,6 @@ import {
 } from "./caseText.js";
 import {
   encodeText,
-  textOf,
   type ContentPart,
 } from "@/core/graph/shared/domain/ContentPart.js";
 import { nodeKey } from "@/core/graph/shared/domain/ProcedureTree.js";
@@ -163,13 +162,5 @@ describe("translateProcedureTree — node names and result parts in one walk", (
     expect(translated.categories[0]!.procedures[0]!.result).toEqual(
       mixedCase.procedures!.categories[0]!.procedures[0]!.result
     );
-  });
-});
-
-describe("textOf is unaffected (sanity: content-part semantics unchanged)", () => {
-  it("still joins each part's text content with a blank line", () => {
-    expect(
-      textOf([fixtureTextPart("First."), fixtureTextPart("Second.")])
-    ).toBe("First.\n\nSecond.");
   });
 });

@@ -55,7 +55,7 @@ Your current task is to plan how the Anamnesis (medical history) facts from the 
 - Plan exactly one content unit per required intake form category, keyed by that category's exact name.
 - Use ONLY the facts specified in the outline. Do not invent symptoms, history items, medications, or details beyond the outline; your job is voice, format and rendering choice.
 - Prefer a single request against the "text" provider carrying each category's whole answer, unless another available provider would clearly add value.
-- Each request's "alt" is a self-contained instruction describing exactly what that rendered part should convey, in the patient voice above — a provider renders it verbatim, it never invents facts.
+- Each request's "alt" is the complete content of that part: every fact the rendered part states, written out in full, in the patient voice above. Later diagnostic steps read ONLY "alt", never the rendered part, so a fact missing from "alt" does not exist for them. The provider's input must convey exactly the same facts; the provider renders it verbatim and never invents facts.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
 

@@ -6,9 +6,9 @@ export type RenderContext = RequestContext;
 
 /**
  * One planner-specified request: provider, its typed input (opaque here;
- * `inputSchema` constrains it), planner-authored `alt`. Safety: `textOf()`
- * feeds blinded solver, `matchDiagnosis` and plan judge, so a provider-authored
- * `alt` could inject facts. Provider sees only `input`.
+ * `inputSchema` constrains it), planner-authored `alt`. Safety: `altOf()`
+ * feeds the blinded solver and bridge, so a provider-authored `alt` could
+ * inject facts. Provider sees only `input`.
  */
 export const PlannedPartSchema = z.object({
   provider: z.string(),

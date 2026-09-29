@@ -83,8 +83,8 @@ adapter lives under `src/adapters/` — `ai/` (LangChain chat-model factory), `c
 Drizzle, translation store), `symptoms/`, `language/` (tinyld), `repos.ts` — and only
 `src/app.ts` wires them in. `importBoundary.test.ts` fails on any core production module that
 imports `@/adapters`, `@/app`, `fs`/`path`, `node:sqlite`, `drizzle-orm`, `tinyld` or a LangChain
-provider package. `@langchain/core` is still allowed until the LLM port stops leaking its types
-(#190); `@langchain/langgraph` stays for good — it is the engine graphs are written in, not an
+provider package or `@langchain/core` (the LLM port speaks only core types since #190);
+`@langchain/langgraph` stays for good — it is the engine graphs are written in, not an
 I/O adapter.
 
 **`GraphRuntime`** (`src/core/graph/runtime.ts`) is the single seam graph construction goes
@@ -368,7 +368,7 @@ Language section below for why the two differ.
 steps — the first compiled in only when the medical-basis registry is non-empty:
 
 - **`basis_resolve`** — runs first, and only when the medical-basis registry (`src/core/graph/02-plan/01-basis/`) is non-empty: an absent registry means an absent node, not a node that runs and does nothing. The registry is a plain list built once in the composition root (`graph/index.ts`'s `createMedicalBasisRegistry`), **not** a second compile-time flag — its _size_ decides whether `basis_resolve` is compiled in, the same rule `assemble.ts` applies to `TRANSLATION_SANDWICH`. Every registered `MedicalBasisProvider` (`02-plan/01-basis/ports.ts`) returns plain text, or nothing when it has none for this query (not rendered), and is run concurrently; their fragments are concatenated in **registry order** (not completion order) — there is no LLM call spent deciding which source to use; a throwing provider is logged and skipped, a hanging one is bounded by the request's abort signal. `02-plan/01-basis/render.ts` renders the concatenated fragments into one "Medical basis" section of the plan's **user** message only (never the system message), each fragment fenced and headed by the provider's `description` alone — the fence delimiters are escaped if they appear inside a fragment's own content, so a fragment can never close its own fence early. The registry is `umlsSymptoms.ts` then `llmSymptoms.ts`: `umlsSymptoms.ts` is UMLS-only — a static symptom floor per ICD code, nothing else — and `llmSymptoms.ts` is its fallback, running only when UMLS has nothing for the ICD code, cache-aside (skips the LLM on a fresh cache hit).
-- **`outline_phase`** (mounts `02-plan/02-outline/`'s `buildPlanGraph`) — generates the tag-delimited outline (see "Outline segments" below), then a combined evaluate ⇄ revise `Command` loop (max 2 iterations, `outline_evaluate`/`outline_regenerate`) judging obviousness AND clinical consistency in one LLM call. On the iteration cap, the loop ends with `outlineAccepted: false` rather than looping forever — what that means is the caller's call: normal mode throws `OutlineNotAcceptedError` (a behaviour change, #159 — it used to render anyway), plan mode shows the outline to the reviewer regardless, with no marker, and lets them judge consistency themselves. `audienceOf(state)` binds the outline and its judge prompts to `"user-facing"` (the request language) only in plan mode; normal mode keeps them `"internal"` (English) — independent of the sandwich, which controls the case-generation runtime's `languageOverride`, not this phase's audience.
+- **`outline_phase`** (mounts `02-plan/02-outline/`'s `buildPlanGraph`) — generates the tag-delimited outline (see "Outline segments" below), then a combined evaluate ⇄ revise `Command` loop (max 2 iterations, `outline_evaluate`/`outline_regenerate`) judging obviousness AND clinical consistency in one LLM call. On the iteration cap, the loop ends with `outlineAccepted: false` rather than looping forever — what that means is the caller's call: normal mode throws `OutlineNotAcceptedError` (a behaviour change, #159 — it used to render anyway), plan mode shows the outline to the reviewer regardless, with no marker, and lets them judge consistency themselves. `languageOf(state, runtime)` binds the outline and its judge prompts to the request language (`boundLanguage(runtime)`) only in plan mode; normal mode passes no language (English) — independent of the sandwich, which controls the case-generation runtime's `languageOverride`, not this phase's audience.
 
 **`generation_phase`** (`buildCaseGenerationGraph`, `02-plan/graph.ts` / `04-case/graph.ts`) takes an
 outline as **input** (no outline generation happens here any more — that moved to
@@ -418,8 +418,7 @@ translator for the segments that miss. This is process-local, in memory — a re
 replica just translates again (ponytail: share it, e.g. NATS KV, if that ever shows in cost).
 
 **The sandwich-off cosmetic gap.** With `TRANSLATION_SANDWICH` off, plan mode generates the
-outline directly in the request language (`audienceOf`'s `"user-facing"` binds the outline
-prompts to it) — but the five fixed section headings above are still the literal English
+outline directly in the request language (`languageOf` binds the outline prompts to it) — but the five fixed section headings above are still the literal English
 strings `checkSkeleton` expects, since the skeleton is shared code, not a per-language template.
 A non-English plan-mode caller with the sandwich off therefore sees English headings over
 localized body text; fixing that is a skeleton-localization change, not a bug in this validation
@@ -480,9 +479,9 @@ with no edges of its own.
 
 ### AI Gateway Layer
 
-Gateways live in the slice that uses them (see "Directory layout" below); only `shared/translation/translate.ts` (`translateRecordKeyed`/`translateTermsKeyed`, used by translate-in, translate-out and outline translation) and `shared/prompt/` (`prompt.ts`, `retry.ts`) are shared. Each gateway builds prompts, calls `runtime.llm.for({ role, temperature }, context?.llmConfig)` (from `src/core/graph/runtime.ts`, implemented in `src/adapters/ai/llm.ts`), and wraps calls with `retry()`.
+Gateways live in the slice that uses them (see "Directory layout" below); only `shared/translation/translate.ts` (`translateRecordKeyed`/`translateTermsKeyed`, used by translate-in, translate-out and outline translation) and `shared/prompt/` (`prompt.ts`, `retry.ts`) are shared. Each gateway builds prompts, calls `runtime.llm.structured({ role, temperature }, { system, user }, schema, context)` — or `runtime.llm.text(...)` for the one free-text call, the outline — and wraps calls with `retry()` (retry feeds the previous validation error back into the prompt, so it is prompt logic and stays in the gateway). The port (`src/core/graph/runtime.ts`) speaks only core types (#190); `src/adapters/ai/llm.ts`'s `chatModelLlmPort` owns everything LangChain: `withStructuredOutput`, the message classes, the abort signal and mapping an unreachable model to `ModelUnreachableError`. Tests build a port over a fake chat model with the same `chatModelLlmPort`.
 
-**LLM roles** (`LlmPort.for`, `src/core/graph/runtime.ts`) model two independent dimensions per call: `role` (`generator` | `judge` | `translator` — each independently configurable, e.g. a small local model generating against a stronger judge) and `temperature` (a fixed policy class, not configuration: `deterministic` = 0.1, `balanced` = 0.4, `creative` = 0.7, read from `adapters/ai/llm.ts`). Every call site's role/temperature pairing is fixed by what it does, not by config. Judges (`02-outline/gateway.ts`, `matchDiagnosis` in `04-case/02-procedures/match.gateway.ts`) and translators (`01-translate-in/gateway.ts`, `shared/translation/translate.ts`, the from-English translation tools) are the two roles that diverge from `generator`, which is everything else, including `generateSymptomsOneShot` (clinical content generation, not translation).
+**LLM roles** (the `call` argument of `LlmPort.structured`/`text`, `src/core/graph/runtime.ts`) model two independent dimensions per call: `role` (`generator` | `judge` | `translator` — each independently configurable, e.g. a small local model generating against a stronger judge) and `temperature` (a fixed policy class, not configuration: `deterministic` = 0.1, `balanced` = 0.4, `creative` = 0.7, read from `adapters/ai/llm.ts`). Every call site's role/temperature pairing is fixed by what it does, not by config. Judges (`02-outline/gateway.ts`, `matchDiagnosis` in `04-case/02-procedures/match.gateway.ts`) and translators (`01-translate-in/gateway.ts`, `shared/translation/translate.ts`, the from-English translation tools) are the two roles that diverge from `generator`, which is everything else, including `generateSymptomsOneShot` (clinical content generation, not translation).
 
 The underlying adapter supports three providers: `ollama`, `google`, `openai` (the `openai` provider also serves OpenAI-compatible endpoints via `LLM_URL`). Provider/model come from env — a general `LLM_PROVIDER`/`LLM_MODEL` plus optional per-role `LLM_GENERATOR_*`/`LLM_JUDGE_*`/`LLM_TRANSLATOR_*` overrides, each field falling back individually to the general value — or from a per-request `llmConfig` passed via `RequestContext` (AsyncLocalStorage), which applies uniformly to all three roles. The `ALLOW_LLMS` feature flag enables per-request LLM selection from an allowlist (`ALLOWED_LLMS=ollama:llama3.1,google:gemini-2.0-flash`); when set, no global LLM (and no per-role default) is configured and requests must supply `llmConfig` (exposed via `GET /api/allowedLlms`). Temperature is never part of `llmConfig`'s effective behavior — it is always the call site's fixed class.
 
@@ -1055,27 +1054,29 @@ Concretely:
   Known limitation, carried over from `llmConfig`: ALS-carried values are invisible to
   checkpoints, so anything resumable (F09) must rebuild `language` from the original request
   rather than expect it to survive a resume.
-- **Audience split.** Every LLM call site is `audience: "internal"` (the plan, the plan judge,
-  the blinded solver, `matchDiagnosis`, the symptom/basis provider — English in both sandwich
-  modes, which is what keeps the generation core language-agnostic) or `"user-facing"` (chief
-  complaint, anamnesis answers, patient, procedure result text). `buildSystemPrompt(runtime,
-audience, ...sections)` (`shared/prompt/prompt.ts`, next to `buildPrompt`) is the one seam: for
-  `"user-facing"` calls it appends the language directive as the system message's final line
-  (never the user message, so it stays inside the stable prefix and doesn't disturb prompt
-  caching) whenever a foreign language is bound — `internal` calls and English never get it.
-  Every gateway that generates case content uses this builder instead of
-  `buildPrompt` for its system prompt; a file that still calls `buildPrompt` for its system
-  prompt is either a translator utility with an explicit, already-stated target language
-  (`01-translate-in/gateway.ts`, `shared/translation/translate.ts` — deliberately out of the conversion, see
-  their comments) or has forgotten to convert.
+- **Explicit language per call (#190).** A gateway that writes user-visible text (chief
+  complaint and anamnesis planners/renderers, patient, procedure-result planner/renderer, the
+  outline in plan mode) takes a `language` parameter and builds its system prompt with
+  `buildSystemPrompt(language, ...sections)` (`shared/prompt/prompt.ts`), which appends the
+  language directive as the system message's final line (never the user message, so it stays
+  inside the stable prefix and doesn't disturb prompt caching) when `language` is set and not
+  English. Internal reasoning calls (the plan in normal mode, the plan judge, the blinded solver,
+  `matchDiagnosis`, the symptom/basis provider) use plain `buildPrompt` and take no language —
+  English in both sandwich modes, which keeps the generation core language-agnostic. The caller
+  decides: nodes and providers pass `boundLanguage(runtime)` (`runtime.languageOverride ?? ALS
+language`), so the choice is visible at every call site instead of hidden in the prompt builder.
+  Translator utilities (`01-translate-in/gateway.ts`, `shared/translation/translate.ts`) state
+  their target language in the prompt itself and use `buildPrompt`.
 - **Sandwich-on forces English at the port, not per call.** With `TRANSLATION_SANDWICH` on,
   generation must run entirely in English regardless of the request's real target language —
   `assembleCaseGraph` builds the generation phase from a runtime with
   `languageOverride: "English"` (`GraphRuntime.languageOverride`, `runtime.ts`), which
-  `buildSystemPrompt` prefers over the ambient ALS language. That is a compile-time binding
-  (one per compiled variant), not a per-request branch, and it is why `buildSystemPrompt` never
-  needs to know the sandwich exists: "a foreign language is bound" already means "sandwich off
-  and non-English" by the time any gateway call reaches it.
+  `boundLanguage` prefers over the ambient ALS language. That is a compile-time binding (one per
+  compiled variant), not a per-request branch. **Exception, true today:** the modality providers
+  are built in `initGraph` from the base runtime, not the generation runtime, so the text
+  renderers already write in the request language while the planners' `alt` is English —
+  translate-out then re-translates that text. #192 makes this the rule and drops the redundant
+  pass.
 - **Non-sandwich mode's known gap.** With the sandwich off, free-text fields (chief complaint,
   anamnesis answers, procedure result text, patient narrative) are generated natively in the
   target language via the directive above. **Controlled vocabulary stays English**:

@@ -1,14 +1,17 @@
 import { ChatOllama, type ChatOllamaInput } from "@langchain/ollama";
 import { ChatGoogle, type ChatGoogleParams } from "@langchain/google";
 import { ChatOpenAI, type ChatOpenAIFields } from "@langchain/openai";
+import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { ModelUnreachableError } from "@/core/graph/errors/AppError.js";
 import {
   LLMConfigSchema,
   type LLMConfig,
 } from "@/core/graph/shared/domain/LLMConfig.js";
+import type { z } from "zod";
+import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { Config } from "@/core/graph/config.js";
-import type { LlmPort, LlmTemperature } from "@/core/graph/runtime.js";
+import type { LlmPort, LlmRole, LlmTemperature } from "@/core/graph/runtime.js";
 
 /** Fixed policy classes, not configuration. */
 const TEMPERATURE_BY_CLASS: Record<LlmTemperature, number> = {
@@ -21,17 +24,67 @@ const TEMPERATURE_BY_CLASS: Record<LlmTemperature, number> = {
 };
 
 /** Real `LlmPort`: builds LangChain chat models via `getLLM` from per-role default configs. */
-export function createLlmPort(defaultConfig: Config): LlmPort {
+export function createLlmPort(config: Config): LlmPort {
+  return chatModelLlmPort((call, llmConfig) =>
+    getLLM(
+      config.llmRoles?.[call.role],
+      llmConfig,
+      TEMPERATURE_BY_CLASS[call.temperature]
+    )
+  );
+}
+
+/** `LlmPort` over any LangChain chat-model factory. Real port uses `getLLM`; tests pass a fake model. */
+export function chatModelLlmPort(
+  modelFor: (
+    call: { role: LlmRole; temperature: LlmTemperature },
+    llmConfig: Partial<LLMConfig> | undefined
+  ) => BaseChatModel
+): LlmPort {
   return {
-    for(opts, llmConfig) {
-      const roleConfig = defaultConfig.llmRoles?.[opts.role];
-      return getLLM(
-        roleConfig,
-        llmConfig,
-        TEMPERATURE_BY_CLASS[opts.temperature]
-      );
+    async structured<T>(
+      call: { role: LlmRole; temperature: LlmTemperature },
+      prompt: { system: string; user: string },
+      schema: z.ZodType<T>,
+      context?: RequestContext
+    ): Promise<T> {
+      return (await modelFor(call, context?.llmConfig)
+        .withStructuredOutput(schema)
+        .invoke(
+          [new SystemMessage(prompt.system), new HumanMessage(prompt.user)],
+          context?.signal !== undefined ? { signal: context.signal } : undefined
+        )
+        .catch((error: Error) => handleLangchainError(error))) as T;
+    },
+    async text(call, prompt, context) {
+      const result = await modelFor(call, {
+        ...context?.llmConfig,
+        outputFormat: "text",
+      })
+        .invoke(
+          [new SystemMessage(prompt.system), new HumanMessage(prompt.user)],
+          context?.signal !== undefined ? { signal: context.signal } : undefined
+        )
+        .catch((error: Error) => handleLangchainError(error));
+      return result.text;
     },
   };
+}
+
+function handleLangchainError(error: Error): never {
+  if (error instanceof Error) {
+    if (
+      error.message.includes("fetch failed") ||
+      error.message.includes("ECONNREFUSED")
+    ) {
+      throw new ModelUnreachableError(
+        "Ollama service is unreachable. Is it running?",
+        error.message
+      );
+    }
+  }
+
+  throw error;
 }
 
 /**

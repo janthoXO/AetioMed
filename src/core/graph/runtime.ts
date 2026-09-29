@@ -1,5 +1,5 @@
-import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
-import type { LLMConfig } from "@/core/graph/shared/domain/LLMConfig.js";
+import type { z } from "zod";
+import type { RequestContext } from "./utils/context.js";
 import type { Language } from "@/core/graph/shared/domain/Language.js";
 import type {
   AnamnesisCatalog,
@@ -28,8 +28,8 @@ export interface GraphRuntime {
   /** So tests can freeze time. */
   clock: () => Date;
   /**
-   * Overrides language `buildSystemPrompt` uses for `"user-facing"` prompts
-   * instead of ambient ALS language. Bound at graph-assembly time per compiled
+   * Language user-facing prompts write in (`boundLanguage`), instead of ambient
+   * ALS language. Bound at graph-assembly time per compiled
    * variant, never per request. `assembleCaseGraph` sets `"English"` for the
    * generation phase when sandwich compiled in; translate-out uses the
    * unmodified runtime.
@@ -43,13 +43,24 @@ export type LlmRole = (typeof LLM_ROLES)[number];
 /** Policy classes, not configuration. See `adapters/ai/llm.ts` for the values. */
 export type LlmTemperature = "deterministic" | "balanced" | "creative";
 
-/** "Call the model for this role/temperature" — the one thing every LLM caller needs. */
+/** "Call the model for this role/temperature, get a schema-valid object back" — the one thing every LLM caller needs. */
 export interface LlmPort {
-  /** Chat model for role + temperature class, overridden by per-call `llmConfig` (e.g. `ALLOW_LLMS` pick). */
-  for(
-    opts: { role: LlmRole; temperature: LlmTemperature },
-    llmConfig?: Partial<LLMConfig>
-  ): BaseChatModel;
+  /**
+   * One structured-output call: system + user message, parsed against `schema`. Per-call `context`
+   * carries the `llmConfig` override (`ALLOW_LLMS` pick) and the abort signal.
+   */
+  structured<T>(
+    call: { role: LlmRole; temperature: LlmTemperature },
+    prompt: { system: string; user: string },
+    schema: z.ZodType<T>,
+    context?: RequestContext
+  ): Promise<T>;
+  /** One free-text call (no structured output); returns the message text. */
+  text(
+    call: { role: LlmRole; temperature: LlmTemperature },
+    prompt: { system: string; user: string },
+    context?: RequestContext
+  ): Promise<string>;
 }
 
 export interface Logger {

@@ -1,5 +1,5 @@
+import type { Language } from "@/core/graph/shared/domain/Language.js";
 import z from "zod";
-import { handleLangchainError } from "@/core/graph/errors/AppError.js";
 import {
   buildPrompt,
   buildSystemPrompt,
@@ -8,7 +8,6 @@ import {
   summarizeValidationError,
 } from "@/core/graph/shared/prompt/prompt.js";
 import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "@/core/graph/shared/prompt/retry.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
@@ -33,6 +32,7 @@ export const CHIEF_COMPLAINT_UNIT_KEY = "chiefComplaint";
  */
 export async function planChiefComplaint(
   runtime: GraphRuntime,
+  language: Language | undefined,
   diagnosis: Diagnosis,
   outline: string,
   providers: ModalityProvider<unknown>[],
@@ -43,8 +43,7 @@ export async function planChiefComplaint(
 
   // User-facing: planned `alt`/instruction become user-visible content.
   const systemPrompt = buildSystemPrompt(
-    runtime,
-    "user-facing",
+    language,
     section(
       "Role",
       `You are an expert attending physician documenting a patient's presentation for a medical training simulator.
@@ -84,24 +83,19 @@ ${renderSchemaForPrompt(schema)}`
 
   const plans = await retry(
     async (attempt: number, previousError?: Error) => {
-      const result = (await runtime.llm
-        .for({ role: "generator", temperature: "balanced" }, context?.llmConfig)
-        .withStructuredOutput(schema)
-        .invoke(
-          [
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              userPrompt +
-                (previousError
-                  ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
-                  : "")
-            ),
-          ],
-          context?.signal !== undefined ? { signal: context.signal } : undefined
-        )
-        .catch((error) => {
-          handleLangchainError(error);
-        })) as {
+      const result = (await runtime.llm.structured(
+        { role: "generator", temperature: "balanced" },
+        {
+          system: systemPrompt,
+          user:
+            userPrompt +
+            (previousError
+              ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+              : ""),
+        },
+        schema,
+        context
+      )) as {
         plans: Parameters<
           typeof plansByKey<{ requests: ModalityPlan[string] }>
         >[0];
@@ -135,6 +129,7 @@ ${renderSchemaForPrompt(schema)}`
  */
 export async function renderChiefComplaintTexts(
   runtime: GraphRuntime,
+  language: Language | undefined,
   instructions: string[],
   context?: RequestContext
 ): Promise<string[]> {
@@ -148,8 +143,7 @@ export async function renderChiefComplaintTexts(
   });
 
   const systemPrompt = buildSystemPrompt(
-    runtime,
-    "user-facing",
+    language,
     section(
       "Role",
       `You are an expert attending physician documenting a patient's presentation for a medical training simulator.
@@ -186,24 +180,19 @@ ${renderSchemaForPrompt(schema)}`
 
   return retry(
     async (attempt: number, previousError?: Error) => {
-      const result = await runtime.llm
-        .for({ role: "generator", temperature: "balanced" }, context?.llmConfig)
-        .withStructuredOutput(schema)
-        .invoke(
-          [
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              userPrompt +
-                (previousError
-                  ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
-                  : "")
-            ),
-          ],
-          context?.signal !== undefined ? { signal: context.signal } : undefined
-        )
-        .catch((error) => {
-          handleLangchainError(error);
-        });
+      const result = await runtime.llm.structured(
+        { role: "generator", temperature: "balanced" },
+        {
+          system: systemPrompt,
+          user:
+            userPrompt +
+            (previousError
+              ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+              : ""),
+        },
+        schema,
+        context
+      );
 
       console.debug(
         `[RenderChiefComplaintTexts] [Attempt ${attempt}] LLM raw Response:\n`,

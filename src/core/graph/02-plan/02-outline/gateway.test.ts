@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { AIMessage, type BaseMessage } from "@langchain/core/messages";
 import type { ChatResult } from "@langchain/core/outputs";
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { generateCaseOutline } from "./gateway.js";
 import { runWithContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime, LlmPort } from "@/core/graph/runtime.js";
@@ -39,7 +40,7 @@ class CapturingChatModel extends BaseChatModel {
 }
 
 function buildRuntime(model: CapturingChatModel): GraphRuntime {
-  const llm: LlmPort = { for: () => model };
+  const llm: LlmPort = chatModelLlmPort(() => model);
   return {
     llm,
     catalogs: {
@@ -158,7 +159,7 @@ describe("generateCaseOutline skeleton", () => {
     await runWithContext(
       () =>
         generateCaseOutline(runtime, { name: "Grippe" }, [], "medium", {
-          audience: "user-facing",
+          language: "German",
         }),
       "job",
       undefined,

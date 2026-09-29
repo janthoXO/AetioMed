@@ -11,10 +11,10 @@ function fakeDetector(
   return { detect: vi.fn().mockReturnValue(result) };
 }
 
-// `runtime.llm.for(...)` only reached by LLM fallback (step 3). Tests proving
-// it is not reached pass this and assert `forSpy` never called.
-function fakeRuntime(forSpy = vi.fn()): GraphRuntime {
-  return { llm: { for: forSpy } } as unknown as GraphRuntime;
+// `runtime.llm.structured(...)` only reached by LLM fallback (step 3). Tests proving
+// it is not reached pass this and assert `structuredSpy` never called.
+function fakeRuntime(structuredSpy = vi.fn()): GraphRuntime {
+  return { llm: { structured: structuredSpy } } as unknown as GraphRuntime;
 }
 
 const LONG_GERMAN_TEXT =
@@ -133,7 +133,7 @@ describe("resolveLanguage — step 2: the offline detector", () => {
 
   it("does not make an LLM call when auto-detect is on but the LLM fallback is off, even on a below-threshold result", async () => {
     const detector = fakeDetector({ iso: "de", confidence: 0.1 });
-    const forSpy = vi.fn();
+    const structuredSpy = vi.fn();
 
     await resolveLanguage({
       explicitLanguage: undefined,
@@ -142,10 +142,10 @@ describe("resolveLanguage — step 2: the offline detector", () => {
       autoDetect: true,
       llmFallbackEnabled: false,
       detector,
-      runtime: fakeRuntime(forSpy),
+      runtime: fakeRuntime(structuredSpy),
     });
 
-    expect(forSpy).not.toHaveBeenCalled();
+    expect(structuredSpy).not.toHaveBeenCalled();
   });
 
   it("still works when passed explicitly, and never wins step 2, for a configured language the mapping table does not know", async () => {

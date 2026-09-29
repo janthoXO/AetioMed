@@ -1,16 +1,14 @@
-import { handleLangchainError } from "@/core/graph/errors/AppError.js";
 import {
   buildPrompt,
   buildSystemPrompt,
   renderSchemaForPrompt,
   section,
   summarizeValidationError,
-  type PromptAudience,
 } from "@/core/graph/shared/prompt/prompt.js";
+import type { Language } from "@/core/graph/shared/domain/Language.js";
 import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
 import type { BasisFragment } from "@/core/graph/02-plan/01-basis/ports.js";
 import { renderMedicalBasisSection } from "@/core/graph/02-plan/01-basis/render.js";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { retry } from "@/core/graph/shared/prompt/retry.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import {
@@ -59,15 +57,14 @@ export async function generateCaseOutline(
     feedback?: string[] | undefined;
     previousOutline?: OutlineSegments | undefined;
     /**
-     * `"internal"` (English) except plan mode with sandwich off: request
+     * Unset (English) except plan mode with sandwich off: request
      * language. With sandwich on, `languageOverride` keeps English either way.
      */
-    audience?: PromptAudience | undefined;
+    language?: Language | undefined;
   } = {},
   context?: RequestContext
 ): Promise<OutlineSegments> {
   const { userInstructions, feedback, previousOutline } = opts;
-  const audience = opts.audience ?? "internal";
   const anamnesisCategories = runtime.catalogs.anamnesis.list();
   // Freeform: one placeholder where the LLM-named category headings go.
   const placeholder = "<intake category name>";
@@ -83,8 +80,7 @@ export async function generateCaseOutline(
 
   // Internal (English) by default; caller may bind request language.
   const systemPrompt = buildSystemPrompt(
-    runtime,
-    audience,
+    opts.language,
     section(
       "Role",
       `You are an expert medical educator tasked with creating a concrete outline for a clinical practice case based on a specific diagnosis.
@@ -156,36 +152,26 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
   try {
     return await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await runtime.llm
-          .for(
-            { role: "generator", temperature: "creative" },
-            { ...context?.llmConfig, outputFormat: "text" }
-          )
-          .invoke(
-            [
-              new SystemMessage(systemPrompt),
-              new HumanMessage(
-                userPrompt +
-                  (previousError
-                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
-                    : "")
-              ),
-            ],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch((error) => {
-            handleLangchainError(error);
-          });
+        const result = await runtime.llm.text(
+          { role: "generator", temperature: "creative" },
+          {
+            system: systemPrompt,
+            user:
+              userPrompt +
+              (previousError
+                ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+                : ""),
+          },
+          context
+        );
 
         console.debug(
           `[GenerateCaseOutline] [Attempt ${attempt}] LLM raw Response:\n`,
-          result.text
+          result
         );
 
         // Off-skeleton outline rejected; retry feeds mismatch back.
-        const segments = parseTaggedOutline(result.text);
+        const segments = parseTaggedOutline(result);
         const check = checkSkeleton(segments, { anamnesisCategories });
         if (!check.ok) {
           throw new OutlineFormatError(
@@ -228,12 +214,11 @@ export async function evaluateOutline(
   userInstructions?: string,
   context?: RequestContext,
   /** Language outline was written in: English except plan mode, sandwich off (request language). */
-  audience: PromptAudience = "internal"
+  language?: Language | undefined
 ): Promise<OutlineEvaluation> {
   // Internal by default.
   const systemPrompt = buildSystemPrompt(
-    runtime,
-    audience,
+    language,
     section(
       "Role",
       `You are an expert medical educator reviewing a clinical case blueprint for a training simulator BEFORE the full case is written out. The blueprint is the single source of truth for all downstream field generation, so it must be sound. Judge it on TWO dimensions and accept it only if BOTH pass.`
@@ -286,29 +271,19 @@ ${renderSchemaForPrompt(OutlineEvaluationSchema)}`
   try {
     const evaluation: OutlineEvaluation = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await runtime.llm
-          .for(
-            { role: "judge", temperature: "deterministic" },
-            context?.llmConfig
-          )
-          .withStructuredOutput(OutlineEvaluationSchema)
-          .invoke(
-            [
-              new SystemMessage(systemPrompt),
-              new HumanMessage(
-                userPrompt +
-                  (previousError
-                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
-                    : "")
-              ),
-            ],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch((error) => {
-            handleLangchainError(error);
-          });
+        const result = await runtime.llm.structured(
+          { role: "judge", temperature: "deterministic" },
+          {
+            system: systemPrompt,
+            user:
+              userPrompt +
+              (previousError
+                ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+                : ""),
+          },
+          OutlineEvaluationSchema,
+          context
+        );
 
         console.debug(
           `[EvaluateOutline] [Attempt ${attempt}] LLM raw Response:\n`,

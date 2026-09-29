@@ -1,12 +1,10 @@
 import z from "zod";
 import { retry } from "@/core/graph/shared/prompt/retry.js";
-import { handleLangchainError } from "@/core/graph/errors/AppError.js";
 import {
   buildPrompt,
   section,
   summarizeValidationError,
 } from "@/core/graph/shared/prompt/prompt.js";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 
@@ -51,25 +49,19 @@ export async function translateTermsKeyed(
 
   return retry(
     async (attempt: number, previousError?: Error) => {
-      const response = await runtime.llm
-        .for(
-          { role: "translator", temperature: "deterministic" },
-          context?.llmConfig
-        )
-        .withStructuredOutput(z.record(z.string(), z.string()))
-        .invoke(
-          [
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              baseUserPrompt +
-                (previousError
-                  ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
-                  : "")
-            ),
-          ],
-          context?.signal !== undefined ? { signal: context.signal } : undefined
-        )
-        .catch(handleLangchainError);
+      const response = await runtime.llm.structured(
+        { role: "translator", temperature: "deterministic" },
+        {
+          system: systemPrompt,
+          user:
+            baseUserPrompt +
+            (previousError
+              ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+              : ""),
+        },
+        z.record(z.string(), z.string()),
+        context
+      );
 
       console.debug(
         `[${logTag}] [Attempt ${attempt}] Generated translations:`,
@@ -139,25 +131,19 @@ export async function translateRecordKeyed(
 
   return retry(
     async (attempt: number, previousError?: Error) => {
-      const response = await runtime.llm
-        .for(
-          { role: "translator", temperature: "deterministic" },
-          context?.llmConfig
-        )
-        .withStructuredOutput(z.record(z.string(), z.string()))
-        .invoke(
-          [
-            new SystemMessage(systemPrompt),
-            new HumanMessage(
-              baseUserPrompt +
-                (previousError
-                  ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
-                  : "")
-            ),
-          ],
-          context?.signal !== undefined ? { signal: context.signal } : undefined
-        )
-        .catch(handleLangchainError);
+      const response = await runtime.llm.structured(
+        { role: "translator", temperature: "deterministic" },
+        {
+          system: systemPrompt,
+          user:
+            baseUserPrompt +
+            (previousError
+              ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+              : ""),
+        },
+        z.record(z.string(), z.string()),
+        context
+      );
 
       console.debug(
         `[${logTag}] [Attempt ${attempt}] Generated translations:`,

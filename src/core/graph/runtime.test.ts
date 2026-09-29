@@ -1,5 +1,6 @@
 // `GraphRuntime` built from fakes only (no LLM, fs, SQLite, network) can run a
 // graph node's tool and count LLM calls.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import type { GraphRuntime, LlmPort, LlmRole } from "@/core/graph/runtime.js";
@@ -19,12 +20,10 @@ function makeCountingFakeLlmPort(response: string): {
 } {
   let calls = 0;
   return {
-    llm: {
-      for() {
-        calls++;
-        return new FakeListChatModel({ responses: [response] });
-      },
-    },
+    llm: chatModelLlmPort(() => {
+      calls++;
+      return new FakeListChatModel({ responses: [response] });
+    }),
     callCount: () => calls,
   };
 }
@@ -36,16 +35,14 @@ function makeRoleAwareFakeLlmPort(
 ): { llm: LlmPort; calls: { role: LlmRole; model: string }[] } {
   const calls: { role: LlmRole; model: string }[] = [];
   return {
-    llm: {
-      for(opts, llmConfig) {
-        const roleConfig = config.llmRoles?.[opts.role];
-        const model = llmConfig?.model ?? roleConfig?.model ?? "unresolved";
-        calls.push({ role: opts.role, model });
-        return new FakeListChatModel({
-          responses: [responses[opts.role] ?? "{}"],
-        });
-      },
-    },
+    llm: chatModelLlmPort((opts, llmConfig) => {
+      const roleConfig = config.llmRoles?.[opts.role];
+      const model = llmConfig?.model ?? roleConfig?.model ?? "unresolved";
+      calls.push({ role: opts.role, model });
+      return new FakeListChatModel({
+        responses: [responses[opts.role] ?? "{}"],
+      });
+    }),
     calls,
   };
 }

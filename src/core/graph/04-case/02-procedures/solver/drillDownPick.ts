@@ -1,3 +1,4 @@
+import { boundLanguage } from "@/core/graph/shared/prompt/prompt.js";
 import {
   generateBlindedProcedureStep,
   pickBridgeProcedures,
@@ -187,6 +188,7 @@ export class DrillDownPick implements ProcedureStrategy {
       runtime,
       planProcedureResults(
         runtime,
+        boundLanguage(runtime),
         view.presentation,
         view.diagnosis,
         procedures,

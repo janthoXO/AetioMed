@@ -1,4 +1,5 @@
 // `selectProcedureLevel`: labels map back to items (off-level ones dropped), diagnose only when allowed, the diagnosis only in bridge mode.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import type { BaseMessage } from "@langchain/core/messages";
@@ -26,7 +27,7 @@ class CapturingChatModel extends FakeListChatModel {
 
 function runtimeWith(model: CapturingChatModel): GraphRuntime {
   return {
-    llm: { for: () => model },
+    llm: chatModelLlmPort(() => model),
     catalogs: {
       procedures: new InMemoryProcedureCatalog(),
       anamnesis: new InMemoryAnamnesisCatalog(),

@@ -1,6 +1,6 @@
+import type { Language } from "@/core/graph/shared/domain/Language.js";
 import { retry } from "@/core/graph/shared/prompt/retry.js";
 import z from "zod";
-import { handleLangchainError } from "@/core/graph/errors/AppError.js";
 import {
   buildPrompt,
   buildSystemPrompt,
@@ -17,7 +17,6 @@ import {
   refLabel,
   type ProcedureRef,
 } from "@/core/graph/shared/domain/ProcedureTree.js";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import {
@@ -75,6 +74,7 @@ function buildProcedureResultPlanSchema(
  */
 export async function planProcedureResults(
   runtime: GraphRuntime,
+  language: Language | undefined,
   presentation: Presentation,
   diagnosis: Diagnosis,
   procedureSteps: ProcedureRef[],
@@ -88,8 +88,7 @@ export async function planProcedureResults(
 
   // User-facing: planned `alt`/instruction become user-visible content.
   const systemPrompt = buildSystemPrompt(
-    runtime,
-    "user-facing",
+    language,
     section(
       "Role",
       `You are a medical simulator PLANNING realistic results for a batch of diagnostic procedures ordered at the same time.
@@ -150,24 +149,15 @@ ${outline}`
     const plans = await retry(
       async (attempt, previousError) => {
         // Balanced: follow outline's workup strategy, plausible specific values.
-        const res = (await runtime.llm
-          .for(
-            { role: "generator", temperature: "balanced" },
-            context?.llmConfig
-          )
-          .withStructuredOutput(schema)
-          .invoke(
-            [
-              new SystemMessage(systemPrompt),
-              new HumanMessage(userPrompt + errorFeedback(previousError)),
-            ],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch((error) => {
-            handleLangchainError(error);
-          })) as {
+        const res = (await runtime.llm.structured(
+          { role: "generator", temperature: "balanced" },
+          {
+            system: systemPrompt,
+            user: userPrompt + errorFeedback(previousError),
+          },
+          schema,
+          context
+        )) as {
           plans: Record<
             string,
             { requests: PlannedPart[]; relevance: ProcedureRelevance }
@@ -216,6 +206,7 @@ ${outline}`
  */
 export async function renderProcedureResultTexts(
   runtime: GraphRuntime,
+  language: Language | undefined,
   instructions: string[],
   context?: RequestContext
 ): Promise<string[]> {
@@ -230,8 +221,7 @@ export async function renderProcedureResultTexts(
 
   // User-facing: student reads result text.
   const systemPrompt = buildSystemPrompt(
-    runtime,
-    "user-facing",
+    language,
     section(
       "Role",
       `You are a medical simulator rendering procedure results for a clinical training simulator.
@@ -268,19 +258,15 @@ ${renderSchemaForPrompt(schema)}`
 
   return retry(
     async (attempt: number, previousError?: Error) => {
-      const result = await runtime.llm
-        .for({ role: "generator", temperature: "balanced" }, context?.llmConfig)
-        .withStructuredOutput(schema)
-        .invoke(
-          [
-            new SystemMessage(systemPrompt),
-            new HumanMessage(userPrompt + errorFeedback(previousError)),
-          ],
-          context?.signal !== undefined ? { signal: context.signal } : undefined
-        )
-        .catch((error) => {
-          handleLangchainError(error);
-        });
+      const result = await runtime.llm.structured(
+        { role: "generator", temperature: "balanced" },
+        {
+          system: systemPrompt,
+          user: userPrompt + errorFeedback(previousError),
+        },
+        schema,
+        context
+      );
 
       console.debug(
         `[RenderProcedureResultTexts] [Attempt ${attempt}] Response:\n`,

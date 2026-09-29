@@ -1,3 +1,4 @@
+import { boundLanguage } from "@/core/graph/shared/prompt/prompt.js";
 import z from "zod";
 import { encodeText } from "@/core/graph/shared/domain/ContentPart.js";
 import {
@@ -23,6 +24,7 @@ export function createAnamnesisProviders(
       render: async (batch, context) => {
         const texts = await renderAnamnesisTexts(
           runtime,
+          boundLanguage(runtime),
           batch.map((item) => item.instruction),
           context
         );

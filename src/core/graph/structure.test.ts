@@ -2,6 +2,7 @@
 // and every reported id must be one a node can emit under, both directions.
 // `traceNode` runs at construction, so `getNodeLabels()` is the variant's full
 // traceable id set with no execution.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it } from "vitest";
 import { assembleCaseGraphs, type AssemblyDeps } from "./assemble.js";
 import { EventBus } from "@/core/event-bus.js";
@@ -51,11 +52,9 @@ function buildDeps(
 ): AssemblyDeps {
   const bus = new EventBus();
   const runtime: GraphRuntime = {
-    llm: {
-      for() {
-        throw new Error("router.test: assembly must never call the LLM.");
-      },
-    },
+    llm: chatModelLlmPort(() => {
+      throw new Error("router.test: assembly must never call the LLM.");
+    }),
     catalogs: {
       procedures: new InMemoryProcedureCatalog(),
       anamnesis: new InMemoryAnamnesisCatalog(),

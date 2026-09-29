@@ -80,7 +80,7 @@ function fakeGraph(generateCase: GenerateCaseFn = vi.fn()): GraphAppContext {
       catalogs: {
         diagnosis: { byIcd: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     ...planAndRenderFrom(generateCase),
   } as GraphAppContext;
@@ -372,7 +372,7 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
           }),
         },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     ...planAndRenderFrom(generateCase),
     graphs: {
@@ -718,7 +718,7 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
       catalogs: {
         diagnosis: { byIcd: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     ...planAndRenderFrom(generateCase),
     graphs: {

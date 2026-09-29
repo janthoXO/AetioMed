@@ -1,4 +1,3 @@
-import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import z from "zod";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 
@@ -20,16 +19,16 @@ export async function detectLanguageViaLlm(
   const choices = [...languages, "none"] as unknown as [string, ...string[]];
 
   try {
-    const response = await runtime.llm
-      .for({ role: "translator", temperature: "deterministic" })
-      .withStructuredOutput(z.object({ language: z.enum(choices) }))
-      .invoke([
-        new SystemMessage(
+    const response = await runtime.llm.structured(
+      { role: "translator", temperature: "deterministic" },
+      {
+        system:
           `Identify which of these languages the user's text is written in: ` +
-            `${languages.join(", ")}. Respond with "none" if you cannot tell.`
-        ),
-        new HumanMessage(text),
-      ]);
+          `${languages.join(", ")}. Respond with "none" if you cannot tell.`,
+        user: text,
+      },
+      z.object({ language: z.enum(choices) })
+    );
 
     return response.language === "none" ? undefined : response.language;
   } catch (error) {

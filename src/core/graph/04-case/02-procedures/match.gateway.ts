@@ -1,14 +1,11 @@
 import { retry } from "@/core/graph/shared/prompt/retry.js";
 import z from "zod";
-import { handleLangchainError } from "@/core/graph/errors/AppError.js";
 import {
   buildPrompt,
-  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
 } from "@/core/graph/shared/prompt/prompt.js";
 import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import { errorFeedback } from "./prompt.js";
@@ -36,9 +33,7 @@ export async function matchDiagnosis(
   context?: RequestContext
 ): Promise<boolean> {
   // Internal: English always.
-  const systemPrompt = buildSystemPrompt(
-    runtime,
-    "internal",
+  const systemPrompt = buildPrompt(
     section(
       "Role",
       `You are a medical knowledge expert. Determine whether a proposed diagnosis is equivalent to the true diagnosis.
@@ -72,24 +67,15 @@ ${renderSchemaForPrompt(MatchSchema)}`
   try {
     const matches = await retry(
       async (attempt, previousError) => {
-        const res = await runtime.llm
-          .for(
-            { role: "judge", temperature: "deterministic" },
-            context?.llmConfig
-          )
-          .withStructuredOutput(MatchSchema)
-          .invoke(
-            [
-              new SystemMessage(systemPrompt),
-              new HumanMessage(userPrompt + errorFeedback(previousError)),
-            ],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch((error) => {
-            handleLangchainError(error);
-          });
+        const res = await runtime.llm.structured(
+          { role: "judge", temperature: "deterministic" },
+          {
+            system: systemPrompt,
+            user: userPrompt + errorFeedback(previousError),
+          },
+          MatchSchema,
+          context
+        );
 
         console.debug(
           `[MatchDiagnosis] [Attempt ${attempt}] Response:\n`,

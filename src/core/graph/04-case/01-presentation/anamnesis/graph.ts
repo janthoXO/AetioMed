@@ -5,7 +5,10 @@ import {
   RequestContextSchema,
   type RequestContext,
 } from "@/core/graph/utils/context.js";
-import { renderUserInstructions } from "@/core/graph/shared/prompt/prompt.js";
+import {
+  renderUserInstructions,
+  boundLanguage,
+} from "@/core/graph/shared/prompt/prompt.js";
 import {
   PlannedPartSchema,
   type ModalityPlan,
@@ -55,6 +58,7 @@ function makePlanContent(
   ): Promise<Pick<AnamnesisGraphState, "plan">> {
     const plan = await planAnamnesis(
       runtime,
+      boundLanguage(runtime),
       state.diagnosis,
       state.outline,
       providers,

@@ -2,20 +2,12 @@ import { stringify as stringifyYaml } from "yaml";
 import z from "zod";
 import { getRequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
+import type { Language } from "@/core/graph/shared/domain/Language.js";
 
 /** Joins sections with blank lines, dropping empty/undefined ones. */
 export function buildPrompt(...parts: (string | undefined)[]): string {
   return parts.filter((s): s is string => !!s).join("\n\n");
 }
-
-/**
- * Prompt audience:
- * - `"internal"`: plan, plan judge, blinded solver, `matchDiagnosis`,
- *   symptom/basis provider. Always English.
- * - `"user-facing"`: chief complaint, anamnesis, patient, procedure results.
- *   Gets language directive when a foreign language is bound.
- */
-export type PromptAudience = "internal" | "user-facing";
 
 /**
  * Final line of the system message, never the user message: constant per
@@ -31,25 +23,27 @@ reproduce them exactly, untranslated.`;
 }
 
 /**
- * `buildPrompt` for system prompts: appends language directive as final
- * section, only for `"user-facing"` and only when a foreign language is bound.
- *
- * Language from `runtime.languageOverride`, else ALS
- * `getRequestContext()?.language`; never LangGraph context or graph state.
- * Sandwich-on generation runs with override `"English"`, so a foreign
- * language here means sandwich off.
+ * `buildPrompt` for a system prompt that writes user-visible text: appends the language directive as
+ * the final section when `language` is set and not English. Internal (English-only) prompts use
+ * `buildPrompt` directly.
  */
 export function buildSystemPrompt(
-  runtime: GraphRuntime,
-  audience: PromptAudience,
+  language: Language | undefined,
   ...parts: (string | undefined)[]
 ): string {
-  const language = runtime.languageOverride ?? getRequestContext()?.language;
   const directive =
-    audience === "user-facing" && language && language !== "English"
+    language && language !== "English"
       ? languageDirective(language)
       : undefined;
   return buildPrompt(...parts, directive);
+}
+
+/**
+ * Language a user-facing prompt writes in: the runtime's override (sandwich on binds "English" for
+ * planners), else the request language bound on ALS.
+ */
+export function boundLanguage(runtime: GraphRuntime): Language | undefined {
+  return runtime.languageOverride ?? getRequestContext()?.language;
 }
 
 /** Markdown-headed section; undefined for empty body (composes with `buildPrompt`). */

@@ -3,15 +3,12 @@ import {
   type Symptom,
 } from "@/core/graph/02-plan/01-basis/symptom.js";
 import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
-import { handleLangchainError } from "@/core/graph/errors/AppError.js";
 import {
   buildPrompt,
-  buildSystemPrompt,
   renderSchemaForPrompt,
   section,
   summarizeValidationError,
 } from "@/core/graph/shared/prompt/prompt.js";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import z from "zod";
 import { retry } from "@/core/graph/shared/prompt/retry.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
@@ -28,9 +25,7 @@ export async function generateSymptomsOneShot(
   });
 
   // Internal: feeds the plan, not the student; English always.
-  const systemPrompt = buildSystemPrompt(
-    runtime,
-    "internal",
+  const systemPrompt = buildPrompt(
     section(
       "Role",
       `You are a medical expert tasked with generating symptoms for a given diagnosis.`
@@ -64,29 +59,19 @@ ${renderSchemaForPrompt(SymptomArrayWrapperSchema)}`
   try {
     const symptoms: Symptom[] = await retry(
       async (attempt: number, previousError?: Error) => {
-        const result = await runtime.llm
-          .for(
-            { role: "generator", temperature: "deterministic" },
-            context?.llmConfig
-          )
-          .withStructuredOutput(SymptomArrayWrapperSchema)
-          .invoke(
-            [
-              new SystemMessage(systemPrompt),
-              new HumanMessage(
-                userPrompt +
-                  (previousError
-                    ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
-                    : "")
-              ),
-            ],
-            context?.signal !== undefined
-              ? { signal: context.signal }
-              : undefined
-          )
-          .catch((error) => {
-            handleLangchainError(error);
-          });
+        const result = await runtime.llm.structured(
+          { role: "generator", temperature: "deterministic" },
+          {
+            system: systemPrompt,
+            user:
+              userPrompt +
+              (previousError
+                ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
+                : ""),
+          },
+          SymptomArrayWrapperSchema,
+          context
+        );
 
         console.debug(
           `[GenerateSymptomsOneShot] [Attempt ${attempt}] LLM raw Response:\n`,

@@ -37,7 +37,7 @@ function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
       catalogs: {
         diagnosis: { byIcd: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
     ...planAndRenderFrom(generateCase),
   } as GraphAppContext;
@@ -202,7 +202,7 @@ describe("labels.router — end-to-end over real HTTP", () => {
       } as GraphAppContext["config"],
       runtime: {
         catalogs: { diagnosis: { byIcd: () => undefined } },
-        llm: { for: vi.fn() },
+        llm: { structured: vi.fn(), text: vi.fn() },
       } as unknown as GraphAppContext["runtime"],
       async planCase(opts: { diagnosis: unknown; userInstructions: unknown }) {
         await gate;

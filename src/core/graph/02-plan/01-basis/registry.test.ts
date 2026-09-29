@@ -1,4 +1,5 @@
 // `resolveAllFragments` against fake providers (no graph/LLM/fs), plus `createMedicalBasisRegistry` shape.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it, vi } from "vitest";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import { createMedicalBasisRegistry, resolveAllFragments } from "./registry.js";
@@ -181,11 +182,9 @@ describe("createMedicalBasisRegistry", () => {
       saveCachedSymptoms: () => {},
     };
     const runtime: GraphRuntime = {
-      llm: {
-        for() {
-          throw new Error("not used in this test");
-        },
-      },
+      llm: chatModelLlmPort(() => {
+        throw new Error("not used in this test");
+      }),
       catalogs: {
         procedures: new InMemoryProcedureCatalog(),
         anamnesis: new InMemoryAnamnesisCatalog(),

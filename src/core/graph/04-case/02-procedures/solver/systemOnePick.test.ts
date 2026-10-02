@@ -1,47 +1,37 @@
-// `SystemOnePick` against a fake System One port and a scripted LLM: narrowing, nucleus, commit gate.
+// `SystemOnePick` against a fake System One port and a scripted LLM: threshold, cap, top-1 fallback, commit gate.
 import { describe, expect, it, vi } from "vitest";
 import type { GraphRuntime, SystemOnePort } from "@/core/graph/runtime.js";
 import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
-import { nucleus, SystemOnePick } from "./systemOnePick.js";
+import { SystemOnePick } from "./systemOnePick.js";
 import type { ProcedureStrategy } from "./ports.js";
 
-/** Probabilities by option label; unlisted options get 0. */
+const NAMES = ["Vitals", "HbA1c", "Glucose", "Chest X-ray"];
+
+/** P(yes) by procedure name, looked up through the question text. */
 function portAnswering(p: Record<string, number>) {
   return {
-    choice: vi.fn(
-      async (_state: string, _instructions: string, options: string[]) =>
-        Object.fromEntries(options.map((option) => [option, p[option] ?? 0]))
+    noul: vi.fn(async (_state: string, questions: Record<string, string>) =>
+      Object.fromEntries(
+        Object.entries(questions).map(([key, text]) => [
+          key,
+          p[NAMES.find((name) => text.includes(`"${name}"`))!] ?? 0,
+        ])
+      )
     ),
   } satisfies SystemOnePort;
 }
 
-// 5 procedures; `maxOptions: 4` forces one narrowing level.
 function pickWith(port: SystemOnePort, commit: object = {}) {
   const structured = vi.fn().mockResolvedValue(commit);
   const runtime: GraphRuntime = {
     llm: { structured, text: vi.fn() },
     catalogs: {
       procedures: new InMemoryProcedureCatalog({
-        procedures: [],
-        categories: [
-          {
-            name: "Lab",
-            procedures: [
-              { name: "HbA1c" },
-              { name: "Glucose" },
-              { name: "Lipids" },
-            ],
-            categories: [],
-          },
-          {
-            name: "Imaging",
-            procedures: [{ name: "Chest X-ray" }, { name: "CT Thorax" }],
-            categories: [],
-          },
-        ],
+        procedures: NAMES.map((name) => ({ name })),
+        categories: [],
       }),
       anamnesis: new InMemoryAnamnesisCatalog(),
       labels: new InMemoryLabelCatalog(),
@@ -50,7 +40,7 @@ function pickWith(port: SystemOnePort, commit: object = {}) {
     log: { info() {}, warn() {}, error() {} },
     clock: () => new Date("2024-01-01T00:00:00.000Z"),
   };
-  const systemOne = { port, pickMass: 0.8, pickMax: 3, maxOptions: 4 };
+  const systemOne = { port, pickThreshold: 0.5, pickMax: 2 };
   const pick = new SystemOnePick(runtime, systemOne, {} as ProcedureStrategy);
   return { pick, structured };
 }
@@ -62,43 +52,47 @@ const view = {
   previousProcedures: [],
 };
 
+const ordered = {
+  ...view,
+  previousProcedures: [
+    {
+      path: [],
+      name: "HbA1c",
+      relevance: "obligatory" as const,
+      result: "HbA1c 8.1 %",
+    },
+  ],
+};
+
 describe("SystemOnePick.nextStep", () => {
-  it("narrows to the chosen category, then orders its nucleus; no LLM before the first batch", async () => {
+  it("orders the candidates at or over the threshold, highest first, capped; no LLM before the first batch", async () => {
     const port = portAnswering({
-      Lab: 0.9,
-      Imaging: 0.1,
-      "Lab › HbA1c": 0.6,
-      "Lab › Glucose": 0.3,
-      "Lab › Lipids": 0.1,
+      Vitals: 0.6,
+      HbA1c: 0.9,
+      Glucose: 0.8,
+      "Chest X-ray": 0.1,
     });
     const { pick, structured } = pickWith(port);
     expect(await pick.nextStep(view)).toEqual({
       action: "order",
       procedures: [
-        { path: ["Lab"], name: "HbA1c" },
-        { path: ["Lab"], name: "Glucose" },
+        { path: [], name: "HbA1c" },
+        { path: [], name: "Glucose" },
       ],
     });
-    expect(port.choice.mock.calls.map(([, , options]) => options)).toEqual([
-      ["Lab", "Imaging"],
-      ["Lab › HbA1c", "Lab › Glucose", "Lab › Lipids"],
-    ]);
     expect(structured).not.toHaveBeenCalled();
   });
 
-  it("after the first batch, lets the LLM diagnose, else chooses only from what is left", async () => {
-    const ordered = {
-      ...view,
-      previousProcedures: [
-        {
-          path: ["Lab"],
-          name: "HbA1c",
-          relevance: "obligatory" as const,
-          result: "HbA1c 8.1 %",
-        },
-      ],
-    };
-    const port = portAnswering({ "Lab › Glucose": 1 });
+  it("orders the single best candidate when none passes", async () => {
+    const { pick } = pickWith(portAnswering({ Glucose: 0.3, Vitals: 0.2 }));
+    expect(await pick.nextStep(view)).toEqual({
+      action: "order",
+      procedures: [{ path: [], name: "Glucose" }],
+    });
+  });
+
+  it("after the first batch, lets the LLM diagnose, else asks only about what is left", async () => {
+    const port = portAnswering({ Glucose: 0.9 });
     const diagnosed = pickWith(port, {
       action: "diagnose",
       diagnosisName: "Diabetes",
@@ -107,34 +101,12 @@ describe("SystemOnePick.nextStep", () => {
       action: "diagnose",
       diagnosisName: "Diabetes",
     });
-    expect(port.choice).not.toHaveBeenCalled();
+    expect(port.noul).not.toHaveBeenCalled();
 
-    // 4 left, not < maxOptions: both categories open into a level of
-    // procedures only, which is the pick; no third choice.
-    expect(
-      await pickWith(port, { action: "continue" }).pick.nextStep(ordered)
-    ).toEqual({
-      action: "order",
-      procedures: [{ path: ["Lab"], name: "Glucose" }],
-    });
-    expect(port.choice).toHaveBeenCalledTimes(2);
-    const [state, , options] = port.choice.mock.calls[1]!;
-    expect(options).not.toContain("Lab › HbA1c");
-    expect(state).toContain("HbA1c 8.1 %");
-  });
-});
-
-describe("nucleus", () => {
-  const ranked = [
-    { option: "a", p: 0.5 },
-    { option: "b", p: 0.3 },
-    { option: "c", p: 0.15 },
-    { option: "d", p: 0.05 },
-  ];
-
-  it("keeps the top options until their mass is reached, capped, at least one", () => {
-    expect(nucleus(ranked, 0.8, 3)).toEqual(["a", "b"]);
-    expect(nucleus(ranked, 0.99, 3)).toEqual(["a", "b", "c"]);
-    expect(nucleus(ranked, 0.1, 3)).toEqual(["a"]);
+    const continued = pickWith(port, { action: "continue" });
+    await continued.pick.nextStep(ordered);
+    const questions = Object.values(port.noul.mock.calls[0]![1]).join("\n");
+    expect(questions).not.toContain('"HbA1c"');
+    expect(port.noul.mock.calls[0]![0]).toContain("HbA1c 8.1 %");
   });
 });

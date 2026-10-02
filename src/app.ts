@@ -41,11 +41,9 @@ const AppEnvSchema = z
       .min(1)
       .default(DEFAULT_MAX_CONCURRENT_GENERATIONS),
     SYSTEM_ONE_URL: z.url().optional(),
-    SYSTEM_ONE_MODEL: z.string().default("multilingual"),
+    SYSTEM_ONE_MODEL: z.string().default("nimble"),
     SYSTEM_ONE_API_KEY: z.string().optional(),
-    SYSTEM_ONE_MAX_LEN: z.coerce.number().int().positive().optional(),
-    SYSTEM_ONE_PICK_MASS: z.coerce.number().gt(0).max(1).default(0.8),
-    SYSTEM_ONE_MAX_OPTIONS: z.coerce.number().int().min(2).max(100).default(20),
+    SYSTEM_ONE_PICK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
     SYSTEM_ONE_PICK_MAX: z.coerce.number().int().min(1).default(3),
   })
   .transform((env) => ({
@@ -59,10 +57,8 @@ const AppEnvSchema = z
           url: env.SYSTEM_ONE_URL,
           model: env.SYSTEM_ONE_MODEL,
           apiKey: env.SYSTEM_ONE_API_KEY,
-          maxLen: env.SYSTEM_ONE_MAX_LEN,
-          pickMass: env.SYSTEM_ONE_PICK_MASS,
+          pickThreshold: env.SYSTEM_ONE_PICK_THRESHOLD,
           pickMax: env.SYSTEM_ONE_PICK_MAX,
-          maxOptions: env.SYSTEM_ONE_MAX_OPTIONS,
         }
       : undefined,
   }));
@@ -99,7 +95,7 @@ export async function createApp(): Promise<{
   });
   if (systemOneEnv) {
     console.log(
-      `[app] Blinded procedure pick: System One at ${systemOneEnv.url} (${systemOneEnv.model}), mass ${systemOneEnv.pickMass}, max ${systemOneEnv.pickMax}, options ${systemOneEnv.maxOptions}`
+      `[app] Blinded procedure pick: System One at ${systemOneEnv.url} (${systemOneEnv.model}), threshold ${systemOneEnv.pickThreshold}, max ${systemOneEnv.pickMax}`
     );
   }
   const graph = initGraph({
@@ -112,9 +108,8 @@ export async function createApp(): Promise<{
     tracer: otel.tracer,
     systemOne: systemOneEnv && {
       port: createSystemOnePort(systemOneEnv),
-      pickMass: systemOneEnv.pickMass,
+      pickThreshold: systemOneEnv.pickThreshold,
       pickMax: systemOneEnv.pickMax,
-      maxOptions: systemOneEnv.maxOptions,
     },
   });
   // Must run after graph construction: labels' base key set is

@@ -27,8 +27,8 @@ import { toSolverMove } from "./solverMove.js";
 export const MAX_PICK_CANDIDATES = 255;
 
 /**
- * Narrows `candidates` level by level until fewer than `maxPool` (default
- * {@link MAX_PICK_CANDIDATES}) remain: the model keeps categories and single
+ * Narrows `candidates` level by level until fewer than
+ * {@link MAX_PICK_CANDIDATES} remain: the model keeps categories and single
  * procedures from the root level; kept procedures stay, kept categories open
  * one level deeper, until the pool is small enough or nothing is left to open.
  * Terminates: each round opens strictly deeper paths of a finite tree.
@@ -39,8 +39,7 @@ export const MAX_PICK_CANDIDATES = 255;
  */
 export async function drillDown(
   candidates: ProcedureCandidates,
-  select: (items: LevelItem[], first: boolean) => Promise<LevelSelection>,
-  maxPool = MAX_PICK_CANDIDATES
+  select: (items: LevelItem[], first: boolean) => Promise<LevelSelection>
 ): Promise<
   | { candidates: ProcedureCandidates }
   | { diagnosed: Extract<LevelSelection, { action: "diagnose" }> }
@@ -60,7 +59,7 @@ export async function drillDown(
       )
     );
     const pool = candidates.narrow(kept, categories);
-    if (categories.length === 0 || (pool.size() ?? 0) < maxPool) {
+    if (categories.length === 0 || (pool.size() ?? 0) < MAX_PICK_CANDIDATES) {
       return { candidates: pool };
     }
     open = categories;

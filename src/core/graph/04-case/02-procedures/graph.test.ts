@@ -22,6 +22,7 @@ import type { ModalityProvider } from "@/core/graph/shared/modality/ports.js";
 import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import { EventBus } from "@/core/event-bus.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
@@ -62,6 +63,7 @@ function buildFakeRuntime(
       procedures,
       anamnesis: new InMemoryAnamnesisCatalog(),
       labels: new InMemoryLabelCatalog(),
+      outlineHeadings: new InMemoryOutlineHeadingCatalog(),
       diagnosis: new InMemoryDiagnosisCatalog(),
     },
     log: { info() {}, warn() {}, error() {} },

@@ -113,24 +113,34 @@ function escapeFixedTags(text: string): string {
   return text.replace(/<(\/?)fixed>/g, "&lt;$1fixed&gt;");
 }
 
-/** Fixed top-level section headings, in outline order. Order is the object's key order. */
+/**
+ * Fixed top-level section titles, in outline order (the object's key order).
+ * The English titles are the keys of `outlineHeadingsTranslations.yml`.
+ */
 export const OUTLINE_SECTIONS = Object.freeze({
-  general: "## General",
-  patient: "## Patient",
-  chiefComplaint: "## Chief complaint",
-  anamnesis: "## Anamnesis",
-  procedures: "## Procedures",
+  general: "General",
+  patient: "Patient",
+  chiefComplaint: "Chief complaint",
+  anamnesis: "Anamnesis",
+  procedures: "Procedures",
 } as const);
+
+/** Markdown prefixes of the two fixed heading levels. */
+export const SECTION_PREFIX = "## ";
+export const CATEGORY_PREFIX = "### ";
 
 /** Section the anamnesis category headings follow. */
 const CATEGORY_ANCHOR: keyof typeof OUTLINE_SECTIONS = "anamnesis";
 
 const SECTION_KEYS = Object.keys(OUTLINE_SECTIONS);
-const SECTIONS_BEFORE_CATEGORIES = Object.values(OUTLINE_SECTIONS).slice(
+const SECTION_HEADINGS = Object.values(OUTLINE_SECTIONS).map(
+  (title) => SECTION_PREFIX + title
+);
+const SECTIONS_BEFORE_CATEGORIES = SECTION_HEADINGS.slice(
   0,
   SECTION_KEYS.indexOf(CATEGORY_ANCHOR) + 1
 );
-const SECTIONS_AFTER_CATEGORIES = Object.values(OUTLINE_SECTIONS).slice(
+const SECTIONS_AFTER_CATEGORIES = SECTION_HEADINGS.slice(
   SECTION_KEYS.indexOf(CATEGORY_ANCHOR) + 1
 );
 
@@ -144,7 +154,9 @@ export function outlineSkeleton(opts: {
 }): string[] {
   return [
     ...SECTIONS_BEFORE_CATEGORIES,
-    ...(opts.anamnesisCategories ?? []).map((category) => `### ${category}`),
+    ...(opts.anamnesisCategories ?? []).map(
+      (category) => CATEGORY_PREFIX + category
+    ),
     ...SECTIONS_AFTER_CATEGORIES,
   ];
 }
@@ -175,7 +187,7 @@ export function checkSkeleton(
     opts.anamnesisCategories ??
     categoryHeadings(fixedTexts)
       .filter((text) => /^### \S/.test(text))
-      .map((text) => text.slice(4));
+      .map((text) => text.slice(CATEGORY_PREFIX.length));
   const expected = outlineSkeleton({ anamnesisCategories });
 
   for (let i = 0; i < Math.max(expected.length, fixedTexts.length); i++) {
@@ -221,7 +233,7 @@ export function restoreSkeletonHeadings(
   // Freeform: category headings keep their translated text.
   const expected = [
     ...SECTIONS_BEFORE_CATEGORIES,
-    ...(categories?.map((category) => `### ${category}`) ??
+    ...(categories?.map((category) => CATEGORY_PREFIX + category) ??
       categoryHeadings(fixedTexts)),
     ...SECTIONS_AFTER_CATEGORIES,
   ];

@@ -258,6 +258,7 @@ Tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`.
 - `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions
 - `labelTranslations.yml` — progress label translations
+- `outlineHeadingsTranslations.yml` — plan-mode outline section-title translations (missing titles are LLM-translated once and cached)
 - `diagnosis_symptoms.json` — UMLS symptoms per ICD code (loaded directly, not via the DB sync)
 
 The generated database lives under `CACHE_DIR` (default `data/cache/`), deliberately a separate directory so a deployer can mount their own catalogues without clobbering it. `scripts/extract-icd11*.ts` build the diagnosis YAML from ICD-11 source data and are run manually.

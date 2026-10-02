@@ -135,13 +135,13 @@ describe("joinOutline", () => {
 });
 
 describe("outlineSkeleton / OUTLINE_SECTIONS", () => {
-  it("exposes the five fixed section headings, keyed, in outline order", () => {
+  it("exposes the five fixed section titles, keyed, in outline order", () => {
     expect(Object.entries(OUTLINE_SECTIONS)).toEqual([
-      ["general", "## General"],
-      ["patient", "## Patient"],
-      ["chiefComplaint", "## Chief complaint"],
-      ["anamnesis", "## Anamnesis"],
-      ["procedures", "## Procedures"],
+      ["general", "General"],
+      ["patient", "Patient"],
+      ["chiefComplaint", "Chief complaint"],
+      ["anamnesis", "Anamnesis"],
+      ["procedures", "Procedures"],
     ]);
   });
 

@@ -1,7 +1,13 @@
 import { ChatOllama, type ChatOllamaInput } from "@langchain/ollama";
 import { ChatGoogle, type ChatGoogleParams } from "@langchain/google";
 import { ChatOpenAI, type ChatOpenAIFields } from "@langchain/openai";
-import { SystemMessage, HumanMessage } from "@langchain/core/messages";
+import {
+  SystemMessage,
+  HumanMessage,
+  ToolMessage,
+  type BaseMessage,
+} from "@langchain/core/messages";
+import { tool } from "@langchain/core/tools";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { ModelUnreachableError } from "@/core/graph/errors/AppError.js";
 import {
@@ -67,6 +73,66 @@ export function chatModelLlmPort(
         )
         .catch((error: Error) => handleLangchainError(error));
       return result.text;
+    },
+    async agent(call, prompt, tools, opts, context) {
+      // "text": Ollama's format=json breaks tool calls.
+      const model = modelFor(call, {
+        ...context?.llmConfig,
+        outputFormat: "text",
+      });
+      if (!model.bindTools) {
+        throw new Error("Configured chat model does not support tool calling");
+      }
+      const bound = model.bindTools(
+        tools.map((t) =>
+          tool(async () => "", {
+            name: t.name,
+            description: t.description,
+            schema: t.schema,
+          })
+        )
+      );
+      const byName = new Map(tools.map((t) => [t.name, t]));
+      const invokeOpts =
+        context?.signal !== undefined ? { signal: context.signal } : undefined;
+      const messages: BaseMessage[] = [
+        new SystemMessage(prompt.system),
+        new HumanMessage(prompt.user),
+      ];
+
+      for (let step = 0; step < opts.maxSteps; step++) {
+        const reply = await bound
+          .invoke(messages, invokeOpts)
+          .catch((error: Error) => handleLangchainError(error));
+        messages.push(reply);
+        if (!reply.tool_calls?.length) return reply.text;
+
+        for (const toolCall of reply.tool_calls) {
+          const t = byName.get(toolCall.name);
+          const content = t
+            ? await t
+                .run(toolCall.args, context)
+                .catch((error: Error) => `Tool error: ${error.message}`)
+            : `Unknown tool: ${toolCall.name}`;
+          messages.push(
+            new ToolMessage({
+              content,
+              tool_call_id: toolCall.id ?? toolCall.name,
+            })
+          );
+        }
+      }
+
+      // Budget spent: answer without tools.
+      messages.push(
+        new HumanMessage(
+          "Tool budget exhausted. Write your final answer now, without tools."
+        )
+      );
+      const final = await model
+        .invoke(messages, invokeOpts)
+        .catch((error: Error) => handleLangchainError(error));
+      return final.text;
     },
   };
 }

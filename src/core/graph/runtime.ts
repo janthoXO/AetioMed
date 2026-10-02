@@ -35,6 +35,23 @@ export interface GraphRuntime {
    * unmodified runtime.
    */
   languageOverride?: Language;
+  /** Web search; absent when the deployment configures none. */
+  webSearch?: WebSearch;
+}
+
+export type WebSearchResult = { title: string; url: string; content: string };
+
+export type WebSearch = (
+  query: string,
+  context?: RequestContext
+) => Promise<WebSearchResult[]>;
+
+/** A tool an agent call may use. Result is plain text fed back to the model. */
+export interface AgentTool {
+  name: string;
+  description: string;
+  schema: z.ZodObject;
+  run(input: unknown, context?: RequestContext): Promise<string>;
 }
 
 export const LLM_ROLES = ["generator", "judge", "translator"] as const;
@@ -59,6 +76,17 @@ export interface LlmPort {
   text(
     call: { role: LlmRole; temperature: LlmTemperature },
     prompt: { system: string; user: string },
+    context?: RequestContext
+  ): Promise<string>;
+  /**
+   * Free-text call in a tool-calling loop: the model may call `tools` up to
+   * `maxSteps` rounds, then must answer. Returns the final message text.
+   */
+  agent(
+    call: { role: LlmRole; temperature: LlmTemperature },
+    prompt: { system: string; user: string },
+    tools: AgentTool[],
+    opts: { maxSteps: number },
     context?: RequestContext
   ): Promise<string>;
 }

@@ -12,6 +12,7 @@ import type { GraphRuntime, LlmPort } from "@/core/graph/runtime.js";
 import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import type { BasisQuery } from "@/core/graph/02-plan/01-basis/ports.js";
 
@@ -65,6 +66,7 @@ function buildRuntime(llm: LlmPort): GraphRuntime {
       procedures: new InMemoryProcedureCatalog(),
       anamnesis: new InMemoryAnamnesisCatalog(),
       labels: new InMemoryLabelCatalog(),
+      outlineHeadings: new InMemoryOutlineHeadingCatalog(),
       diagnosis: new InMemoryDiagnosisCatalog(),
     },
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },

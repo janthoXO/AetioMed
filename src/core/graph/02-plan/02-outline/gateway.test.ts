@@ -11,6 +11,7 @@ import type { GraphRuntime, LlmPort } from "@/core/graph/runtime.js";
 import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import type { BasisFragment } from "@/core/graph/02-plan/01-basis/ports.js";
 import { taggedOutlineFixture } from "@/core/graph/shared/outline/fixtures.js";
@@ -47,6 +48,7 @@ function buildRuntime(model: CapturingChatModel): GraphRuntime {
       procedures: new InMemoryProcedureCatalog(),
       anamnesis: new InMemoryAnamnesisCatalog(),
       labels: new InMemoryLabelCatalog(),
+      outlineHeadings: new InMemoryOutlineHeadingCatalog(),
       diagnosis: new InMemoryDiagnosisCatalog(),
     },
     log: { info() {}, warn() {}, error() {} },

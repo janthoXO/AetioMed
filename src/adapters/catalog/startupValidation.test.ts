@@ -187,6 +187,9 @@ function fakeRepos(
     labels: {
       translationsFile: "labelTranslations.yml",
     } as unknown as Repos["labels"],
+    outlineHeadings: {
+      translationsFile: "outlineHeadingsTranslations.yml",
+    } as unknown as Repos["outlineHeadings"],
     symptoms: {} as unknown as Repos["symptoms"],
   };
 }
@@ -194,6 +197,9 @@ function fakeRepos(
 describe("validateCatalogsOrExit — end to end", () => {
   beforeEach(() => {
     declared.clear();
+    declared.set("outlineHeadingsTranslations.yml", {
+      German: { General: "Allgemein" },
+    });
     vi.spyOn(console, "log").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -279,6 +285,9 @@ describe("validateCatalogsOrExit — end to end", () => {
       Klingon: { Influenza: "tlhIngan" },
     });
     declared.set("labelTranslations.yml", { Klingon: { unused: "tlhIngan" } });
+    declared.set("outlineHeadingsTranslations.yml", {
+      Klingon: { General: "tlhIngan" },
+    });
 
     const exitSpy = vi
       .spyOn(process, "exit")

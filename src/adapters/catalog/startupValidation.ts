@@ -1,4 +1,5 @@
 import { readDeclaredTranslations } from "../persistence/predefinedList.js";
+import { OUTLINE_SECTIONS } from "@/core/graph/shared/outline/segments.js";
 import type { Repos } from "../repos.js";
 import { getKnownLabels } from "@/core/graph/utils/nodeWrapper.js";
 import { unmappableLanguages } from "@/core/languageDetection/mapping.js";
@@ -61,6 +62,15 @@ function loadCatalogueSpecs(repos: Repos): CatalogueSpec[] {
       file: repos.anamnesis.translationsFile,
       baseKeys: repos.anamnesis.getEffectiveCategoryList() ?? [],
       translations: readDeclaredTranslations(repos.anamnesis.translationsFile),
+      enforceUnknownKeys: true,
+    },
+    {
+      catalogue: "outlineHeadings",
+      file: repos.outlineHeadings.translationsFile,
+      baseKeys: Object.values(OUTLINE_SECTIONS),
+      translations: readDeclaredTranslations(
+        repos.outlineHeadings.translationsFile
+      ),
       enforceUnknownKeys: true,
     },
     {

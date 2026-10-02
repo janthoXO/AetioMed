@@ -36,31 +36,27 @@ export interface GraphRuntime {
    */
   languageOverride?: Language;
   /**
-   * System One decider (Laya/Jev) for the blinded procedure pick. Absent: the
+   * System One decider (Jev wire, e.g. an Ollama decision model) for the blinded procedure pick. Absent: the
    * LLM picks (`DrillDownPick`). Not a topology flag: same nodes either way.
    */
   systemOne?: {
     port: SystemOnePort;
-    /** Keep the top-ranked options until their probabilities sum to this (nucleus). */
-    pickMass: number;
-    /** At most this many categories per level and procedures per batch. */
+    /** A candidate is ordered when its P(yes) ≥ this. */
+    pickThreshold: number;
+    /** At most this many procedures per batch, highest P first. */
     pickMax: number;
-    /** Narrow the catalogue until a pick offers fewer options than this. */
-    maxOptions: number;
   };
 }
 
 /**
  * System One model: typed questions answered in one parallel pass, no text
- * generation. Only `choice` is used: per-option `noul` proved not to
- * discriminate between options (#202).
+ * generation. Only `noul` (P(yes)) is used so far.
  */
 export interface SystemOnePort {
-  /** Probability per option (summing to 1) that it is the answer to `instructions` about `state`. */
-  choice(
+  /** P(yes) per question key, for yes/no `questions` asked about `state`. */
+  noul(
     state: string,
-    instructions: string,
-    options: string[],
+    questions: Record<string, string>,
     context?: RequestContext
   ): Promise<Record<string, number>>;
 }

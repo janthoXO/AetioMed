@@ -1,47 +1,50 @@
-import {
-  TypeSafeClient,
-  choice,
-  type SystemOneRequest,
-} from "@typesafe-ai/sdk";
+import { TypeSafeClient, noul } from "@typesafe-ai/sdk";
 import type { SystemOnePort } from "@/core/graph/runtime.js";
 
 /**
- * Real `SystemOnePort`: Jev-wire client (laya-serve), one `choice` question per call.
- * laya-serve rejects more than 100 options per choice (413) and gets less accurate past ~20 —
- * the caller narrows first.
+ * Ollama packs state and every question of a request into one prompt with a
+ * hard token cap (tev1: 2050, never truncated); 16 short questions next to a
+ * short state already reach ~1300. Small chunks leave room for a long state.
+ *
+ * ponytail: fixed count, not a token estimate; lower it if a long workup
+ * state hits the cap ("prompt 0 has N tokens").
  */
+export const MAX_QUESTIONS_PER_REQUEST = 8;
+
+/** Real `SystemOnePort`: Jev-wire client (Ollama ≥ 0.35 `/v1/systemone`), questions chunked and sent concurrently. */
 export function createSystemOnePort(cfg: {
   url: string;
   model: string;
   apiKey?: string | undefined;
-  maxLen?: number | undefined;
 }): SystemOnePort {
   const client = new TypeSafeClient({
     baseURL: cfg.url,
-    apiKey: cfg.apiKey ?? "unused", // required by the SDK; laya-serve ignores it unless LAYA_API_KEY is set
+    apiKey: cfg.apiKey ?? "unused", // required by the SDK; Ollama ignores it
     defaultModel: cfg.model,
-    timeout: 120_000, // CPU inference is slow
+    timeout: 120_000, // local inference over many questions is slow
   });
   return {
-    async choice(state, instructions, options, context) {
-      const req = {
-        state,
-        questions: {
-          pick: choice(
-            instructions,
-            Object.fromEntries(options.map((o) => [o, null]))
-          ),
-        },
-        ...(cfg.maxLen ? { max_len: cfg.maxLen } : {}),
-      } as SystemOneRequest;
-      const res = (await client.systemOne(
-        req,
-        context?.signal ? { signal: context.signal } : {}
-      )) as unknown as {
-        answers: { pick: { probabilities: Record<string, number> } };
-      };
-      const p = res.answers.pick.probabilities;
-      return Object.fromEntries(options.map((o) => [o, p[o] ?? 0]));
+    async noul(state, questions, context) {
+      const entries = Object.entries(questions);
+      const chunks: [string, string][][] = [];
+      for (let i = 0; i < entries.length; i += MAX_QUESTIONS_PER_REQUEST) {
+        chunks.push(entries.slice(i, i + MAX_QUESTIONS_PER_REQUEST));
+      }
+      const results = await Promise.all(
+        chunks.map(async (chunk) => {
+          const res = (await client.systemOne(
+            {
+              state,
+              questions: Object.fromEntries(
+                chunk.map(([k, q]) => [k, noul(q)])
+              ),
+            },
+            context?.signal ? { signal: context.signal } : {}
+          )) as { answers: Record<string, { noul: number }> };
+          return chunk.map(([k]) => [k, res.answers[k]!.noul] as const);
+        })
+      );
+      return Object.fromEntries(results.flat());
     },
   };
 }

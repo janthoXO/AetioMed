@@ -1,6 +1,6 @@
-// Manual smoke test: the blinded System One pick against a running Laya server, same case in
-// English and German. `docker compose --profile LAYA up -d laya`, then
-// `SYSTEM_ONE_URL=http://localhost:8000 pnpm exec tsx scripts/layaSmoke.ts`.
+// Manual smoke test: the blinded System One pick against a local Ollama, same case in
+// English and German. `ollama pull nimble`, then
+// `SYSTEM_ONE_URL=http://localhost:11434 pnpm exec tsx scripts/systemOneSmoke.ts`.
 import { readFileSync } from "node:fs";
 import { parse } from "yaml";
 import z from "zod";
@@ -14,8 +14,8 @@ import { SystemOnePick } from "@/core/graph/04-case/02-procedures/solver/systemO
 import type { ProcedureStrategy } from "@/core/graph/04-case/02-procedures/solver/ports.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 
-const url = process.env.SYSTEM_ONE_URL ?? "http://localhost:8000";
-const model = process.env.SYSTEM_ONE_MODEL ?? "multilingual";
+const url = process.env.SYSTEM_ONE_URL ?? "http://localhost:11434";
+const model = process.env.SYSTEM_ONE_MODEL ?? "nimble";
 
 const cases = {
   English: {
@@ -73,9 +73,8 @@ const pick = new SystemOnePick(
   runtime,
   {
     port: createSystemOnePort({ url, model }),
-    pickMass: Number(process.env.SYSTEM_ONE_PICK_MASS ?? 0.8),
+    pickThreshold: Number(process.env.SYSTEM_ONE_PICK_THRESHOLD ?? 0.5),
     pickMax: Number(process.env.SYSTEM_ONE_PICK_MAX ?? 3),
-    maxOptions: Number(process.env.SYSTEM_ONE_MAX_OPTIONS ?? 20),
   },
   {} as ProcedureStrategy
 );

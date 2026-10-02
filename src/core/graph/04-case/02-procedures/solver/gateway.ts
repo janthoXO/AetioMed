@@ -328,7 +328,7 @@ export type LevelSelectionView =
       userInstructions?: string | undefined;
     };
 
-export function levelItemLabel(item: LevelItem): string {
+function levelItemLabel(item: LevelItem): string {
   return item.kind === "category" ? item.path.join(" › ") : refLabel(item.ref);
 }
 

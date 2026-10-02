@@ -79,7 +79,7 @@ export function initGraph(opts: {
   symptomCache: SymptomCache;
   /** OTel port from `observability/otel.ts`'s `createOtelNodeTracer()`. Pass `noopNodeTracer` for silence. */
   tracer: NodeTracer;
-  /** Laya/Jev decider for the blinded procedure pick; absent = LLM picks. */
+  /** System One decider (Jev wire) for the blinded procedure pick; absent = LLM picks. */
   systemOne?: GraphRuntime["systemOne"];
 }): GraphAppContext {
   const { bus, config, llm, catalogs, umlsFloor, symptomCache, tracer } = opts;

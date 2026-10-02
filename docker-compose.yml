@@ -56,14 +56,12 @@ services:
       - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS:-4}
 
       # ─── System One (blinded procedure pick) ─────────────────────────
-      # No default; http://laya:8000 with the LAYA profile.
+      # No default; http://ollama:11434 to use the ollama service's decision model.
       - SYSTEM_ONE_URL
-      - SYSTEM_ONE_MODEL=${SYSTEM_ONE_MODEL:-multilingual}
+      - SYSTEM_ONE_MODEL=${SYSTEM_ONE_MODEL:-nimble}
       - SYSTEM_ONE_API_KEY
-      - SYSTEM_ONE_MAX_LEN
-      - SYSTEM_ONE_PICK_MASS
+      - SYSTEM_ONE_PICK_THRESHOLD
       - SYSTEM_ONE_PICK_MAX
-      - SYSTEM_ONE_MAX_OPTIONS
 
       # ─── OpenTelemetry ───────────────────────────────────────────────
       - OTEL_SDK_DISABLED
@@ -78,52 +76,16 @@ services:
     restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:0.21.2
+    image: ollama/ollama:0.35.0
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     environment:
       - MODEL_NAME=${LLM_MODEL:-llama3.1}
+      - SYSTEM_ONE_MODEL=${SYSTEM_ONE_MODEL:-nimble}
     entrypoint: >
-      sh -c "ollama serve & sleep 5 && ollama pull $$MODEL_NAME && wait"
-
-  # Jev-compatible System One server, used for the blinded procedure pick
-  # when SYSTEM_ONE_URL is set.
-  laya:
-    profiles: [LAYA]
-    build:
-      context: https://github.com/NandhaKishorM/laya.git
-      args:
-        TORCH_INDEX: ${LAYA_TORCH_INDEX:-cpu}
-    command: ["laya-serve"]
-    ports:
-      - "8000:8000"
-    environment:
-      - LAYA_HOST=0.0.0.0
-      - LAYA_PORT=8000
-      - LAYA_DEVICE=${LAYA_DEVICE:-cpu}
-      - LAYA_MODELS=${LAYA_MODELS:-multilingual}
-      - LAYA_PRELOAD=1
-      - LAYA_MAX_TOKEN_BUDGET=8192
-      - HF_TOKEN
-    volumes:
-      - laya_models:/home/laya/.cache/huggingface
-    init: true
-    restart: unless-stopped
-    healthcheck:
-      test:
-        [
-          "CMD",
-          "python",
-          "-c",
-          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4)",
-        ]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 10m
-      start_interval: 2s
+      sh -c "ollama serve & sleep 5 && ollama pull $$MODEL_NAME && ollama pull $$SYSTEM_ONE_MODEL && wait"
 
   nats:
     profiles: [NATS]
@@ -152,6 +114,5 @@ services:
       - nats
 
 volumes:
-  laya_models:
   ollama_data:
   nats_data:

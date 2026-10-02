@@ -12,24 +12,17 @@ import { cancelSubject, statusSubject } from "./subjects.js";
 export type JobStatusReply = Exclude<JobPeek, { state: "unknown" }>;
 
 /**
- * Answer per-job requests for every job this process runs, whatever
- * transport submitted it. Ownership is expressed as subscription interest:
- * this replica subscribes to a job's subjects when the job is accepted, so a
- * request reaches exactly the replica that owns the job. A job no replica
- * knows has no subscriber, and the requester gets NATS's "no responders" at
- * once — never a wrong answer from a replica that merely does not own it.
+ * Answer per-job requests for every job this process runs, any transport.
+ * Ownership = subscription interest: subscribe on accept, so requests reach
+ * only the owner; unknown job gets "no responders".
  *
- * - `cases.cancel.<jobId>` → `{cancelled}`, while the job runs (#142).
- *   `{cancelled: false}` only happens when the job finished between the
- *   request and the abort.
- * - `cases.status.<jobId>` → `{state: "active"}` while it runs, then
- *   `{state: "terminal", complete}` for the channel's tombstone window
- *   (#145). That is what lets an observer on another replica tell
- *   "finished" from "never existed". A `planned` job stops answering at
- *   once (#159): its continuation, with the same jobId, may run on any
- *   replica, and this one must not answer for it.
+ * - `cases.cancel.<jobId>` → `{cancelled}` while job runs. `false` only if
+ *   job finished between request and abort.
+ * - `cases.status.<jobId>` → `{state: "active"}` while running, then
+ *   `{state: "terminal", complete}` for tombstone window. A `planned` job
+ *   stops answering at once: continuation may run on any replica.
  *
- * Returns a function that stops answering.
+ * Returns stop function.
  */
 export function startJobResponders(opts: {
   nc: NatsConnection;
@@ -53,9 +46,7 @@ export function startJobResponders(opts: {
 
   const stopListening = jobEvents.subscribeAll((jobId, event) => {
     if (event.type === "accepted") {
-      // Every jobId that reaches the service is validated against
-      // `JobIdSchema`, but a subject built from anything else would address
-      // a different subject — so never trust it blindly here.
+      // Guard: non-token jobId would address a different subject.
       if (!JobIdSchema.safeParse(jobId).success) {
         console.warn(
           `[NATS] jobId=${jobId} is not a subject token; not reachable over NATS`
@@ -81,9 +72,7 @@ export function startJobResponders(opts: {
           callback: (error, msg) => {
             if (error) return;
             const peek = jobEvents.peek(jobId);
-            // Unknown here means the tombstone just expired: stay silent,
-            // so the requester sees "no responders", exactly as for a job
-            // that never existed.
+            // Tombstone expired: stay silent so requester sees "no responders".
             if (peek.state === "unknown") return;
             msg.respond(JSON.stringify(peek satisfies JobStatusReply));
           },

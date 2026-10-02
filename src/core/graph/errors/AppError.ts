@@ -36,9 +36,8 @@ export class GenerationError extends AppError {
 }
 
 /**
- * The outline judge never accepted the outline before its iteration cap
- * (#159). Normal mode fails here instead of generating a case from an
- * outline nobody approved; plan mode shows it to the reviewer instead.
+ * Outline judge hit its iteration cap without accepting. Normal mode fails
+ * with this; plan mode shows the outline to the reviewer instead.
  */
 export class OutlineNotAcceptedError extends AppError {
   constructor(

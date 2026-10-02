@@ -1,169 +1,399 @@
 German:
-  "Cardiology (without Radiology): Resting ECG": "Kardiologie (ohne Radiologie): Ruhe-EKG"
-  "Cardiology (without Radiology): Stress ECG": "Kardiologie (ohne Radiologie): Belastungs-EKG"
-  "Cardiology (without Radiology): Holter ECG": "Kardiologie (ohne Radiologie): Langzeit-EKG"
-  "Cardiology (without Radiology): Ambulatory Blood Pressure Monitoring": "Kardiologie (ohne Radiologie): Langzeit-Blutdruck"
-  "Cardiology (without Radiology): Transthoracic Echocardiography": "Kardiologie (ohne Radiologie): Transthorakale Echokardiografie"
-  "Cardiology (without Radiology): Transesophageal Echocardiography": "Kardiologie (ohne Radiologie): Transösophageale Echokardiografie"
-  "Cardiology (without Radiology): Coronary CT": "Kardiologie (ohne Radiologie): Koronar CT"
-  "Cardiology (without Radiology): Left Heart Catheterization": "Kardiologie (ohne Radiologie): Linksherzkatheter"
-  "Cardiology (without Radiology): Right Heart Catheterization": "Kardiologie (ohne Radiologie): Rechtsherzkatheter"
-  "Cardiology (without Radiology): Myocardial Biopsy": "Kardiologie (ohne Radiologie): Myokardbiopsie"
-  "Pulmonology (without Radiology): Pleural Puncture": "Pulmologie (ohne Radiologie): Pleurapunktion"
-  "Pulmonology (without Radiology): Spirometry": "Pulmologie (ohne Radiologie): Spirometrie"
-  "Pulmonology (without Radiology): Body Plethysmography": "Pulmologie (ohne Radiologie): Bodyplethysmografie"
-  "Pulmonology (without Radiology): Methacholine Challenge Test": "Pulmologie (ohne Radiologie): Metacholin-Provokationstest"
-  "Pulmonology (without Radiology): Apnea-Hypopnea Index": "Pulmologie (ohne Radiologie): Apnoe-Hypopnoe-Index"
-  "Pulmonology (without Radiology): Polygraphy": "Pulmologie (ohne Radiologie): Polygraphie"
-  "Pulmonology (without Radiology): Polysomnography": "Pulmologie (ohne Radiologie): Polysomnographie"
-  "Bronchoscopy (possibly incl. Biopsy): Bronchoscopy possibly with Puncture": "Bronchoskopie (ggf. inkl. Biopsie): Bronchoskopie mit ggf. Punktion"
-  "Bronchoscopy (possibly incl. Biopsy): with Bronchoalveolar Lavage": "Bronchoskopie (ggf. inkl. Biopsie): mit Bronchoalveoläre Lavage"
-  "Bronchial Challenge Test: specific": "Bronchialer Provokationstest: spezifisch"
-  "Bronchial Challenge Test: nonspecific/Methacholine Challenge Test": "Bronchialer Provokationstest: unspezifisch/Metacholin Provokationstest"
-  "Gastroenterology (without Radiology): Colonoscopy, possibly incl. Biopsy": "Gastroenterologie (ohne Radiologie): Koloskopie, ggf. inkl. Biopsie"
-  "Gastroenterology (without Radiology): ERCP": "Gastroenterologie (ohne Radiologie): ERCP"
-  "Gastroenterology (without Radiology): Manometry": "Gastroenterologie (ohne Radiologie): Manometrie"
-  "Gastroenterology (without Radiology): Long-term pH-Metry": "Gastroenterologie (ohne Radiologie): Langzeit-PH-Metrie"
-  "Gastroenterology (without Radiology): H2 Breath Test": "Gastroenterologie (ohne Radiologie): H2-Atemtest"
-  "Gastroenterology (without Radiology): C13 Breath Test": "Gastroenterologie (ohne Radiologie): C13-Atemtest"
-  "Gastroscopy: Inspection, Biopsies for Histology and Urease Rapid Test": "Gastroskopie: Inspektion, Biopsien für Histologie und Urease Schnelltest"
-  "Gastroscopy: Endoscopic Ultrasound": "Gastroskopie: Endoskopische Sonografie"
-  "Neurology: EEG": "Neurologie: EEG"
-  "Neurology: EMG": "Neurologie: EMG"
-  "Neurology: ENG": "Neurologie: ENG"
-  "Neurology: Tensilon Test": "Neurologie: Tensilon-Test"
-  "Neurology: Lumbar Puncture incl. Laboratory": "Neurologie: Lumbalpunktion inkl. Labor"
-  "Neurology: DSA cranial": "Neurologie: DSA kranial"
-  "Psychometric Tests: Mini Mental Status Examination": "Psychometrische Tests: Mini Mental Status Test"
-  "Dermatology: Prick Test": "Dermatologie: Prick-Test"
-  "Dermatology: Intracutaneous Test": "Dermatologie: Intrakutan-Test"
-  "Dermatology: Epicutaneous Test": "Dermatologie: Epikutan-Test"
-  "Dermatology: Tuberculin Skin Test": "Dermatologie: Tuberkulin-Hauttest"
-  "Dermatology: Dermatoscopy": "Dermatologie: Dermatoskopie"
-  "Dermatology: Skin Cancer Screening": "Dermatologie: Hautkrebsscreening"
-  "Dermatology: Diascopy (Glass Spatula Examination)": "Dermatologie: Diaskopie (Glasspateluntersuchung)"
-  "Dermatology: Dermographism": "Dermatologie: Dermographismus"
-  "Biopsy: Routine Staining": "Biopsie: Routinefärbung"
-  "Biopsy: Routine Staining and Direct Immunofluorescence": "Biopsie: Routinefärbung und direkte Immunfluoreszenzuntersuchung"
-  "Ophthalmology: Slit Lamp Examination": "Augenheilkunde: Spaltlampenuntersuchung"
-  "Ophthalmology: Ophthalmoscopy/Fundoscopy": "Augenheilkunde: Ophthalmoskopie/Funduskopie"
-  "Ophthalmology: Perimetry": "Augenheilkunde: Perimetrie"
-  "Ophthalmology: Visual Acuity Test": "Augenheilkunde: Visusprüfung"
-  "Ophthalmology: OCT (Optical Coherence Tomography)": "Augenheilkunde: OCT (Optische Kohärenztomographie)"
-  "Ophthalmology: Fluorescein Angiography": "Augenheilkunde: Fluoreszenzangiographie"
-  "Ophthalmology: Strabismus Test": "Augenheilkunde: Strabismusprüfung"
-  "Ophthalmology: Applanation Tonometry": "Augenheilkunde: Applanationstonometrie"
-  "Bacteriology and Mycology: Microscopic Examination (Native Preparation or Simple Staining, e.g. Methylene Blue)":
-    "Bakteriologie und Mykologie: Mikroskopische Untersuchung
-    (Nativpräparat oder einfache Färbung, z.B. Methylenblau)"
-  "Cultural Examinations: Blood Culture": "Kulturelle Untersuchungen: Blutkultur"
-  "Cultural Examinations: (Wound) Swab (Cultural Detection Fungi/Bacteria)":
-    "Kulturelle Untersuchungen: (Wund)Abstrich (kultureller Nachweis
-    Pilze/Bakterien)"
-  "Cultural Examinations: Urine Culture": "Kulturelle Untersuchungen: Urinkultur"
-  "Cultural Examinations: Stool Culture": "Kulturelle Untersuchungen: Stuhl-Kultur"
-  "Antigen & Antibody-based Examinations: Borrelia (Ab)": "Antigen- & Antikörperbasierte Untersuchungen: Borrelien (AK)"
-  "Antigen & Antibody-based Examinations: Campylobacter jejuni (Ab)": "Antigen- & Antikörperbasierte Untersuchungen: Campylobacter jejuni (AK)"
-  "Antigen & Antibody-based Examinations: Helicobacter pylori (Ab)": "Antigen- & Antikörperbasierte Untersuchungen: Helicobacter pylori (AK)"
-  "Antigen & Antibody-based Examinations: TPHA (Treponema Pallidum Hemagglutination Test)":
-    "Antigen- & Antikörperbasierte Untersuchungen: TPHA (Treponema
-    Pallidum Hämagglutinationstest)"
-  "Antigen & Antibody-based Examinations: FTA-ABS (Fluorescent Treponemal Antibody Absorption Test)":
-    "Antigen- & Antikörperbasierte Untersuchungen: FTA-ABS
-    (Fluoreszenz-Treponemen-Antikörper-Absorptionstest)"
-  "Antigen & Antibody-based Examinations: Venereal Disease Research Laboratory Test":
-    "Antigen- & Antikörperbasierte Untersuchungen: Venereal Disease
-    Research Laboratory Test"
-  "Antigen & Antibody-based Examinations: Legionella Antigen (Urine)": "Antigen- & Antikörperbasierte Untersuchungen: Legionellen Antigen (Urin)"
-  "Antigen & Antibody-based Examinations: Pneumococcal Antigen": "Antigen- & Antikörperbasierte Untersuchungen: Pneumokokken Antigen"
-  "Antigen & Antibody-based Examinations: Galactomannan": "Antigen- & Antikörperbasierte Untersuchungen: Galaktomannan"
-  "Antigen & Antibody-based Examinations: Beta-D-Glucan Detection": "Antigen- & Antikörperbasierte Untersuchungen: Beta-D-Glucan Nachweis"
-  "Antigen & Antibody-based Examinations: Aspergillus Antibodies": "Antigen- & Antikörperbasierte Untersuchungen: Aspergillus-Antikörper"
-  "Antigen & Antibody-based Examinations: Helicobacter Pylori Antibodies (Serum)":
-    "Antigen- & Antikörperbasierte Untersuchungen: Helicobacter Pylori
-    Antikörper (Serum)"
-  "Antigen & Antibody-based Examinations: HP Antigen in Stool": "Antigen- & Antikörperbasierte Untersuchungen: HP-Antigen im Stuhl"
-  "PCR: GI Infection Pathogens": "PCR: GI-Infektionen Erreger"
-  "PCR: Pneumococci": "PCR: Pneumokokken"
-  "PCR: STD Pathogens (Chlamydia tr., Neisseria g., Mycoplasma genitalium, Trichomonas, HSV 1 & 2)":
-    "PCR: STD Erreger (Chlamydia tr., Neisseria g., Mycoplasma genitalium,
-    Trichomonas, HSV 1 & 2)"
-  "PCR: Mycology PCR": "PCR: Mykologie PCR"
-  "PCR: Mycobacterium tuberculosis": "PCR: Mykobakterium tuberkulosis"
-  "Toxin and Enzyme Detection: Clostridium Difficile Toxin A/B, Clostridia GLDH":
-    "Toxin- und Enzym-Nachweise: Clostridium Difficile Toxin A/B,
-    Clostridien GLDH"
-  "Coagulation: INR/Quick": "Gerinnung: INR/Quick"
-  "Current Vital Signs: Pulse": "Aktuelle Vitalparameter: Puls"
-  "Current Vital Signs: Blood Pressure": "Aktuelle Vitalparameter: Blutdruck"
-  "Current Vital Signs: Temperature": "Aktuelle Vitalparameter: Temperatur"
-  "Current Vital Signs: General Condition": "Aktuelle Vitalparameter: Allgemeinzustand"
-  "Current Vital Signs: O2 Saturation": "Aktuelle Vitalparameter: O2-Sättigung"
-  "Organ & System Specific Examinations: General/Nutritional Status": "Organ- & Systemspezifische Untersuchungen: Allgemein-/Ernährungszustand"
-  "Organ & System Specific Examinations: Heart, Vessels": "Organ- & Systemspezifische Untersuchungen: Cor, Gefäße"
-  "Organ & System Specific Examinations: Lungs/Thorax": "Organ- & Systemspezifische Untersuchungen: Pulmo/Thorax"
-  "Organ & System Specific Examinations: Abdomen": "Organ- & Systemspezifische Untersuchungen: Abdomen"
-  "Organ & System Specific Examinations: Skin/Integument": "Organ- & Systemspezifische Untersuchungen: Haut/Integument"
-  "Organ & System Specific Examinations: Lymph Nodes": "Organ- & Systemspezifische Untersuchungen: Lymphknoten"
-  "Organ & System Specific Examinations: Mouth/Throat": "Organ- & Systemspezifische Untersuchungen: Mund/Rachen"
-  "Organ & System Specific Examinations: Spine": "Organ- & Systemspezifische Untersuchungen: Wirbelsäule"
-  "Organ & System Specific Examinations: Digital Rectal Examination": "Organ- & Systemspezifische Untersuchungen: Digital rektale Untersuchung"
-  "Upper Extremity: Shoulder": "Obere Extremität: Schulter"
-  "Upper Extremity: Elbow": "Obere Extremität: Ellenbogen"
-  "Upper Extremity: Wrist": "Obere Extremität: Handgelenk"
-  "Lower Extremity: Hip": "Untere Extremität: Hüfte"
-  "Lower Extremity: Knee": "Untere Extremität: Knie"
-  "Lower Extremity: Ankle": "Untere Extremität: Sprunggelenk"
-  "Neurological Examination: Oriented": "Neurologische Untersuchung: Orientierend"
-  "Neurological Examination: Cognition": "Neurologische Untersuchung: Kognition"
-  "Neurological Examination: Meningism": "Neurologische Untersuchung: Meningismus"
-  "Neurological Examination: Stance and Gait Tests": "Neurologische Untersuchung: Stand- und Gangprüfungen"
-  "Neurological Examination: Cranial Nerves": "Neurologische Untersuchung: Hirnnerven"
-  "Neurological Examination: Motor Function": "Neurologische Untersuchung: Motorik"
-  "Neurological Examination: Muscle Stretch Reflexes": "Neurologische Untersuchung: Muskeleigenreflexe"
-  "Neurological Examination: Sensitivity": "Neurologische Untersuchung: Sensibilität"
-  "Neurological Examination: Coordination": "Neurologische Untersuchung: Koordination"
-  "Neurological Examination: Simpson Test": "Neurologische Untersuchung: Simpson-Test"
-  "Sonography: Abdomen": "Sonographie: Abdomen"
-  "Sonography: Abdomen Ultrasound incl. Liver Elastography": "Sonographie: Abdomen Ultraschall inkl. Elastographie Leber"
-  "Sonography: Neck": "Sonographie: Hals"
-  "Sonography: Neck + Biopsy": "Sonographie: Hals + Biopsie"
-  "Sonography: Vessels - ABI": "Sonographie: Gefäße - ABI"
-  "Sonography: Vessels - Neck": "Sonographie: Gefäße - Hals"
-  "Sonography: Joints": "Sonographie: Gelenke"
-  "Sonography: Transthoracic Echocardiography": "Sonographie: Transthorakale Echokardiografie"
-  "Sonography: Transesophageal Echocardiography": "Sonographie: Transösophageale Echokardiografie"
-  "X-ray: Thorax": "Röntgen: Thorax"
-  "X-ray: Abdomen": "Röntgen: Abdomen"
-  "X-ray: Gastrografin Swallow": "Röntgen: Gastrografinschluck"
-  "X-ray: Skeletal": "Röntgen: Skelettal"
-  "CT: Skull": "CT: Schädel"
-  "CT: Thorax": "CT: Thorax"
-  "CT: Abdomen": "CT: Abdomen"
-  "CT: Musculoskeletal of Affected Body Region": "CT: Muskoloskelettal der betroffenen Körperregion"
-  "CT: Coronary CT": "CT: Koronar CT"
-  "CT: Biopsy": "CT: Biopsie"
-  "MRI: Skull": "MRT: Schädel"
-  "MRI: Abdomen": "MRT: Abdomen"
-  "MRI: Thorax": "MRT: Thorax"
-  "MRI: Musculoskeletal of Affected Body Region": "MRT: Muskuloskelettal der betroffenen Körperregion"
-  "Special Examinations: Bone Density/Osteodensitometry (DXA)": "Spezialuntersuchungen: Knochendichte/Osteodensitometrie (DXA)"
-  "Special Examinations: Scintigraphic Examination (Trunk)": "Spezialuntersuchungen: Szintigrafische Untersuchung (Rumpf)"
-  "Special Examinations: PET-SCAN": "Spezialuntersuchungen: PET-SCAN"
-  "Special Examinations: Thyroid Scintigraphy": "Spezialuntersuchungen: Schilddrüsen-Szintigraphie"
-  "Special Examinations: Myocardial Scintigraphy": "Spezialuntersuchungen: Myokardszintigraphie"
-  "Respiratory Infections: Influenza Rapid Test (Swab)": "Resp. Infektionen: Influenza-Schnelltest (Abstrich)"
-  "Respiratory Infections: Coronaviruses (Antigen Detection)": "Resp. Infektionen: Coronaviren (Antigen-Nachweis)"
-  "Respiratory Infections: Coronaviren (PCR)": "Resp. Infektionen: Coronaviren (PCR)"
-  "Respiratory Infections: RSV (Antigen Detection)": "Resp. Infektionen: RSV (Antigen-Nachweis)"
-  "Respiratory Infections: Nucleic Acid Detection of Pathogens of Resp. Infections": "Resp. Infektionen: Nukleinsäurenachweis von Erregern resp. Infektionen"
-  "HIV: HIV-Ab and p24-Ag Screening Test (EDTA Blood)": "HIV: HIV-Ak und p24-Ag Suchtest (EDTA Blut)"
-  "HIV: HIV-Ab in Western Blot (Serum)": "HIV: HIV-Ak im Westernblot (Serum)"
-  "HIV: HIV-RNA Detection": "HIV: HIV-RNA Nachweis"
-  "HIV: HIV-RNA Quantitative": "HIV: HIV-RNA quantitativ"
-  "Hepatitis Viruses: Hepatitis Viruses (Serum)": "Hepatitisviren: Hepatitisviren (Serum)"
-  "Other Viruses: VZV-Ab": "Weitere Viren: VZV-Ak"
-  "Other Viruses: HSV": "Weitere Viren: HSV"
-  "Other Viruses: EBV (Anti-VCA-IgG, Anti-EA-IgG, Anti-EBNA-1-IgG)": "Weitere Viren: EBV (Anti-VCA-IgG, Anti-EA-IgG, Anti-EBNA-1-IgG)"
-  "Other Viruses: Adenoviruses": "Weitere Viren: Adenoviren"
-  "Other Viruses: other": "Weitere Viren: andere"
+  categories:
+    - key: Cardiology (without Radiology)
+      name: Kardiologie (ohne Radiologie)
+      procedures:
+        - key: Resting ECG
+          name: Ruhe-EKG
+        - key: Stress ECG
+          name: Belastungs-EKG
+        - key: Holter ECG
+          name: Langzeit-EKG
+        - key: Ambulatory Blood Pressure Monitoring
+          name: Langzeit-Blutdruck
+        - key: Transthoracic Echocardiography
+          name: Transthorakale Echokardiografie
+        - key: Transesophageal Echocardiography
+          name: Transösophageale Echokardiografie
+        - key: Coronary CT
+          name: Koronar CT
+        - key: Left Heart Catheterization
+          name: Linksherzkatheter
+        - key: Right Heart Catheterization
+          name: Rechtsherzkatheter
+        - key: Myocardial Biopsy
+          name: Myokardbiopsie
+    - key: Pulmonology (without Radiology)
+      name: Pulmologie (ohne Radiologie)
+      procedures:
+        - key: Pleural Puncture
+          name: Pleurapunktion
+        - key: Spirometry
+          name: Spirometrie
+        - key: Body Plethysmography
+          name: Bodyplethysmografie
+        - key: Methacholine Challenge Test
+          name: Metacholin-Provokationstest
+        - key: Apnea-Hypopnea Index
+          name: Apnoe-Hypopnoe-Index
+        - key: Polygraphy
+          name: Polygraphie
+        - key: Polysomnography
+          name: Polysomnographie
+    - key: Bronchoscopy (possibly incl. Biopsy)
+      name: Bronchoskopie (ggf. inkl. Biopsie)
+      procedures:
+        - key: Bronchoscopy possibly with Puncture
+          name: Bronchoskopie mit ggf. Punktion
+        - key: with Bronchoalveolar Lavage
+          name: mit Bronchoalveoläre Lavage
+    - key: Bronchial Challenge Test
+      name: Bronchialer Provokationstest
+      procedures:
+        - key: specific
+          name: spezifisch
+        - key: nonspecific/Methacholine Challenge Test
+          name: unspezifisch/Metacholin Provokationstest
+    - key: Gastroenterology (without Radiology)
+      name: Gastroenterologie (ohne Radiologie)
+      procedures:
+        - key: Colonoscopy, possibly incl. Biopsy
+          name: Koloskopie, ggf. inkl. Biopsie
+        - key: ERCP
+          name: ERCP
+        - key: Manometry
+          name: Manometrie
+        - key: Long-term pH-Metry
+          name: Langzeit-PH-Metrie
+        - key: H2 Breath Test
+          name: H2-Atemtest
+        - key: C13 Breath Test
+          name: C13-Atemtest
+    - key: Gastroscopy
+      name: Gastroskopie
+      procedures:
+        - key: Inspection, Biopsies for Histology and Urease Rapid Test
+          name: Inspektion, Biopsien für Histologie und Urease Schnelltest
+        - key: Endoscopic Ultrasound
+          name: Endoskopische Sonografie
+    - key: Neurology
+      name: Neurologie
+      procedures:
+        - key: EEG
+          name: EEG
+        - key: EMG
+          name: EMG
+        - key: ENG
+          name: ENG
+        - key: Tensilon Test
+          name: Tensilon-Test
+        - key: Lumbar Puncture incl. Laboratory
+          name: Lumbalpunktion inkl. Labor
+        - key: DSA cranial
+          name: DSA kranial
+    - key: Psychometric Tests
+      name: Psychometrische Tests
+      procedures:
+        - key: Mini Mental Status Examination
+          name: Mini Mental Status Test
+    - key: Dermatology
+      name: Dermatologie
+      procedures:
+        - key: Prick Test
+          name: Prick-Test
+        - key: Intracutaneous Test
+          name: Intrakutan-Test
+        - key: Epicutaneous Test
+          name: Epikutan-Test
+        - key: Tuberculin Skin Test
+          name: Tuberkulin-Hauttest
+        - key: Dermatoscopy
+          name: Dermatoskopie
+        - key: Skin Cancer Screening
+          name: Hautkrebsscreening
+        - key: Diascopy (Glass Spatula Examination)
+          name: Diaskopie (Glasspateluntersuchung)
+        - key: Dermographism
+          name: Dermographismus
+    - key: Biopsy
+      name: Biopsie
+      procedures:
+        - key: Routine Staining
+          name: Routinefärbung
+        - key: Routine Staining and Direct Immunofluorescence
+          name: Routinefärbung und direkte Immunfluoreszenzuntersuchung
+    - key: Ophthalmology
+      name: Augenheilkunde
+      procedures:
+        - key: Slit Lamp Examination
+          name: Spaltlampenuntersuchung
+        - key: Ophthalmoscopy/Fundoscopy
+          name: Ophthalmoskopie/Funduskopie
+        - key: Perimetry
+          name: Perimetrie
+        - key: Visual Acuity Test
+          name: Visusprüfung
+        - key: OCT (Optical Coherence Tomography)
+          name: OCT (Optische Kohärenztomographie)
+        - key: Fluorescein Angiography
+          name: Fluoreszenzangiographie
+        - key: Strabismus Test
+          name: Strabismusprüfung
+        - key: Applanation Tonometry
+          name: Applanationstonometrie
+    - key: Bacteriology and Mycology
+      name: Bakteriologie und Mykologie
+      procedures:
+        - key: Microscopic Examination (Native Preparation or Simple Staining, e.g. Methylene Blue)
+          name: Mikroskopische Untersuchung (Nativpräparat oder einfache Färbung, z.B. Methylenblau)
+    - key: Cultural Examinations
+      name: Kulturelle Untersuchungen
+      procedures:
+        - key: Blood Culture
+          name: Blutkultur
+        - key: (Wound) Swab (Cultural Detection Fungi/Bacteria)
+          name: (Wund)Abstrich (kultureller Nachweis Pilze/Bakterien)
+        - key: Urine Culture
+          name: Urinkultur
+        - key: Stool Culture
+          name: Stuhl-Kultur
+    - key: Antigen & Antibody-based Examinations
+      name: Antigen- & Antikörperbasierte Untersuchungen
+      procedures:
+        - key: Borrelia (Ab)
+          name: Borrelien (AK)
+        - key: Campylobacter jejuni (Ab)
+          name: Campylobacter jejuni (AK)
+        - key: Helicobacter pylori (Ab)
+          name: Helicobacter pylori (AK)
+        - key: TPHA (Treponema Pallidum Hemagglutination Test)
+          name: TPHA (Treponema Pallidum Hämagglutinationstest)
+        - key: FTA-ABS (Fluorescent Treponemal Antibody Absorption Test)
+          name: FTA-ABS (Fluoreszenz-Treponemen-Antikörper-Absorptionstest)
+        - key: Venereal Disease Research Laboratory Test
+          name: Venereal Disease Research Laboratory Test
+        - key: Legionella Antigen (Urine)
+          name: Legionellen Antigen (Urin)
+        - key: Pneumococcal Antigen
+          name: Pneumokokken Antigen
+        - key: Galactomannan
+          name: Galaktomannan
+        - key: Beta-D-Glucan Detection
+          name: Beta-D-Glucan Nachweis
+        - key: Aspergillus Antibodies
+          name: Aspergillus-Antikörper
+        - key: Helicobacter Pylori Antibodies (Serum)
+          name: Helicobacter Pylori Antikörper (Serum)
+        - key: HP Antigen in Stool
+          name: HP-Antigen im Stuhl
+    - key: PCR
+      name: PCR
+      procedures:
+        - key: GI Infection Pathogens
+          name: GI-Infektionen Erreger
+        - key: Pneumococci
+          name: Pneumokokken
+        - key: STD Pathogens (Chlamydia tr., Neisseria g., Mycoplasma genitalium, Trichomonas, HSV 1 & 2)
+          name: STD Erreger (Chlamydia tr., Neisseria g., Mycoplasma genitalium, Trichomonas, HSV 1 & 2)
+        - key: Mycology PCR
+          name: Mykologie PCR
+        - key: Mycobacterium tuberculosis
+          name: Mykobakterium tuberkulosis
+    - key: Toxin and Enzyme Detection
+      name: Toxin- und Enzym-Nachweise
+      procedures:
+        - key: Clostridium Difficile Toxin A/B, Clostridia GLDH
+          name: Clostridium Difficile Toxin A/B, Clostridien GLDH
+    - key: Coagulation
+      name: Gerinnung
+      procedures:
+        - key: INR/Quick
+          name: INR/Quick
+    - key: Current Vital Signs
+      name: Aktuelle Vitalparameter
+      procedures:
+        - key: Pulse
+          name: Puls
+        - key: Blood Pressure
+          name: Blutdruck
+        - key: Temperature
+          name: Temperatur
+        - key: General Condition
+          name: Allgemeinzustand
+        - key: O2 Saturation
+          name: O2-Sättigung
+    - key: Organ & System Specific Examinations
+      name: Organ- & Systemspezifische Untersuchungen
+      procedures:
+        - key: General/Nutritional Status
+          name: Allgemein-/Ernährungszustand
+        - key: Heart, Vessels
+          name: Cor, Gefäße
+        - key: Lungs/Thorax
+          name: Pulmo/Thorax
+        - key: Abdomen
+          name: Abdomen
+        - key: Skin/Integument
+          name: Haut/Integument
+        - key: Lymph Nodes
+          name: Lymphknoten
+        - key: Mouth/Throat
+          name: Mund/Rachen
+        - key: Spine
+          name: Wirbelsäule
+        - key: Digital Rectal Examination
+          name: Digital rektale Untersuchung
+    - key: Upper Extremity
+      name: Obere Extremität
+      procedures:
+        - key: Shoulder
+          name: Schulter
+        - key: Elbow
+          name: Ellenbogen
+        - key: Wrist
+          name: Handgelenk
+    - key: Lower Extremity
+      name: Untere Extremität
+      procedures:
+        - key: Hip
+          name: Hüfte
+        - key: Knee
+          name: Knie
+        - key: Ankle
+          name: Sprunggelenk
+    - key: Neurological Examination
+      name: Neurologische Untersuchung
+      procedures:
+        - key: Oriented
+          name: Orientierend
+        - key: Cognition
+          name: Kognition
+        - key: Meningism
+          name: Meningismus
+        - key: Stance and Gait Tests
+          name: Stand- und Gangprüfungen
+        - key: Cranial Nerves
+          name: Hirnnerven
+        - key: Motor Function
+          name: Motorik
+        - key: Muscle Stretch Reflexes
+          name: Muskeleigenreflexe
+        - key: Sensitivity
+          name: Sensibilität
+        - key: Coordination
+          name: Koordination
+        - key: Simpson Test
+          name: Simpson-Test
+    - key: Sonography
+      name: Sonographie
+      procedures:
+        - key: Abdomen
+          name: Abdomen
+        - key: Abdomen Ultrasound incl. Liver Elastography
+          name: Abdomen Ultraschall inkl. Elastographie Leber
+        - key: Neck
+          name: Hals
+        - key: Neck + Biopsy
+          name: Hals + Biopsie
+        - key: Vessels - ABI
+          name: Gefäße - ABI
+        - key: Vessels - Neck
+          name: Gefäße - Hals
+        - key: Joints
+          name: Gelenke
+        - key: Transthoracic Echocardiography
+          name: Transthorakale Echokardiografie
+        - key: Transesophageal Echocardiography
+          name: Transösophageale Echokardiografie
+    - key: X-ray
+      name: Röntgen
+      procedures:
+        - key: Thorax
+          name: Thorax
+        - key: Abdomen
+          name: Abdomen
+        - key: Gastrografin Swallow
+          name: Gastrografinschluck
+        - key: Skeletal
+          name: Skelettal
+    - key: CT
+      name: CT
+      procedures:
+        - key: Skull
+          name: Schädel
+        - key: Thorax
+          name: Thorax
+        - key: Abdomen
+          name: Abdomen
+        - key: Musculoskeletal of Affected Body Region
+          name: Muskoloskelettal der betroffenen Körperregion
+        - key: Coronary CT
+          name: Koronar CT
+        - key: Biopsy
+          name: Biopsie
+    - key: MRI
+      name: MRT
+      procedures:
+        - key: Skull
+          name: Schädel
+        - key: Abdomen
+          name: Abdomen
+        - key: Thorax
+          name: Thorax
+        - key: Musculoskeletal of Affected Body Region
+          name: Muskuloskelettal der betroffenen Körperregion
+    - key: Special Examinations
+      name: Spezialuntersuchungen
+      procedures:
+        - key: Bone Density/Osteodensitometry (DXA)
+          name: Knochendichte/Osteodensitometrie (DXA)
+        - key: Scintigraphic Examination (Trunk)
+          name: Szintigrafische Untersuchung (Rumpf)
+        - key: PET-SCAN
+          name: PET-SCAN
+        - key: Thyroid Scintigraphy
+          name: Schilddrüsen-Szintigraphie
+        - key: Myocardial Scintigraphy
+          name: Myokardszintigraphie
+    - key: Respiratory Infections
+      name: Resp. Infektionen
+      procedures:
+        - key: Influenza Rapid Test (Swab)
+          name: Influenza-Schnelltest (Abstrich)
+        - key: Coronaviruses (Antigen Detection)
+          name: Coronaviren (Antigen-Nachweis)
+        - key: Coronaviren (PCR)
+          name: Coronaviren (PCR)
+        - key: RSV (Antigen Detection)
+          name: RSV (Antigen-Nachweis)
+        - key: Nucleic Acid Detection of Pathogens of Resp. Infections
+          name: Nukleinsäurenachweis von Erregern resp. Infektionen
+    - key: HIV
+      name: HIV
+      procedures:
+        - key: HIV-Ab and p24-Ag Screening Test (EDTA Blood)
+          name: HIV-Ak und p24-Ag Suchtest (EDTA Blut)
+        - key: HIV-Ab in Western Blot (Serum)
+          name: HIV-Ak im Westernblot (Serum)
+        - key: HIV-RNA Detection
+          name: HIV-RNA Nachweis
+        - key: HIV-RNA Quantitative
+          name: HIV-RNA quantitativ
+    - key: Hepatitis Viruses
+      name: Hepatitisviren
+      procedures:
+        - key: Hepatitis Viruses (Serum)
+          name: Hepatitisviren (Serum)
+    - key: Other Viruses
+      name: Weitere Viren
+      procedures:
+        - key: VZV-Ab
+          name: VZV-Ak
+        - key: HSV
+          name: HSV
+        - key: EBV (Anti-VCA-IgG, Anti-EA-IgG, Anti-EBNA-1-IgG)
+          name: EBV (Anti-VCA-IgG, Anti-EA-IgG, Anti-EBNA-1-IgG)
+        - key: Adenoviruses
+          name: Adenoviren
+        - key: other
+          name: andere

@@ -1,11 +1,10 @@
-// Issue 15 §4/§6 — `GET /api/graph` must reflect the *actually compiled*
-// topology (flag-varied, since #120), and every id it reports must be one a
-// real node can emit an event under, in both directions. `traceNode(...)`
-// calls happen at graph-*construction* time (see `nodeWrapper.ts`), so a
-// freshly built variant's `getNodeLabels()` already *is* that variant's
-// complete traceable node-id set — no execution required to prove coverage.
+// `GET /api/graph` must reflect the actually compiled (flag-varied) topology,
+// and every reported id must be one a node can emit under, both directions.
+// `traceNode` runs at construction, so `getNodeLabels()` is the variant's full
+// traceable id set with no execution.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it } from "vitest";
-import { assembleCaseGraphs, type AssemblyDeps } from "./02graphs/caseGraph.js";
+import { assembleCaseGraphs, type AssemblyDeps } from "./assemble.js";
 import { EventBus } from "@/core/event-bus.js";
 import {
   createTraceNode,
@@ -13,16 +12,14 @@ import {
 } from "@/core/graph/utils/nodeWrapper.js";
 import { createLogger } from "@/core/graph/utils/logger.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import { InMemoryProcedureCatalog } from "@/core/graph/catalog/procedures/index.js";
-import { InMemoryAnamnesisCatalog } from "@/core/graph/catalog/anamnesis/index.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
-import { InMemoryDiagnosisCatalog } from "@/core/graph/catalog/diagnosis/index.js";
-import type { AnamnesisRepo } from "@/core/graph/catalog/anamnesis/index.js";
-import type { ProceduresRepo } from "@/core/graph/catalog/procedures/index.js";
-import type { MedicalBasisProvider } from "@/core/graph/medicalBasis/ports.js";
+import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
+import type { MedicalBasisProvider } from "@/core/graph/02-plan/01-basis/ports.js";
 import z from "zod";
-import type { ModalityProvider } from "@/core/graph/modality/ports.js";
-import type { ModalityRegistries } from "@/core/graph/modality/registry.js";
+import type { ModalityProvider } from "@/core/graph/shared/modality/ports.js";
+import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
 import { buildGraphStructure } from "./structure.js";
 
 /** The one production-shaped provider: batch-in, batch-out, `{instruction}` input. */
@@ -41,7 +38,11 @@ function fakeTextProvider(): ModalityProvider<unknown> {
 
 function buildDeps(
   medicalBasisRegistry: MedicalBasisProvider[] = [
-    { id: "fake-basis", fetch: async () => [] },
+    {
+      id: "fake-basis",
+      description: "fake basis",
+      fetch: async () => undefined,
+    },
   ],
   modalityRegistries: ModalityRegistries = {
     chiefComplaint: [fakeTextProvider()],
@@ -51,11 +52,9 @@ function buildDeps(
 ): AssemblyDeps {
   const bus = new EventBus();
   const runtime: GraphRuntime = {
-    llm: {
-      for() {
-        throw new Error("router.test: assembly must never call the LLM.");
-      },
-    },
+    llm: chatModelLlmPort(() => {
+      throw new Error("router.test: assembly must never call the LLM.");
+    }),
     catalogs: {
       procedures: new InMemoryProcedureCatalog(),
       anamnesis: new InMemoryAnamnesisCatalog(),
@@ -66,40 +65,24 @@ function buildDeps(
     clock: () => new Date("2024-01-01T00:00:00.000Z"),
   };
 
-  const anamnesis: AnamnesisRepo = {
-    translationsFile: "",
-    getAnamnesisCategoryTranslationFromEnglish: () => undefined,
-    saveAnamnesisCategoryTranslations: () => {},
-    getEffectiveCategoryList: () => undefined,
-  };
-  const procedures: ProceduresRepo = {
-    translationsFile: "",
-    getProcedureNameTranslationFromEnglish: () => undefined,
-    saveProcedureNameTranslation: () => {},
-    getEffectiveProcedureList: () => undefined,
-  };
-
   return {
     runtime,
-    repos: { anamnesis, procedures },
     medicalBasisRegistry,
     modalityRegistries,
     traceNode: createTraceNode(bus),
   };
 }
 
-describe("GET /api/graph structure (issue 15 §4)", () => {
+describe("GET /api/graph structure", () => {
   it("reflects a flag-varied topology: the sandwich-off graph has no translation nodes, the sandwich-on graph does", async () => {
     const off = await buildGraphStructure(
       assembleCaseGraphs(buildDeps(), {
         translationSandwich: false,
-        procedurePreselection: false,
       })
     );
     const on = await buildGraphStructure(
       assembleCaseGraphs(buildDeps(), {
         translationSandwich: true,
-        procedurePreselection: false,
       })
     );
 
@@ -109,8 +92,7 @@ describe("GET /api/graph structure (issue 15 §4)", () => {
     expect(offIds.some((id) => id.includes("translate_diagnosis"))).toBe(false);
     expect(onIds.some((id) => id.includes("translate_diagnosis"))).toBe(true);
 
-    // The sandwich-off topology is a strict subset of the sandwich-on one —
-    // same generation phase, minus the two translation phases.
+    // Sandwich-off = strict subset of sandwich-on (minus translation phases).
     for (const id of offIds) {
       expect(onIds).toContain(id);
     }
@@ -121,7 +103,6 @@ describe("GET /api/graph structure (issue 15 §4)", () => {
     const structure = await buildGraphStructure(
       assembleCaseGraphs(buildDeps(), {
         translationSandwich: true,
-        procedurePreselection: false,
       })
     );
 
@@ -135,7 +116,6 @@ describe("GET /api/graph structure (issue 15 §4)", () => {
     const structure = await buildGraphStructure(
       assembleCaseGraphs(buildDeps(), {
         translationSandwich: false,
-        procedurePreselection: false,
       })
     );
 
@@ -145,27 +125,20 @@ describe("GET /api/graph structure (issue 15 §4)", () => {
   });
 
   it("both directions: every structure node id can emit an event, and every id a node can emit under appears in the structure", async () => {
-    // `assembleCaseGraphs` wraps every node via `traceNode` at *construction*
-    // time (see `nodeWrapper.ts`) — so with this the only variant built in
-    // this test, `getNodeLabels()` already is this topology's complete
-    // traceable node-id set, without running anything.
+    // Only variant built here, so `getNodeLabels()` is its full traceable id set.
     const compiled = assembleCaseGraphs(buildDeps(), {
       translationSandwich: true,
-      procedurePreselection: false,
     });
     const structure = await buildGraphStructure(compiled);
 
     const structureIds = new Set(structure.nodes.map((n) => n.id));
     const traceableIds = new Set(Object.keys(getNodeLabels()));
 
-    // Direction 1: every structure node id was registered by `traceNode` —
-    // i.e. is a node that can emit an event.
+    // Every structure id was registered by `traceNode`.
     for (const id of structureIds) {
       expect(traceableIds.has(id)).toBe(true);
     }
-    // Direction 2: every id a node can emit under appears in the structure
-    // — a one-directional check alone would pass even if half the graph
-    // were unreachable from the structure endpoint.
+    // Every traceable id appears in structure.
     for (const id of traceableIds) {
       expect(structureIds.has(id)).toBe(true);
     }

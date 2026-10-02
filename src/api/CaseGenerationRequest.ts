@@ -1,31 +1,24 @@
 import {
   AllGenerationFlags,
   GenerationFlagSchema,
-} from "@/core/graph/models/GenerationFlags.js";
-import { ICDCodeSchema } from "@/core/graph/models/Diagnosis.js";
-import { makeLanguageSchema } from "@/core/graph/models/Language.js";
-import { DifficultySchema } from "@/core/graph/models/Difficulty.js";
+} from "@/core/graph/shared/domain/GenerationFlags.js";
+import { ICDCodeSchema } from "@/core/graph/shared/domain/Diagnosis.js";
+import { makeLanguageSchema } from "@/core/graph/shared/domain/Language.js";
+import { DifficultySchema } from "@/core/graph/shared/domain/Difficulty.js";
 import { z } from "zod/v4";
-import { UserInstructionsSchema } from "@/core/graph/models/UserInstructions.js";
+import { UserInstructionsSchema } from "@/core/graph/shared/domain/UserInstructions.js";
 import type { Config } from "@/core/graph/config.js";
-import { LLMConfigSchema } from "@/core/graph/models/LLMConfig.js";
+import { LLMConfigSchema } from "@/core/graph/shared/domain/LLMConfig.js";
 import { JobIdSchema } from "./JobId.js";
-import { RunModeSchema } from "@/core/graph/models/RunMode.js";
+import { RunModeSchema } from "@/core/graph/shared/domain/RunMode.js";
 import {
   isCanonicalShape,
   OutlineSegmentsSchema,
-} from "@/core/graph/outline/segments.js";
+} from "@/core/graph/shared/outline/segments.js";
 
 /**
- * The public request schema depends on the deployment's configured
- * `LANGUAGES` set (issue 09 §1) as well as on whether a global LLM is
- * configured (`config.llm`), so it can no longer be a module-scope constant
- * evaluated at import time — that only worked "by luck of load order"
- * against the mutable graph-config singleton this replaces, which could be
- * `undefined` depending on import order. Build it explicitly from the
- * resolved graph config instead: `app.ts` resolves it once and hands it to
- * each transport's start function as `GraphAppContext.config`, and callers
- * (the `rest`/`nats` transports) call this with that value.
+ * Request schema depends on configured `LANGUAGES` and global LLM (`config.llm`),
+ * so built from resolved graph config (`GraphAppContext.config`), not module scope.
  */
 function makeBaseCaseGenerationRequestSchema(config: Config) {
   return z.object({
@@ -42,15 +35,11 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
     ),
     generationFlags: z
       .array(GenerationFlagSchema)
-      // `.min(1)` mirrors `CaseGenerationStateSchema`, which already declares
-      // it — without it here an explicit `[]` passed the API and then threw a
-      // Zod error deep inside the graph, surfacing as a 500 rather than a 400.
+      // `.min(1)` mirrors `CaseGenerationStateSchema`: `[]` is 400, not 500 from graph.
       .min(1, "generationFlags must name at least one field to generate")
       .default(AllGenerationFlags)
       .describe("Generation flags to specify case fields to generate"),
-    // Validated against the deployment's configured `LANGUAGES` here, at the
-    // API boundary, so an unsupported language is a 400 — not a 500 raised
-    // deep inside the graph (issue 09 §1).
+    // Checked against configured `LANGUAGES` here: unsupported language is 400, not 500.
     language: makeLanguageSchema(config.LANGUAGES)
       .optional()
       .describe(
@@ -70,7 +59,7 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
         "to generate the case from it."
     ),
     plan: OutlineSegmentsSchema.optional().describe(
-      "A plan from an earlier call with this request (#159), possibly " +
+      "A plan from an earlier call with this request, possibly " +
         "edited: planning is skipped and the case is generated from it. In " +
         "plan mode it is in the request language, in normal mode English — " +
         "exactly as it was handed out. Fixed segments must be unchanged."

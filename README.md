@@ -44,7 +44,7 @@ AetioMed runs with Ollama (fully local, self-hosted models), Google Gemini, or a
 - **Difficulty Control**: `easy` / `medium` / `hard` shape how directly the case points at the diagnosis, both in the presentation and in the workup results.
 - **Selectable Fields**: Generate any subset of patient, chief complaint, anamnesis, and procedures.
 - **Multi-Language**: The supported set is configured per deployment. With the translation sandwich on, generation always happens in English internally and is translated on the way out; with it off, generation runs directly in the target language.
-- **Restricted Vocabularies**: When configured, procedure names and anamnesis categories are constrained to an approved, translatable list.
+- **Restricted Vocabularies**: When configured, procedures are constrained to an approved, translatable catalogue — a tree of categories (of any depth) and procedures — and anamnesis categories to an approved list.
 - **Live Progress**: Every pipeline step reports when it starts and finishes, as a short label in the requester's language. A client can fetch the compiled pipeline once and light up its steps as they run, over REST or NATS.
 - **Two Integration Styles**: A synchronous REST API that streams the job back on the same request, and an asynchronous NATS interface whose requests and results survive restarts and dropped connections. Every feature is available on both.
 - **Plan Mode**: Optionally stop once the case outline exists and hand it back in the request's own language; send it back, possibly edited, to generate the case from it.
@@ -168,41 +168,39 @@ See the [Developer Guide](README-DEV.md) for the module layout, the APIs and the
 
 ## Generation Pipeline
 
-All AI generation runs as a **LangGraph** state machine, assembled from the deployer's flags at boot. With the translation sandwich enabled the top-level graph is:
+All AI generation runs as two **LangGraph** state machines, assembled from the deployer's flags at boot: a **plan graph** that ends with the case outline, and a **case graph** that generates the case from it. Normal mode runs one straight into the other; plan mode stops between them for review (see [Plan Mode](#plan-mode)). With the translation sandwich enabled:
 
 ```
-[translate diagnosis + instructions → English] → [case generation] → [translate case → target language]
+plan graph: [translate diagnosis + instructions → English] → [medical basis → outline ⇄ judge]
+case graph: [presentation → procedures] → [translate case → target language]
 ```
 
 With it disabled the translation phases are **not compiled into the graph at all**, and generation runs directly in the target language. Within a compiled graph, whether a given request is translated is still decided per request — a deployment that _can_ translate does not translate an English request.
 
-The case-generation phase runs up to three stages: **medical basis → presentation → procedures**.
+Generation runs up to three stages: **medical basis → presentation → procedures**.
 
-The full compiled graph is in [`docs/graphs/case-graph.translation-sandwich.svg`](docs/graphs/case-graph.translation-sandwich.svg) (sandwich on) and [`docs/graphs/case-graph.none.svg`](docs/graphs/case-graph.none.svg) (sandwich off).
+The full compiled pipeline, end to end, is in `docs/graphs/`, one diagram per run mode: [plan mode](docs/graphs/plan-mode.translation-sandwich.svg) and [normal mode](docs/graphs/normal-mode.translation-sandwich.svg) with the sandwich on, and [plan mode](docs/graphs/plan-mode.none.svg) and [normal mode](docs/graphs/normal-mode.none.svg) with it off.
 
 ### Medical Basis
 
-Establishes the disease knowledge the plan may draw from. This is a registry of providers rather than a fixed step: with no providers registered the node is not compiled in at all, and with one or more, all of them run and their fragments are concatenated in registry order. No LLM call is ever spent deciding which source to use.
+Establishes the disease knowledge the outline may draw from. This is a registry of providers rather than a fixed step: with no providers registered the node is not compiled in at all. With one or more, all of them run in parallel, each returns plain text or nothing, and the non-empty results are concatenated in registry order, each headed by its provider's description. No LLM call is ever spent deciding which source to use.
 
-The UMLS symptom provider is the first and, today, only entry:
+Two providers are registered today:
 
-1. A static **UMLS symptom floor** is looked up for the diagnosis's ICD-11 code. This is a curated, non-AI baseline.
-2. The floor is passed to the LLM as an exclusion list, which then generates _additional_ plausible symptoms.
-3. The generated additions are cached per ICD code with a TTL. A fresh cache hit skips the LLM call entirely, so repeated generations for the same diagnosis start faster and stay consistent.
-
-The result is the union of the static floor and the (cached) LLM additions.
+1. **UMLS symptoms** — a curated, non-AI symptom list looked up for the diagnosis's ICD code. Returns nothing when there is no data for the code.
+2. **LLM symptoms** — the fallback, run only when UMLS has nothing for the code. Generated symptoms are cached per ICD code with a TTL; a fresh cache hit skips the LLM call, so repeated generations for the same diagnosis start faster and stay consistent.
 
 ### Presentation
 
 This stage produces the patient, chief complaint, and anamnesis — whichever were requested.
 
-1. **Outline generation.** A single structured markdown blueprint is written containing the complete factual record of the case: exact age/gender/height/weight, the selected symptom subset with onset and timeline, the concrete chief complaint, per-category anamnesis facts, and a _Workup / Procedure Results Strategy_ section describing how later lab and imaging results should be shaped. The diagnosis is never named anywhere in it.
+1. **Outline generation.** A single structured markdown blueprint is written containing the complete factual record of the case: exact age/gender/height/weight, the selected symptom subset with onset and timeline, the concrete chief complaint, per-category anamnesis facts, and a _Procedures_ section describing how later lab and imaging results should be shaped. The diagnosis is never named anywhere in it.
 
 2. **Evaluate ⇄ revise loop.** A judge scores the outline on two dimensions in a single call:
    - _Obviousness_ — does it give the diagnosis away more directly than the requested difficulty permits?
    - _Clinical consistency_ — is the diagnosis kept secret, do the planned fields cohere, are the values physically realistic?
 
-   On rejection, the concrete reasons plus one actionable directive are fed back into a regeneration, and the outline is re-judged. The loop is capped; on exhaustion the current outline is accepted as-is so generation always terminates.
+   On rejection, the concrete reasons plus one actionable directive are fed back into a regeneration, and the outline is re-judged. The loop is capped. An outline still rejected at the cap is never generated from: a normal-mode call fails with `OUTLINE_NOT_ACCEPTED`, and a plan-mode call hands it to the reviewer, who judges it.
 
 3. **Fan-out.** Once accepted, the outline is sent in parallel to the enabled field generators. Each one only **re-renders the outline's facts** in the right voice and format — the patient generator adds nothing but a plausible name, the chief complaint is rewritten in clinical-chart voice, the anamnesis is rewritten in the patient's own subjective voice for each intake category. None of them invent clinical facts.
 
@@ -212,19 +210,19 @@ Because all consistency judgment happens on the blueprint _before_ any field is 
 
 Only runs when the `procedures` flag is set. This is a **blinded solver loop**, and the blinding is the point: it produces a workup that a real clinician might plausibly have ordered, including dead ends, instead of the tidy confirmatory sequence a model produces when it already knows the answer.
 
-The loop has three steps:
+The loop works like this:
 
-1. **Blinded step.** A simulated attending physician sees _only_ the patient presentation and the results of procedures ordered so far. It never sees the diagnosis. It either orders the next batch of mutually independent procedures, or commits to a diagnosis. It is given its remaining step budget as explicit pressure to converge rather than order exhaustively.
+1. **Blinded step.** A simulated attending physician sees _only_ the patient presentation and the results of procedures ordered so far. It never sees the diagnosis. It either orders the next batch of mutually independent procedures, or commits to a diagnosis — never before its first batch, so every workup has procedures even when the presentation is textbook. It is given its remaining step budget as explicit pressure to converge rather than order exhaustively.
 
-2. **Result step.** Knowing the true diagnosis _and_ the outline's workup strategy, this generates realistic results for the ordered batch, plus a `relevance` judgment (`obligatory` / `optional` / `contraindicated`) measured against the true diagnosis. Relevance is deliberately decided here and never by the blinded solver — the solver cannot judge whether a test was contraindicated for a diagnosis it doesn't know. Results then flow back to the blinded step.
+2. **Result step.** Knowing the true diagnosis _and_ the outline's workup strategy, this plans realistic results for the ordered batch, plus a `relevance` judgment (`obligatory` / `optional` / `contraindicated`) measured against the true diagnosis. Relevance is deliberately decided here and never by the blinded solver — the solver cannot judge whether a test was contraindicated for a diagnosis it doesn't know. Results then flow back to the blinded step. They are only planned inside the loop; every procedure's result is rendered once, after the workup is final.
 
 3. **Diagnosis check.** When the solver commits, an LLM judge decides whether the proposed name is equivalent to the true diagnosis, accounting for synonyms and abbreviations. On a match, the workup is done. On a mismatch, the wrong guess is recorded as ruled-out and the loop continues.
 
 4. **Bridge.** If the solver exhausts its budget without arriving at the diagnosis, a final non-blinded step generates the remaining confirmatory procedures that complete the pathway, so every case ends with a workup that actually supports its diagnosis.
 
-Two properties are enforced structurally rather than by asking the model nicely: already-ordered procedures are removed from the candidate list before each pick, so duplicate orders are impossible; and when an approved procedure list is configured, the model is constrained to exact names from it.
+Two properties are enforced structurally rather than by asking the model nicely: already-ordered procedures are removed from the candidate list before each pick, so duplicate orders are impossible; and when an approved procedure catalogue is configured, the model is constrained to exact names from it, placed under their exact category. `Case.procedures` mirrors the catalogue's category tree, with each ordered procedure carrying its 0-based workup position (`order`) so the sequence in which it was ordered survives the regrouping by category.
 
-**Small-model support.** When the approved list is large and categorized, the candidate set can overwhelm a smaller model. `PROCEDURE_PRESELECTION` selects a different procedure-selection _strategy_ at assembly time: instead of one call against the full list, each pick becomes a category pick (deliberately over-inclusive) followed by a procedure pick scoped to those categories. The scoped pick may ask to pull in more categories if nothing in scope fits, under a hard cap. The graph shape is fixed at three nodes either way — the flag swaps an adapter, not a topology.
+**Large catalogues.** A pick is offered at most 255 procedures. A larger catalogue is narrowed level by level first: the model keeps the categories (shown with their size and a few sample names) and single procedures relevant to this step, the kept categories are opened one level deeper, and this repeats until fewer than 255 procedures remain — then the model picks exact procedures from what is left. The bridge narrows the same way, knowing the diagnosis.
 
 ### Translation
 

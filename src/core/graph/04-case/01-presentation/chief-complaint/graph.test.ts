@@ -12,6 +12,7 @@ import { EmptyModalityRegistryError } from "@/core/graph/shared/modality/registr
 import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
@@ -46,6 +47,7 @@ function buildFakeRuntime(llm: LlmPort): GraphRuntime {
       procedures: new InMemoryProcedureCatalog(),
       anamnesis: new InMemoryAnamnesisCatalog(),
       labels: new InMemoryLabelCatalog(),
+      outlineHeadings: new InMemoryOutlineHeadingCatalog(),
       diagnosis: new InMemoryDiagnosisCatalog(),
     },
     log: { info() {}, warn() {}, error() {} },

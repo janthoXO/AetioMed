@@ -88,7 +88,7 @@ provider package or `@langchain/core` (the LLM port speaks only core types since
 I/O adapter.
 
 **`GraphRuntime`** (`src/core/graph/runtime.ts`) is the single seam graph construction goes
-through: the LLM port, the four catalogs, a logger and a clock. It is captured by **closure
+through: the LLM port, the five catalogs, a logger and a clock. It is captured by **closure
 at graph-assembly time**, not threaded through node signatures and not carried on
 LangGraph's runtime context. Nothing under `src/core/graph/` imports a mutable module
 singleton.
@@ -291,11 +291,12 @@ model's pick back into `ProcedureRef[]`, dropping anything outside the tree. Fre
 catalogue) is unchanged: the model invents names, refs come back with `path: []`.
 
 `src/core/graph/catalog/` owns the catalogue concept behind ports (`ProcedureCatalog`,
-`AnamnesisCatalog`, `LabelCatalog`, `DiagnosisCatalog` in `ports.ts`). The adapters live in
-`src/adapters/catalog/<domain>/` (`procedures/`, `anamnesis/`, `labels/`, `diagnosis/`), each
+`AnamnesisCatalog`, `LabelCatalog`, `DiagnosisCatalog`, `OutlineHeadingCatalog` in `ports.ts`). The adapters live in
+`src/adapters/catalog/<domain>/` (`procedures/`, `anamnesis/`, `labels/`, `diagnosis/`,
+`outlineHeadings/`), each
 holding that domain's repo (`repo.ts`) and its port adapters (`catalog.ts`: a `Yaml*` adapter
 over the repo instance and an `InMemory*` adapter for tests and `scripts/exportGraphs.ts`),
-re-exported from the slice's `index.ts`. `adapters/catalog/index.ts` composes all four `Yaml*`
+re-exported from the slice's `index.ts`. `adapters/catalog/index.ts` composes all five `Yaml*`
 adapters into the `GraphRuntime["catalogs"]` bundle (`createYamlCatalogs(repos)`).
 
 Nothing in core reaches past a port (#188). The translation accessors translate-out needs are on
@@ -407,8 +408,9 @@ editable and fixed segments correctly. `joinOutline` — the prompt-ready text e
 generator reads — always escapes any `<fixed>`/`</fixed>` typed inside an editable segment, so a
 handed-back plan can never re-create outline structure that only the server is allowed to own.
 
-**Only in plan mode, and only with the sandwich on, does a plan cross the language boundary at
-all** (`translatesPlan` in `caseGenerationService.ts`): a plan-mode call without a plan
+**Only in plan mode, and only with the sandwich on, does a plan's body cross the language
+boundary at all** (`translatesPlan` in `caseGenerationService.ts`; its headings are localized in
+any non-English plan mode, `localizesPlan` — see below): a plan-mode call without a plan
 translates its fresh English outline out to the request language before returning it
 (`translatePlanOut`); a plan-mode call carrying a plan translates it back to English
 (`translatePlanIn`) before validating and generating from it. Normal mode never translates a
@@ -419,12 +421,18 @@ as its original English rather than being re-translated: `translatePlanOut` reco
 translator for the segments that miss. This is process-local, in memory — a restart or another
 replica just translates again (ponytail: share it, e.g. NATS KV, if that ever shows in cost).
 
-**The sandwich-off cosmetic gap.** With `TRANSLATION_SANDWICH` off, plan mode generates the
-outline directly in the request language (`languageOf` binds the outline prompts to it) — but the five fixed section headings above are still the literal English
-strings `checkSkeleton` expects, since the skeleton is shared code, not a per-language template.
-A non-English plan-mode caller with the sandwich off therefore sees English headings over
-localized body text; fixing that is a skeleton-localization change, not a bug in this validation
-logic.
+**Headings are dictionary-translated, never free-translated.** Generation always reproduces the
+English skeleton; a non-English plan-mode plan gets its server-owned headings swapped in
+afterwards, by `localizeHeadings` (`03-outline-translation/headings.ts`) — section titles
+(`OUTLINE_SECTIONS`) from the `OutlineHeadingCatalog` (`outlineHeadingsTranslations.yml`),
+configured anamnesis categories from the `AnamnesisCatalog`. A title missing for the language is
+translated in one LLM call and persisted (`source: generated`), so every later plan shows the same
+heading; the YAML is the ground truth and overwrites a generated value on its next sync
+(`translationStore.ts`). Only the body crosses the sandwich (`translatePlanOut` skips the
+localized headings); with the sandwich off the body is already in the request language, so only
+the headings are swapped. Either way a handed-back plan's headings go back to English by position
+(`restoreSkeletonHeadings`). LLM-named (freeform) category headings are case content: translated
+with the body under the sandwich, written in the request language without it.
 
 **Gateways:** each slice keeps its prompt building, LLM calls, retries and structured-output parsing in a `gateway.ts` (or `<concern>.gateway.ts` when a slice has several concerns, e.g. `04-case/02-procedures/{results,match}.gateway.ts`, `01-presentation/patient.gateway.ts`). Graph nodes are thin and call the gateway functions directly — the old `Tool<TInput, TOutput>` wrapper is gone (#189): its `inputSchema` was never enforced. Nodes are wrapped with `traceNode()` (`utils/nodeWrapper.ts`) to emit "Node Started/Completed" bus events with translated labels.
 
@@ -977,6 +985,8 @@ in delivery guarantees:
 - `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions (static config, no longer a request field)
 - `labelTranslations.yml` — trace-node label translations
+- `outlineHeadingsTranslations.yml` — plan-mode outline section-title translations (keys:
+  `OUTLINE_SECTIONS`); missing titles are LLM-translated once and cached in the DB
 - `diagnosis_symptoms.json` — UMLS-derived symptom floor per ICD code (loaded directly, not via the DB sync)
   The embedded SQLite DB is generated under `CACHE_DIR` (default `data/cache/`), which is
   deliberately a separate directory so a deployer can mount their own catalogues over

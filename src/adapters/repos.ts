@@ -10,6 +10,10 @@ import {
   createAnamnesisRepo,
   type AnamnesisRepo,
 } from "./catalog/anamnesis/index.js";
+import {
+  createOutlineHeadingsRepo,
+  type OutlineHeadingsRepo,
+} from "./catalog/outlineHeadings/index.js";
 import { createLabelsRepo, type LabelsRepo } from "./catalog/labels/index.js";
 import {
   createDiagnosisRepo,
@@ -26,6 +30,7 @@ export interface Repos {
   procedures: ProceduresRepo;
   anamnesis: AnamnesisRepo;
   labels: LabelsRepo;
+  outlineHeadings: OutlineHeadingsRepo;
   diagnosis: DiagnosisRepo;
   umlsFloor: UmlsSymptomFloor;
   symptomCache: SymptomCache;
@@ -45,6 +50,7 @@ export function createRepos(opts: {
     procedures: createProceduresRepo(db, opts.catalogDir),
     anamnesis: createAnamnesisRepo(db, opts.catalogDir),
     labels: createLabelsRepo(db, opts.catalogDir),
+    outlineHeadings: createOutlineHeadingsRepo(db, opts.catalogDir),
     diagnosis: createDiagnosisRepo(db, opts.catalogDir),
     umlsFloor: createUmlsSymptomFloor(opts.catalogDir),
     symptomCache: createSymptomCache(db, opts.symptomCacheTtlDays),
@@ -56,6 +62,7 @@ export type {
   ProceduresRepo,
   AnamnesisRepo,
   LabelsRepo,
+  OutlineHeadingsRepo,
   DiagnosisRepo,
   UmlsSymptomFloor,
   SymptomCache,

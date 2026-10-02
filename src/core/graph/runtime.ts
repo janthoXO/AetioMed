@@ -6,6 +6,7 @@ import type {
   ProcedureCatalog,
   LabelCatalog,
   DiagnosisCatalog,
+  OutlineHeadingCatalog,
 } from "./catalog/ports.js";
 
 /**
@@ -22,6 +23,7 @@ export interface GraphRuntime {
     anamnesis: AnamnesisCatalog;
     labels: LabelCatalog;
     diagnosis: DiagnosisCatalog;
+    outlineHeadings: OutlineHeadingCatalog;
   };
   /** info/warn/error — stamps the timestamp (via `clock`) and emits the bus event. */
   log: Logger;

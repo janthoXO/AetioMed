@@ -1,7 +1,5 @@
-// Unit coverage for the shared read model (#144): each accessor against a
-// fake `GraphAppContext`, proving it delegates rather than reimplementing
-// anything — the actual REST-vs-NATS parity guarantee is exercised in
-// `src/transports/nats/nats.parity.integration.test.ts`.
+// Each accessor against fake `GraphAppContext`: delegates, no reimplementation.
+// REST-vs-NATS parity tested in `src/transports/nats/nats.parity.integration.test.ts`.
 import { describe, expect, it, vi } from "vitest";
 import { createReadModel } from "./readModel.js";
 import type { GraphAppContext } from "./graph/appContext.js";
@@ -16,7 +14,12 @@ function fakeGraph(): GraphAppContext {
     runtime: {
       catalogs: {
         diagnosis: { all: () => [{ icd: "1A00", name: "Cholera" }] },
-        procedures: { list: () => ["Chest X-ray", "CBC"] },
+        procedures: {
+          tree: () => ({
+            categories: [],
+            procedures: [{ name: "Chest X-ray" }, { name: "CBC" }],
+          }),
+        },
       },
     } as unknown as GraphAppContext["runtime"],
     ...planAndRenderFrom(vi.fn()),
@@ -40,23 +43,23 @@ function fakeGraph(): GraphAppContext {
   } as GraphAppContext;
 }
 
-describe("createReadModel (#144)", () => {
+describe("createReadModel", () => {
   it("diagnoses() delegates to the diagnosis catalog", () => {
     const readModel = createReadModel(fakeGraph(), new Set());
     expect(readModel.diagnoses()).toEqual([{ icd: "1A00", name: "Cholera" }]);
   });
 
-  it("procedures() maps the procedure catalog's list to {name} objects", () => {
+  it("procedures() delegates to the procedure catalog's tree", () => {
     const readModel = createReadModel(fakeGraph(), new Set());
-    expect(readModel.procedures()).toEqual([
-      { name: "Chest X-ray" },
-      { name: "CBC" },
-    ]);
+    expect(readModel.procedures()).toEqual({
+      categories: [],
+      procedures: [{ name: "Chest X-ray" }, { name: "CBC" }],
+    });
   });
 
-  it("procedures() passes through undefined when the catalog has no predefined list", () => {
+  it("procedures() passes through undefined when the catalog is freeform", () => {
     const graph = fakeGraph();
-    (graph.runtime.catalogs.procedures as { list: () => undefined }).list =
+    (graph.runtime.catalogs.procedures as { tree: () => undefined }).tree =
       () => undefined;
     const readModel = createReadModel(graph, new Set());
     expect(readModel.procedures()).toBeUndefined();

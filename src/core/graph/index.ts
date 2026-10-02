@@ -1,19 +1,19 @@
 import type { EventBus } from "../event-bus.js";
-import type { Case } from "./models/Case.js";
-import type { Language } from "./models/Language.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
+import type { Language } from "@/core/graph/shared/domain/Language.js";
 import { ConfigSchema, type Config } from "./config.js";
-import { validateCatalogsOrExit } from "./catalog/startupValidation.js";
-import { buildCaseGraph } from "./02graphs/caseGraph.js";
-import { createYamlCatalogs } from "./catalog/index.js";
-import { createRepos } from "./repos.js";
-import { createMedicalBasisRegistry } from "./medicalBasis/registry.js";
-import type { ModalityRegistries } from "./modality/registry.js";
-import { createChiefComplaintProviders } from "./02graphs/02case-generation/02presentation/generation/chiefComplaint/providers.js";
-import { createAnamnesisProviders } from "./02graphs/02case-generation/02presentation/generation/anamnesis/providers.js";
-import { createProcedureResultProviders } from "./02graphs/02case-generation/03procedure/providers.js";
-import { createLlmPort } from "./utils/llm.js";
+import { buildCaseGraph } from "./assemble.js";
+import { createMedicalBasisRegistry } from "@/core/graph/02-plan/01-basis/registry.js";
+import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
+import { createChiefComplaintProviders } from "@/core/graph/04-case/01-presentation/chief-complaint/providers.js";
+import { createAnamnesisProviders } from "@/core/graph/04-case/01-presentation/anamnesis/providers.js";
+import { createProcedureResultProviders } from "@/core/graph/04-case/02-procedures/providers.js";
 import { createLogger } from "./utils/logger.js";
-import { LLM_ROLES, type GraphRuntime } from "./runtime.js";
+import { LLM_ROLES, type GraphRuntime, type LlmPort } from "./runtime.js";
+import type {
+  SymptomCache,
+  UmlsSymptomFloor,
+} from "@/core/graph/02-plan/01-basis/ports.js";
 import type { GraphAppContext } from "./appContext.js";
 import type { NodeTracer } from "./utils/nodeWrapper.js";
 
@@ -53,8 +53,6 @@ declare module "../event-bus.js" {
       language?: Language;
       timestamp: string;
     };
-    // Issue 15 §2: the defect this fixes is `traceNode` never emitting a
-    // terminal event for a throwing node. This is that terminal event.
     "Node Failed": {
       node: string;
       label?: string;
@@ -69,55 +67,38 @@ declare module "../event-bus.js" {
 export { ConfigSchema };
 
 /**
- * Build the `GraphRuntime` (ports), construct the graph as a function of it,
- * and validate the catalogues. Called once from `createApp()`, before any
- * transport starts — there is no module-scope mutable state left for
- * transports to race against.
+ * Build `GraphRuntime` from the adapters `createApp()` constructed, then the
+ * graph from it. Called once from `createApp()` before any transport starts.
  */
 export function initGraph(opts: {
   bus: EventBus;
   config: Config;
-  /** Already-resolved absolute path (see `persistence/paths.ts`). */
-  catalogDir: string;
-  /** Already-resolved absolute path (see `persistence/paths.ts`). */
-  cacheDir: string;
-  symptomCacheTtlDays: number;
-  /**
-   * The OTel operator channel's port (issue #141), constructed by
-   * `app.ts` via `observability/otel.ts`'s `createOtelNodeTracer()`,
-   * gated only by the standard `OTEL_SDK_DISABLED`. Required: `app.ts` is
-   * the only caller, and it always has one — pass `noopNodeTracer`
-   * explicitly if you ever need a silent graph.
-   */
+  llm: LlmPort;
+  catalogs: GraphRuntime["catalogs"];
+  umlsFloor: UmlsSymptomFloor;
+  symptomCache: SymptomCache;
+  /** OTel port from `observability/otel.ts`'s `createOtelNodeTracer()`. Pass `noopNodeTracer` for silence. */
   tracer: NodeTracer;
 }): GraphAppContext {
-  const { bus, config, catalogDir, cacheDir, symptomCacheTtlDays, tracer } =
-    opts;
-
-  const repos = createRepos({ catalogDir, cacheDir, symptomCacheTtlDays });
+  const { bus, config, llm, catalogs, umlsFloor, symptomCache, tracer } = opts;
 
   const runtime: GraphRuntime = {
-    llm: createLlmPort(config),
-    catalogs: createYamlCatalogs(repos),
+    llm,
+    catalogs,
     log: createLogger(bus),
     clock: () => new Date(),
   };
 
-  // The medical-basis registry is a plain list built here, in the
-  // composition root — not a `FEATURES`/config flag (see
-  // `medicalBasis/registry.ts`'s `createMedicalBasisRegistry` doc comment
-  // for why). Today it always returns `[umlsSymptomProvider]`; a deployer
-  // cannot currently switch it off.
+  // Plain list, not a config flag (see `createMedicalBasisRegistry`). Always
+  // `[umlsSymptomProvider]`.
   const medicalBasisRegistry = createMedicalBasisRegistry({
     runtime,
-    symptomsRepo: repos.symptoms,
+    umlsFloor,
+    symptomCache,
   });
 
-  // The per-field modality registries (issue 21 §4): each field composes
-  // its own provider list from its `providers.ts` slice
-  // (`02presentation/generation/chiefComplaint/providers.ts`,
-  // `.../anamnesis/providers.ts`, `03procedure/providers.ts`), mirroring the
-  // `catalog/<domain>/` vertical-slice convention.
+  // Per-field modality registries; each field's providers come from its own
+  // `providers.ts` slice.
   const modalityRegistries: ModalityRegistries = {
     chiefComplaint: createChiefComplaintProviders(runtime),
     anamnesis: createAnamnesisProviders(runtime),
@@ -128,18 +109,10 @@ export function initGraph(opts: {
     runtime,
     bus,
     config,
-    repos,
     medicalBasisRegistry,
     modalityRegistries,
     tracer
   );
-
-  // Validate catalogue translation files here, and not any earlier: the
-  // "labels" catalogue's base key set is `getKnownLabels()`
-  // (utils/nodeWrapper.ts), which `traceNode` populates as `buildCaseGraph`
-  // constructs the graph modules above. Running the validation any earlier
-  // would validate labels against an empty set and silently pass.
-  validateCatalogsOrExit(repos, config.LANGUAGES);
 
   if (config.allowedLlms) {
     console.log("[graph] Initialized with dynamic LLMs configuration.");
@@ -162,7 +135,6 @@ export function initGraph(opts: {
     renderCase,
     translateOutline,
     graphs,
-    db: repos.db,
   };
 }
 

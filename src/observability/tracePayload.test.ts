@@ -1,39 +1,38 @@
-// Issue 15 §1.3/§3/§6 — trace payloads get a size cap, not a node's full
-// output, and bytes must never reach a trace event: `ContentPart[]` fields
-// are projected through `textOf`, exactly as prompts do (issue 11 §4).
+// Trace payloads capped; bytes never reach a trace: each `ContentPart` reduced to `{ type, bytes }`.
 import { describe, expect, it } from "vitest";
 import {
   encodeText,
   type ContentPart,
-} from "@/core/graph/models/ContentPart.js";
+} from "@/core/graph/shared/domain/ContentPart.js";
 import { buildTracePayload, sanitizeForTrace } from "./tracePayload.js";
 
-/** Local fixture builder — the pre-issue-21 `textPart()` constructor,
- * inlined at every real call site now; kept here only to keep these
- * fixtures readable. */
+/** Fixture builder: part whose `alt` equals its decoded `value`. */
 function fixtureTextPart(alt: string): ContentPart {
   return { type: "text/plain", value: encodeText(alt), alt };
 }
 
 describe("sanitizeForTrace — no ContentPart bytes ever reach a trace", () => {
-  it("projects a ContentPart[] field to its textOf() text", () => {
-    const parts = [fixtureTextPart("First."), fixtureTextPart("Second.")];
-    const sanitized = sanitizeForTrace({ chiefComplaint: parts }) as {
-      chiefComplaint: string;
-    };
+  it("reduces every part of a ContentPart[] field to { type, bytes }: no alt, no text", () => {
+    const parts = [fixtureTextPart("First."), fixtureTextPart("Second!!")];
+    const sanitized = sanitizeForTrace({ chiefComplaint: parts });
 
-    expect(sanitized.chiefComplaint).toBe("First.\n\nSecond.");
-    expect(sanitized.chiefComplaint).not.toBeInstanceOf(Uint8Array);
+    expect(sanitized).toEqual({
+      chiefComplaint: [
+        { type: "text/plain", bytes: 6 },
+        { type: "text/plain", bytes: 8 },
+      ],
+    });
   });
 
   it("walks nested structures (anamnesis-shaped array of {category, answer})", () => {
     const sanitized = sanitizeForTrace({
       anamnesis: [{ category: "History", answer: [fixtureTextPart("Cough.")] }],
-    }) as { anamnesis: { category: string; answer: string }[] };
+    });
 
-    expect(sanitized.anamnesis[0]).toEqual({
-      category: "History",
-      answer: "Cough.",
+    expect(sanitized).toEqual({
+      anamnesis: [
+        { category: "History", answer: [{ type: "text/plain", bytes: 6 }] },
+      ],
     });
   });
 
@@ -55,7 +54,7 @@ describe("sanitizeForTrace — no ContentPart bytes ever reach a trace", () => {
   });
 });
 
-describe("buildTracePayload — size cap, not full output (issue 15 §1.3)", () => {
+describe("buildTracePayload — size cap, not full output", () => {
   it("returns the value untouched (truncated: false) when under the cap", () => {
     const payload = buildTracePayload({ small: "value" }, 1000);
     expect(payload).toEqual({ truncated: false, value: { small: "value" } });
@@ -75,16 +74,15 @@ describe("buildTracePayload — size cap, not full output (issue 15 §1.3)", () 
     expect(JSON.stringify(payload)).not.toContain("x".repeat(1000));
   });
 
-  it("caps based on the sanitized (post-textOf) size, so a large ContentPart's bytes never inflate the reported size", () => {
+  it("caps based on the sanitized size, so a large ContentPart's bytes never inflate the reported size", () => {
     const hugeBinary = new Uint8Array(10_000_000); // way over any real cap
     const part = { type: "image/png", alt: "short caption", value: hugeBinary };
     const payload = buildTracePayload({ image: [part] }, 1000);
 
-    // Sanitized to `textOf([part])` === "short caption" — tiny, well under
-    // the cap, regardless of the original 10MB of pixel bytes.
+    // Sanitized to `{ type, bytes }`: tiny, regardless of 10MB bytes.
     expect(payload).toEqual({
       truncated: false,
-      value: { image: "short caption" },
+      value: { image: [{ type: "image/png", bytes: 10_000_000 }] },
     });
   });
 });

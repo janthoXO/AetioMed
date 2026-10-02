@@ -20,18 +20,13 @@ const DUPLICATE_CODES = new Set([
 ]);
 
 /**
- * Handle one `cases.request.generate` message. `slot` is a generation slot
- * the caller already reserved; it is handed to the service, which releases
- * it — and released here too on every path that never reaches the service
- * (releasing twice is a no-op).
+ * Handle one `cases.request.generate` message. `slot` = pre-reserved
+ * generation slot, handed to service; also released here on paths never
+ * reaching service (double release is no-op).
  *
- * **Ack only once the call's output is published (#159).** The generator
- * keeps nothing between calls, so an unacked request *is* the recovery
- * path: a replica that dies mid-call stops heartbeating (`msg.working()`),
- * the short ack wait runs out, and JetStream hands the request to another
- * replica. A plan-mode continuation carries its plan, so only the second
- * half reruns; anything else reruns from the start. Past
- * {@link REQUEST_MAX_ATTEMPTS} deliveries the request is failed instead.
+ * Ack only after output published. Unacked request is the recovery path:
+ * dead replica stops `msg.working()`, ack wait expires, JetStream
+ * redelivers. Past {@link REQUEST_MAX_ATTEMPTS} deliveries, request fails.
  */
 export async function consumeCaseGenerateMessage(
   msg: JsMsg,
@@ -45,10 +40,8 @@ export async function consumeCaseGenerateMessage(
   try {
     const raw = safeJson(msg);
 
-    // On NATS the jobId is required: it is the address of the job's result
-    // (`cases.result.<jobId>`), so a server-minted one could never be found
-    // by the client that asked. Without a usable one there is nowhere to
-    // send an error either, so the message is terminated, not retried.
+    // jobId required: it addresses the result (`cases.result.<jobId>`).
+    // Without one nowhere to send an error, so terminate, don't retry.
     const jobIdResult = JobIdSchema.safeParse(
       (raw as { jobId?: unknown } | undefined)?.jobId
     );
@@ -62,7 +55,7 @@ export async function consumeCaseGenerateMessage(
     }
     const jobId = jobIdResult.data;
 
-    // The consumer's one extra delivery: every attempt before it crashed.
+    // Consumer's one extra delivery: all earlier attempts crashed.
     if (msg.info.deliveryCount > REQUEST_MAX_ATTEMPTS) {
       console.error(
         `[NATS] Giving up on jobId=${jobId} after ${REQUEST_MAX_ATTEMPTS} attempts`
@@ -97,7 +90,7 @@ export async function consumeCaseGenerateMessage(
       { ...request.data, jobId },
       {
         ...(slot && { slot }),
-        // A normal-mode plan on the way: best effort, the case follows.
+        // Normal-mode plan: best effort, case follows.
         onPlan: (plan) => {
           publishPlan(plan).catch((error) => {
             console.error(
@@ -110,17 +103,14 @@ export async function consumeCaseGenerateMessage(
     );
 
     if (result.status === "failed" && DUPLICATE_CODES.has(result.error!.code)) {
-      // The job with this id is running or finished here already, and
-      // publishes (or published) its own result. Answering this duplicate
-      // with an error would overwrite that result for the client.
+      // Original job publishes its own result; an error here would overwrite it.
       console.warn(`[NATS] Ignoring duplicate request for jobId=${jobId}`);
     } else {
       await publishStop(graph, result);
     }
     msg.ack();
   } catch (error) {
-    // Protocol-level failures only (the publish itself failing): retry.
-    // Domain failures are results, published above.
+    // Protocol failures only (publish failing): retry. Domain failures are results.
     console.error("[NATS] Error processing message:", error);
     msg.nak();
   } finally {
@@ -138,10 +128,8 @@ function safeJson(msg: JsMsg): unknown {
 }
 
 /**
- * Pull requests one at a time, and only once a generation slot is free.
- * Messages this replica cannot start yet stay in the stream for another
- * replica, rather than being pulled and then queued in memory. Returns when
- * the connection closes.
+ * Pull one request at a time, only once a generation slot is free; excess
+ * stays in stream for other replicas. Returns when connection closes.
  */
 export async function runRequestWorker(opts: {
   consumer: Consumer;
@@ -168,7 +156,7 @@ export async function runRequestWorker(opts: {
       slot();
       continue;
     }
-    // Not awaited: the slot, not this loop, is what bounds concurrency.
+    // Not awaited: slot bounds concurrency.
     void consumeCaseGenerateMessage(msg, graph, service, slot);
   }
 }

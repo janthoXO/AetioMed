@@ -42,7 +42,6 @@ services:
 
       # ─── Graph topology ──────────────────────────────────────────────
       - TRANSLATION_SANDWICH=${TRANSLATION_SANDWICH}
-      - PROCEDURE_PRESELECTION=${PROCEDURE_PRESELECTION}
 
       # ─── Language ────────────────────────────────────────────────────
       - LANGUAGES=${LANGUAGES}

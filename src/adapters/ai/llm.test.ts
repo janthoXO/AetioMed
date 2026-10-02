@@ -4,6 +4,7 @@ import {
   AIMessage,
   HumanMessage,
   SystemMessage,
+  ToolMessage,
 } from "@langchain/core/messages";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { ModelUnreachableError } from "@/core/graph/errors/AppError.js";
@@ -67,5 +68,37 @@ describe("chatModelLlmPort", () => {
     });
     expect(withStructuredOutput).not.toHaveBeenCalled();
     expect(invoke.mock.calls[0]![1]).toBeUndefined();
+  });
+
+  it("agent: runs tool calls, feeds results back, returns final text", async () => {
+    const invoke = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new AIMessage({
+          content: "",
+          tool_calls: [{ id: "1", name: "web_search", args: { query: "q" } }],
+        })
+      )
+      .mockResolvedValueOnce(new AIMessage("outline"));
+    const model = {
+      bindTools: vi.fn().mockReturnValue({ invoke }),
+      invoke,
+    } as unknown as BaseChatModel;
+    const port = chatModelLlmPort(() => model);
+    const run = vi.fn().mockResolvedValue("result text");
+
+    const result = await port.agent(
+      call,
+      prompt,
+      [{ name: "web_search", description: "d", schema: z.object({}), run }],
+      { maxSteps: 3 }
+    );
+
+    expect(result).toBe("outline");
+    expect(run).toHaveBeenCalledWith({ query: "q" }, undefined);
+    // [system, human, tool call, tool result, final]; array shared by reference.
+    const toolResult = invoke.mock.calls[1]![0][3];
+    expect(toolResult).toBeInstanceOf(ToolMessage);
+    expect(toolResult.content).toBe("result text");
   });
 });

@@ -1,6 +1,4 @@
-// Integration tests against a real nats-server (#142). Skipped entirely
-// unless NATS_TEST_URL is set — see CLAUDE.md's Testing section for how to
-// start one locally and how CI provides it.
+// Integration tests against a real nats-server. Skipped unless NATS_TEST_URL is set.
 import {
   afterAll,
   afterEach,
@@ -25,11 +23,13 @@ import { ensureStreams } from "./streams.js";
 import {
   REQUESTS_STREAM,
   RESULTS_STREAM,
+  PLANS_STREAM,
   LEGACY_STREAM,
   REQUEST_CONSUMER,
   resultSubject,
   cancelSubject,
   progressSubject,
+  planSubject,
   CATALOG_DIAGNOSIS_SUBJECT,
   CATALOG_PROCEDURES_SUBJECT,
   META_FEATURES_SUBJECT,
@@ -52,28 +52,26 @@ import {
   type JobDirectory,
   type JobEventChannel,
 } from "@/core/jobEvents/index.js";
-import { selectJobDirectory } from "@/core/app.js";
+import { selectJobDirectory } from "@/app.js";
 import { wireLabels } from "@/core/jobEvents/labels.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { EventBus } from "@/core/event-bus.js";
 import { getRequestContext } from "@/core/graph/utils/context.js";
 import { createReadModel } from "@/core/readModel.js";
 import { createRestApp } from "@/transports/rest/index.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
-import type { CompiledCaseGraph } from "@/core/graph/02graphs/caseGraph.js";
-import type { Case } from "@/core/graph/models/Case.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
+import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
 const NATS_TEST_URL = process.env.NATS_TEST_URL;
 
-function fakeGraph(
-  generateCase: GraphAppContext["generateCase"] = vi.fn()
-): GraphAppContext {
+function fakeGraph(generateCase: GenerateCaseFn = vi.fn()): GraphAppContext {
   return {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      PROCEDURE_PRESELECTION: false,
       LANGUAGES: ["English", "German"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
@@ -82,13 +80,13 @@ function fakeGraph(
       catalogs: {
         diagnosis: { byIcd: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
+    ...planAndRenderFrom(generateCase),
   } as GraphAppContext;
 }
 
-describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
+describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker", () => {
   let jsm: JetStreamManager;
 
   beforeEach(async () => {
@@ -178,25 +176,23 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
       const js = getJetStreamClient();
       const nc = getNatsConnection();
 
-      const generateCase: GraphAppContext["generateCase"] = vi.fn(
-        async (): Promise<Case> => {
-          const signal = getRequestContext()?.signal;
-          await new Promise<void>((resolve, reject) => {
-            const timer = setTimeout(resolve, 300);
-            signal?.addEventListener(
-              "abort",
-              () => {
-                clearTimeout(timer);
-                const error = new Error("aborted");
-                error.name = "AbortError";
-                reject(error);
-              },
-              { once: true }
-            );
-          });
-          return { patient: { name: "Jane", age: 40, sex: "female" } };
-        }
-      );
+      const generateCase: GenerateCaseFn = vi.fn(async (): Promise<Case> => {
+        const signal = getRequestContext()?.signal;
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(resolve, 300);
+          signal?.addEventListener(
+            "abort",
+            () => {
+              clearTimeout(timer);
+              const error = new Error("aborted");
+              error.name = "AbortError";
+              reject(error);
+            },
+            { once: true }
+          );
+        });
+        return { patient: { name: "Jane", age: 40, sex: "female" } };
+      });
 
       const graph = fakeGraph(generateCase);
       const channel = createJobEventChannel();
@@ -258,12 +254,9 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
         const requestsInfo = await jsm.streams.info(REQUESTS_STREAM.name);
         expect(requestsInfo.state.messages).toBe(0);
       } finally {
-        // `closed` only stops the loop between pulls — the worker's current
-        // `consumer.next({ expires: 30_000 })` call (cases.handler.ts) is
-        // still outstanding and would otherwise block this test's own
-        // timeout. Let it settle in the background instead of awaiting it;
-        // it errors out (or returns) on its own once this describe block's
-        // `afterAll` closes the connection.
+        // `closed` only stops the loop between pulls; the outstanding
+        // `consumer.next({ expires: 30_000 })` would block the test timeout.
+        // Don't await: it settles when `afterAll` closes the connection.
         closed = true;
         stopResponders();
         void workerPromise.catch(() => undefined);
@@ -323,12 +316,9 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
         const after = await jsm.streams.info(RESULTS_STREAM.name);
         expect(after.state.messages).toBe(before.state.messages);
       } finally {
-        // `closed` only stops the loop between pulls — the worker's current
-        // `consumer.next({ expires: 30_000 })` call (cases.handler.ts) is
-        // still outstanding and would otherwise block this test's own
-        // timeout. Let it settle in the background instead of awaiting it;
-        // it errors out (or returns) on its own once this describe block's
-        // `afterAll` closes the connection.
+        // `closed` only stops the loop between pulls; the outstanding
+        // `consumer.next({ expires: 30_000 })` would block the test timeout.
+        // Don't await: it settles when `afterAll` closes the connection.
         closed = true;
         stopResponders();
         void workerPromise.catch(() => undefined);
@@ -337,12 +327,9 @@ describe.skipIf(!NATS_TEST_URL)("JetStream streams and worker (#142)", () => {
   );
 });
 
-// #144 — NATS parity: the progress publisher and the request/reply meta
-// service. Kept in this file, in its own `describe`, rather than a sibling
-// file: both hit the same `CASE_REQUESTS`/`CASE_RESULTS` streams by name, and
-// two files each deleting/recreating them in a `beforeEach` race when
-// vitest runs test files in parallel workers — sequential `it`s inside one
-// file don't.
+// NATS parity: progress publisher and request/reply meta service. Same file
+// as the other blocks: files hitting the same streams by name race their
+// `beforeEach` delete/recreate under parallel vitest workers.
 function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
   const traceNode = createTraceNode(bus);
   const doThing = traceNode(
@@ -350,7 +337,7 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
     async () => ({ ok: true }),
     "Doing a thing"
   );
-  const generateCase: GraphAppContext["generateCase"] = vi.fn(async () => {
+  const generateCase: GenerateCaseFn = vi.fn(async () => {
     await doThing();
     return {
       patient: {
@@ -368,7 +355,6 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: ["ollama:llama3.1"],
       MAX_CONTENT_PART_BYTES: 5_000_000,
-      PROCEDURE_PRESELECTION: false,
       LANGUAGES: ["English", "German"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
@@ -379,25 +365,34 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
           byIcd: () => undefined,
           all: () => [{ icd: "1A00", name: "Cholera" }],
         },
-        procedures: { list: () => ["Chest X-ray", "CBC"] },
+        procedures: {
+          tree: () => ({
+            categories: [],
+            procedures: [{ name: "Chest X-ray" }, { name: "CBC" }],
+          }),
+        },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
-    caseGraph: {
-      getGraphAsync: async () => ({
-        nodes: { __start__: {}, some_node: {}, __end__: {} },
-        edges: [
-          { source: "__start__", target: "some_node" },
-          { source: "some_node", target: "__end__" },
-        ],
-      }),
-    } as unknown as CompiledCaseGraph,
+    ...planAndRenderFrom(generateCase),
+    graphs: {
+      plan: {
+        getGraphAsync: async () => ({ nodes: {}, edges: [] }),
+      },
+      case: {
+        getGraphAsync: async () => ({
+          nodes: { __start__: {}, some_node: {}, __end__: {} },
+          edges: [
+            { source: "__start__", target: "some_node" },
+            { source: "some_node", target: "__end__" },
+          ],
+        }),
+      },
+    } as unknown as GraphAppContext["graphs"],
   } as GraphAppContext;
 }
 
-/** Collect every message on `subject` (a core-NATS fan-out subject, `>`
- * wildcard allowed) until `count` have arrived or `timeoutMs` elapses. */
+/** Collect messages on `subject` (core NATS, `>` allowed) until `count` arrive or `timeoutMs`. */
 async function collectCore(
   subject: string,
   count: number,
@@ -425,7 +420,7 @@ async function collectCore(
   return received;
 }
 
-describe.skipIf(!NATS_TEST_URL)("NATS parity (#144)", () => {
+describe.skipIf(!NATS_TEST_URL)("NATS parity", () => {
   let jsm: JetStreamManager;
 
   beforeEach(async () => {
@@ -489,7 +484,7 @@ describe.skipIf(!NATS_TEST_URL)("NATS parity (#144)", () => {
           progressSubject("job-n", "label").replace(".label", ".>"),
           4
         );
-        // Let the subscription land before publishing.
+        // Let subscription land before publishing.
         await new Promise((resolve) => setTimeout(resolve, 100));
 
         await js.publish(
@@ -667,15 +662,10 @@ describe.skipIf(!NATS_TEST_URL)("NATS parity (#144)", () => {
   );
 });
 
-// #145 — the partial NATS backbone: with both `REST` and `NATS` enabled,
-// REST watches and cancels jobs over NATS, so it sees jobs on every replica.
-// Two independent connections stand in for two replicas on the same server —
-// replica A rides the shared `getNatsConnection()` (as the other describe
-// blocks in this file do), replica B connects on its own via `connect()`
-// directly, exactly as a second process would. Kept in this file, in its own
-// `describe`, for the same reason as "NATS parity (#144)" above: both hit
-// the same `CASE_REQUESTS`/`CASE_RESULTS` streams by name, and a sibling
-// file's `beforeEach` deleting/recreating them would race this one's.
+// NATS backbone: with `REST` and `NATS` both enabled, REST watches and
+// cancels jobs over NATS, seeing every replica. Two connections stand in for
+// two replicas: A uses shared `getNatsConnection()`, B its own `connect()`.
+// Same file as the other blocks, to avoid stream-name races (see above).
 function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
   const traceNode = createTraceNode(bus);
   const doThing = traceNode(
@@ -690,7 +680,7 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
     return err;
   }
 
-  const generateCase: GraphAppContext["generateCase"] = vi.fn(async () => {
+  const generateCase: GenerateCaseFn = vi.fn(async () => {
     const signal = getRequestContext()?.signal;
     for (let i = 0; i < 3; i++) {
       if (signal?.aborted) throw abortError();
@@ -720,7 +710,6 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
       MAX_CONTENT_PART_BYTES: 5_000_000,
-      PROCEDURE_PRESELECTION: false,
       LANGUAGES: ["English", "German"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
@@ -729,17 +718,17 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
       catalogs: {
         diagnosis: { byIcd: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
-    caseGraph: {
-      getGraphAsync: async () => ({ nodes: {}, edges: [] }),
-    } as unknown as GraphAppContext["caseGraph"],
+    ...planAndRenderFrom(generateCase),
+    graphs: {
+      plan: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
+      case: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
+    } as unknown as GraphAppContext["graphs"],
   } as GraphAppContext;
 }
 
-/** One replica: its own bus/channel/service around the fake 3-step graph,
- * with both NATS adapters (`jobResponders`, `progressPublisher`) started. */
+/** One replica: own bus/channel/service around the fake 3-step graph, `jobResponders` and `progressPublisher` started. */
 function createReplica(nc: NatsConnection): {
   graph: GraphAppContext;
   service: CaseGenerationService;
@@ -791,7 +780,7 @@ async function startRestApp(opts: {
   return { server, port };
 }
 
-describe.skipIf(!NATS_TEST_URL)("partial NATS backbone (#145)", () => {
+describe.skipIf(!NATS_TEST_URL)("partial NATS backbone", () => {
   let jsm: JetStreamManager;
   let ncB: NatsConnection;
 
@@ -868,7 +857,7 @@ describe.skipIf(!NATS_TEST_URL)("partial NATS backbone (#145)", () => {
         expect(text).toContain("event: label");
         expect(text).toContain("event: complete");
         expect(text).toContain('"status":"done"');
-        // Watch, not collect: the observer stream never carries the case.
+        // Watch, not collect: observer stream never carries the case.
         expect(text).not.toContain("patient");
 
         // (b) job submitted via A's POST /api/cases, watched over NATS from
@@ -937,7 +926,7 @@ describe.skipIf(!NATS_TEST_URL)("partial NATS backbone (#145)", () => {
         }));
         const port = (server.address() as AddressInfo).port;
 
-        // Give the responder subscription on B a moment to land.
+        // Let B's responder subscription land.
         await new Promise((resolve) => setTimeout(resolve, 150));
 
         const deleteRes = await fetch(
@@ -1097,4 +1086,146 @@ describe.skipIf(!NATS_TEST_URL)("partial NATS backbone (#145)", () => {
   afterEach(async () => {
     await ncB?.close();
   });
+});
+
+// Plan mode over NATS: plan-mode request's plan lands on `cases.plan.<jobId>`;
+// a second request carrying that plan (same jobId) produces the case on
+// `cases.result.<jobId>`. Same file as above, to avoid stream-name races.
+describe.skipIf(!NATS_TEST_URL)("plan mode over NATS", () => {
+  let jsm: JetStreamManager;
+
+  beforeEach(async () => {
+    await connectNats({
+      url: NATS_TEST_URL!,
+      user: process.env.NATS_TEST_USER ?? "nats",
+      password: process.env.NATS_TEST_PASSWORD ?? "nats",
+    });
+    jsm = await jetstreamManager(getNatsConnection());
+
+    for (const name of [
+      REQUESTS_STREAM.name,
+      RESULTS_STREAM.name,
+      PLANS_STREAM.name,
+      LEGACY_STREAM,
+    ]) {
+      await jsm.streams.delete(name).catch(() => undefined);
+    }
+  });
+
+  afterAll(async () => {
+    await closeNats();
+  });
+
+  /**
+   * Read next stored message on `subject` from `streamName` via a fresh
+   * ephemeral consumer, `deliver_policy: All`, so publish order vs consumer
+   * creation doesn't matter.
+   */
+  async function awaitStored(
+    streamName: string,
+    subject: string,
+    timeoutMs = 5000
+  ): Promise<unknown> {
+    const js = getJetStreamClient();
+    const consumer = await js.consumers.get(streamName, {
+      filter_subjects: [subject],
+      deliver_policy: DeliverPolicy.All,
+    });
+    const msg = await consumer.next({ expires: timeoutMs });
+    if (!msg) throw new Error(`No message on ${subject} within ${timeoutMs}ms`);
+    msg.ack();
+    return JSON.parse(new TextDecoder().decode(msg.data));
+  }
+
+  it(
+    "plan request → plan on cases.plan.<jobId>; the plan handed back → the case on cases.result.<jobId>, same jobId",
+    { timeout: 20000 },
+    async () => {
+      await ensureStreams(jsm);
+      const js = getJetStreamClient();
+      const nc = getNatsConnection();
+
+      const generateCase: GenerateCaseFn = vi.fn(async () => ({
+        patient: { name: "Jane", age: 40, sex: "female" },
+      }));
+      const graph = fakeGraph(generateCase);
+      const channel = createJobEventChannel();
+      const service = createCaseGenerationService(
+        graph,
+        new EventBus(),
+        channel,
+        { maxConcurrent: 2 }
+      );
+
+      const stopResponders = startJobResponders({
+        nc,
+        jobEvents: channel,
+        service,
+      });
+      const consumer = await js.consumers.get(
+        REQUESTS_STREAM.name,
+        REQUEST_CONSUMER
+      );
+      let closed = false;
+      const workerPromise = runRequestWorker({
+        consumer,
+        graph,
+        service,
+        isClosed: () => closed,
+      });
+
+      try {
+        await js.publish(
+          "cases.request.generate",
+          JSON.stringify({
+            jobId: "job-plan-1",
+            diagnosis: "Influenza",
+            mode: "plan",
+            language: "English",
+          })
+        );
+
+        const plan = await awaitStored(
+          PLANS_STREAM.name,
+          planSubject("job-plan-1")
+        );
+        // `planAndRenderFrom` (`src/testing/graphFakes.ts`) always plans a
+        // 3-segment outline: editable segment 0, fixed marker, render options JSON.
+        expect(plan).toMatchObject({
+          jobId: "job-plan-1",
+          mode: "plan",
+          plan: [
+            { fixed: false, text: "" },
+            { fixed: true, text: "## Plan options" },
+            { fixed: false },
+          ],
+        });
+
+        // Second request carrying the plan reuses the jobId and produces the case.
+        await js.publish(
+          "cases.request.generate",
+          JSON.stringify({
+            jobId: "job-plan-1",
+            diagnosis: "Influenza",
+            mode: "plan",
+            language: "English",
+            plan: (plan as { plan: unknown }).plan,
+          })
+        );
+
+        const result = await awaitStored(
+          RESULTS_STREAM.name,
+          resultSubject("job-plan-1")
+        );
+        expect(result).toMatchObject({
+          jobId: "job-plan-1",
+          patient: { name: "Jane" },
+        });
+      } finally {
+        closed = true;
+        stopResponders();
+        void workerPromise.catch(() => undefined);
+      }
+    }
+  );
 });

@@ -14,7 +14,7 @@
     "test:watch": "vitest",
     "format": "prettier --write src",
     "format:check": "prettier --check src",
-    "graph:export": "tsx src/core/graph/02graphs/exportGraphs.ts"
+    "graph:export": "tsx scripts/exportGraphs.ts"
   },
   "keywords": [
     "medical-education",

@@ -1,13 +1,19 @@
 import type { Config } from "./config.js";
 import type { GraphRuntime } from "./runtime.js";
-import type { DbHandle } from "./persistence/db.js";
-import type { Case } from "./models/Case.js";
-import type { Diagnosis } from "./models/Diagnosis.js";
-import type { GenerationFlag } from "./models/GenerationFlags.js";
-import type { UserInstructions } from "./models/UserInstructions.js";
-import type { Language } from "./models/Language.js";
-import type { Difficulty } from "./models/Difficulty.js";
-import type { CompiledCaseGraph } from "./02graphs/caseGraph.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
+import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
+import type { GenerationFlag } from "@/core/graph/shared/domain/GenerationFlags.js";
+import type { UserInstructions } from "@/core/graph/shared/domain/UserInstructions.js";
+import type { Language } from "@/core/graph/shared/domain/Language.js";
+import type { Difficulty } from "@/core/graph/shared/domain/Difficulty.js";
+import type {
+  CompiledCaseGraphs,
+  PlanCaseInput,
+  PlanResult,
+  RenderCaseInput,
+} from "./assemble.js";
+
+export type { PlanCaseInput, PlanResult, RenderCaseInput };
 
 export type GenerateCaseFn = (opts: {
   diagnosis: Diagnosis;
@@ -16,40 +22,38 @@ export type GenerateCaseFn = (opts: {
   language?: Language | undefined;
   difficulty?: Difficulty | undefined;
   /**
-   * Whether the caller actually supplied free text — a diagnosis name
-   * (rather than only an `icd`) or any `userInstructions` (issue 12 §3).
-   * `CaseGenerationService` is the only place that knows this, since it
-   * performs the ICD→name resolution before calling in.
+   * Caller supplied free text: diagnosis name (not just `icd`) or any
+   * `userInstructions`. Only `CaseGenerationService` knows; it does ICD→name
+   * resolution first.
    */
   callerSuppliedFreeText: boolean;
 }) => Promise<Case>;
 
 /**
- * The case-generation graph's surface, as consumed by the transports (rest,
- * nats). Built once in `app.ts`'s `createApp()` and handed explicitly to
- * each transport's start function (`startRestServer`, `startNatsTransport`)
- * — transports never import graph internals (there is no module singleton
- * to import).
+ * Graph surface consumed by transports. Built once in `createApp()`, passed
+ * to each transport start function. Transports never import graph internals.
  */
 export interface GraphAppContext {
   config: Config;
   runtime: GraphRuntime;
-  generateCase: GenerateCaseFn;
+  /** Run plan graph only: outline + judge loop, plus working-language inputs the case graph needs. */
+  planCase: (opts: PlanCaseInput) => Promise<PlanResult>;
+  /** Run the case graph only, from an outline {@link planCase} produced. */
+  renderCase: (opts: RenderCaseInput) => Promise<Case>;
   /**
-   * The embedded database handle, exposed here only so `app.ts` can register
-   * it as the last shutdown closer (issue 18) — everything that might still
-   * write must have stopped before it closes. Transports have no reason to
-   * touch it and shouldn't.
+   * Translate outline values keyed by segment index: `"out"` to request
+   * language, `"in"` to English. Only when sandwich compiled in.
    */
-  db: DbHandle;
+  translateOutline:
+    | ((
+        values: Record<string, string>,
+        direction: "out" | "in"
+      ) => Promise<Record<string, string>>)
+    | undefined;
   /**
-   * The compiled top-level graph this deployment actually serves (bound to
-   * the deployer's flags, not one of the other three eagerly-built
-   * variants — see `buildCaseGraph`'s doc comment). `GET /api/graph`
-   * (`core/graph/structure.ts`, #140) is the one consumer: it calls
-   * `getGraphAsync({ xray: true })` on exactly this graph, the same call
-   * `02graphs/exportGraphs.ts` uses to draw mermaid diagrams, so the two
-   * must not drift.
+   * Compiled plan + case graphs this deployment serves (deployer's flag
+   * variant). Consumed by `GET /api/graph` (`structure.ts`) via
+   * `getGraphAsync({ xray: true })`, same call as `scripts/exportGraphs.ts`.
    */
-  caseGraph: CompiledCaseGraph;
+  graphs: CompiledCaseGraphs;
 }

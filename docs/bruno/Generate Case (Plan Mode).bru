@@ -1,0 +1,35 @@
+meta {
+  name: Generate Case (Plan Mode)
+  type: http
+  seq: 13
+}
+
+post {
+  url: {{base_url}}/api/cases
+  body: json
+  auth: inherit
+}
+
+body:json {
+  // Stops once the outline exists and hands it back in the request
+  // language, instead of generating the case. The generator keeps nothing
+  // of this call — send the outline back with "Generate Case (Continue
+  // Plan)" to generate from it.
+  {
+    "jobId": "{{jobId}}",
+    "diagnosis": "diabetes",
+    "mode": "plan",
+    "language": "German",
+    "generationFlags": [
+      "patient",
+      "chiefComplaint",
+      "anamnesis",
+      "procedures"
+    ]
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

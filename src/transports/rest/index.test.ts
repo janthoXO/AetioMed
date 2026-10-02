@@ -1,8 +1,6 @@
-// #140 — app-level coverage for `createRestApp`: the always-on `GET
-// /api/graph` and `GET /api/cases/:jobId/labels` routes are actually
-// mounted, the old traces-over-SSE route is gone, and `GET /api/features`
-// still reports the raw flag set — all with no OTel env configured, since
-// neither gate applies here any more.
+// App-level coverage for `createRestApp`: `GET /api/graph` and
+// `GET /api/cases/:jobId/labels` are mounted, and `GET /api/features`
+// reports the raw flag set, all with no OTel env configured.
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,15 +12,14 @@ import {
 import { createReadModel } from "@/core/readModel.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type { CaseGenerationService } from "@/core/caseGenerationService.js";
-import type { CompiledCaseGraph } from "@/core/graph/02graphs/caseGraph.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
 
-// Same shape as `caseGenerationService.test.ts`'s `fakeGraph`.
+// Same shape as `fakeGraph` in `caseGenerationService.test.ts`.
 function fakeGraph(): GraphAppContext {
   return {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      PROCEDURE_PRESELECTION: false,
       LANGUAGES: ["English", "German"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
@@ -31,23 +28,31 @@ function fakeGraph(): GraphAppContext {
       catalogs: {
         diagnosis: { byIcd: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase: vi.fn(),
-    caseGraph: {
-      getGraphAsync: async () => ({
-        nodes: { __start__: {}, a: {}, b: {}, __end__: {} },
-        edges: [
-          { source: "__start__", target: "a" },
-          { source: "a", target: "b" },
-          { source: "b", target: "__end__" },
-        ],
-      }),
-    } as unknown as CompiledCaseGraph,
+    ...planAndRenderFrom(vi.fn()),
+    graphs: {
+      plan: {
+        getGraphAsync: async () => ({
+          nodes: { __start__: {}, __end__: {} },
+          edges: [{ source: "__start__", target: "__end__" }],
+        }),
+      },
+      case: {
+        getGraphAsync: async () => ({
+          nodes: { __start__: {}, a: {}, b: {}, __end__: {} },
+          edges: [
+            { source: "__start__", target: "a" },
+            { source: "a", target: "b" },
+            { source: "b", target: "__end__" },
+          ],
+        }),
+      },
+    } as unknown as GraphAppContext["graphs"],
   } as GraphAppContext;
 }
 
-describe("createRestApp (#140) — app-level route table", () => {
+describe("createRestApp — app-level route table", () => {
   const savedEnv: Record<string, string | undefined> = {};
 
   beforeEach(() => {
@@ -114,7 +119,7 @@ describe("createRestApp (#140) — app-level route table", () => {
     expect(body.edges).toEqual([{ source: "a", target: "b" }]);
   });
 
-  it("GET /api/cases/unknown/labels answers 404 (#145) — unknown is never a stream", async () => {
+  it("GET /api/cases/unknown/labels answers 404 — unknown is never a stream", async () => {
     ({ server } = await startApp());
     const port = (server!.address() as AddressInfo).port;
 

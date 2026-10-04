@@ -22,6 +22,7 @@ import {
 } from "@/core/graph/shared/domain/ProcedureTree.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
 import { altOf } from "@/core/graph/shared/domain/ContentPart.js";
+import type { PresentationSections } from "@/core/graph/shared/outline/segments.js";
 import { matchDiagnosis } from "./match.gateway.js";
 import { invokeLogged } from "./solver/invokeLogged.js";
 import { buildBlindedSolverGraph } from "./solver/graph.js";
@@ -53,6 +54,7 @@ const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
   userInstructions: true,
   case: true,
   outline: true,
+  outlineSections: true,
 }).extend({
   /** Iterations remaining before the bridge step is forced. */
   solverIterationsRemaining: z.number().default(SOLVER_MAX_ITERATIONS),
@@ -82,19 +84,29 @@ type BlindedSolverGraph = ReturnType<typeof buildBlindedSolverGraph>;
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Presentation slice (no diagnosis, no procedures), projected to `alt` (`altOf`); bytes never reach a prompt. */
-function presentationOf(c: Case): Presentation {
+/**
+ * Blinded presentation (no diagnosis, no procedures). Generated field: its
+ * `alt` (`altOf`), bytes never reach a prompt. Field not generated: its outline
+ * section, raw (#205).
+ */
+function presentationOf(
+  c: Case,
+  sections: PresentationSections | undefined
+): Presentation {
+  const patient = c.patient ?? sections?.patient;
+  const chiefComplaint =
+    c.chiefComplaint !== undefined
+      ? altOf(c.chiefComplaint)
+      : sections?.chiefComplaint;
+  const anamnesis =
+    c.anamnesis?.map((a) => ({
+      category: a.category,
+      answer: altOf(a.answer),
+    })) ?? sections?.anamnesis;
   return {
-    ...(c.patient !== undefined && { patient: c.patient }),
-    ...(c.chiefComplaint !== undefined && {
-      chiefComplaint: altOf(c.chiefComplaint),
-    }),
-    ...(c.anamnesis !== undefined && {
-      anamnesis: c.anamnesis.map((a) => ({
-        category: a.category,
-        answer: altOf(a.answer),
-      })),
-    }),
+    ...(patient !== undefined && { patient }),
+    ...(chiefComplaint !== undefined && { chiefComplaint }),
+    ...(anamnesis !== undefined && { anamnesis }),
   };
 }
 
@@ -166,7 +178,7 @@ function makeBlindedStep(
       return new Command({ goto: "bridge" });
     }
 
-    const presentation = presentationOf(state.case);
+    const presentation = presentationOf(state.case, state.outlineSections);
     const previousProcedures = projectPreviousProcedures(
       state.plannedProcedures
     );
@@ -286,7 +298,7 @@ function makeResultStep(
     const plannedBatch: PlannedProcedure[] = await planProcedureResults(
       runtime,
       boundLanguage(runtime),
-      presentationOf(state.case),
+      presentationOf(state.case, state.outlineSections),
       state.diagnosis,
       pending,
       providers,
@@ -330,7 +342,7 @@ function makeBridge(runtime: GraphRuntime, strategy: ProcedureStrategy) {
       `[ProcedureGraph] Planning bridge procedures to confirm diagnosis…`
     );
 
-    const presentation = presentationOf(state.case);
+    const presentation = presentationOf(state.case, state.outlineSections);
     const previousProcedures = projectPreviousProcedures(
       state.plannedProcedures
     );

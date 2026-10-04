@@ -123,25 +123,22 @@ function fixtureTextPart(alt: string): ContentPart {
   return { type: "text/plain", value: encodeText(alt), alt };
 }
 
-describe("CaseGenerationService — generationFlags expansion and projection", () => {
-  const fullCase: Case = {
-    patient: { name: "Jane", age: 40, sex: "female" },
-    chiefComplaint: [fixtureTextPart("Cough for three days")],
-    anamnesis: [
-      { category: "History", answer: [fixtureTextPart("Nothing of note")] },
-    ],
-    procedures: [
-      {
-        name: "CBC",
-        relevance: "obligatory",
-        result: [fixtureTextPart("Normal")],
+describe("CaseGenerationService — generationFlags pass-through", () => {
+  it("hands a procedures-only request to the graph unchanged and returns the graph's case as is", async () => {
+    const graphCase: Case = {
+      procedures: {
+        categories: [],
+        procedures: [
+          {
+            name: "CBC",
+            relevance: "obligatory",
+            order: 0,
+            result: [fixtureTextPart("Normal")],
+          },
+        ],
       },
-    ],
-  };
-
-  it("generates the presentation internally for a procedures-only request, then projects it out", async () => {
-    // Blinded solver needs the presentation; caller gets only procedures.
-    const generateCase = vi.fn(async () => fullCase);
+    };
+    const generateCase = vi.fn(async () => graphCase);
     const service = createCaseGenerationService(
       fakeGraph(generateCase),
       new EventBus(),
@@ -155,32 +152,8 @@ describe("CaseGenerationService — generationFlags expansion and projection", (
 
     expect(generateCase.mock.calls[0]?.[0]?.generationFlags).toEqual([
       "procedures",
-      "patient",
-      "chiefComplaint",
-      "anamnesis",
     ]);
-    expect(result.case).toEqual({ procedures: fullCase.procedures });
-  });
-
-  it("passes a request that already names a presentation field through untouched", async () => {
-    const generateCase = vi.fn(async () => fullCase);
-    const service = createCaseGenerationService(
-      fakeGraph(generateCase),
-      new EventBus(),
-      createJobEventChannel()
-    );
-
-    const result = await service.generate({
-      diagnosis: "Influenza",
-      generationFlags: ["procedures", "patient"],
-    });
-
-    expect(generateCase.mock.calls[0]?.[0]?.generationFlags).toEqual([
-      "procedures",
-      "patient",
-    ]);
-    // No expansion, no projection.
-    expect(result.case).toBe(fullCase);
+    expect(result.case).toBe(graphCase);
   });
 });
 

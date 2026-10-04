@@ -9,12 +9,9 @@ import type { CaseGenerationRequest } from "@/api/index.js";
 import { getRequestContext, runWithContext } from "./graph/utils/context.js";
 import { AppError, OutlineNotAcceptedError } from "./graph/errors/AppError.js";
 import {
-  expandFlagsForSolver,
-  projectCaseToFlags,
-} from "@/core/graph/shared/domain/GenerationFlags.js";
-import {
   checkSkeleton,
   joinOutline,
+  presentationSections,
   restoreSkeletonHeadings,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
@@ -338,9 +335,7 @@ export function createCaseGenerationService(
       runtime: graph.runtime,
     });
 
-    // `procedures`-only request: blinded solver needs a presentation, so
-    // generate internally, project out at end. See `expandFlagsForSolver`.
-    const generationFlags = expandFlagsForSolver(req.generationFlags);
+    const { generationFlags } = req;
     const mode = req.mode ?? "normal";
 
     return runWithContext(
@@ -383,22 +378,17 @@ export function createCaseGenerationService(
           });
         }
 
-        const fullCase = await graph.renderCase({
+        const outline = plan ?? planned.outlineSegments;
+        const generatedCase = await graph.renderCase({
           diagnosis: planned.diagnosis,
           generationFlags,
           userInstructions: planned.userInstructions,
           difficulty: req.difficulty,
-          outline: joinOutline(plan ?? planned.outlineSegments),
+          outline: joinOutline(outline),
+          // Blinded solver reads these for fields not generated (#205).
+          outlineSections: presentationSections(outline),
         });
-        return {
-          jobId,
-          status: "done",
-          case:
-            generationFlags !== req.generationFlags
-              ? projectCaseToFlags(fullCase, req.generationFlags)
-              : fullCase,
-          language,
-        };
+        return { jobId, status: "done", case: generatedCase, language };
       },
       jobId,
       req.llmConfig,

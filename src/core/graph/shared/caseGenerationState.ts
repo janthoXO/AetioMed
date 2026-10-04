@@ -32,6 +32,18 @@ export const CaseGenerationStateSchema = z.object({
 
   /** Case blueprint. Threaded to field and procedure-result generation, never to blinded solver. */
   outline: z.string().optional(),
+
+  /**
+   * Outline's presentation sections (`presentationSections`): the blinded
+   * solver's view of a field not generated (#205). Never `## General` or `## Procedures`.
+   */
+  outlineSections: z
+    .object({
+      patient: z.string(),
+      chiefComplaint: z.string(),
+      anamnesis: z.string(),
+    })
+    .optional(),
 });
 
 export type CaseGenerationState = z.infer<typeof CaseGenerationStateSchema>;

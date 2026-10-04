@@ -426,6 +426,55 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
     expect(bridgeViews).toHaveLength(1);
   });
 
+  it("hands the strategy the outline sections for a field that was not generated", async () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
+    const { strategy, nextStepViews } = makeScriptedStrategy({
+      nextSteps: [{ action: "exhausted", reason: "empty pick" }],
+      bridgeResult: [],
+    });
+
+    await buildGraph(runtime, strategy).invoke({
+      diagnosis: { name: "Unknown" },
+      case: {},
+      outlineSections: {
+        patient: "58, male.",
+        chiefComplaint: "Sharp pain.",
+        anamnesis: "No history.",
+      },
+    });
+
+    expect(nextStepViews[0]?.presentation).toEqual({
+      patient: "58, male.",
+      chiefComplaint: "Sharp pain.",
+      anamnesis: "No history.",
+    });
+  });
+
+  it("a generated field wins over its outline section", async () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
+    const { strategy, nextStepViews } = makeScriptedStrategy({
+      nextSteps: [{ action: "exhausted", reason: "empty pick" }],
+      bridgeResult: [],
+    });
+
+    await buildGraph(runtime, strategy).invoke({
+      diagnosis: { name: "Unknown" },
+      case: {
+        chiefComplaint: [
+          { type: "text/plain", value: encodeText("X"), alt: "X" },
+        ],
+      },
+      outlineSections: {
+        patient: "58, male.",
+        chiefComplaint: "Sharp pain.",
+        anamnesis: "No history.",
+      },
+    });
+
+    expect(nextStepViews[0]?.presentation.chiefComplaint).toBe("X");
+    expect(nextStepViews[0]?.presentation.patient).toBe("58, male.");
+  });
+
   it("has exactly four nodes, render_results is terminal", async () => {
     const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
     const traceNode = createTraceNode(new EventBus());

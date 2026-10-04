@@ -15,6 +15,7 @@ import type {
 } from "@/core/graph/appContext.js";
 import {
   joinOutline,
+  presentationSections,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
@@ -204,6 +205,9 @@ describe("normal mode", () => {
       plan: OUTLINE,
     } satisfies PlanPayload);
     expect(fake.renderCalls[0]!.outline).toBe(joinOutline(OUTLINE));
+    expect(fake.renderCalls[0]!.outlineSections).toEqual(
+      presentationSections(OUTLINE)
+    );
     // Normal mode: no reviewer, no outline translation.
     expect(fake.translateCalls).toHaveLength(0);
   });

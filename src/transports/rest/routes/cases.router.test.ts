@@ -190,7 +190,7 @@ function requestBody(overrides: Record<string, unknown> = {}): string {
 /**
  * Plan-mode request. English + `TRANSLATION_SANDWICH` unset in `fakeGraph`
  * means `translatesOutline` is false, so review outline equals
- * `planAndRenderFrom`'s: `["", "## Plan options", JSON.stringify(opts)]`.
+ * `planAndRenderFrom`'s: the five-section skeleton, `JSON.stringify(opts)` last.
  */
 function planRequestBody(overrides: Record<string, unknown> = {}): string {
   return requestBody({ mode: "plan", language: "English", ...overrides });
@@ -720,12 +720,14 @@ describe("plan mode — a stateless call stops at its plan", () => {
     };
     expect(body.jobId).toBe("job-plan-1");
     expect(body.mode).toBe("plan");
-    // planAndRenderFrom's outline: three segments, middle fixed.
-    expect(body.plan).toHaveLength(3);
-    expect(body.plan[1]).toMatchObject({
-      fixed: true,
-      text: "## Plan options",
-    });
+    // planAndRenderFrom's outline: the five-section skeleton.
+    expect(body.plan.filter((s) => s.fixed).map((s) => s.text)).toEqual([
+      "## General",
+      "## Patient",
+      "## Chief complaint",
+      "## Anamnesis",
+      "## Procedures",
+    ]);
   });
 
   it("SSE create in plan mode: event: accepted precedes event: plan, then the stream ends with no event: result", async () => {

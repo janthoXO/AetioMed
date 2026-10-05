@@ -7,6 +7,7 @@ import type { GraphRuntime, LlmPort, LlmRole } from "@/core/graph/runtime.js";
 import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import { translateDiagnosisToEnglish } from "@/core/graph/01-translate-in/gateway.js";
 import { ConfigSchema, type Config } from "@/core/graph/config.js";
@@ -54,6 +55,7 @@ function buildFakeRuntime(llm: LlmPort): GraphRuntime {
       procedures: new InMemoryProcedureCatalog(),
       anamnesis: new InMemoryAnamnesisCatalog(),
       labels: new InMemoryLabelCatalog(),
+      outlineHeadings: new InMemoryOutlineHeadingCatalog(),
       diagnosis: new InMemoryDiagnosisCatalog(),
     },
     log: { info() {}, warn() {}, error() {} },

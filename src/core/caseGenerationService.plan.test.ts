@@ -18,6 +18,7 @@ import {
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
+import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 
 // Valid English skeleton (five fixed sections); `checkSkeleton` accepts.
 const OUTLINE: OutlineSegments = [
@@ -33,6 +34,21 @@ const OUTLINE: OutlineSegments = [
   { fixed: true, text: "## Procedures" },
   { fixed: false, text: "ECG only." },
 ];
+
+/** OUTLINE with the curated German headings the fake catalogue serves. */
+const GERMAN_HEADINGS = [
+  "## Allgemein",
+  "## Patient",
+  "## Hauptbeschwerde",
+  "## Anamnese",
+  "## Untersuchungen",
+];
+const localized = (outline: OutlineSegments) => {
+  let k = 0;
+  return outline.map((s) =>
+    s.fixed ? { fixed: true, text: GERMAN_HEADINGS[k++]! } : s
+  );
+};
 
 type Fake = {
   graph: GraphAppContext;
@@ -63,6 +79,15 @@ function fakeGraph(
       catalogs: {
         diagnosis: { byIcd: () => undefined },
         anamnesis: { list: () => undefined },
+        outlineHeadings: new InMemoryOutlineHeadingCatalog({
+          German: {
+            General: "Allgemein",
+            Patient: "Patient",
+            "Chief complaint": "Hauptbeschwerde",
+            Anamnesis: "Anamnese",
+            Procedures: "Untersuchungen",
+          },
+        }),
       },
       llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
@@ -132,12 +157,22 @@ describe("plan mode — the stop at a plan", () => {
       fixed: false,
       text: "DE:Chest pain for two hours.",
     });
-    // Fixed segments are translated for display too.
-    expect(result.plan![1]!.text).toBe("DE:## General");
+    // Headings come from the catalogue, never from the body translator.
+    expect(result.plan!.filter((s) => s.fixed).map((s) => s.text)).toEqual(
+      GERMAN_HEADINGS
+    );
+    expect(Object.keys(fake.translateCalls[0]!.values)).toEqual([
+      "0",
+      "2",
+      "4",
+      "6",
+      "8",
+      "10",
+    ]);
     expect(fake.renderCalls).toHaveLength(0);
   });
 
-  it("sandwich off: the plan comes back as generated, translateOutline is never called", async () => {
+  it("sandwich off: the plan comes back as generated with catalogue headings, translateOutline is never called", async () => {
     const fake = fakeGraph({ sandwich: false });
     const translateSpy = vi.fn();
     fake.graph.translateOutline = translateSpy as never;
@@ -146,7 +181,7 @@ describe("plan mode — the stop at a plan", () => {
     const result = await service.generate(request());
 
     expect(result.status).toBe("planned");
-    expect(result.plan).toEqual(OUTLINE);
+    expect(result.plan).toEqual(localized(OUTLINE));
     expect(translateSpy).not.toHaveBeenCalled();
   });
 });
@@ -288,7 +323,7 @@ describe("continuation, plan mode + sandwich on", () => {
 });
 
 describe("continuation, sandwich off (any mode)", () => {
-  it("plan mode: the plan goes straight in, no translation", async () => {
+  it("plan mode: the plan goes in untranslated, headings restored to English", async () => {
     const fake = fakeGraph({ sandwich: false });
     const translateSpy = vi.fn();
     fake.graph.translateOutline = translateSpy as never;
@@ -305,9 +340,9 @@ describe("continuation, sandwich off (any mode)", () => {
 
     expect(result.status).toBe("done");
     expect(translateSpy).not.toHaveBeenCalled();
-    expect(fake.renderCalls[0]!.outline).toContain(
-      "Brustschmerz seit zwei Stunden."
-    );
+    const expected = structuredClone(OUTLINE);
+    expected[2]!.text = "Brustschmerz seit zwei Stunden.";
+    expect(fake.planCalls[1]!.outline).toEqual(expected);
   });
 
   it("normal mode: a plan handed back goes straight in too", async () => {

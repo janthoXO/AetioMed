@@ -2,7 +2,7 @@ import { DatabaseSync } from "node:sqlite";
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { load as parseYaml } from "js-yaml";
+import { loadAll } from "js-yaml";
 import { eq } from "drizzle-orm";
 import { drizzle, type NodeSQLiteDatabase } from "drizzle-orm/node-sqlite";
 import { migrate } from "drizzle-orm/node-sqlite/migrator";
@@ -22,8 +22,9 @@ export interface DbHandle {
    * Sync a YAML file into the DB when its sha256 (stored per `source` in `_meta`)
    * changed. `ingest(parsed)` runs in a transaction: read-only lists should
    * delete-then-insert; translation maps should upsert so runtime rows for keys
-   * absent from YAML survive. Returns `true` if synced, `false` if missing or
-   * unchanged. `yamlFile` must be absolute.
+   * absent from YAML survive. A missing or empty file is ingested as `{}`, so a
+   * removed catalogue clears its read-only list. Returns `true` if synced,
+   * `false` if unchanged or unparseable. `yamlFile` must be absolute.
    */
   syncSource(
     source: string,
@@ -70,12 +71,9 @@ export function createDb(cacheDir: string): DbHandle {
     yamlFile: string,
     ingest: (parsed: unknown) => void
   ): boolean {
-    if (!fs.existsSync(yamlFile)) {
-      console.warn(`[${source}] No ${yamlFile} found, skipping sync.`);
-      return false;
-    }
-
-    const raw = fs.readFileSync(yamlFile, "utf-8");
+    const raw = fs.existsSync(yamlFile)
+      ? fs.readFileSync(yamlFile, "utf-8")
+      : "";
     const hash = crypto.createHash("sha256").update(raw).digest("hex");
 
     // `_meta` fingerprint keyed on `source` (fixed domain name), not file path, so moving CATALOG_DIR keeps the cache.
@@ -90,7 +88,8 @@ export function createDb(cacheDir: string): DbHandle {
 
     let parsed: unknown;
     try {
-      parsed = parseYaml(raw);
+      // `loadAll`, not `load`: js-yaml throws on a file with no document (empty, comments only).
+      parsed = loadAll(raw)[0] ?? {};
     } catch (err) {
       console.error(`[${source}] Failed to parse ${yamlFile}:`, err);
       return false;

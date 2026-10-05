@@ -163,3 +163,8 @@ data/cache/
 docs/*
 !docs/graphs/
 !docs/bruno/
+
+# Licensed data (UMLS / ICD-11 derived): supply your own, never commit. See data/README.md.
+data/diagnosis.yml
+data/diagnosisTranslations.yml
+data/diagnosis_symptoms.json

@@ -20,7 +20,23 @@ import { nodeKey } from "@/core/graph/shared/domain/ProcedureTree.js";
 import type { Repos } from "@/adapters/repos.js";
 
 describe("findMissingLanguages", () => {
-  it("reports a catalogue with no entries at all for a configured language", () => {
+  it("reports a catalogue that declares other languages but not a configured one", () => {
+    const specs: CatalogueSpec[] = [
+      {
+        catalogue: "procedures",
+        file: "procedures.yml",
+        baseKeys: ["Blood Test"],
+        translations: { French: { "Blood Test": "Analyse de sang" } },
+        enforceUnknownKeys: true,
+      },
+    ];
+
+    expect(findMissingLanguages(specs, ["English", "German"])).toEqual([
+      { catalogue: "procedures", file: "procedures.yml", language: "German" },
+    ]);
+  });
+
+  it("does not report a catalogue whose file declares no language (missing or empty)", () => {
     const specs: CatalogueSpec[] = [
       {
         catalogue: "procedures",
@@ -31,9 +47,7 @@ describe("findMissingLanguages", () => {
       },
     ];
 
-    expect(findMissingLanguages(specs, ["English", "German"])).toEqual([
-      { catalogue: "procedures", file: "procedures.yml", language: "German" },
-    ]);
+    expect(findMissingLanguages(specs, ["English", "German"])).toEqual([]);
   });
 
   it("reports a catalogue whose language key is present but empty", () => {
@@ -76,7 +90,7 @@ describe("findMissingLanguages", () => {
         catalogue: "diagnosis",
         file: "diagnosisTranslations.yml",
         baseKeys: ["Influenza"],
-        translations: {},
+        translations: { French: { Influenza: "Grippe" } },
         enforceUnknownKeys: false,
       },
     ];
@@ -206,7 +220,10 @@ describe("validateCatalogsOrExit — end to end", () => {
   });
 
   it("exits non-zero and names the catalogue when a configured language has no translations", () => {
-    // procedures.yml has no German entries at all; every other file does.
+    // procedures.yml declares French but not German; every other file has German.
+    declared.set("procedures.yml", {
+      French: { [nodeKey(["Blood Test"])]: "Analyse de sang" },
+    });
     declared.set("anamnesisCategoriesTranslations.yml", {
       German: { Symptoms: "Symptome" },
     });
@@ -227,6 +244,18 @@ describe("validateCatalogsOrExit — end to end", () => {
     expect(errorOutput).toContain("procedures.yml");
     expect(errorOutput).toContain("labelTranslations.yml");
 
+    exitSpy.mockRestore();
+  });
+
+  it("does not exit when every translations file is missing", () => {
+    declared.clear();
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    validateCatalogsOrExit(fakeRepos(), ["English", "German"]);
+
+    expect(exitSpy).not.toHaveBeenCalled();
     exitSpy.mockRestore();
   });
 

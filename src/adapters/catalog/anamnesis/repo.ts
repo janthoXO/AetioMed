@@ -58,7 +58,7 @@ export function createAnamnesisRepo(
       (parsed) => {
         const categoryObject = z
           .object({
-            categories: z.array(AnamnesisCategorySchema),
+            categories: z.array(AnamnesisCategorySchema).default([]),
           })
           .safeParse(parsed);
 

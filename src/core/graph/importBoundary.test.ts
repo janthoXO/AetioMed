@@ -1,10 +1,9 @@
-// #139 — static import-boundary check. `src/core/graph/` (part of core) must
-// never import from `tracing/`, `transports/` or `observability/`: those are
-// adapters around core-owned ports (the `EventBus`, `core/jobEvents/`,
-// `NodeTracer`/`NodeSpan`), never the other way around. This is enforced
-// here as a plain source scan rather than an eslint rule so it runs with
-// `pnpm test` and reports every offending file/specifier pair in one go.
+// Static import-boundary check. `src/core/graph/` must never import
+// `tracing/`, `transports/` or `observability/`: those are adapters around
+// core-owned ports (`EventBus`, `core/jobEvents/`, `NodeTracer`/`NodeSpan`).
+// Plain source scan (not eslint) so it runs in `pnpm test` and lists all offenders.
 import { readdirSync, readFileSync } from "node:fs";
+import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
@@ -44,7 +43,7 @@ function isForbidden(specifier: string): boolean {
   );
 }
 
-describe("import boundary (#139) — src/core/graph/ never imports tracing/transports/observability", () => {
+describe("import boundary — src/core/graph/ never imports tracing/transports/observability", () => {
   it("has no offending import/export specifiers", () => {
     const files = listTsFiles(GRAPH_DIR);
     expect(files.length).toBeGreaterThan(0);
@@ -62,13 +61,10 @@ describe("import boundary (#139) — src/core/graph/ never imports tracing/trans
     expect(offenses).toEqual([]);
   });
 
-  // #141 — `observability/otel.ts` is the *only* place `@opentelemetry/*`
-  // may be imported. This is a package-shaped boundary, not the
-  // directory-shaped one above, so it is scanned separately and over all of
-  // `src/core/` (not just `src/core/graph/`): `src/core/app.ts` is the
-  // composition root that imports the *adapter* (`observability/otel.ts`)
-  // without ever importing an `@opentelemetry/*` package itself — core only
-  // knows the `NodeTracer`/`NodeSpan` port (`utils/nodeWrapper.ts`).
+  // `observability/otel.ts` is the only place `@opentelemetry/*` may be
+  // imported. Package boundary, scanned over all of `src/core/`: `app.ts`
+  // imports the adapter, never an `@opentelemetry/*` package; core knows only
+  // the `NodeTracer`/`NodeSpan` port (`utils/nodeWrapper.ts`).
   it("no module under src/core/ imports @opentelemetry/*", () => {
     const CORE_DIR = fileURLToPath(new URL("../", import.meta.url));
     const files = listTsFiles(CORE_DIR);
@@ -88,15 +84,10 @@ describe("import boundary (#139) — src/core/graph/ never imports tracing/trans
     expect(offenses).toEqual([]);
   });
 
-  // #145 — direction matters: REST depends on NATS through composition
-  // (`app.ts`'s `selectJobDirectory`), never the reverse. NATS is
-  // infrastructure here, not a peer, so no *production* module under
-  // `src/transports/nats/` may import `src/transports/rest/`. Test files are
-  // excluded on purpose: `jetstream.integration.test.ts` (#144's NATS-parity
-  // block) legitimately builds a REST app to assert "the NATS endpoint
-  // returns the same payload as its REST counterpart" — that is a test
-  // asserting parity between the two transports, not a runtime dependency of
-  // one on the other, and the distinction this rule actually cares about.
+  // REST depends on NATS via composition (`app.ts`'s `selectJobDirectory`),
+  // never the reverse: no production module under `src/transports/nats/` may
+  // import `src/transports/rest/`. Test files excluded: NATS-parity tests
+  // legitimately build a REST app to compare payloads.
   it("no production module under src/transports/nats/ imports transports/rest", () => {
     const NATS_DIR = fileURLToPath(
       new URL("../../transports/nats/", import.meta.url)
@@ -120,6 +111,87 @@ describe("import boundary (#139) — src/core/graph/ never imports tracing/trans
       }
     }
 
+    expect(offenses).toEqual([]);
+  });
+});
+
+// Hexagon (#188): core is I/O-free. Every adapter (SQLite, filesystem, LLM
+// providers, tinyld) lives under `src/adapters/`, wired only by `src/app.ts`.
+// `@langchain/core` is adapter-only too (the `LlmPort` hides it); `@langchain/langgraph` stays allowed: engine.
+describe("import boundary — src/core/ never imports adapters or I/O packages", () => {
+  it("has no offending specifiers in production modules", () => {
+    const CORE_DIR = fileURLToPath(new URL("../", import.meta.url));
+    const files = listTsFiles(CORE_DIR).filter(
+      (file) => !file.endsWith(".test.ts")
+    );
+    expect(files.length).toBeGreaterThan(0);
+
+    const EXACT = new Set([
+      "fs",
+      "node:fs",
+      "path",
+      "node:path",
+      "node:sqlite",
+      "tinyld",
+    ]);
+    const PREFIXES = [
+      "@/adapters",
+      "@/app",
+      "drizzle-orm",
+      "@langchain/core",
+      "@langchain/ollama",
+      "@langchain/openai",
+      "@langchain/google",
+    ];
+    const offenses: string[] = [];
+    for (const file of files) {
+      const source = readFileSync(file, "utf8");
+      for (const specifier of specifiersOf(source)) {
+        if (
+          EXACT.has(specifier) ||
+          /(^|\/)adapters\//.test(specifier) ||
+          PREFIXES.some((prefix) => specifier.startsWith(prefix))
+        ) {
+          offenses.push(`${file}: ${specifier}`);
+        }
+      }
+    }
+
+    expect(offenses).toEqual([]);
+  });
+});
+
+const SLICE_RE = /^\d{2}-[a-z-]+$/;
+
+/** Top-level numbered slice a specifier lands in, if any (alias or relative). */
+function sliceOf(file: string, specifier: string): string | undefined {
+  let target: string;
+  if (specifier.startsWith("@/core/graph/")) {
+    target = specifier.slice("@/core/graph/".length);
+  } else if (specifier.startsWith(".")) {
+    target = relative(GRAPH_DIR, resolve(dirname(file), specifier));
+  } else {
+    return undefined;
+  }
+  const top = target.split(sep).join("/").split("/")[0];
+  return top !== undefined && SLICE_RE.test(top) ? top : undefined;
+}
+
+describe("slice boundary — numbered slices never import each other", () => {
+  it("has no import into a different top-level numbered slice", () => {
+    const offenses: string[] = [];
+    for (const file of listTsFiles(GRAPH_DIR)) {
+      if (file.endsWith(".test.ts")) continue;
+      const own = relative(GRAPH_DIR, file).split(sep)[0];
+      if (own === undefined || !SLICE_RE.test(own)) continue;
+      const source = readFileSync(file, "utf8");
+      for (const specifier of specifiersOf(source)) {
+        const target = sliceOf(file, specifier);
+        if (target !== undefined && target !== own) {
+          offenses.push(`${file}: ${specifier}`);
+        }
+      }
+    }
     expect(offenses).toEqual([]);
   });
 });

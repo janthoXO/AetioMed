@@ -1,26 +1,20 @@
-// Wire encoding for `ContentPart[]` fields (issue 11 §5) — a boundary
-// concern, not a domain one, so it lives here rather than under
-// `src/core/graph/models/`. Both transports (`transports/rest/routes/cases.router.ts`
-// and the NATS publisher, `transports/nats/cases.handler.ts`) encode a
-// generated `Case` through `encodeCase` before it leaves the process:
-// without this, `Uint8Array` JSON-stringifies to `{"0":102,"1":101,…}`.
-//
-// Encoding, per MIME class:
-//   text/*          -> UTF-8 string, verbatim
-//   everything else -> base64
-// `alt` is ALWAYS emitted and ALWAYS read back (issue 21 §8): it is now an
-// independent label authored by the planner, not derivable from `value` —
-// a text part's prose lives in `value`, its short label lives in `alt`, and
-// the two can legitimately differ. The round trip is lossless and
-// order-preserving.
+// Wire encoding for `ContentPart[]`. Both transports encode `Case` through
+// `encodeCase`; raw `Uint8Array` would JSON-stringify to `{"0":102,…}`.
+// text/* -> UTF-8 string verbatim; else base64.
+// `alt` always emitted and read back: independent of `value`, can differ. Lossless, order-preserving.
 import { z } from "zod";
 import {
   encodeText,
   type ContentPart,
-} from "@/core/graph/models/ContentPart.js";
-import { PatientSchema } from "@/core/graph/models/Patient.js";
-import { ProcedureRelevanceSchema } from "@/core/graph/models/Procedure.js";
-import { CaseSchema, type Case } from "@/core/graph/models/Case.js";
+} from "@/core/graph/shared/domain/ContentPart.js";
+import { PatientSchema } from "@/core/graph/shared/domain/Patient.js";
+import { ProcedureRelevanceSchema } from "@/core/graph/shared/domain/Procedure.js";
+import {
+  procedureTreeSchema,
+  mapTree,
+  refLabel,
+} from "@/core/graph/shared/domain/ProcedureTree.js";
+import { CaseSchema, type Case } from "@/core/graph/shared/domain/Case.js";
 
 function isTextMime(type: string): boolean {
   return type.startsWith("text/");
@@ -36,11 +30,7 @@ export class ContentPartTooLargeError extends Error {
   }
 }
 
-/**
- * One `ContentPart` on the wire. `alt` is required for every part — a text
- * part's `alt` is no longer derivable from `value` (issue 21 §2), so
- * omitting it would silently drop the label.
- */
+/** One `ContentPart` on the wire. `alt` required: not derivable from `value`. */
 export const ContentPartWireSchema = z.object({
   type: z.string(),
   value: z.string(),
@@ -52,19 +42,10 @@ export type ContentPartWire = z.infer<typeof ContentPartWireSchema>;
 const ContentPartsWireSchema = z.array(ContentPartWireSchema).min(1);
 
 /**
- * Encode one domain `ContentPart` to its wire shape. `field` names the case
- * field being encoded, for the size-ceiling error message only.
+ * Encode one `ContentPart`. `field` names case field, for size error only.
+ * `maxBytes` passed in (`ConfigSchema.MAX_CONTENT_PART_BYTES`), never read from env.
  *
- * `maxBytes` is passed in, never read from `process.env` here: config
- * resolution belongs to the composition root
- * (`ConfigSchema.MAX_CONTENT_PART_BYTES`), and a hidden env read would make
- * this module's behaviour depend on ambient state — the exact pattern the
- * rest of this codebase removed.
- *
- * TODO(asset store): once an asset store exists, a large part carries a
- * reference instead of inline bytes — additive to this design, since `type`
- * already governs interpretation — and this global ceiling becomes
- * per-provider instead.
+ * TODO(asset store): large part carries reference not inline bytes; ceiling becomes per-provider.
  */
 export function encodeContentPart(
   part: ContentPart,
@@ -115,21 +96,19 @@ export const CaseWireSchema = z.object({
   anamnesis: z
     .array(z.object({ category: z.string(), answer: ContentPartsWireSchema }))
     .optional(),
-  procedures: z
-    .array(
-      z.object({
-        name: z.string(),
-        relevance: ProcedureRelevanceSchema,
-        result: ContentPartsWireSchema,
-      })
-    )
-    .optional(),
+  procedures: procedureTreeSchema(
+    z.object({
+      name: z.string(),
+      order: z.number().int().min(0),
+      relevance: ProcedureRelevanceSchema,
+      result: ContentPartsWireSchema,
+    })
+  ).optional(),
 });
 
 export type CaseWire = z.infer<typeof CaseWireSchema>;
 
-/** Encode a generated `Case` for the wire — the one place both transports
- * call through (issue 11 §5). */
+/** Encode generated `Case` for wire; single call point for both transports. */
 export function encodeCase(c: Case, maxBytes: number): CaseWire {
   return {
     ...(c.patient !== undefined && { patient: c.patient }),
@@ -147,13 +126,20 @@ export function encodeCase(c: Case, maxBytes: number): CaseWire {
       })),
     }),
     ...(c.procedures !== undefined && {
-      procedures: c.procedures.map((p) => ({
-        name: p.name,
-        relevance: p.relevance,
-        result: p.result.map((part) =>
-          encodeContentPart(part, `procedures[${p.name}].result`, maxBytes)
-        ),
-      })),
+      procedures: mapTree(c.procedures, {
+        leaf: (path, leaf) => ({
+          name: leaf.name,
+          order: leaf.order,
+          relevance: leaf.relevance,
+          result: leaf.result.map((part) =>
+            encodeContentPart(
+              part,
+              `procedures[${refLabel({ path, name: leaf.name })}].result`,
+              maxBytes
+            )
+          ),
+        }),
+      }),
     }),
   };
 }
@@ -172,11 +158,14 @@ export function decodeCase(wire: CaseWire): Case {
       })),
     }),
     ...(wire.procedures !== undefined && {
-      procedures: wire.procedures.map((p) => ({
-        name: p.name,
-        relevance: p.relevance,
-        result: p.result.map(decodeContentPart),
-      })),
+      procedures: mapTree(wire.procedures, {
+        leaf: (_path, leaf) => ({
+          name: leaf.name,
+          order: leaf.order,
+          relevance: leaf.relevance,
+          result: leaf.result.map(decodeContentPart),
+        }),
+      }),
     }),
   });
 }

@@ -1,0 +1,276 @@
+// Drives compiled `anamnesisGraph` with fake `LlmPort` that throws on anything unscripted.
+// Under test: per-category planning, reassembly in CATALOGUE order (not LLM order), cross-category BATCHING.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
+import { describe, expect, it } from "vitest";
+import z from "zod";
+import { FakeListChatModel } from "@langchain/core/utils/testing";
+import { EventBus } from "@/core/event-bus.js";
+import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
+import { buildAnamnesisGraph } from "./graph.js";
+import type { GraphRuntime, LlmPort, LlmRole } from "@/core/graph/runtime.js";
+import type { ModalityProvider } from "@/core/graph/shared/modality/ports.js";
+import { EmptyModalityRegistryError } from "@/core/graph/shared/modality/registry.js";
+import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
+import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
+import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
+import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
+
+function makeQueuedLlmPort(
+  responses: Partial<Record<LlmRole, string[]>>
+): LlmPort {
+  const queues: Partial<Record<LlmRole, string[]>> = {
+    generator: [...(responses.generator ?? [])],
+    judge: [...(responses.judge ?? [])],
+    translator: [...(responses.translator ?? [])],
+  };
+  return chatModelLlmPort((opts) => {
+    const queue = queues[opts.role];
+    if (!queue || queue.length === 0) {
+      throw new Error(
+        `Unexpected LLM call for role "${opts.role}" — the test did not script one.`
+      );
+    }
+    const response = queue.shift() as string;
+    return new FakeListChatModel({ responses: [response] });
+  });
+}
+
+function buildFakeRuntime(
+  llm: LlmPort,
+  categories: string[] = ["Current Symptoms", "Past Illnesses"]
+): GraphRuntime {
+  return {
+    llm,
+    catalogs: {
+      procedures: new InMemoryProcedureCatalog(),
+      anamnesis: new InMemoryAnamnesisCatalog(categories),
+      labels: new InMemoryLabelCatalog(),
+      outlineHeadings: new InMemoryOutlineHeadingCatalog(),
+      diagnosis: new InMemoryDiagnosisCatalog(),
+    },
+    log: { info() {}, warn() {}, error() {} },
+    clock: () => new Date("2024-01-01T00:00:00.000Z"),
+  };
+}
+
+/** Counts calls and echoes each part's alt back as its own rendered text. */
+function makeCountingTextProvider(): {
+  provider: ModalityProvider<unknown>;
+  calls: { input: object; alt: string }[][];
+} {
+  const calls: { input: object; alt: string }[][] = [];
+  const provider: ModalityProvider<unknown> = {
+    id: "text",
+    mime: "text/plain",
+    description: "test text provider",
+    inputSchema: z.object({}),
+    render: async (batch) => {
+      const typed = batch as { input: object; alt: string }[];
+      calls.push(typed);
+      return typed.map((b) => new TextEncoder().encode(b.alt));
+    },
+  };
+  return { provider, calls };
+}
+
+const diagnosis: Diagnosis = { name: "Influenza", icd: "1E32" };
+
+function buildGraph(
+  llm: LlmPort,
+  providers: ModalityProvider<unknown>[],
+  categories?: string[],
+  bus: EventBus = new EventBus()
+) {
+  const runtime = buildFakeRuntime(llm, categories);
+  return buildAnamnesisGraph(runtime, providers, createTraceNode(bus));
+}
+
+describe("anamnesisGraph — output surface", () => {
+  it("writes back only `case`, not the whole state schema", () => {
+    const { provider } = makeCountingTextProvider();
+    const graph = buildGraph(makeQueuedLlmPort({}), [provider]);
+    expect([...graph.outputChannels].sort()).toEqual(["case"]);
+  });
+});
+
+describe("anamnesisGraph — node shape (no registry-size branching)", () => {
+  it("rejects an empty registry immediately, at build time", () => {
+    expect(() => buildGraph(makeQueuedLlmPort({}), [])).toThrow(
+      EmptyModalityRegistryError
+    );
+  });
+
+  it("compiles exactly plan_content and render_parts", async () => {
+    const { provider } = makeCountingTextProvider();
+    const graph = buildGraph(makeQueuedLlmPort({}), [provider]);
+    const drawn = await graph.getGraphAsync({ xray: true });
+    expect(Object.keys(drawn.nodes).sort()).toEqual(
+      ["__start__", "__end__", "plan_content", "render_parts"].sort()
+    );
+  });
+});
+
+describe("anamnesisGraph", () => {
+  it("reorders categories to CATALOGUE order, not the planner's array order", async () => {
+    const { provider } = makeCountingTextProvider();
+    const llm = makeQueuedLlmPort({
+      generator: [
+        // The planner returns "Past Illnesses" before "Current Symptoms" —
+        // the catalogue says the opposite.
+        JSON.stringify({
+          plans: {
+            "Past Illnesses": {
+              requests: [
+                {
+                  provider: "text",
+                  input: {},
+                  alt: "None.",
+                },
+              ],
+            },
+            "Current Symptoms": {
+              requests: [
+                {
+                  provider: "text",
+                  input: {},
+                  alt: "Fever.",
+                },
+              ],
+            },
+          },
+        }),
+      ],
+    });
+
+    const graph = buildGraph(
+      llm,
+      [provider],
+      ["Current Symptoms", "Past Illnesses"]
+    );
+
+    const result = (await graph.invoke({
+      diagnosis,
+      outline: "outline text",
+      case: {},
+    })) as { case: Case };
+
+    const anamnesis = result.case.anamnesis!;
+    expect(anamnesis.map((f) => f.category)).toEqual([
+      "Current Symptoms",
+      "Past Illnesses",
+    ]);
+    expect(new TextDecoder().decode(anamnesis[0]!.answer[0]!.value)).toBe(
+      "Fever."
+    );
+    expect(new TextDecoder().decode(anamnesis[1]!.answer[0]!.value)).toBe(
+      "None."
+    );
+  });
+
+  it("batches every category's alts into ONE render call — the token-efficiency property this design exists for", async () => {
+    const { provider, calls } = makeCountingTextProvider();
+    const llm = makeQueuedLlmPort({
+      generator: [
+        JSON.stringify({
+          plans: {
+            "Current Symptoms": {
+              requests: [
+                {
+                  provider: "text",
+                  input: {},
+                  alt: "Fever.",
+                },
+              ],
+            },
+            "Past Illnesses": {
+              requests: [
+                {
+                  provider: "text",
+                  input: {},
+                  alt: "None.",
+                },
+              ],
+            },
+          },
+        }),
+      ],
+    });
+
+    const graph = buildGraph(
+      llm,
+      [provider],
+      ["Current Symptoms", "Past Illnesses"]
+    );
+
+    await graph.invoke({
+      diagnosis,
+      outline: "outline text",
+      case: {},
+    });
+
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toEqual([
+      { input: {}, alt: "Fever." },
+      { input: {}, alt: "None." },
+    ]);
+  });
+
+  it("gives every category's answer a non-empty alt under a two-provider registry, fan-in per category following planned order", async () => {
+    const slow: ModalityProvider<unknown> = {
+      id: "slow",
+      mime: "application/x-slow",
+      description: "slow",
+      inputSchema: z.unknown(),
+      render: async (batch) => {
+        await new Promise((r) => setTimeout(r, 20));
+        return (batch as { input: string }[]).map((v) =>
+          new TextEncoder().encode(`slow:${v.input}`)
+        );
+      },
+    };
+    const fast: ModalityProvider<unknown> = {
+      id: "fast",
+      mime: "application/x-fast",
+      description: "fast",
+      inputSchema: z.unknown(),
+      render: async (batch) =>
+        (batch as { input: string }[]).map((v) =>
+          new TextEncoder().encode(`fast:${v.input}`)
+        ),
+    };
+
+    const llm = makeQueuedLlmPort({
+      generator: [
+        JSON.stringify({
+          plans: {
+            "Current Symptoms": {
+              requests: [
+                { provider: "slow", input: "slow desc", alt: "slow desc" },
+                { provider: "fast", input: "fast desc", alt: "fast desc" },
+              ],
+            },
+          },
+        }),
+      ],
+    });
+
+    const graph = buildGraph(llm, [slow, fast], ["Current Symptoms"]);
+    const result = (await graph.invoke({
+      diagnosis,
+      outline: "outline text",
+      case: {},
+    })) as { case: Case };
+
+    const answer = result.case.anamnesis![0]!.answer;
+    expect(answer.map((p) => p.type)).toEqual([
+      "application/x-slow",
+      "application/x-fast",
+    ]);
+    for (const part of answer) {
+      expect(part.alt.length).toBeGreaterThan(0);
+    }
+  });
+});

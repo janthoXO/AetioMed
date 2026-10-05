@@ -1,0 +1,577 @@
+// Drives compiled procedure graph with a fake `ProcedureStrategy` and a fake
+// `LlmPort` that throws on unscripted calls. Covers solver control flow
+// (order, results, diagnose, iteration cap, ruled-out, `exhausted`). No
+// filesystem, SQLite or real LLM.
+import { chatModelLlmPort } from "@/adapters/ai/llm.js";
+import { describe, expect, it } from "vitest";
+import z from "zod";
+import { FakeListChatModel } from "@langchain/core/utils/testing";
+import { buildProcedureGraph } from "./graph.js";
+import { buildBlindedSolverGraph } from "./solver/graph.js";
+import { DrillDownPick } from "@/core/graph/04-case/02-procedures/solver/drillDownPick.js";
+import type {
+  BlindedView,
+  OracleView,
+  ProcedureStrategy,
+  SolverMove,
+} from "@/core/graph/04-case/02-procedures/solver/ports.js";
+import type { GraphRuntime, LlmPort, LlmRole } from "@/core/graph/runtime.js";
+import type { PlannedProcedure } from "@/core/graph/shared/domain/Procedure.js";
+import { encodeText } from "@/core/graph/shared/domain/ContentPart.js";
+import type { ModalityProvider } from "@/core/graph/shared/modality/ports.js";
+import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
+import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
+import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
+import { EventBus } from "@/core/event-bus.js";
+import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
+import { runWithContext } from "@/core/graph/utils/context.js";
+import { createJobEventChannel } from "@/core/jobEvents/channel.js";
+import { wireLabels, type LabelEvent } from "@/core/jobEvents/labels.js";
+
+// ─── Fakes ──────────────────────────────────────────────────────────────────
+
+/** `LlmPort` serving scripted per-role JSON queues; throws on unscripted calls. */
+function makeQueuedLlmPort(
+  responses: Partial<Record<LlmRole, string[]>>
+): LlmPort {
+  const queues: Partial<Record<LlmRole, string[]>> = {
+    generator: [...(responses.generator ?? [])],
+    judge: [...(responses.judge ?? [])],
+    translator: [...(responses.translator ?? [])],
+  };
+  return chatModelLlmPort((opts) => {
+    const queue = queues[opts.role];
+    if (!queue || queue.length === 0) {
+      throw new Error(
+        `Unexpected LLM call for role "${opts.role}" — the test did not script one.`
+      );
+    }
+    const response = queue.shift() as string;
+    return new FakeListChatModel({ responses: [response] });
+  });
+}
+
+function buildFakeRuntime(
+  llm: LlmPort,
+  procedures: InMemoryProcedureCatalog = new InMemoryProcedureCatalog()
+): GraphRuntime {
+  return {
+    llm,
+    catalogs: {
+      procedures,
+      anamnesis: new InMemoryAnamnesisCatalog(),
+      labels: new InMemoryLabelCatalog(),
+      outlineHeadings: new InMemoryOutlineHeadingCatalog(),
+      diagnosis: new InMemoryDiagnosisCatalog(),
+    },
+    log: { info() {}, warn() {}, error() {} },
+    clock: () => new Date("2024-01-01T00:00:00.000Z"),
+  };
+}
+
+/** Recording batch text provider; echoes each instruction as bytes, no LLM call. */
+function makeRecordingTextProvider(): {
+  provider: ModalityProvider<unknown>;
+  calls: { instruction: string }[][];
+} {
+  const calls: { instruction: string }[][] = [];
+  const provider: ModalityProvider<unknown> = {
+    id: "text",
+    mime: "text/plain",
+    description: "test text provider",
+    inputSchema: z.object({ instruction: z.string().min(1) }),
+    render: async (batch) => {
+      const typed = batch as { instruction: string }[];
+      calls.push(typed);
+      return typed.map((b) => encodeText(b.instruction));
+    },
+  };
+  return { provider, calls };
+}
+
+/** A scripted `ProcedureStrategy`: one move per `nextStep` call, in order. */
+function makeScriptedStrategy(opts: {
+  id?: string;
+  nextSteps?: SolverMove[];
+  bridgeResult?: PlannedProcedure[];
+}) {
+  const nextStepViews: BlindedView[] = [];
+  const bridgeViews: OracleView[] = [];
+  const queue = [...(opts.nextSteps ?? [])];
+
+  const strategy: ProcedureStrategy = {
+    id: opts.id ?? "fake-strategy",
+    async nextStep(view) {
+      nextStepViews.push(view);
+      const move = queue.shift();
+      if (!move) {
+        throw new Error(
+          "fake strategy: nextStep() called more times than scripted"
+        );
+      }
+      return move;
+    },
+    async bridge(view) {
+      bridgeViews.push(view);
+      if (!opts.bridgeResult) {
+        throw new Error("fake strategy: bridge() called but not scripted");
+      }
+      return opts.bridgeResult;
+    },
+  };
+
+  return { strategy, nextStepViews, bridgeViews };
+}
+
+/** A planned procedure fixture — a batch of one "text"-provider request. */
+function fixturePlannedProcedure(
+  name: string,
+  relevance: PlannedProcedure["relevance"],
+  finding: string
+): PlannedProcedure {
+  return {
+    path: [],
+    name,
+    relevance,
+    parts: [
+      { provider: "text", input: { instruction: finding }, alt: finding },
+    ],
+  };
+}
+
+/** A `planProcedureResults`-shaped LLM response for a single-procedure batch. */
+function planResponse(
+  key: string,
+  relevance: PlannedProcedure["relevance"],
+  finding: string
+) {
+  return JSON.stringify({
+    plans: {
+      [key]: {
+        requests: [
+          { provider: "text", input: { instruction: finding }, alt: finding },
+        ],
+        relevance,
+      },
+    },
+  });
+}
+
+function buildGraph(
+  runtime: GraphRuntime,
+  strategy: ProcedureStrategy,
+  providers: ModalityProvider<unknown>[] = [
+    makeRecordingTextProvider().provider,
+  ]
+) {
+  return buildProcedureGraph(
+    runtime,
+    strategy,
+    providers,
+    createTraceNode(new EventBus())
+  );
+}
+
+// ─── Tests ──────────────────────────────────────────────────────────────────
+
+describe("procedure graph — output surface", () => {
+  it("buildProcedureGraph writes back only `case`", () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
+    const { strategy } = makeScriptedStrategy({});
+    const graph = buildGraph(runtime, strategy);
+    expect([...graph.outputChannels].sort()).toEqual(["case"]);
+  });
+
+  it("buildBlindedSolverGraph writes back only `move`", () => {
+    const { strategy } = makeScriptedStrategy({});
+    const graph = buildBlindedSolverGraph(strategy);
+    expect([...graph.outputChannels].sort()).toEqual(["move"]);
+  });
+});
+
+describe("procedure graph — driven by a fake ProcedureStrategy", () => {
+  it("drives order → results → order → diagnose(correct) → render_results → END, with zero LLM calls from the strategy", async () => {
+    const llm = makeQueuedLlmPort({
+      generator: [
+        planResponse("CBC", "obligatory", "WBC 11k"),
+        planResponse("CT chest", "obligatory", "Infiltrate"),
+      ],
+      judge: [JSON.stringify({ matches: true })],
+    });
+    const runtime = buildFakeRuntime(llm);
+    const { provider, calls } = makeRecordingTextProvider();
+
+    const { strategy, nextStepViews, bridgeViews } = makeScriptedStrategy({
+      nextSteps: [
+        { action: "order", procedures: [{ path: [], name: "CBC" }] },
+        { action: "order", procedures: [{ path: [], name: "CT chest" }] },
+        { action: "diagnose", diagnosisName: "Pneumonia" },
+      ],
+    });
+
+    const result = await buildGraph(runtime, strategy, [provider]).invoke({
+      diagnosis: { name: "Pneumonia" },
+      case: {},
+    });
+
+    expect(result.case.procedures?.procedures.map((p) => p.name)).toEqual([
+      "CBC",
+      "CT chest",
+    ]);
+    expect(nextStepViews).toHaveLength(3);
+    expect(bridgeViews).toHaveLength(0);
+    // Already-ordered exclusion reads `plannedProcedures`: second view carries
+    // CBC's finding as `alt`, not bytes.
+    expect(nextStepViews[1]?.previousProcedures).toEqual([
+      { path: [], name: "CBC", relevance: "obligatory", result: "WBC 11k" },
+    ]);
+    // One `render` call for whole list: both instructions in one batch.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]).toHaveLength(2);
+  });
+
+  it("render_results: two procedures under the same category from different rounds merge into one category node, ordered 0 and 1", async () => {
+    const llm = makeQueuedLlmPort({
+      generator: [
+        planResponse(
+          "Cardiology › Resting ECG",
+          "obligatory",
+          "Normal sinus rhythm"
+        ),
+        planResponse(
+          "Cardiology › Stress ECG",
+          "optional",
+          "No ischemic changes"
+        ),
+      ],
+      judge: [JSON.stringify({ matches: true })],
+    });
+    const runtime = buildFakeRuntime(llm);
+    const { provider } = makeRecordingTextProvider();
+
+    const { strategy } = makeScriptedStrategy({
+      nextSteps: [
+        {
+          action: "order",
+          procedures: [{ path: ["Cardiology"], name: "Resting ECG" }],
+        },
+        {
+          action: "order",
+          procedures: [{ path: ["Cardiology"], name: "Stress ECG" }],
+        },
+        { action: "diagnose", diagnosisName: "Pneumonia" },
+      ],
+    });
+
+    const result = await buildGraph(runtime, strategy, [provider]).invoke({
+      diagnosis: { name: "Pneumonia" },
+      case: {},
+    });
+
+    const procedures = result.case.procedures!;
+    expect(procedures.procedures).toEqual([]);
+    expect(procedures.categories).toHaveLength(1);
+    const cardiology = procedures.categories[0]!;
+    expect(cardiology.name).toBe("Cardiology");
+    expect(cardiology.procedures.map((p) => [p.name, p.order])).toEqual([
+      ["Resting ECG", 0],
+      ["Stress ECG", 1],
+    ]);
+  });
+
+  it("emits a paired started/terminal label for every node, blinded_step revisited 3x, result_step 2x", async () => {
+    const llm = makeQueuedLlmPort({
+      generator: [
+        planResponse("CBC", "obligatory", "WBC 11k"),
+        planResponse("CT chest", "obligatory", "Infiltrate"),
+      ],
+      judge: [JSON.stringify({ matches: true })],
+    });
+    const runtime = buildFakeRuntime(llm);
+    const { provider } = makeRecordingTextProvider();
+
+    const { strategy } = makeScriptedStrategy({
+      nextSteps: [
+        { action: "order", procedures: [{ path: [], name: "CBC" }] },
+        { action: "order", procedures: [{ path: [], name: "CT chest" }] },
+        { action: "diagnose", diagnosisName: "Pneumonia" },
+      ],
+    });
+
+    const bus = new EventBus();
+    const channel = createJobEventChannel();
+    wireLabels(bus, channel, new InMemoryLabelCatalog());
+    const jobId = "job-solver-loop";
+    channel.open(jobId);
+    const labels: LabelEvent[] = [];
+    channel.subscribe(jobId, (e) => {
+      if (e.type === "label") labels.push(e.data);
+    });
+
+    const graph = buildProcedureGraph(
+      runtime,
+      strategy,
+      [provider],
+      createTraceNode(bus)
+    );
+
+    await runWithContext(
+      () =>
+        graph.invoke({
+          diagnosis: { name: "Pneumonia" },
+          case: {},
+        }),
+      jobId
+    );
+
+    const byNode = new Map<string, LabelEvent[]>();
+    for (const label of labels) {
+      const list = byNode.get(label.nodeId) ?? [];
+      list.push(label);
+      byNode.set(label.nodeId, list);
+    }
+
+    for (const [, nodeLabels] of byNode) {
+      const started = nodeLabels.filter((l) => l.status === "started").length;
+      const completed = nodeLabels.filter(
+        (l) => l.status === "completed"
+      ).length;
+      const failed = nodeLabels.filter((l) => l.status === "failed").length;
+      expect(started).toBeGreaterThanOrEqual(1);
+      expect(started).toBe(completed + failed);
+    }
+
+    expect(
+      [...byNode.entries()]
+        .find(([nodeId]) => nodeId.endsWith("blinded_step"))?.[1]
+        .filter((l) => l.status === "started")
+    ).toHaveLength(3);
+    expect(
+      [...byNode.entries()]
+        .find(([nodeId]) => nodeId.endsWith("result_step"))?.[1]
+        .filter((l) => l.status === "started")
+    ).toHaveLength(2);
+
+    for (const label of labels) {
+      expect(Object.keys(label).sort()).toEqual(
+        ["jobId", "label", "nodeId", "status", "timestamp"].sort()
+      );
+    }
+  });
+
+  it("iteration-cap exhaustion routes to bridge without ever calling nextStep", async () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
+    const { provider } = makeRecordingTextProvider();
+
+    const { strategy, nextStepViews, bridgeViews } = makeScriptedStrategy({
+      bridgeResult: [
+        fixturePlannedProcedure("Biopsy", "obligatory", "Positive"),
+      ],
+    });
+
+    const result = await buildGraph(runtime, strategy, [provider]).invoke({
+      diagnosis: { name: "Lymphoma" },
+      case: {},
+      solverIterationsRemaining: 0,
+    });
+
+    expect(nextStepViews).toHaveLength(0);
+    expect(bridgeViews).toHaveLength(1);
+    expect(result.case.procedures?.procedures.map((p) => p.name)).toEqual([
+      "Biopsy",
+    ]);
+  });
+
+  it("a wrong diagnosis is appended to ruledOutDiagnoses and is visible on the next nextStep call", async () => {
+    const llm = makeQueuedLlmPort({
+      judge: [
+        JSON.stringify({ matches: false }),
+        JSON.stringify({ matches: true }),
+      ],
+    });
+    const runtime = buildFakeRuntime(llm);
+
+    const { strategy, nextStepViews } = makeScriptedStrategy({
+      nextSteps: [
+        { action: "diagnose", diagnosisName: "Wrong Dx" },
+        { action: "diagnose", diagnosisName: "Right Dx" },
+      ],
+    });
+
+    await buildGraph(runtime, strategy).invoke({
+      diagnosis: { name: "Right Dx" },
+      case: {},
+    });
+
+    expect(nextStepViews).toHaveLength(2);
+    expect(nextStepViews[0]?.ruledOutDiagnoses).toEqual([]);
+    expect(nextStepViews[1]?.ruledOutDiagnoses).toEqual(["Wrong Dx"]);
+  });
+
+  it("an `exhausted` move routes to bridge", async () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
+
+    const { strategy, bridgeViews } = makeScriptedStrategy({
+      nextSteps: [{ action: "exhausted", reason: "empty pick" }],
+      bridgeResult: [],
+    });
+
+    await buildGraph(runtime, strategy).invoke({
+      diagnosis: { name: "Unknown" },
+      case: {},
+    });
+
+    expect(bridgeViews).toHaveLength(1);
+  });
+
+  it("hands the strategy the outline sections for a field that was not generated", async () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
+    const { strategy, nextStepViews } = makeScriptedStrategy({
+      nextSteps: [{ action: "exhausted", reason: "empty pick" }],
+      bridgeResult: [],
+    });
+
+    await buildGraph(runtime, strategy).invoke({
+      diagnosis: { name: "Unknown" },
+      case: {},
+      outlineSections: {
+        patient: "58, male.",
+        chiefComplaint: "Sharp pain.",
+        anamnesis: "No history.",
+      },
+    });
+
+    expect(nextStepViews[0]?.presentation).toEqual({
+      patient: "58, male.",
+      chiefComplaint: "Sharp pain.",
+      anamnesis: "No history.",
+    });
+  });
+
+  it("a generated field wins over its outline section", async () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
+    const { strategy, nextStepViews } = makeScriptedStrategy({
+      nextSteps: [{ action: "exhausted", reason: "empty pick" }],
+      bridgeResult: [],
+    });
+
+    await buildGraph(runtime, strategy).invoke({
+      diagnosis: { name: "Unknown" },
+      case: {
+        chiefComplaint: [
+          { type: "text/plain", value: encodeText("X"), alt: "X" },
+        ],
+      },
+      outlineSections: {
+        patient: "58, male.",
+        chiefComplaint: "Sharp pain.",
+        anamnesis: "No history.",
+      },
+    });
+
+    expect(nextStepViews[0]?.presentation.chiefComplaint).toBe("X");
+    expect(nextStepViews[0]?.presentation.patient).toBe("58, male.");
+  });
+
+  it("has exactly four nodes, render_results is terminal", async () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
+    const traceNode = createTraceNode(new EventBus());
+    const { provider } = makeRecordingTextProvider();
+
+    const strategy = new DrillDownPick(runtime, [provider]);
+    expect(strategy.id).toBe("drill-down-pick");
+
+    const graph = buildProcedureGraph(runtime, strategy, [provider], traceNode);
+
+    const { nodes, edges } = await graph.getGraphAsync();
+    const nodeNames = Object.keys(nodes)
+      .filter((n) => n !== "__start__" && n !== "__end__")
+      .sort();
+
+    expect(nodeNames).toEqual([
+      "blinded_step",
+      "bridge",
+      "render_results",
+      "result_step",
+    ]);
+
+    // `render_results` is terminal: its only outgoing edge is `END`.
+    const fromRenderResults = edges.filter(
+      (e) => e.source === "render_results"
+    );
+    expect(fromRenderResults).toHaveLength(1);
+    expect(fromRenderResults[0]?.target).toBe("__end__");
+  });
+
+  it("rejects an empty modality registry at build time", () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
+    const { strategy } = makeScriptedStrategy({});
+
+    expect(() =>
+      buildProcedureGraph(
+        runtime,
+        strategy,
+        [],
+        createTraceNode(new EventBus())
+      )
+    ).toThrow(/modality registry is empty/i);
+  });
+
+  it("both the match path and the bridge path reach render_results, with `case.procedures` empty at every point before it and populated after", async () => {
+    const llm = makeQueuedLlmPort({
+      generator: [planResponse("CBC", "obligatory", "WBC 11k")],
+      judge: [JSON.stringify({ matches: true })],
+    });
+    const runtime = buildFakeRuntime(llm);
+    const { provider } = makeRecordingTextProvider();
+
+    const { strategy } = makeScriptedStrategy({
+      nextSteps: [
+        { action: "order", procedures: [{ path: [], name: "CBC" }] },
+        { action: "diagnose", diagnosisName: "Pneumonia" },
+      ],
+    });
+
+    const graph = buildGraph(runtime, strategy, [provider]);
+    const seenProcedureCounts: number[] = [];
+    for await (const chunk of await graph.stream(
+      { diagnosis: { name: "Pneumonia" }, case: {} },
+      { streamMode: "values" }
+    )) {
+      const typed = chunk as {
+        case?: { procedures?: { procedures: unknown[] } };
+      };
+      seenProcedureCounts.push(typed.case?.procedures?.procedures.length ?? 0);
+    }
+
+    // Every superstep before the last has no rendered procedures yet...
+    expect(seenProcedureCounts.slice(0, -1).every((n) => n === 0)).toBe(true);
+    // ...and the last one (after render_results) has exactly one.
+    expect(seenProcedureCounts.at(-1)).toBe(1);
+  });
+
+  it("the blinded child graph's state schema has no `diagnosis` field, and a smuggled-in value does not survive a real invoke", async () => {
+    const { strategy, nextStepViews } = makeScriptedStrategy({
+      nextSteps: [{ action: "exhausted", reason: "empty pick" }],
+    });
+
+    const childGraph = buildBlindedSolverGraph(strategy);
+
+    // Cast bypasses the `BlindedView` compile error to prove the runtime backstop.
+    const smuggledInput = {
+      presentation: {},
+      previousProcedures: [],
+      ruledOutDiagnoses: [],
+      iterationsRemaining: 3,
+      diagnosis: { name: "Should never arrive" },
+    } as unknown as Parameters<typeof childGraph.invoke>[0];
+
+    const result = await childGraph.invoke(smuggledInput);
+
+    expect(result).not.toHaveProperty("diagnosis");
+    expect(nextStepViews).toHaveLength(1);
+    expect(nextStepViews[0]).not.toHaveProperty("diagnosis");
+  });
+});

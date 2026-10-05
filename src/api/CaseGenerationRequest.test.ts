@@ -8,9 +8,7 @@ const schema = makeCaseGenerationRequestSchema(
 
 describe("CaseGenerationRequestSchema — generationFlags", () => {
   it("rejects an explicit empty array", () => {
-    // Before `.min(1)` this passed the API and then threw a Zod error deep
-    // inside the graph (whose state schema *does* declare it), surfacing to
-    // the caller as a 500 instead of a 400.
+    // `.min(1)` must reject `[]` at API boundary: 400, not 500 from graph.
     const result = schema.safeParse({
       diagnosis: "Influenza",
       generationFlags: [],
@@ -40,7 +38,7 @@ describe("CaseGenerationRequestSchema — generationFlags", () => {
   });
 });
 
-describe("CaseGenerationRequestSchema — language (issue 09 §1)", () => {
+describe("CaseGenerationRequestSchema — language", () => {
   it("accepts a language in the deployment's configured LANGUAGES", () => {
     const configuredSchema = makeCaseGenerationRequestSchema(
       ConfigSchema.parse({

@@ -2,11 +2,7 @@
 export type Release = () => void;
 
 export interface Limiter {
-  /**
-   * Wait for a free slot, first come first served. Rejects with an
-   * `AbortError` if `signal` aborts while waiting — a job cancelled while
-   * queued never takes a slot.
-   */
+  /** Wait for free slot, FIFO. Rejects `AbortError` if `signal` aborts while queued. */
   acquire(signal?: AbortSignal): Promise<Release>;
   readonly active: number;
   readonly waiting: number;
@@ -18,25 +14,21 @@ function abortError(): Error {
   return error;
 }
 
-/**
- * A FIFO counting semaphore. One instance bounds generations across every
- * transport (`MAX_CONCURRENT_GENERATIONS`, #142), so throughput does not
- * depend on which door a request came in through.
- */
+/** FIFO counting semaphore. One instance bounds generations across all transports (`MAX_CONCURRENT_GENERATIONS`). */
 export function createLimiter(max: number): Limiter {
   if (!Number.isInteger(max) || max < 1) {
     throw new Error(`Limiter max must be a positive integer, got ${max}`);
   }
 
   let active = 0;
-  const queue: { grant: () => void }[] = [];
+  const waiters: { grant: () => void }[] = [];
 
   function release(): Release {
     let released = false;
     return () => {
       if (released) return;
       released = true;
-      const next = queue.shift();
+      const next = waiters.shift();
       if (next) next.grant();
       else active -= 1;
     };
@@ -51,27 +43,26 @@ export function createLimiter(max: number): Limiter {
       }
       return new Promise<Release>((resolve, reject) => {
         const waiter = {
-          // The slot passes straight from the releaser to this waiter, so
-          // `active` never dips and nobody can jump the queue in between.
+          // Slot passes straight to waiter: `active` never dips, no queue jumping.
           grant: () => {
             signal?.removeEventListener("abort", onAbort);
             resolve(release());
           },
         };
         const onAbort = () => {
-          const index = queue.indexOf(waiter);
-          if (index !== -1) queue.splice(index, 1);
+          const index = waiters.indexOf(waiter);
+          if (index !== -1) waiters.splice(index, 1);
           reject(abortError());
         };
         signal?.addEventListener("abort", onAbort, { once: true });
-        queue.push(waiter);
+        waiters.push(waiter);
       });
     },
     get active() {
       return active;
     },
     get waiting() {
-      return queue.length;
+      return waiters.length;
     },
   };
 }

@@ -1,0 +1,426 @@
+// Pure tests over `findMissingLanguages`/`formatMissingLanguages`/
+// `warnUnconfiguredLanguages` on plain `CatalogueSpec[]`, plus one end-to-end
+// `validateCatalogsOrExit` test with mocked repo layer and `predefinedList.js`.
+import { describe, expect, it, vi, beforeEach } from "vitest";
+
+const declared = new Map<string, Record<string, Record<string, string>>>();
+
+vi.mock("@/adapters/persistence/predefinedList.js", () => ({
+  readDeclaredTranslations: (file: string) => declared.get(file) ?? {},
+}));
+
+import {
+  findMissingLanguages,
+  formatMissingLanguages,
+  warnUnconfiguredLanguages,
+  validateCatalogsOrExit,
+  type CatalogueSpec,
+} from "@/adapters/catalog/startupValidation.js";
+import { nodeKey } from "@/core/graph/shared/domain/ProcedureTree.js";
+import type { Repos } from "@/adapters/repos.js";
+
+describe("findMissingLanguages", () => {
+  it("reports a catalogue that declares other languages but not a configured one", () => {
+    const specs: CatalogueSpec[] = [
+      {
+        catalogue: "procedures",
+        file: "procedures.yml",
+        baseKeys: ["Blood Test"],
+        translations: { French: { "Blood Test": "Analyse de sang" } },
+        enforceUnknownKeys: true,
+      },
+    ];
+
+    expect(findMissingLanguages(specs, ["English", "German"])).toEqual([
+      { catalogue: "procedures", file: "procedures.yml", language: "German" },
+    ]);
+  });
+
+  it("does not report a catalogue whose file declares no language (missing or empty)", () => {
+    const specs: CatalogueSpec[] = [
+      {
+        catalogue: "procedures",
+        file: "procedures.yml",
+        baseKeys: ["Blood Test"],
+        translations: {},
+        enforceUnknownKeys: true,
+      },
+    ];
+
+    expect(findMissingLanguages(specs, ["English", "German"])).toEqual([]);
+  });
+
+  it("reports a catalogue whose language key is present but empty", () => {
+    const specs: CatalogueSpec[] = [
+      {
+        catalogue: "labels",
+        file: "labelTranslations.yml",
+        baseKeys: ["Generating patient"],
+        translations: { German: {} },
+        enforceUnknownKeys: true,
+      },
+    ];
+
+    expect(findMissingLanguages(specs, ["English", "German"])).toEqual([
+      {
+        catalogue: "labels",
+        file: "labelTranslations.yml",
+        language: "German",
+      },
+    ]);
+  });
+
+  it("never flags English itself", () => {
+    const specs: CatalogueSpec[] = [
+      {
+        catalogue: "procedures",
+        file: "procedures.yml",
+        baseKeys: ["Blood Test"],
+        translations: {},
+        enforceUnknownKeys: true,
+      },
+    ];
+
+    expect(findMissingLanguages(specs, ["English"])).toEqual([]);
+  });
+
+  it("does not exempt diagnosis from the completeness check", () => {
+    const specs: CatalogueSpec[] = [
+      {
+        catalogue: "diagnosis",
+        file: "diagnosisTranslations.yml",
+        baseKeys: ["Influenza"],
+        translations: { French: { Influenza: "Grippe" } },
+        enforceUnknownKeys: false,
+      },
+    ];
+
+    expect(findMissingLanguages(specs, ["English", "German"])).toEqual([
+      {
+        catalogue: "diagnosis",
+        file: "diagnosisTranslations.yml",
+        language: "German",
+      },
+    ]);
+  });
+
+  it("passes when every configured language has at least one entry", () => {
+    const specs: CatalogueSpec[] = [
+      {
+        catalogue: "procedures",
+        file: "procedures.yml",
+        baseKeys: ["Blood Test"],
+        translations: { German: { "Blood Test": "Bluttest" } },
+        enforceUnknownKeys: true,
+      },
+    ];
+
+    expect(findMissingLanguages(specs, ["English", "German"])).toEqual([]);
+  });
+});
+
+describe("formatMissingLanguages", () => {
+  it("groups by catalogue and names every missing language", () => {
+    const text = formatMissingLanguages([
+      { catalogue: "procedures", file: "procedures.yml", language: "German" },
+      { catalogue: "procedures", file: "procedures.yml", language: "French" },
+    ]);
+
+    expect(text).toContain("[procedures] procedures.yml");
+    expect(text).toContain("German");
+    expect(text).toContain("French");
+  });
+});
+
+describe("warnUnconfiguredLanguages", () => {
+  it("warns for a language present in translations but not configured", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const specs: CatalogueSpec[] = [
+      {
+        catalogue: "procedures",
+        file: "procedures.yml",
+        baseKeys: ["Blood Test"],
+        translations: { German: { "Blood Test": "Bluttest" }, Spanish: {} },
+        enforceUnknownKeys: true,
+      },
+    ];
+
+    warnUnconfiguredLanguages(specs, ["English", "German"]);
+
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Spanish"));
+    warnSpy.mockRestore();
+  });
+
+  it("does not warn when every declared language is configured", () => {
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    const specs: CatalogueSpec[] = [
+      {
+        catalogue: "procedures",
+        file: "procedures.yml",
+        baseKeys: ["Blood Test"],
+        translations: { German: { "Blood Test": "Bluttest" } },
+        enforceUnknownKeys: true,
+      },
+    ];
+
+    warnUnconfiguredLanguages(specs, ["English", "German"]);
+
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+});
+
+function fakeRepos(
+  procedureTree: {
+    categories: {
+      name: string;
+      categories: never[];
+      procedures: { name: string }[];
+    }[];
+    procedures: { name: string }[];
+  } = { categories: [], procedures: [{ name: "Blood Test" }] }
+): Repos {
+  return {
+    db: {} as unknown as Repos["db"],
+    procedures: {
+      translationsFile: "procedures.yml",
+      getProcedureTree: () => procedureTree,
+    } as unknown as Repos["procedures"],
+    anamnesis: {
+      translationsFile: "anamnesisCategoriesTranslations.yml",
+      getEffectiveCategoryList: () => ["Symptoms"],
+    } as unknown as Repos["anamnesis"],
+    diagnosis: {
+      translationsFile: "diagnosisTranslations.yml",
+      getAllDiagnoses: () => [
+        { name: "Influenza", icd: "1E32", alternativeNames: [] },
+      ],
+    } as unknown as Repos["diagnosis"],
+    labels: {
+      translationsFile: "labelTranslations.yml",
+    } as unknown as Repos["labels"],
+    outlineHeadings: {
+      translationsFile: "outlineHeadingsTranslations.yml",
+    } as unknown as Repos["outlineHeadings"],
+    symptoms: {} as unknown as Repos["symptoms"],
+  };
+}
+
+describe("validateCatalogsOrExit — end to end", () => {
+  beforeEach(() => {
+    declared.clear();
+    declared.set("outlineHeadingsTranslations.yml", {
+      German: { General: "Allgemein" },
+    });
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+  });
+
+  it("exits non-zero and names the catalogue when a configured language has no translations", () => {
+    // procedures.yml declares French but not German; every other file has German.
+    declared.set("procedures.yml", {
+      French: { [nodeKey(["Blood Test"])]: "Analyse de sang" },
+    });
+    declared.set("anamnesisCategoriesTranslations.yml", {
+      German: { Symptoms: "Symptome" },
+    });
+    declared.set("diagnosisTranslations.yml", {
+      German: { Influenza: "Grippe" },
+    });
+    declared.set("labelTranslations.yml", { German: {} }); // also missing
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+    const errorSpy = vi.spyOn(console, "error");
+
+    validateCatalogsOrExit(fakeRepos(), ["English", "German"]);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const errorOutput = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(errorOutput).toContain("procedures.yml");
+    expect(errorOutput).toContain("labelTranslations.yml");
+
+    exitSpy.mockRestore();
+  });
+
+  it("does not exit when every translations file is missing", () => {
+    declared.clear();
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    validateCatalogsOrExit(fakeRepos(), ["English", "German"]);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    exitSpy.mockRestore();
+  });
+
+  it("does not exit when every catalogue has entries for every configured language", () => {
+    for (const file of [
+      "procedures.yml",
+      "anamnesisCategoriesTranslations.yml",
+      "diagnosisTranslations.yml",
+      "labelTranslations.yml",
+    ]) {
+      declared.set(file, { German: { x: "y" } });
+    }
+    // Give each catalogue's own base key a translation so the unknown-key
+    // check also passes (irrelevant to this test, but keeps it honest).
+    declared.set("procedures.yml", {
+      German: { [nodeKey(["Blood Test"])]: "Bluttest" },
+    });
+    declared.set("anamnesisCategoriesTranslations.yml", {
+      German: { Symptoms: "Symptome" },
+    });
+    declared.set("diagnosisTranslations.yml", {
+      German: { Influenza: "Grippe" },
+    });
+    declared.set("labelTranslations.yml", { German: {} });
+    // labels has no `getKnownLabels()` entries in this unit test (nothing
+    // built a graph in-process), so its base key set is empty and the
+    // completeness check would still flag an empty German map — give it one.
+    declared.set("labelTranslations.yml", { German: { unused: "unused" } });
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    validateCatalogsOrExit(fakeRepos(), ["English", "German"]);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    exitSpy.mockRestore();
+  });
+
+  it("warns, but does not exit, for a configured language the detector's mapping table does not know", () => {
+    for (const file of [
+      "procedures.yml",
+      "anamnesisCategoriesTranslations.yml",
+      "diagnosisTranslations.yml",
+      "labelTranslations.yml",
+    ]) {
+      declared.set(file, { Klingon: { x: "y" } });
+    }
+    declared.set("procedures.yml", {
+      Klingon: { [nodeKey(["Blood Test"])]: "tlhIngan" },
+    });
+    declared.set("anamnesisCategoriesTranslations.yml", {
+      Klingon: { Symptoms: "tlhIngan" },
+    });
+    declared.set("diagnosisTranslations.yml", {
+      Klingon: { Influenza: "tlhIngan" },
+    });
+    declared.set("labelTranslations.yml", { Klingon: { unused: "tlhIngan" } });
+    declared.set("outlineHeadingsTranslations.yml", {
+      Klingon: { General: "tlhIngan" },
+    });
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+    const warnSpy = vi.spyOn(console, "warn");
+
+    validateCatalogsOrExit(fakeRepos(), ["English", "Klingon"]);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Klingon"));
+
+    exitSpy.mockRestore();
+  });
+
+  const nestedTree = {
+    categories: [
+      {
+        name: "Cardiology",
+        categories: [],
+        procedures: [{ name: "Resting ECG" }],
+      },
+    ],
+    procedures: [],
+  };
+
+  it("exits non-zero when a translation path is not in the English tree, naming it readably", () => {
+    declared.set("procedures.yml", {
+      German: { [nodeKey(["Cardiology", "Resting EKG"])]: "Ruhe-EKG" },
+    });
+    declared.set("anamnesisCategoriesTranslations.yml", {
+      German: { Symptoms: "Symptome" },
+    });
+    declared.set("diagnosisTranslations.yml", {
+      German: { Influenza: "Grippe" },
+    });
+    declared.set("labelTranslations.yml", { German: { unused: "unused" } });
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+    const errorSpy = vi.spyOn(console, "error");
+
+    validateCatalogsOrExit(fakeRepos(nestedTree), ["English", "German"]);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const errorOutput = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(errorOutput).toContain("Cardiology › Resting EKG");
+    expect(errorOutput).toContain("Cardiology › Resting ECG"); // Levenshtein suggestion
+
+    exitSpy.mockRestore();
+  });
+
+  it("does not exit for a valid nested translation", () => {
+    declared.set("procedures.yml", {
+      German: {
+        [nodeKey(["Cardiology"])]: "Kardiologie",
+        [nodeKey(["Cardiology", "Resting ECG"])]: "Ruhe-EKG",
+      },
+    });
+    declared.set("anamnesisCategoriesTranslations.yml", {
+      German: { Symptoms: "Symptome" },
+    });
+    declared.set("diagnosisTranslations.yml", {
+      German: { Influenza: "Grippe" },
+    });
+    declared.set("labelTranslations.yml", { German: { unused: "unused" } });
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+
+    validateCatalogsOrExit(fakeRepos(nestedTree), ["English", "German"]);
+
+    expect(exitSpy).not.toHaveBeenCalled();
+    exitSpy.mockRestore();
+  });
+
+  it("exits non-zero when the catalogue has duplicate sibling names", () => {
+    const duplicateTree = {
+      categories: [
+        { name: "Echo", categories: [], procedures: [{ name: "x" }] },
+      ],
+      procedures: [{ name: "Echo" }],
+    };
+    declared.set("procedures.yml", { German: {} });
+    declared.set("anamnesisCategoriesTranslations.yml", {
+      German: { Symptoms: "Symptome" },
+    });
+    declared.set("diagnosisTranslations.yml", {
+      German: { Influenza: "Grippe" },
+    });
+    declared.set("labelTranslations.yml", { German: { unused: "unused" } });
+
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+    const errorSpy = vi.spyOn(console, "error");
+
+    validateCatalogsOrExit(fakeRepos(duplicateTree), ["English", "German"]);
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    const errorOutput = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(errorOutput).toContain("Echo");
+
+    exitSpy.mockRestore();
+  });
+});

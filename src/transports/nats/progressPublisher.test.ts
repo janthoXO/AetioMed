@@ -1,18 +1,16 @@
-// Unit coverage for the progress publisher (#144). No server: a fake `nc`
-// with a `publish` spy, driven against a real `JobEventChannel`.
+// Unit coverage for the progress publisher. No server: fake `nc` with a
+// `publish` spy, real `JobEventChannel`.
 import { describe, expect, it, vi } from "vitest";
 import { createJobEventChannel } from "@/core/jobEvents/index.js";
 import { progressSubject } from "./subjects.js";
 import { startProgressPublisher } from "./progressPublisher.js";
 
-// Deliberately not importing anything from `client.ts` — asserted at module
-// scope below — and the fake `nc` here carries no jetstream client at all,
-// so a jetstream import couldn't even be exercised through it.
+// Must not import `client.ts` (asserted below); fake `nc` has no jetstream client.
 function fakeNats() {
   return { publish: vi.fn() };
 }
 
-describe("startProgressPublisher (#144)", () => {
+describe("startProgressPublisher", () => {
   it("publishes accepted, label and complete in order, as JSON, to cases.progress.<id>.<type>", () => {
     const nc = fakeNats();
     const channel = createJobEventChannel();
@@ -91,7 +89,7 @@ describe("startProgressPublisher (#144)", () => {
   });
 });
 
-describe("never touches JetStream (#144)", () => {
+describe("never touches JetStream", () => {
   it("imports nothing from ./client.js, source", async () => {
     const { readFileSync } = await import("node:fs");
     const { fileURLToPath } = await import("node:url");

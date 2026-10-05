@@ -2,22 +2,20 @@ import { describe, expect, it, vi } from "vitest";
 import { detectLanguageViaLlm } from "./llmFallback.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 
-function fakeRuntime(invokeResult: unknown): {
+function fakeRuntime(structuredResult: unknown): {
   runtime: GraphRuntime;
-  forSpy: ReturnType<typeof vi.fn>;
+  structured: ReturnType<typeof vi.fn>;
 } {
-  const invoke = vi.fn().mockResolvedValue(invokeResult);
-  const withStructuredOutput = vi.fn().mockReturnValue({ invoke });
-  const forSpy = vi.fn().mockReturnValue({ withStructuredOutput });
+  const structured = vi.fn().mockResolvedValue(structuredResult);
   return {
-    runtime: { llm: { for: forSpy } } as unknown as GraphRuntime,
-    forSpy,
+    runtime: { llm: { structured } } as unknown as GraphRuntime,
+    structured,
   };
 }
 
-describe("detectLanguageViaLlm (issue 10 §1, step 3)", () => {
+describe("detectLanguageViaLlm (step 3)", () => {
   it("returns the language the model picked", async () => {
-    const { runtime, forSpy } = fakeRuntime({ language: "German" });
+    const { runtime, structured } = fakeRuntime({ language: "German" });
 
     const result = await detectLanguageViaLlm(runtime, "Bitte kurz halten.", [
       "English",
@@ -25,7 +23,7 @@ describe("detectLanguageViaLlm (issue 10 §1, step 3)", () => {
     ]);
 
     expect(result).toBe("German");
-    expect(forSpy).toHaveBeenCalledWith({
+    expect(structured.mock.calls[0]![0]).toEqual({
       role: "translator",
       temperature: "deterministic",
     });
@@ -45,11 +43,7 @@ describe("detectLanguageViaLlm (issue 10 §1, step 3)", () => {
   it("returns undefined (never throws) when the model call fails", async () => {
     const runtime = {
       llm: {
-        for: vi.fn().mockReturnValue({
-          withStructuredOutput: vi.fn().mockReturnValue({
-            invoke: vi.fn().mockRejectedValue(new Error("model unreachable")),
-          }),
-        }),
+        structured: vi.fn().mockRejectedValue(new Error("model unreachable")),
       },
     } as unknown as GraphRuntime;
     vi.spyOn(console, "warn").mockImplementation(() => {});

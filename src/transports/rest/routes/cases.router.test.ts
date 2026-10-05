@@ -1,10 +1,8 @@
-// #143 — `POST /api/cases` as a stream: content negotiation on the same
-// route, `event: accepted` written before any node runs (so the jobId is
-// never learned too late to subscribe), a heartbeat independent of label
-// cadence, body-level `jobId` (the `?jobId=` query param is gone), and a
-// duplicate jobId answered with a 409 on either path without starting a
-// second generation. Real wiring, over real HTTP (`127.0.0.1:0`, global
-// `fetch`, no supertest) — the same pattern as `labels.router.test.ts`.
+// `POST /api/cases` as a stream: content negotiation on one route,
+// `event: accepted` before any node runs, heartbeat independent of label
+// cadence, body-level `jobId`, duplicate jobId → 409 on either path without
+// a second generation. Real wiring over real HTTP (`127.0.0.1:0`, global
+// `fetch`, no supertest), like `labels.router.test.ts`.
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -18,7 +16,7 @@ import {
   type JobEventChannel,
 } from "@/core/jobEvents/index.js";
 import { wireLabels } from "@/core/jobEvents/labels.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import {
   createCaseGenerationService,
   type CaseGenerationService,
@@ -28,20 +26,18 @@ import { getRequestContext } from "@/core/graph/utils/context.js";
 import { AppError } from "@/core/graph/errors/AppError.js";
 import { CaseGenerationResponseSchema } from "@/api/index.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
-import type { Case } from "@/core/graph/models/Case.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
+import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
-// Same shape as `caseGenerationService.test.ts`'s `fakeGraph`, plus
-// `MAX_CONTENT_PART_BYTES` (read by `encodeCase` on the success path) and a
-// `caseGraph` stub — `GET /api/graph` is not exercised here, so
+// Same shape as `fakeGraph` in `caseGenerationService.test.ts`, plus
+// `MAX_CONTENT_PART_BYTES` (read by `encodeCase`) and a `graphs` stub;
 // `getGraphAsync` is never called.
-function fakeGraph(
-  generateCase: GraphAppContext["generateCase"]
-): GraphAppContext {
+function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
   return {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      PROCEDURE_PRESELECTION: false,
       LANGUAGES: ["English", "German"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
@@ -50,13 +46,15 @@ function fakeGraph(
     runtime: {
       catalogs: {
         diagnosis: { byIcd: () => undefined },
+        anamnesis: { list: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
-    caseGraph: {
-      getGraphAsync: async () => ({ nodes: {}, edges: [] }),
-    } as unknown as GraphAppContext["caseGraph"],
+    ...planAndRenderFrom(generateCase),
+    graphs: {
+      plan: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
+      case: { getGraphAsync: async () => ({ nodes: {}, edges: [] }) },
+    } as unknown as GraphAppContext["graphs"],
   } as GraphAppContext;
 }
 
@@ -67,12 +65,10 @@ function abortError(): Error {
 }
 
 /**
- * A `generateCase` gated per jobId (read off `getRequestContext()`, the
- * same ALS the real service binds before invoking it): each job's gate
- * opens independently via `release(jobId)`, honours `signal` abort (rejects
- * with an `AbortError`, mirroring the real graph), and — once released —
- * runs one node wrapped by `createTraceNode(bus)` so labels flow, before
- * resolving with a minimal case.
+ * `generateCase` gated per jobId (from `getRequestContext()` ALS): each gate
+ * opens via `release(jobId)`, `signal` abort rejects with `AbortError`, and
+ * once released runs one `createTraceNode(bus)` node so labels flow, then
+ * resolves a minimal case.
  */
 function makeGatedGenerateCase(bus: EventBus) {
   const gates = new Map<
@@ -119,12 +115,8 @@ function makeGatedGenerateCase(bus: EventBus) {
     });
 
     await doThing();
-    // A full `Patient` (not just `{ name, age, sex }` as in the other
-    // harnesses' fixtures) — this result is encoded through the real
-    // `CaseWireSchema`/`PatientSchema` on the success path here, unlike
-    // `caseGenerationService.test.ts`'s and `labels.router.test.ts`'s
-    // harnesses, which never encode their fixture and so tolerate a partial
-    // one.
+    // Full `Patient`: result is encoded through real `CaseWireSchema`/
+    // `PatientSchema` here; other harnesses never encode.
     return {
       patient: {
         name: "Jane",
@@ -134,7 +126,7 @@ function makeGatedGenerateCase(bus: EventBus) {
         gender: "female",
       },
     } as Case;
-  }) as unknown as GraphAppContext["generateCase"];
+  }) as unknown as GenerateCaseFn;
 
   return {
     generateCase,
@@ -196,10 +188,15 @@ function requestBody(overrides: Record<string, unknown> = {}): string {
 }
 
 /**
- * Read from `reader` (accumulating across calls, via a per-reader buffer)
- * until `predicate(text)` is true, or reject after `timeoutMs`. Copied from
- * `labels.router.test.ts`.
+ * Plan-mode request. English + `TRANSLATION_SANDWICH` unset in `fakeGraph`
+ * means `translatesOutline` is false, so review outline equals
+ * `planAndRenderFrom`'s: the five-section skeleton, `JSON.stringify(opts)` last.
  */
+function planRequestBody(overrides: Record<string, unknown> = {}): string {
+  return requestBody({ mode: "plan", language: "English", ...overrides });
+}
+
+/** Read from `reader` until `predicate(text)`; reject after `timeoutMs`. Copied from `labels.router.test.ts`. */
 const buffers = new WeakMap<ReadableStreamDefaultReader<Uint8Array>, string>();
 
 async function readUntil(
@@ -267,7 +264,7 @@ async function waitUntil(
   }
 }
 
-describe("POST /api/cases (#143) — content negotiation, streaming, heartbeat", () => {
+describe("POST /api/cases — content negotiation, streaming, heartbeat", () => {
   let server: Server | undefined;
 
   afterEach(async () => {
@@ -384,7 +381,7 @@ describe("POST /api/cases (#143) — content negotiation, streaming, heartbeat",
     wireLabels(bus, channel, new InMemoryLabelCatalog());
     const generateCase = vi.fn(async () => {
       throw new AppError("boom", "GENERATION_FAILED", 500);
-    }) as unknown as GraphAppContext["generateCase"];
+    }) as unknown as GenerateCaseFn;
     const graph = fakeGraph(generateCase);
     const service = createCaseGenerationService(graph, bus, channel);
     ({ server } = await startApp(graph, service, channel));
@@ -414,12 +411,11 @@ describe("POST /api/cases (#143) — content negotiation, streaming, heartbeat",
     const bus = new EventBus();
     const channel = createJobEventChannel();
     wireLabels(bus, channel, new InMemoryLabelCatalog());
-    // Schema-invalid on the wire (`PatientSchema` needs height/weight/
-    // gender), so encoding the success body throws after the headers are
-    // sent — the same shape as a content part over MAX_CONTENT_PART_BYTES.
+    // Schema-invalid on wire (`PatientSchema` needs height/weight/gender):
+    // encoding throws after headers sent, like a part over MAX_CONTENT_PART_BYTES.
     const generateCase = vi.fn(async () => ({
       patient: { name: "Jane" },
-    })) as unknown as GraphAppContext["generateCase"];
+    })) as unknown as GenerateCaseFn;
     const graph = fakeGraph(generateCase);
     const service = createCaseGenerationService(graph, bus, channel);
     ({ server } = await startApp(graph, service, channel));
@@ -689,8 +685,170 @@ describe("POST /api/cases (#143) — content negotiation, streaming, heartbeat",
   });
 });
 
-/** A `JobDirectory` whose `cancel` is fully scripted — `watch` is never
- * exercised by these tests. */
+type Plan = { fixed: boolean; text: string }[];
+
+describe("plan mode — a stateless call stops at its plan", () => {
+  let server: Server | undefined;
+
+  afterEach(async () => {
+    if (server) {
+      await new Promise<void>((resolve) => server!.close(() => resolve()));
+      server = undefined;
+    }
+  });
+
+  it("a plan-mode POST stops at 'planned' — 200 with the plan, JSON path", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-1" }),
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      jobId: string;
+      mode: string;
+      language: string;
+      plan: Plan;
+    };
+    expect(body.jobId).toBe("job-plan-1");
+    expect(body.mode).toBe("plan");
+    // planAndRenderFrom's outline: the five-section skeleton.
+    expect(body.plan.filter((s) => s.fixed).map((s) => s.text)).toEqual([
+      "## General",
+      "## Patient",
+      "## Chief complaint",
+      "## Anamnesis",
+      "## Procedures",
+    ]);
+  });
+
+  it("SSE create in plan mode: event: accepted precedes event: plan, then the stream ends with no event: result", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: planRequestBody({ jobId: "job-plan-sse" }),
+    });
+    const reader = res.body!.getReader();
+
+    const text = await readUntil(reader, (t) => t.includes("event: plan"));
+    const idxAccepted = text.indexOf("event: accepted");
+    const idxPlan = text.indexOf("event: plan");
+    expect(idxAccepted).toBeGreaterThanOrEqual(0);
+    expect(idxPlan).toBeGreaterThan(idxAccepted);
+
+    const data = extractEventData(text, "plan") as {
+      jobId: string;
+      mode: string;
+      plan: Plan;
+    };
+    expect(data.jobId).toBe("job-plan-sse");
+    expect(data.mode).toBe("plan");
+
+    const { done } = await reader.read();
+    expect(done).toBe(true);
+    expect(text).not.toContain("event: result");
+  });
+
+  it("normal mode SSE emits event: plan before event: result", async () => {
+    const { channel, service, graph, release } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: requestBody({ jobId: "job-normal-plan" }),
+    });
+    const reader = res.body!.getReader();
+
+    const beforeRelease = await readUntil(reader, (t) =>
+      t.includes("event: plan")
+    );
+    expect(beforeRelease).not.toContain("event: result");
+
+    release("job-normal-plan");
+
+    const text = await readUntil(reader, (t) => t.includes("event: result"));
+    const idxPlan = text.indexOf("event: plan");
+    const idxResult = text.indexOf("event: result");
+    expect(idxPlan).toBeGreaterThanOrEqual(0);
+    expect(idxResult).toBeGreaterThan(idxPlan);
+
+    const { done } = await reader.read();
+    expect(done).toBe(true);
+  });
+
+  it("a malformed plan shape (not alternating editable/fixed) is a 400", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({
+        jobId: "job-plan-malformed",
+        plan: [
+          { fixed: true, text: "## General" },
+          { fixed: true, text: "## Patient" },
+        ],
+      }),
+    });
+
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("INVALID_REQUEST_BODY");
+  });
+
+  it("the same jobId can be posted again after a 'planned' stop — no 409", async () => {
+    const { channel, service, graph } = createHarness();
+    ({ server } = await startApp(graph, service, channel));
+    const port = (server.address() as AddressInfo).port;
+
+    await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-reuse" }),
+    });
+
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: planRequestBody({ jobId: "job-plan-reuse" }),
+    });
+
+    expect(res.status).not.toBe(409);
+  });
+});
+
+/** `JobDirectory` with scripted `cancel`; `watch` unused. */
 function stubDirectory(cancel: JobDirectory["cancel"]): JobDirectory {
   return {
     watch: () => Promise.reject(new Error("not used by these tests")),
@@ -698,7 +856,7 @@ function stubDirectory(cancel: JobDirectory["cancel"]): JobDirectory {
   };
 }
 
-describe("DELETE /api/cases/:jobId (#145) — via the JobDirectory port", () => {
+describe("DELETE /api/cases/:jobId — via the JobDirectory port", () => {
   let server: Server | undefined;
 
   afterEach(async () => {

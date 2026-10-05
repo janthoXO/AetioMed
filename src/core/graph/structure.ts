@@ -1,24 +1,15 @@
-// Issue 15 §4 — the actually compiled topology of the variant this
-// deployment serves, plus each node's English label key. Served as
-// `GET /api/graph` on REST and `meta.graph` on NATS (#144), so it lives in
-// core rather than in either transport. It follows the labels' always-on
-// gate (#140): a client that receives labels but cannot fetch the topology
-// to hang them on has half a feature.
-import type { CompiledCaseGraph } from "./02graphs/caseGraph.js";
+// Compiled topology of the served variant plus each node's English label key.
+// Served as `GET /api/graph` (REST) and `meta.graph` (NATS); always on.
+import type { CompiledCaseGraphs } from "./assemble.js";
 import { getNodeLabels } from "./utils/nodeWrapper.js";
 
 /** One node of the compiled graph, as reported to a client. */
 export interface StructureNode {
   id: string;
   /**
-   * English label key, or `undefined` for a node that has one (every
-   * `traceNode`-wrapped node does — see `nodeWrapper.ts`) but whose label
-   * hasn't been recorded for some reason. Never localized here — issue 15
-   * §4's settled reason: the structure is language-independent and
-   * cacheable, whereas a localized response would need a `language`
-   * parameter and a cache entry per language for data that never varies by
-   * language. A client wanting localization already has it on the SSE
-   * `label` event, per job.
+   * English label key; undefined if no label recorded. Never localized:
+   * structure stays language-independent and cacheable. Localized labels come
+   * on the per-job `label` event.
    */
   labelKey?: string;
 }
@@ -33,39 +24,47 @@ export interface GraphStructure {
   edges: StructureEdge[];
 }
 
-/**
- * LangGraph's own synthetic per-(sub)graph nodes. They never run a
- * `traceNode`-wrapped function and can never emit an event, so they are
- * excluded here — including them would fail the "every node in the
- * structure can emit an event" half of the issue 15 §6 bidirectional test,
- * and they carry no useful information for a client rendering the pipeline.
- */
+/** LangGraph's synthetic `__start__`/`__end__` nodes never emit events; excluded. */
 function isSynthetic(nodeId: string): boolean {
   const leaf = nodeId.split(":").pop()!;
   return leaf === "__start__" || leaf === "__end__";
 }
 
 /**
- * Build the structure response from the deployment's actually-compiled
- * graph. Reuses exactly `getGraphAsync({ xray: true })` — the same call
- * `02graphs/exportGraphs.ts` uses to draw mermaid diagrams — so the two
- * must not drift (issue 15 §4).
+ * Structure of the compiled graphs via `getGraphAsync({ xray: true })`, same
+ * call as `scripts/exportGraphs.ts`. Union of plan and case graphs (mount
+ * names never collide), in execution order. No edge between them: the job
+ * service runs one after the other.
  */
 export async function buildGraphStructure(
-  caseGraph: CompiledCaseGraph
+  graphs: Pick<CompiledCaseGraphs, "plan" | "case"> &
+    Partial<Pick<CompiledCaseGraphs, "outlineOut" | "reviewIn">>
 ): Promise<GraphStructure> {
-  const graph = await caseGraph.getGraphAsync({ xray: true });
   const labels = getNodeLabels();
+  const nodes: StructureNode[] = [];
+  const edges: StructureEdge[] = [];
 
-  const nodes = Object.keys(graph.nodes)
-    .filter((id) => !isSynthetic(id))
-    .map((id) =>
-      labels[id] !== undefined ? { id, labelKey: labels[id] } : { id }
-    );
+  // Middle translation graphs (sandwich on only), in plan-mode run order.
+  const ordered = [
+    graphs.plan,
+    graphs.outlineOut,
+    graphs.reviewIn,
+    graphs.case,
+  ].filter((g) => g !== undefined);
 
-  const edges = graph.edges
-    .filter((e) => !isSynthetic(e.source) && !isSynthetic(e.target))
-    .map((e) => ({ source: e.source, target: e.target }));
+  for (const compiled of ordered) {
+    const graph = await compiled.getGraphAsync({ xray: true });
+    for (const id of Object.keys(graph.nodes)) {
+      if (isSynthetic(id)) continue;
+      nodes.push(
+        labels[id] !== undefined ? { id, labelKey: labels[id] } : { id }
+      );
+    }
+    for (const e of graph.edges) {
+      if (isSynthetic(e.source) || isSynthetic(e.target)) continue;
+      edges.push({ source: e.source, target: e.target });
+    }
+  }
 
   return { nodes, edges };
 }

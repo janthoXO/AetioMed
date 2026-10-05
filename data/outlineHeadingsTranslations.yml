@@ -1,0 +1,9 @@
+# Curated outline section-title translations; they always win over generated
+# ones. Titles not listed here are translated on demand and cached in the DB,
+# never written back to this file.
+German:
+  General: Allgemein
+  Patient: Patient:in
+  Chief complaint: Vorstellungsgrund
+  Anamnesis: Anamnese
+  Procedures: Untersuchungen

@@ -201,6 +201,37 @@ export function checkSkeleton(
   return { ok: true };
 }
 
+/** Outline section text per presentation field: what the blinded solver reads for a field not generated (#205). */
+export type PresentationSections = {
+  patient: string;
+  chiefComplaint: string;
+  anamnesis: string;
+};
+
+/**
+ * Slices the presentation sections out of a skeleton-checked outline, by
+ * position: anamnesis keeps its `### <category>` subsections. Never `## General`
+ * (pedagogy) or `## Procedures` (results strategy, written knowing the diagnosis).
+ */
+export function presentationSections(
+  segments: OutlineSegments
+): PresentationSections {
+  const fixed = segments.flatMap((s, i) => (s.fixed ? [i] : []));
+  const categoryCount = fixed.length - SECTION_KEYS.length;
+  const anchor = SECTION_KEYS.indexOf(CATEGORY_ANCHOR);
+  // Section k's heading; sections after the anchor shift by the category count.
+  const heading = (k: number) => fixed[k > anchor ? k + categoryCount : k]!;
+  const body = (key: keyof typeof OUTLINE_SECTIONS) => {
+    const k = SECTION_KEYS.indexOf(key);
+    return joinOutline(segments.slice(heading(k) + 1, heading(k + 1)));
+  };
+  return {
+    patient: body("patient"),
+    chiefComplaint: body("chiefComplaint"),
+    anamnesis: body("anamnesis"),
+  };
+}
+
 /** Whether `segments` has canonical alternating shape; a handed-back plan must pass before skeleton check. */
 export function isCanonicalShape(segments: OutlineSegments): boolean {
   return (

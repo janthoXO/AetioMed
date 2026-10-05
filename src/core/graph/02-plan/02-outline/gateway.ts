@@ -45,7 +45,8 @@ const DIFFICULTY_STRATEGY: Record<Difficulty, string> = {
  * Headings are server-owned skeleton (`outlineSkeleton`) reproduced in `<fixed>`
  * tags; mismatch rejected and retried with error fed back (validation, not grammar).
  * All sections always outlined regardless of `generationFlags`: procedure
- * results need patient/presentation/anamnesis, and plan reviewer edits one stable shape.
+ * results need patient/presentation/anamnesis, the blinded solver reads the
+ * section of a field not generated (#205), and plan reviewer edits one stable shape.
  */
 export async function generateCaseOutline(
   runtime: GraphRuntime,
@@ -90,15 +91,16 @@ This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents g
     section(
       "Instructions",
       `1. Write the outline under the fixed headings listed in "Structure", with hard, concrete data in each section:
-   - General: the clinical picture — select a clinically coherent subset of the reference symptoms (see "Medical basis", when present) to feature, with concrete onset, duration, severity, timeline, and any distractors the difficulty strategy calls for.
+   - General: the clinical picture and its teaching design — select a clinically coherent subset of the reference symptoms (see "Medical basis", when present) to feature, with concrete onset, duration, severity and timeline; which symptoms are hallmark signs; which are distractors and which differential diagnosis each points to; how the difficulty strategy is applied. ALL pedagogical information belongs here and nowhere else.
    - Patient: exact age, sex, height (in cm), weight (in kg), and any relevant demographic details.
    - Chief complaint: the specific presenting problem in one or two factual sentences.
    - Anamnesis: under each intake category heading, the concrete facts to state (history items, medications with names and doses, lifestyle details, family history).
    - Procedures: the workup / procedure results strategy — how procedure and lab results should be shaped per the difficulty strategy, so a downstream agent generating those results can follow it.
 2. Downstream generators must be able to write their field using ONLY facts from this outline. Any fact not specified here does not exist. Do not leave placeholders or vague descriptions.
-3. Make sure that all sections are clinically coherent with each other.
-4. The diagnosis must never be explicitly named anywhere in the outline's content — the student must deduce it.
-5. Return ONLY the outline. Do not include introductory text, acknowledgments, or conversational filler.`
+3. The Patient, Chief complaint and Anamnesis sections state FACTS ONLY, as the patient's record would: no pedagogical annotations, no hints, no labels such as "hallmark", "classic sign", "distractor" or "red herring", and no reasoning about what a finding suggests. Each of these sections must be self-contained: repeat in it every fact its field needs (onset, duration, severity, timeline), even when General already describes it — a reader of only that section must get every fact.
+4. Make sure that all sections are clinically coherent with each other.
+5. The diagnosis must never be explicitly named anywhere in the outline's content — the student must deduce it.
+6. Return ONLY the outline. Do not include introductory text, acknowledgments, or conversational filler.`
     ),
 
     section(
@@ -231,7 +233,7 @@ export async function evaluateOutline(
 
     section(
       "Dimension 2: Clinical consistency",
-      `1. Diagnosis Secrecy (Pedagogical): The target diagnosis MUST NOT be explicitly named anywhere in the blueprint's field content (the student is supposed to deduce it).
+      `1. Diagnosis Secrecy (Pedagogical): The target diagnosis MUST NOT be explicitly named anywhere in the blueprint's field content (the student is supposed to deduce it). In addition, the Patient, Chief complaint and Anamnesis sections must state facts only: flag any pedagogical annotation or hint there — a symptom labelled as hallmark, classic, typical, a distractor or red herring, or any remark on what a finding suggests. Such notes belong in General only. Also flag a field section that relies on General for a fact it needs instead of stating that fact itself.
 2. Clinical Coherence: Do the planned fields logically align? (e.g., Does the workup strategy make sense for the chief complaint? Does the planned anamnesis contradict the patient's age/gender?)
 3. Realism: Are there impossible biometric values (e.g., a 2-year-old weighing 70kg), contradictory timelines, or medical hallucinations?
 

@@ -27,6 +27,7 @@ import { createRepos } from "./adapters/repos.js";
 import { createYamlCatalogs } from "./adapters/catalog/index.js";
 import { validateCatalogsOrExit } from "./adapters/catalog/startupValidation.js";
 import { createLlmPort } from "./adapters/ai/llm.js";
+import { createSystemOnePort } from "./adapters/ai/systemOne.js";
 import { createTinyldDetector } from "./adapters/language/tinyldDetector.js";
 
 const AppEnvSchema = z
@@ -39,6 +40,11 @@ const AppEnvSchema = z
       .int()
       .min(1)
       .default(DEFAULT_MAX_CONCURRENT_GENERATIONS),
+    SYSTEM_ONE_URL: z.url().optional(),
+    SYSTEM_ONE_MODEL: z.string().default("nimble"),
+    SYSTEM_ONE_API_KEY: z.string().optional(),
+    SYSTEM_ONE_PICK_THRESHOLD: z.coerce.number().min(0).max(1).default(0.5),
+    SYSTEM_ONE_PICK_MAX: z.coerce.number().int().min(1).default(3),
   })
   .transform((env) => ({
     features: env.FEATURES.split(",")
@@ -46,6 +52,15 @@ const AppEnvSchema = z
       .filter(Boolean),
     symptomCacheTtlDays: env.SYMPTOM_CACHE_TTL_DAYS,
     maxConcurrentGenerations: env.MAX_CONCURRENT_GENERATIONS,
+    systemOne: env.SYSTEM_ONE_URL
+      ? {
+          url: env.SYSTEM_ONE_URL,
+          model: env.SYSTEM_ONE_MODEL,
+          apiKey: env.SYSTEM_ONE_API_KEY,
+          pickThreshold: env.SYSTEM_ONE_PICK_THRESHOLD,
+          pickMax: env.SYSTEM_ONE_PICK_MAX,
+        }
+      : undefined,
   }));
 
 /**
@@ -64,6 +79,7 @@ export async function createApp(): Promise<{
     features: featureList,
     symptomCacheTtlDays,
     maxConcurrentGenerations,
+    systemOne: systemOneEnv,
   } = AppEnvSchema.parse(process.env);
   const features = new Set(featureList);
   console.log(`[app] Feature flags: ${[...features].join(", ") || "none"}`);
@@ -77,6 +93,11 @@ export async function createApp(): Promise<{
     cacheDir: resolveCacheDir(process.env),
     symptomCacheTtlDays,
   });
+  if (systemOneEnv) {
+    console.log(
+      `[app] Blinded procedure pick: System One at ${systemOneEnv.url} (${systemOneEnv.model}), threshold ${systemOneEnv.pickThreshold}, max ${systemOneEnv.pickMax}`
+    );
+  }
   const graph = initGraph({
     bus,
     config: graphConfig,
@@ -85,6 +106,11 @@ export async function createApp(): Promise<{
     umlsFloor: repos.umlsFloor,
     symptomCache: repos.symptomCache,
     tracer: otel.tracer,
+    systemOne: systemOneEnv && {
+      port: createSystemOnePort(systemOneEnv),
+      pickThreshold: systemOneEnv.pickThreshold,
+      pickMax: systemOneEnv.pickMax,
+    },
   });
   // Must run after graph construction: labels' base key set is
   // `getKnownLabels()`, populated by `traceNode` while graph builds. Earlier =

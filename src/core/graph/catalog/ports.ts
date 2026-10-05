@@ -71,6 +71,20 @@ export interface AnamnesisCatalog {
 }
 
 /**
+ * Outline section-title translations (`OUTLINE_SECTIONS`), keyed by the
+ * English title. Curated YAML always wins; a runtime fill is persisted and
+ * never regenerated.
+ */
+export interface OutlineHeadingCatalog {
+  fromEnglish(title: string, lang: ForeignLanguage): string | undefined;
+  /** Persist `english -> translated` titles for `lang`. */
+  saveTranslations(
+    englishToTarget: Record<string, string>,
+    lang: ForeignLanguage
+  ): void;
+}
+
+/**
  * Trace node label translations, as consumed by `utils/nodeWrapper.ts`
  * (synchronous per-label lookup on the trace hot path) and
  * `assemble.ts` (batch warm-up before generation starts).

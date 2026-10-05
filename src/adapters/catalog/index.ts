@@ -4,6 +4,7 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { Repos } from "../repos.js";
 import { YamlProcedureCatalog } from "./procedures/index.js";
 import { YamlAnamnesisCatalog } from "./anamnesis/index.js";
+import { YamlOutlineHeadingCatalog } from "./outlineHeadings/index.js";
 import { YamlLabelCatalog } from "./labels/index.js";
 import { YamlDiagnosisCatalog } from "./diagnosis/index.js";
 
@@ -12,6 +13,7 @@ export function createYamlCatalogs(repos: Repos): GraphRuntime["catalogs"] {
     procedures: new YamlProcedureCatalog(repos.procedures),
     anamnesis: new YamlAnamnesisCatalog(repos.anamnesis),
     labels: new YamlLabelCatalog(repos.labels),
+    outlineHeadings: new YamlOutlineHeadingCatalog(repos.outlineHeadings),
     diagnosis: new YamlDiagnosisCatalog(repos.diagnosis),
   };
 }
@@ -20,5 +22,6 @@ export type {
   ProcedureCatalog,
   AnamnesisCatalog,
   LabelCatalog,
+  OutlineHeadingCatalog,
   DiagnosisCatalog,
 } from "@/core/graph/catalog/ports.js";

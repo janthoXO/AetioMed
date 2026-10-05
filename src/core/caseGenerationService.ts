@@ -6,7 +6,7 @@ import type { Case } from "@/core/graph/shared/domain/Case.js";
 import type { Language } from "@/core/graph/shared/domain/Language.js";
 import type { RunMode } from "@/core/graph/shared/domain/RunMode.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
-import { runWithContext } from "./graph/utils/context.js";
+import { getRequestContext, runWithContext } from "./graph/utils/context.js";
 import { AppError, OutlineNotAcceptedError } from "./graph/errors/AppError.js";
 import {
   expandFlagsForSolver,
@@ -18,6 +18,7 @@ import {
   restoreSkeletonHeadings,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
+import { localizeHeadings } from "./graph/03-outline-translation/headings.js";
 import type { LanguageDetector } from "./languageDetection/port.js";
 import { resolveLanguage } from "./languageDetection/resolveLanguage.js";
 
@@ -148,11 +149,6 @@ class InvalidPlanError extends AppError {
   }
 }
 
-/** Index-keyed values for the keyed translator. */
-function indexed(texts: string[]): Record<string, string> {
-  return Object.fromEntries(texts.map((text, i) => [String(i), text]));
-}
-
 const NO_DETECTOR: LanguageDetector = { detect: () => undefined };
 
 export function createCaseGenerationService(
@@ -186,22 +182,55 @@ export function createCaseGenerationService(
   const cacheKey = (language: Language, text: string) =>
     `${language}\u0000${text}`;
 
-  /** Whether a plan-mode plan crosses the sandwich for this request. */
+  /** Whether a plan-mode plan is shown in a non-English language. */
+  function localizesPlan(mode: RunMode, language: Language): boolean {
+    return mode === "plan" && language !== "English";
+  }
+
+  /** Whether a plan-mode plan's body crosses the sandwich for this request. */
   function translatesPlan(mode: RunMode, language: Language): boolean {
-    return mode === "plan" && sandwich && language !== "English";
+    return sandwich && localizesPlan(mode, language);
+  }
+
+  /**
+   * Plan for display. Server-owned headings come from the catalogues, never
+   * from a free translation; the body is translated out under the sandwich,
+   * and already in `language` without it.
+   */
+  async function localizePlan(
+    outline: OutlineSegments,
+    language: Language
+  ): Promise<OutlineSegments> {
+    const headings = await localizeHeadings(
+      graph.runtime,
+      outline,
+      language,
+      getRequestContext()
+    );
+    return sandwich
+      ? translatePlanOut(outline, headings, language)
+      : outline.map((segment, i) => ({
+          fixed: segment.fixed,
+          text: headings.get(i) ?? segment.text,
+        }));
   }
 
   async function translatePlanOut(
     english: OutlineSegments,
+    headings: Map<number, string>,
     language: Language
   ): Promise<OutlineSegments> {
     const translated = await graph.translateOutline!(
-      indexed(english.map((s) => s.text)),
+      Object.fromEntries(
+        english.flatMap((segment, i) =>
+          headings.has(i) ? [] : [[String(i), segment.text]]
+        )
+      ),
       "out"
     );
     const expires = now() + PLAN_CACHE_TTL_MS;
     return english.map((segment, i) => {
-      const text = translated[String(i)] ?? segment.text;
+      const text = headings.get(i) ?? translated[String(i)] ?? segment.text;
       planCache.delete(cacheKey(language, text)); // refresh insertion order
       planCache.set(cacheKey(language, text), {
         english: segment.text,
@@ -255,10 +284,13 @@ export function createCaseGenerationService(
     language: Language
   ): Promise<OutlineSegments> {
     const anamnesisCategories = graph.runtime.catalogs.anamnesis.list();
-    const english = translatesPlan(mode, language)
-      ? restoreSkeletonHeadings(await translatePlanIn(plan, language), {
-          anamnesisCategories,
-        })
+    const english = localizesPlan(mode, language)
+      ? restoreSkeletonHeadings(
+          translatesPlan(mode, language)
+            ? await translatePlanIn(plan, language)
+            : plan,
+          { anamnesisCategories }
+        )
       : plan;
     const skeleton = checkSkeleton(english, { anamnesisCategories });
     if (!skeleton.ok) throw new InvalidPlanError(skeleton.message);
@@ -335,8 +367,8 @@ export function createCaseGenerationService(
             return {
               jobId,
               status: "planned",
-              plan: translatesPlan(mode, language)
-                ? await translatePlanOut(planned.outlineSegments, language)
+              plan: localizesPlan(mode, language)
+                ? await localizePlan(planned.outlineSegments, language)
                 : planned.outlineSegments,
               language,
             };

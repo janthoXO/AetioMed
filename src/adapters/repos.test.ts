@@ -25,6 +25,7 @@ describe("repo modules perform no I/O on import", () => {
       import("@/adapters/catalog/procedures/repo.ts"),
       import("@/adapters/catalog/anamnesis/repo.ts"),
       import("@/adapters/catalog/labels/repo.ts"),
+      import("@/adapters/catalog/outlineHeadings/repo.ts"),
       import("@/adapters/catalog/diagnosis/repo.ts"),
       import("@/adapters/symptoms/repo.ts"),
       import("@/adapters/repos.ts"),

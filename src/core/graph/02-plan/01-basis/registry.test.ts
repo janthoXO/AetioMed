@@ -10,6 +10,7 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
+import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 
 const query: BasisQuery = {
@@ -189,6 +190,7 @@ describe("createMedicalBasisRegistry", () => {
         procedures: new InMemoryProcedureCatalog(),
         anamnesis: new InMemoryAnamnesisCatalog(),
         labels: new InMemoryLabelCatalog(),
+        outlineHeadings: new InMemoryOutlineHeadingCatalog(),
         diagnosis: new InMemoryDiagnosisCatalog(),
       },
       log: fakeLog(),

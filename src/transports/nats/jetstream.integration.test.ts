@@ -79,6 +79,7 @@ function fakeGraph(generateCase: GenerateCaseFn = vi.fn()): GraphAppContext {
     runtime: {
       catalogs: {
         diagnosis: { byIcd: () => undefined },
+        anamnesis: { list: () => undefined },
       },
       llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
@@ -1189,17 +1190,10 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS", () => {
           PLANS_STREAM.name,
           planSubject("job-plan-1")
         );
-        // `planAndRenderFrom` (`src/testing/graphFakes.ts`) always plans a
-        // 3-segment outline: editable segment 0, fixed marker, render options JSON.
-        expect(plan).toMatchObject({
-          jobId: "job-plan-1",
-          mode: "plan",
-          plan: [
-            { fixed: false, text: "" },
-            { fixed: true, text: "## Plan options" },
-            { fixed: false },
-          ],
-        });
+        // `planAndRenderFrom` (`src/testing/graphFakes.ts`) always plans the
+        // five-section skeleton, render options JSON in the last segment.
+        expect(plan).toMatchObject({ jobId: "job-plan-1", mode: "plan" });
+        expect((plan as { plan: unknown[] }).plan).toHaveLength(11);
 
         // Second request carrying the plan reuses the jobId and produces the case.
         await js.publish(

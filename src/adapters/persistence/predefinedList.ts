@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { load as parseYaml } from "js-yaml";
+import { loadAll } from "js-yaml";
 import {
   TranslationMappingSchema,
   type TranslationMapping,
@@ -8,7 +8,7 @@ import {
 /**
  * Read a translations YAML (`{ Language: { EnglishTerm: Translation } }`) into
  * its raw map. Bypasses `syncSource` and the hash cache: runs every boot.
- * `yamlFile` must be absolute. Returns `{}` if missing, unparseable or wrongly shaped.
+ * `yamlFile` must be absolute. Returns `{}` if missing, empty, unparseable or wrongly shaped.
  * `parse` overrides the default flat-shape parse, for a domain whose YAML is
  * structured differently (e.g. procedures' tree) — see `createTranslationStore`.
  */
@@ -35,7 +35,8 @@ export function readDeclaredTranslations(
 
   let parsed: unknown;
   try {
-    parsed = parseYaml(raw);
+    // No document (empty, comments only) = no translations; see `syncSource`.
+    parsed = loadAll(raw)[0] ?? {};
   } catch {
     console.warn(
       `[predefinedList] Could not parse ${yamlFile}, skipping key extraction.`

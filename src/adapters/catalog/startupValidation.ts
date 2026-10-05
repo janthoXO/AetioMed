@@ -153,9 +153,11 @@ type MissingLanguageProblem = {
 };
 
 /**
- * Every catalogue needs at least one translation entry per configured
- * non-English language; empty/absent means the language was never wired up.
- * Diagnosis is not exempt here, only from the unknown-key check.
+ * A translations file that declares any language needs at least one entry per
+ * configured non-English language; otherwise that language was never wired up.
+ * A file declaring no language at all (missing or empty) is a deliberately
+ * untranslated catalogue: its keys are LLM-translated at runtime or fall back
+ * to English. Diagnosis is not exempt here, only from the unknown-key check.
  */
 export function findMissingLanguages(
   specs: CatalogueSpec[],
@@ -165,6 +167,7 @@ export function findMissingLanguages(
   for (const language of languages) {
     if (language === "English") continue;
     for (const spec of specs) {
+      if (Object.keys(spec.translations).length === 0) continue;
       const entries = spec.translations[language];
       if (!entries || Object.keys(entries).length === 0) {
         problems.push({ catalogue: spec.catalogue, file: spec.file, language });

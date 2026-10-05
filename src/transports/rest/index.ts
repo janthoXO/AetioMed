@@ -30,11 +30,7 @@ export interface RestAppOptions {
   graph: GraphAppContext;
   service: CaseGenerationService;
   jobEvents: JobEventChannel;
-  /**
-   * Where the label stream and `DELETE` find a job by id: in-process, or
-   * over NATS when NATS is enabled (#145). Chosen by the composition root,
-   * so this module never imports the NATS transport.
-   */
+  /** Finds jobs by id for label stream and `DELETE`: in-process or NATS. Chosen by composition root; no NATS import here. */
   directory: JobDirectory;
   readModel: ReadModel;
   features: Set<string>;
@@ -70,8 +66,7 @@ export function createRestApp(opts: RestAppOptions): express.Express {
       ...(opts.heartbeatMs !== undefined && { heartbeatMs: opts.heartbeatMs }),
     })
   );
-  // Labels and the topology they are keyed against are always on (#140):
-  // they are a product feature of the streaming API, not telemetry.
+  // Labels and graph topology always on.
   apiRouter.use("/cases", createLabelsRouter(directory));
   apiRouter.use("/", createGraphRouter(readModel));
   apiRouter.use("/diagnosis", createDiagnosisRouter(readModel));
@@ -84,12 +79,8 @@ export function createRestApp(opts: RestAppOptions): express.Express {
 }
 
 /**
- * Start the REST transport. Constructed explicitly from resolved config by
- * the composition root (`app.ts`) — no loader, no topological sort, no
- * cascade-skip. Called when the `REST` flag is set.
- *
- * Returns a closer rather than registering its own signal handlers — see
- * `src/shutdown.ts` for why shutdown is owned by the composition root.
+ * Start the REST transport. Returns a closer; shutdown owned by composition
+ * root (`src/shutdown.ts`), no signal handlers here.
  */
 export async function startRestServer(
   opts: RestAppOptions
@@ -106,11 +97,8 @@ export async function startRestServer(
 
   return {
     async close() {
-      // `server.close()` alone stops accepting new connections and then
-      // waits for existing ones to end — but an SSE label stream
-      // (`GET /api/cases/:jobId/labels`) holds its connection open by
-      // design, so that wait could outlast the shutdown deadline. Destroy
-      // every open socket first so close() can actually resolve.
+      // SSE streams hold connections open, so `server.close()` alone could
+      // outlast the shutdown deadline. Destroy sockets first.
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => {
         server.close((err) => (err ? reject(err) : resolve()));

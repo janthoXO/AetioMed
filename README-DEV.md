@@ -52,7 +52,6 @@ Copy `.env.example` to `.env` and adjust. The most important variable is `FEATUR
 | `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`            | —                       | Same, for the `translator` role                                                                                                                                             |
 | `ALLOWED_LLMS`                                                        | —                       | `ollama:model1,google:model2` — requires the `ALLOW_LLMS` flag                                                                                                              |
 | `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                       |
-| `PROCEDURE_PRESELECTION`                                              | `false`                 | `true`/`1` selects the category-scoped procedure strategy                                                                                                                   |
 | `LANGUAGES`                                                           | `English,German`        | Comma-separated deployment language set; must include `English`. A request's `language` is validated against it (400 if outside)                                            |
 | `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables offline n-gram detection for a request that omits `language`; not a graph flag                                                                           |
 | `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally allows one LLM call when the detector is below threshold; requires `LANGUAGE_AUTO_DETECT`                                                           |
@@ -124,7 +123,7 @@ src/
 ├── api/                      shared request/response Zod schemas, JobId rule, wire codec
 ├── core/
 │   ├── app.ts                the composition root — builds and starts everything
-│   ├── caseGenerationService.ts  the seam both transports call
+│   ├── caseGenerationService.ts  the seam both transports call; stateless between calls
 │   ├── concurrency.ts        the FIFO limiter behind MAX_CONCURRENT_GENERATIONS
 │   ├── jobEvents/            the per-job event channel, progress labels, the JobDirectory port
 │   ├── readModel.ts          catalogue/meta/graph reads, served identically by both transports
@@ -135,7 +134,12 @@ src/
 │       ├── repos.ts          composes every repo into one bundle
 │       ├── config.ts         graph env schema
 │       ├── structure.ts      the actually-compiled topology behind GET /api/graph
+│       ├── outline/          the outline's segment model — parse/render/validate
 │       ├── 02graphs/         LangGraph graphs, numbered by pipeline phase
+│       │   ├── caseGraph.ts  assembles the plan graph and the case graph
+│       │   ├── outline-translation/  translates a plan out to the requester and back in
+│       │   └── 02case-generation/
+│       │       └── 01plan/   the outline generate ⇄ judge loop (mounted into the plan graph)
 │       ├── 03aigateway/      prompt building, LLM calls, retries, output parsing
 │       ├── catalog/          one vertical slice per catalogue domain (repo + port adapters)
 │       ├── persistence/      shared SQLite infrastructure
@@ -149,9 +153,10 @@ src/
 │   ├── rest/                 Express app (createRestApp), SSE framing, routers
 │   └── nats/                 streams + worker, per-job responders, progress publisher,
 │                             meta service, and the NATS JobDirectory adapter
-└── observability/
-    ├── otel.ts               the OTel adapter — exporter selection, spans, log records
-    └── tracePayload.ts       the size cap on a node's output in a log record
+├── observability/
+│   ├── otel.ts               the OTel adapter — exporter selection, spans, log records
+│   └── tracePayload.ts       the size cap on a node's output in a log record
+└── testing/                  shared test fakes (graphFakes.ts) used across the suite
 ```
 
 The numbered prefixes under `core/graph/` encode pipeline order: graphs call tools, tools call the aigateway. `persistence/`, `catalog/`, `symptoms/`, `medicalBasis/` and `modality/` are deliberately unnumbered — they are not pipeline steps.
@@ -172,7 +177,7 @@ To publish new events, augment `EventMap` via module augmentation on `core/event
 
 REST and NATS are peers: every product feature is reachable from both, and a client speaking only one of them loses nothing. They differ only in delivery guarantees — REST is **connection-scoped** (a job lives as long as its HTTP request), NATS is **durable** (JetStream persists requests and results). Neither transport holds job state of its own; it all lives in core.
 
-**The per-job event channel** (`core/jobEvents/channel.ts`) is created once in `app.ts`. `CaseGenerationService` opens a job's channel and closes it with the job's outcome; transports only subscribe. A job's events are `accepted` → `label`… → `complete`, and those names are the wire names on both transports — the SSE `event:` name on REST, the last subject token on NATS — so no adapter keeps a mapping table. `complete` carries the outcome (`done` / `failed` / `cancelled`), never the case.
+**The per-job event channel** (`core/jobEvents/channel.ts`) is created once in `app.ts`. `CaseGenerationService` opens a job's channel and closes it with the job's outcome; transports only subscribe. A job's events are `accepted` → `label`… → `complete`, and those names are the wire names on both transports — the SSE `event:` name on REST, the last subject token on NATS — so no adapter keeps a mapping table. `complete` carries the outcome (`done` / `planned` / `failed` / `cancelled`), never the case.
 
 **Labels** (`core/jobEvents/labels.ts`) are produced from the graph's node lifecycle events: every node emits `started` and a terminal `completed` or `failed`, localized to the request's language with an English fallback, and never with a payload. They are always on. The node's output is the operator's, and goes to OpenTelemetry instead (see Observability below).
 
@@ -194,11 +199,11 @@ Ownership over NATS is **subscription interest**: the replica running a job subs
 
 ### Graph Assembly
 
-`assembleCaseGraph(deps, flags)` is pure wiring, and follows one rule:
+`assembleCaseGraphs(deps, flags)` builds the plan graph and the case graph (plus, with the sandwich on, the two plan-translation graphs). It is pure wiring, and follows one rule:
 
 > **Compile on what the deployer chose; branch on what the caller asked for.**
 
-`TRANSLATION_SANDWICH` and `PROCEDURE_PRESELECTION` are deployment config and are compiled away — an absent flag means an **absent node**, not a skipped one. `generationFlags`, `difficulty` and `language` are per-request and stay runtime branches. All four flag combinations are compiled eagerly at boot; `generateCase` is bound to the one the config selects.
+`TRANSLATION_SANDWICH` is deployment config and is compiled away — an absent flag means an **absent node**, not a skipped one. `generationFlags`, `difficulty` and `language` are per-request and stay runtime branches. Both flag variants are compiled eagerly at boot; `planCase`/`renderCase` are bound to the one the config selects.
 
 ### Tool Pattern
 
@@ -227,7 +232,7 @@ Retry prompts get `summarizeValidationError()` output — a few short actionable
 
 ### Content Parts
 
-`chiefComplaint`, each `anamnesis[].answer` and each `procedures[].result` are ordered, non-empty arrays of `ContentPart` (`{ type, value: Uint8Array, alt }`). The array **composes** one field value; it is not a list of alternative renditions.
+`chiefComplaint`, each `anamnesis[].answer` and each procedure's `result` (`case.procedures`' leaves — see below) are ordered, non-empty arrays of `ContentPart` (`{ type, value: Uint8Array, alt }`). The array **composes** one field value; it is not a list of alternative renditions.
 
 `value` is the rendered artifact and `alt` a short description of what it conveys; the two are independent, and `alt` is authored by the planner, never by a provider. `textOf(parts)` is still the only path from content to a prompt, but it is MIME-dispatched: for a `text/*` part the prose lives in `value` and is decoded from it, and anything else falls back to `alt`. Add a MIME row to the table in `models/ContentPart.ts` (say, `application/pdf`) rather than reaching for a runtime registration API. **Bytes never reach a prompt or an LLM output schema.** Wire encoding (UTF-8 for `text/*`, base64 otherwise) lives in one place, `src/api/contentWire.ts`, and always carries `alt`.
 
@@ -249,11 +254,12 @@ Tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`.
 
 `CATALOG_DIR` (default `data/`) holds the sources synced into SQLite at startup:
 
-- `procedures.yml` / `proceduresTranslations.yml` — approved procedure names. Names may be prefixed `"Category: Name"`; uncategorized entries fall into a synthetic `"General"` bucket.
+- `procedures.yml` / `proceduresTranslations.yml` — approved procedure catalogue: a tree of `categories` (name + nested `categories`/`procedures`, any depth) and root-level `procedures`. Translations mirror the same tree, each node keyed by its own English `key` alongside its translated `name`.
 - `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions
 - `labelTranslations.yml` — progress label translations
-- `diagnosis_symptoms.json` — UMLS symptom floor per ICD code (loaded directly, not via the DB sync)
+- `outlineHeadingsTranslations.yml` — plan-mode outline section-title translations (missing titles are LLM-translated once and cached)
+- `diagnosis_symptoms.json` — UMLS symptoms per ICD code (loaded directly, not via the DB sync)
 
 The generated database lives under `CACHE_DIR` (default `data/cache/`), deliberately a separate directory so a deployer can mount their own catalogues without clobbering it. `scripts/extract-icd11*.ts` build the diagnosis YAML from ICD-11 source data and are run manually.
 
@@ -261,19 +267,52 @@ The generated database lives under `CACHE_DIR` (default `data/cache/`), delibera
 
 Requires the `REST` feature flag.
 
-| Method   | Path                       | Purpose                                                                                  |
-| -------- | -------------------------- | ---------------------------------------------------------------------------------------- |
-| `GET`    | `/api/health`              | Health check                                                                             |
-| `GET`    | `/api/features`            | Active feature flags                                                                     |
-| `GET`    | `/api/allowedLlms`         | Allowlisted LLMs (when `ALLOW_LLMS` is set)                                              |
-| `GET`    | `/api/diagnosis`           | List predefined diagnoses                                                                |
-| `GET`    | `/api/procedures`          | List predefined procedures                                                               |
-| `GET`    | `/api/graph`               | Compiled graph topology — nodes, edges, English label keys — for this deployment's flags |
-| `POST`   | `/api/cases`               | Generate a case — streamed as SSE, or blocking JSON (see below)                          |
-| `GET`    | `/api/cases/:jobId/labels` | Watch any job's progress as SSE — `404` for an unknown job                               |
-| `DELETE` | `/api/cases/:jobId`        | Cancel any job — `204` cancelled, `404` finished or unknown, `504` owner unreachable     |
+| Method   | Path                       | Purpose                                                                                                                                   |
+| -------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET`    | `/api/health`              | Health check                                                                                                                              |
+| `GET`    | `/api/features`            | Active feature flags                                                                                                                      |
+| `GET`    | `/api/allowedLlms`         | Allowlisted LLMs (when `ALLOW_LLMS` is set)                                                                                               |
+| `GET`    | `/api/diagnosis`           | List predefined diagnoses                                                                                                                 |
+| `GET`    | `/api/procedures`          | The approved procedure catalogue as a tree (**breaking**, see below); absent when freeform                                                |
+| `GET`    | `/api/graph`               | Compiled graph topology — nodes, edges, English label keys — for this deployment's flags                                                  |
+| `POST`   | `/api/cases`               | Generate a case — streamed as SSE, or blocking JSON (see below); plan mode stops at the plan, and a `plan` in the body generates from one |
+| `GET`    | `/api/cases/:jobId/labels` | Watch any job's progress as SSE — `404` for an unknown job                                                                                |
+| `DELETE` | `/api/cases/:jobId`        | Cancel any job — `204` cancelled, `404` finished or unknown, `504` owner unreachable                                                      |
 
 A request body needs either `icd` or `diagnosis`; `generationFlags` defaults to all four fields and must name at least one; `difficulty` defaults to `medium`. `jobId` is optional — the server mints a UUID when it is omitted — and must match `[A-Za-z0-9_-]{1,128}`, because it is also a NATS subject token. The response echoes the resolved `language`, and content-bearing fields are wire-encoded (see Content Parts).
+
+**Breaking change: `procedures` is now a tree, not a flat array.** Both `GET /api/procedures`/`catalog.procedures` and `Case.procedures` on a generated case changed shape — an approved catalogue used to be a flat list of (optionally `"Category: Name"`-prefixed) strings, and a case's ordered procedures a flat array. Both are now the same recursive shape:
+
+```ts
+type ProcedureTree<Leaf> = {
+  categories: ({ name: string } & ProcedureTree<Leaf>)[];
+  procedures: Leaf[];
+};
+```
+
+`GET /api/procedures` returns a `ProcedureTree<{ name: string }>` (the catalogue), or nothing when no catalogue is configured (freeform). A generated case's `procedures` is a `ProcedureTree<{ name, order, relevance, result }>` — `order` is the procedure's 0-based position in the order it was actually worked up, since the tree groups by category and the workup sequence would otherwise be lost:
+
+```json
+{
+  "procedures": {
+    "procedures": [],
+    "categories": [
+      {
+        "name": "Cardiology (without Radiology)",
+        "categories": [],
+        "procedures": [
+          {
+            "name": "Resting ECG",
+            "order": 0,
+            "relevance": "obligatory",
+            "result": [{ "type": "text/plain", "value": "…", "alt": "…" }]
+          }
+        ]
+      }
+    ]
+  }
+}
+```
 
 ### `POST /api/cases`
 
@@ -308,6 +347,19 @@ data: {"patient": {…}, "jobId":"3fa2…","language":"English"}
 
 `event: accepted` is written before any node runs, so the client never learns its jobId too late to follow it. A `: ping` comment is written every 15 seconds regardless of label activity, so a proxy never closes a connection that merely looks idle during a long node. On failure the stream ends with `event: error` instead of `event: result`. A duplicate `jobId` is a `409` on either path, answered before any stream opens.
 
+**Plan mode** (`"mode": "plan"`) stops the call once the outline exists and hands it back as
+`event: plan` instead of `event: result` (a normal-mode stream gets `event: plan` too, partway
+through, on the way to its `event: result` — the generator hands the plan over rather than
+pausing on it). Send the same request back with that outline (possibly edited) as `plan` to
+generate the case from it, reusing the same `jobId` — the one case a `jobId` may be resent for.
+
+The plan is an array of segments, `{ "fixed": boolean, "text": string }`, alternating editable and
+fixed: even indices are editable (possibly empty text), odd indices are the server-owned section
+headings — `## General`, `## Patient`, `## Chief complaint`, `## Anamnesis` (followed by one
+`### <category>` per anamnesis category) and `## Procedures`. Edit only the editable segments. A
+plan that no longer alternates is rejected as `400 INVALID_REQUEST_BODY`; one whose headings no
+longer match the skeleton as `400 INVALID_PLAN`.
+
 **Disconnecting cancels the job**, on both paths. REST keeps no result store, so there is nothing to come back to; a client that must survive a dropped connection should use NATS.
 
 ### Watching and cancelling
@@ -327,15 +379,16 @@ An observer can **watch** a job but not **collect** it: `complete` carries the o
 
 Requires the `NATS` feature flag. Subjects are split on **durability**, not on feature: a JetStream stream's retention applies to everything its filter captures, so each retention policy gets its own stream (`transports/nats/subjects.ts`).
 
-| Subject                                            | Kind                                 | Purpose                                                                                    |
-| -------------------------------------------------- | ------------------------------------ | ------------------------------------------------------------------------------------------ |
-| `cases.request.generate`                           | JetStream `CASE_REQUESTS`, workqueue | Submit a job — the same body as `POST /api/cases`, with `jobId` **required**               |
-| `cases.result.<jobId>`                             | JetStream `CASE_RESULTS`, limits, 1h | The job's case or error — replayable, by any number of readers                             |
-| `cases.progress.<jobId>.{accepted,label,complete}` | core NATS, fan-out                   | The job's progress events — the same payloads as the SSE stream                            |
-| `cases.cancel.<jobId>`                             | core NATS, request/reply             | Cancel → `{cancelled}`; "no responders" for an unknown or finished job                     |
-| `cases.status.<jobId>`                             | core NATS, request/reply             | `{state: "active"}` or `{state: "terminal", complete}`; "no responders" for an unknown job |
-| `catalog.diagnosis`, `catalog.procedures`          | request/reply, service `aetiomed`    | The same payloads as `GET /api/diagnosis` and `/api/procedures`                            |
-| `meta.features`, `meta.allowedLlms`, `meta.graph`  | request/reply, service `aetiomed`    | The same payloads as `GET /api/features`, `/api/allowedLlms` and `/api/graph`              |
+| Subject                                            | Kind                                 | Purpose                                                                                                                          |
+| -------------------------------------------------- | ------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- |
+| `cases.request.generate`                           | JetStream `CASE_REQUESTS`, workqueue | Submit a job — the same body as `POST /api/cases`, with `jobId` **required**; a `plan` field generates from it                   |
+| `cases.result.<jobId>`                             | JetStream `CASE_RESULTS`, limits, 1h | The job's case or error — replayable, by any number of readers                                                                   |
+| `cases.plan.<jobId>`                               | JetStream `CASE_PLANS`, limits, 1h   | The job's plan — a plan-mode stop, or a normal-mode job's plan on the way to its result; replayable, like `cases.result.<jobId>` |
+| `cases.progress.<jobId>.{accepted,label,complete}` | core NATS, fan-out                   | The job's progress events — the same payloads as the SSE stream                                                                  |
+| `cases.cancel.<jobId>`                             | core NATS, request/reply             | Cancel → `{cancelled}`; "no responders" for an unknown or finished job                                                           |
+| `cases.status.<jobId>`                             | core NATS, request/reply             | `{state: "active"}` or `{state: "terminal", complete}`; "no responders" for an unknown job, or a `planned` job past its stop     |
+| `catalog.diagnosis`, `catalog.procedures`          | request/reply, service `aetiomed`    | The same payloads as `GET /api/diagnosis` and `/api/procedures`                                                                  |
+| `meta.features`, `meta.allowedLlms`, `meta.graph`  | request/reply, service `aetiomed`    | The same payloads as `GET /api/features`, `/api/allowedLlms` and `/api/graph`                                                    |
 
 **Why the jobId is required.** It is the address of the result: a client subscribes to `cases.result.<jobId>` before or after submitting, and a server-minted id would be unfindable. A request without a valid one is terminated, not processed.
 
@@ -345,7 +398,7 @@ Requires the `NATS` feature flag. Subjects are split on **durability**, not on f
 
 **The reads** run as a NATS micro-service (`@nats-io/services`, `metaService.ts`), so a NATS-only client can discover them through `$SRV.PING|INFO|STATS.aetiomed`.
 
-**Upgrading from before the stream split.** The old `cases` stream (`cases.>`, workqueue) overlaps both new streams and cannot be migrated in place. Startup refuses to run while it exists. Delete it by hand — `nats stream rm cases` — after checking it holds no unprocessed requests.
+**Upgrading from before the stream split.** The old `cases` stream (`cases.>`, workqueue) overlaps every stream above and cannot be migrated in place. Startup refuses to run while it exists. Delete it by hand — `nats stream rm cases` — after checking it holds no unprocessed requests.
 
 ## Observability
 
@@ -387,7 +440,7 @@ NATS_TEST_URL=nats://localhost:4222 pnpm test
 
 CI starts that container before `pnpm test`, so they always run there — including a two-replica test of the NATS backbone.
 
-**`tsconfig.json` excludes `**/_.test.ts`and includes only`src/\*\*/_`**, so `tsc`does not typecheck test files or`scripts/`. A type error in a test surfaces only if an assertion happens to catch it — verify tests by running them, not by trusting the build.
+`tsconfig.json` excludes `**/*.test.ts` and includes only `src/**/*`, so `tsc` does not typecheck test files or `scripts/`. A type error in a test surfaces only if an assertion happens to catch it — verify tests by running them, not by trusting the build.
 
 For pipeline changes, run a generation with `DEBUG` in `FEATURES` and read each node's output from the console exporter. `DEBUG` also adds `cors` and request logging to the REST app.
 
@@ -399,4 +452,4 @@ For pipeline changes, run a generation with `DEBUG` in `FEATURES` and read each 
 ## Additional Tools
 
 - **Bruno**: ready-made API requests in `docs/bruno/` for exercising the endpoints.
-- **Graph diagrams**: `docs/graphs/case-graph.<topology>.svg`, regenerated by `pnpm graph:export`. `<topology>` is `none` or `translation-sandwich` — `PROCEDURE_PRESELECTION` swaps a strategy adapter without changing the graph's shape, so it does not get its own diagram.
+- **Graph diagrams**: `docs/graphs/<mode>.<variant>.svg`, regenerated by `pnpm graph:export` (`scripts/exportGraphs.ts`). `<mode>` is `plan-mode` or `normal-mode`, each drawn end to end across the plan and case graphs; `<variant>` is `none` or `translation-sandwich`.

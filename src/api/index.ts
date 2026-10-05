@@ -1,5 +1,4 @@
-// Shared request/response Zod schemas for case generation, consumed by both
-// transports (rest, nats).
+// Shared request/response Zod schemas for both transports (rest, nats).
 
 export {
   makeCaseGenerationRequestSchema,

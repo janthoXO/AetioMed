@@ -1,161 +1,215 @@
-procedures:
-  - "Cardiology (without Radiology): Resting ECG"
-  - "Cardiology (without Radiology): Stress ECG"
-  - "Cardiology (without Radiology): Holter ECG"
-  - "Cardiology (without Radiology): Ambulatory Blood Pressure Monitoring"
-  - "Cardiology (without Radiology): Transthoracic Echocardiography"
-  - "Cardiology (without Radiology): Transesophageal Echocardiography"
-  - "Cardiology (without Radiology): Coronary CT"
-  - "Cardiology (without Radiology): Left Heart Catheterization"
-  - "Cardiology (without Radiology): Right Heart Catheterization"
-  - "Cardiology (without Radiology): Myocardial Biopsy"
-  - "Pulmonology (without Radiology): Pleural Puncture"
-  - "Pulmonology (without Radiology): Spirometry"
-  - "Pulmonology (without Radiology): Body Plethysmography"
-  - "Pulmonology (without Radiology): Methacholine Challenge Test"
-  - "Pulmonology (without Radiology): Apnea-Hypopnea Index"
-  - "Pulmonology (without Radiology): Polygraphy"
-  - "Pulmonology (without Radiology): Polysomnography"
-  - "Bronchoscopy (possibly incl. Biopsy): Bronchoscopy possibly with Puncture"
-  - "Bronchoscopy (possibly incl. Biopsy): with Bronchoalveolar Lavage"
-  - "Bronchial Challenge Test: specific"
-  - "Bronchial Challenge Test: nonspecific/Methacholine Challenge Test"
-  - "Gastroenterology (without Radiology): Colonoscopy, possibly incl. Biopsy"
-  - "Gastroenterology (without Radiology): ERCP"
-  - "Gastroenterology (without Radiology): Manometry"
-  - "Gastroenterology (without Radiology): Long-term pH-Metry"
-  - "Gastroenterology (without Radiology): H2 Breath Test"
-  - "Gastroenterology (without Radiology): C13 Breath Test"
-  - "Gastroscopy: Inspection, Biopsies for Histology and Urease Rapid Test"
-  - "Gastroscopy: Endoscopic Ultrasound"
-  - "Neurology: EEG"
-  - "Neurology: EMG"
-  - "Neurology: ENG"
-  - "Neurology: Tensilon Test"
-  - "Neurology: Lumbar Puncture incl. Laboratory"
-  - "Neurology: DSA cranial"
-  - "Psychometric Tests: Mini Mental Status Examination"
-  - "Dermatology: Prick Test"
-  - "Dermatology: Intracutaneous Test"
-  - "Dermatology: Epicutaneous Test"
-  - "Dermatology: Tuberculin Skin Test"
-  - "Dermatology: Dermatoscopy"
-  - "Dermatology: Skin Cancer Screening"
-  - "Dermatology: Diascopy (Glass Spatula Examination)"
-  - "Dermatology: Dermographism"
-  - "Biopsy: Routine Staining"
-  - "Biopsy: Routine Staining and Direct Immunofluorescence"
-  - "Ophthalmology: Slit Lamp Examination"
-  - "Ophthalmology: Ophthalmoscopy/Fundoscopy"
-  - "Ophthalmology: Perimetry"
-  - "Ophthalmology: Visual Acuity Test"
-  - "Ophthalmology: OCT (Optical Coherence Tomography)"
-  - "Ophthalmology: Fluorescein Angiography"
-  - "Ophthalmology: Strabismus Test"
-  - "Ophthalmology: Applanation Tonometry"
-  - "Bacteriology and Mycology: Microscopic Examination (Native Preparation or
-      Simple Staining, e.g. Methylene Blue)"
-  - "Cultural Examinations: Blood Culture"
-  - "Cultural Examinations: (Wound) Swab (Cultural Detection Fungi/Bacteria)"
-  - "Cultural Examinations: Urine Culture"
-  - "Cultural Examinations: Stool Culture"
-  - "Antigen & Antibody-based Examinations: Borrelia (Ab)"
-  - "Antigen & Antibody-based Examinations: Campylobacter jejuni (Ab)"
-  - "Antigen & Antibody-based Examinations: Helicobacter pylori (Ab)"
-  - "Antigen & Antibody-based Examinations: TPHA (Treponema Pallidum
-      Hemagglutination Test)"
-  - "Antigen & Antibody-based Examinations: FTA-ABS (Fluorescent Treponemal
-      Antibody Absorption Test)"
-  - "Antigen & Antibody-based Examinations: Venereal Disease Research
-      Laboratory Test"
-  - "Antigen & Antibody-based Examinations: Legionella Antigen (Urine)"
-  - "Antigen & Antibody-based Examinations: Pneumococcal Antigen"
-  - "Antigen & Antibody-based Examinations: Galactomannan"
-  - "Antigen & Antibody-based Examinations: Beta-D-Glucan Detection"
-  - "Antigen & Antibody-based Examinations: Aspergillus Antibodies"
-  - "Antigen & Antibody-based Examinations: Helicobacter Pylori Antibodies
-      (Serum)"
-  - "Antigen & Antibody-based Examinations: HP Antigen in Stool"
-  - "PCR: GI Infection Pathogens"
-  - "PCR: Pneumococci"
-  - "PCR: STD Pathogens (Chlamydia tr., Neisseria g., Mycoplasma genitalium,
-      Trichomonas, HSV 1 & 2)"
-  - "PCR: Mycology PCR"
-  - "PCR: Mycobacterium tuberculosis"
-  - "Toxin and Enzyme Detection: Clostridium Difficile Toxin A/B, Clostridia
-      GLDH"
-  - "Coagulation: INR/Quick"
-  - "Current Vital Signs: Pulse"
-  - "Current Vital Signs: Blood Pressure"
-  - "Current Vital Signs: Temperature"
-  - "Current Vital Signs: General Condition"
-  - "Current Vital Signs: O2 Saturation"
-  - "Organ & System Specific Examinations: General/Nutritional Status"
-  - "Organ & System Specific Examinations: Heart, Vessels"
-  - "Organ & System Specific Examinations: Lungs/Thorax"
-  - "Organ & System Specific Examinations: Abdomen"
-  - "Organ & System Specific Examinations: Skin/Integument"
-  - "Organ & System Specific Examinations: Lymph Nodes"
-  - "Organ & System Specific Examinations: Mouth/Throat"
-  - "Organ & System Specific Examinations: Spine"
-  - "Organ & System Specific Examinations: Digital Rectal Examination"
-  - "Upper Extremity: Shoulder"
-  - "Upper Extremity: Elbow"
-  - "Upper Extremity: Wrist"
-  - "Lower Extremity: Hip"
-  - "Lower Extremity: Knee"
-  - "Lower Extremity: Ankle"
-  - "Neurological Examination: Oriented"
-  - "Neurological Examination: Cognition"
-  - "Neurological Examination: Meningism"
-  - "Neurological Examination: Stance and Gait Tests"
-  - "Neurological Examination: Cranial Nerves"
-  - "Neurological Examination: Motor Function"
-  - "Neurological Examination: Muscle Stretch Reflexes"
-  - "Neurological Examination: Sensitivity"
-  - "Neurological Examination: Coordination"
-  - "Neurological Examination: Simpson Test"
-  - "Sonography: Abdomen"
-  - "Sonography: Abdomen Ultrasound incl. Liver Elastography"
-  - "Sonography: Neck"
-  - "Sonography: Neck + Biopsy"
-  - "Sonography: Vessels - ABI"
-  - "Sonography: Vessels - Neck"
-  - "Sonography: Joints"
-  - "Sonography: Transthoracic Echocardiography"
-  - "Sonography: Transesophageal Echocardiography"
-  - "X-ray: Thorax"
-  - "X-ray: Abdomen"
-  - "X-ray: Gastrografin Swallow"
-  - "X-ray: Skeletal"
-  - "CT: Skull"
-  - "CT: Thorax"
-  - "CT: Abdomen"
-  - "CT: Musculoskeletal of Affected Body Region"
-  - "CT: Coronary CT"
-  - "CT: Biopsy"
-  - "MRI: Skull"
-  - "MRI: Abdomen"
-  - "MRI: Thorax"
-  - "MRI: Musculoskeletal of Affected Body Region"
-  - "Special Examinations: Bone Density/Osteodensitometry (DXA)"
-  - "Special Examinations: Scintigraphic Examination (Trunk)"
-  - "Special Examinations: PET-SCAN"
-  - "Special Examinations: Thyroid Scintigraphy"
-  - "Special Examinations: Myocardial Scintigraphy"
-  - "Respiratory Infections: Influenza Rapid Test (Swab)"
-  - "Respiratory Infections: Coronaviruses (Antigen Detection)"
-  - "Respiratory Infections: Coronaviren (PCR)"
-  - "Respiratory Infections: RSV (Antigen Detection)"
-  - "Respiratory Infections: Nucleic Acid Detection of Pathogens of Resp.
-      Infections"
-  - "HIV: HIV-Ab and p24-Ag Screening Test (EDTA Blood)"
-  - "HIV: HIV-Ab in Western Blot (Serum)"
-  - "HIV: HIV-RNA Detection"
-  - "HIV: HIV-RNA Quantitative"
-  - "Hepatitis Viruses: Hepatitis Viruses (Serum)"
-  - "Other Viruses: VZV-Ab"
-  - "Other Viruses: HSV"
-  - "Other Viruses: EBV (Anti-VCA-IgG, Anti-EA-IgG, Anti-EBNA-1-IgG)"
-  - "Other Viruses: Adenoviruses"
-  - "Other Viruses: other"
+categories:
+  - name: Cardiology (without Radiology)
+    procedures:
+      - name: Resting ECG
+      - name: Stress ECG
+      - name: Holter ECG
+      - name: Ambulatory Blood Pressure Monitoring
+      - name: Transthoracic Echocardiography
+      - name: Transesophageal Echocardiography
+      - name: Coronary CT
+      - name: Left Heart Catheterization
+      - name: Right Heart Catheterization
+      - name: Myocardial Biopsy
+  - name: Pulmonology (without Radiology)
+    procedures:
+      - name: Pleural Puncture
+      - name: Spirometry
+      - name: Body Plethysmography
+      - name: Methacholine Challenge Test
+      - name: Apnea-Hypopnea Index
+      - name: Polygraphy
+      - name: Polysomnography
+  - name: Bronchoscopy (possibly incl. Biopsy)
+    procedures:
+      - name: Bronchoscopy possibly with Puncture
+      - name: with Bronchoalveolar Lavage
+  - name: Bronchial Challenge Test
+    procedures:
+      - name: specific
+      - name: nonspecific/Methacholine Challenge Test
+  - name: Gastroenterology (without Radiology)
+    procedures:
+      - name: Colonoscopy, possibly incl. Biopsy
+      - name: ERCP
+      - name: Manometry
+      - name: Long-term pH-Metry
+      - name: H2 Breath Test
+      - name: C13 Breath Test
+  - name: Gastroscopy
+    procedures:
+      - name: Inspection, Biopsies for Histology and Urease Rapid Test
+      - name: Endoscopic Ultrasound
+  - name: Neurology
+    procedures:
+      - name: EEG
+      - name: EMG
+      - name: ENG
+      - name: Tensilon Test
+      - name: Lumbar Puncture incl. Laboratory
+      - name: DSA cranial
+  - name: Psychometric Tests
+    procedures:
+      - name: Mini Mental Status Examination
+  - name: Dermatology
+    procedures:
+      - name: Prick Test
+      - name: Intracutaneous Test
+      - name: Epicutaneous Test
+      - name: Tuberculin Skin Test
+      - name: Dermatoscopy
+      - name: Skin Cancer Screening
+      - name: Diascopy (Glass Spatula Examination)
+      - name: Dermographism
+  - name: Biopsy
+    procedures:
+      - name: Routine Staining
+      - name: Routine Staining and Direct Immunofluorescence
+  - name: Ophthalmology
+    procedures:
+      - name: Slit Lamp Examination
+      - name: Ophthalmoscopy/Fundoscopy
+      - name: Perimetry
+      - name: Visual Acuity Test
+      - name: OCT (Optical Coherence Tomography)
+      - name: Fluorescein Angiography
+      - name: Strabismus Test
+      - name: Applanation Tonometry
+  - name: Bacteriology and Mycology
+    procedures:
+      - name: Microscopic Examination (Native Preparation or Simple Staining, e.g. Methylene Blue)
+  - name: Cultural Examinations
+    procedures:
+      - name: Blood Culture
+      - name: (Wound) Swab (Cultural Detection Fungi/Bacteria)
+      - name: Urine Culture
+      - name: Stool Culture
+  - name: Antigen & Antibody-based Examinations
+    procedures:
+      - name: Borrelia (Ab)
+      - name: Campylobacter jejuni (Ab)
+      - name: Helicobacter pylori (Ab)
+      - name: TPHA (Treponema Pallidum Hemagglutination Test)
+      - name: FTA-ABS (Fluorescent Treponemal Antibody Absorption Test)
+      - name: Venereal Disease Research Laboratory Test
+      - name: Legionella Antigen (Urine)
+      - name: Pneumococcal Antigen
+      - name: Galactomannan
+      - name: Beta-D-Glucan Detection
+      - name: Aspergillus Antibodies
+      - name: Helicobacter Pylori Antibodies (Serum)
+      - name: HP Antigen in Stool
+  - name: PCR
+    procedures:
+      - name: GI Infection Pathogens
+      - name: Pneumococci
+      - name: STD Pathogens (Chlamydia tr., Neisseria g., Mycoplasma genitalium, Trichomonas, HSV 1 & 2)
+      - name: Mycology PCR
+      - name: Mycobacterium tuberculosis
+  - name: Toxin and Enzyme Detection
+    procedures:
+      - name: Clostridium Difficile Toxin A/B, Clostridia GLDH
+  - name: Coagulation
+    procedures:
+      - name: INR/Quick
+  - name: Current Vital Signs
+    procedures:
+      - name: Pulse
+      - name: Blood Pressure
+      - name: Temperature
+      - name: General Condition
+      - name: O2 Saturation
+  - name: Organ & System Specific Examinations
+    procedures:
+      - name: General/Nutritional Status
+      - name: Heart, Vessels
+      - name: Lungs/Thorax
+      - name: Abdomen
+      - name: Skin/Integument
+      - name: Lymph Nodes
+      - name: Mouth/Throat
+      - name: Spine
+      - name: Digital Rectal Examination
+  - name: Upper Extremity
+    procedures:
+      - name: Shoulder
+      - name: Elbow
+      - name: Wrist
+  - name: Lower Extremity
+    procedures:
+      - name: Hip
+      - name: Knee
+      - name: Ankle
+  - name: Neurological Examination
+    procedures:
+      - name: Oriented
+      - name: Cognition
+      - name: Meningism
+      - name: Stance and Gait Tests
+      - name: Cranial Nerves
+      - name: Motor Function
+      - name: Muscle Stretch Reflexes
+      - name: Sensitivity
+      - name: Coordination
+      - name: Simpson Test
+  - name: Sonography
+    procedures:
+      - name: Abdomen
+      - name: Abdomen Ultrasound incl. Liver Elastography
+      - name: Neck
+      - name: Neck + Biopsy
+      - name: Vessels - ABI
+      - name: Vessels - Neck
+      - name: Joints
+      - name: Transthoracic Echocardiography
+      - name: Transesophageal Echocardiography
+  - name: X-ray
+    procedures:
+      - name: Thorax
+      - name: Abdomen
+      - name: Gastrografin Swallow
+      - name: Skeletal
+  - name: CT
+    procedures:
+      - name: Skull
+      - name: Thorax
+      - name: Abdomen
+      - name: Musculoskeletal of Affected Body Region
+      - name: Coronary CT
+      - name: Biopsy
+  - name: MRI
+    procedures:
+      - name: Skull
+      - name: Abdomen
+      - name: Thorax
+      - name: Musculoskeletal of Affected Body Region
+  - name: Special Examinations
+    procedures:
+      - name: Bone Density/Osteodensitometry (DXA)
+      - name: Scintigraphic Examination (Trunk)
+      - name: PET-SCAN
+      - name: Thyroid Scintigraphy
+      - name: Myocardial Scintigraphy
+  - name: Respiratory Infections
+    procedures:
+      - name: Influenza Rapid Test (Swab)
+      - name: Coronaviruses (Antigen Detection)
+      - name: Coronaviren (PCR)
+      - name: RSV (Antigen Detection)
+      - name: Nucleic Acid Detection of Pathogens of Resp. Infections
+  - name: HIV
+    procedures:
+      - name: HIV-Ab and p24-Ag Screening Test (EDTA Blood)
+      - name: HIV-Ab in Western Blot (Serum)
+      - name: HIV-RNA Detection
+      - name: HIV-RNA Quantitative
+  - name: Hepatitis Viruses
+    procedures:
+      - name: Hepatitis Viruses (Serum)
+  - name: Other Viruses
+    procedures:
+      - name: VZV-Ab
+      - name: HSV
+      - name: EBV (Anti-VCA-IgG, Anti-EA-IgG, Anti-EBNA-1-IgG)
+      - name: Adenoviruses
+      - name: other

@@ -1,9 +1,7 @@
-// #139/#140 — end-to-end over real HTTP: `createLabelsRouter` mounted on a real
-// Express app, driven with global `fetch` and a raw SSE body reader (no
-// `supertest`), wired the same way the composition root wires it: a real
-// `EventBus` + `createJobEventChannel()`, `wireLabels`
-// producing onto it, and `CaseGenerationService` opening/closing each job's
-// channel around a fake graph.
+// End-to-end over real HTTP: `createLabelsRouter` on a real Express app,
+// driven by global `fetch` and a raw SSE reader (no `supertest`). Wired like
+// the composition root: real `EventBus` + `createJobEventChannel()`,
+// `wireLabels`, and `CaseGenerationService` around a fake graph.
 import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -16,23 +14,21 @@ import {
   type JobEventChannel,
 } from "@/core/jobEvents/index.js";
 import { wireLabels } from "@/core/jobEvents/labels.js";
-import { InMemoryLabelCatalog } from "@/core/graph/catalog/labels/index.js";
+import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { createCaseGenerationService } from "@/core/caseGenerationService.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import createLabelsRouter from "./labels.router.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
-import type { Case } from "@/core/graph/models/Case.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
+import { planAndRenderFrom } from "@/testing/graphFakes.js";
+import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
-// Same shape as `caseGenerationService.test.ts`'s `fakeGraph` — a minimal
-// stand-in for the composition root's real `GraphAppContext`.
-function fakeGraph(
-  generateCase: GraphAppContext["generateCase"]
-): GraphAppContext {
+// Same shape as `fakeGraph` in `caseGenerationService.test.ts`; minimal `GraphAppContext` stand-in.
+function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
   return {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      PROCEDURE_PRESELECTION: false,
       LANGUAGES: ["English", "German"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
@@ -41,16 +37,13 @@ function fakeGraph(
       catalogs: {
         diagnosis: { byIcd: () => undefined },
       },
-      llm: { for: vi.fn() },
+      llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
-    generateCase,
+    ...planAndRenderFrom(generateCase),
   } as GraphAppContext;
 }
 
-/**
- * Read from `reader` (accumulating across calls, via a per-reader buffer)
- * until `predicate(text)` is true, or reject after `timeoutMs`.
- */
+/** Read from `reader` (per-reader buffer accumulates) until `predicate(text)`; reject after `timeoutMs`. */
 const buffers = new WeakMap<ReadableStreamDefaultReader<Uint8Array>, string>();
 
 async function readUntil(
@@ -95,8 +88,7 @@ async function readUntil(
   return text;
 }
 
-/** Build a fresh bus/channel/service wired the production way, plus a gated
- * generation that runs one traced node before returning a minimal case. */
+/** Fresh bus/channel/service wired like production, plus gated generation running one traced node. */
 function createHarness() {
   const bus = new EventBus();
   const channel: JobEventChannel = createJobEventChannel();
@@ -148,7 +140,7 @@ async function startServer(
   return { server, port };
 }
 
-describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
+describe("labels.router — end-to-end over real HTTP", () => {
   let server: Server | undefined;
 
   afterEach(async () => {
@@ -163,8 +155,7 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     ({ server } = await startServer(directory));
     const port = (server!.address() as AddressInfo).port;
 
-    // The channel is opened synchronously by `service.generate`, before its
-    // first await, so the stream can be opened right after issuing the call.
+    // `service.generate` opens the channel before its first await.
     const p = service.generate({
       diagnosis: "Influenza",
       generationFlags: ["patient"],
@@ -186,11 +177,84 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     );
 
     expect(text).toContain("event: label");
-    // Node output left the SSE channel in #140; it goes to OTel.
+    // No node output on SSE.
     expect(text).not.toContain("event: trace");
     expect(text).not.toContain('"ok":true');
     expect(text).toContain('"status":"started"');
     expect(text).toContain('"status":"completed"');
+
+    const { done } = await reader.read();
+    expect(done).toBe(true);
+  });
+
+  it("a plan-mode call ends with event: complete whose status is 'planned', never the plan itself", async () => {
+    // Gated `planCase`: stop must land after the labels stream subscribes,
+    // else it fires before any listener attaches.
+    let release: () => void = () => {};
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const graph = {
+      config: {
+        llm: { provider: "ollama", model: "test-model" },
+        allowedLlms: undefined,
+        LANGUAGES: ["English", "German"],
+        LANGUAGE_AUTO_DETECT: false,
+        LANGUAGE_DETECT_LLM_FALLBACK: false,
+      } as GraphAppContext["config"],
+      runtime: {
+        catalogs: { diagnosis: { byIcd: () => undefined } },
+        llm: { structured: vi.fn(), text: vi.fn() },
+      } as unknown as GraphAppContext["runtime"],
+      async planCase(opts: { diagnosis: unknown; userInstructions: unknown }) {
+        await gate;
+        return {
+          diagnosis: opts.diagnosis,
+          userInstructions: opts.userInstructions,
+          outlineAccepted: true,
+          outlineSegments: [
+            { fixed: false, text: "" },
+            { fixed: true, text: "## Plan options" },
+            { fixed: false, text: "{}" },
+          ],
+        };
+      },
+      async renderCase() {
+        return { patient: { name: "Jane", age: 40, sex: "female" } } as Case;
+      },
+      translateOutline: undefined,
+    } as unknown as GraphAppContext;
+
+    const channel: JobEventChannel = createJobEventChannel();
+    const service = createCaseGenerationService(graph, new EventBus(), channel);
+    const directory = createLocalJobDirectory(channel, service.cancel);
+    ({ server } = await startServer(directory));
+    const port = (server!.address() as AddressInfo).port;
+
+    const p = service.generate({
+      diagnosis: "Influenza",
+      generationFlags: ["patient"],
+      jobId: "job-plan-labels",
+      mode: "plan",
+      language: "English",
+    });
+
+    const res = await fetch(
+      `http://127.0.0.1:${port}/api/cases/job-plan-labels/labels`
+    );
+    const reader = res.body!.getReader();
+    await readUntil(reader, (text) => text.includes("event: connected"));
+
+    release();
+    const result = await p;
+    expect(result.status).toBe("planned");
+
+    const text = await readUntil(reader, (text) =>
+      text.includes("event: complete")
+    );
+    expect(text).toContain('"jobId":"job-plan-labels"');
+    expect(text).toContain('"status":"planned"');
+    // Observer never sees the plan; only requester gets it as return value.
+    expect(text).not.toContain("outline");
+    expect(text).not.toContain("Plan options");
 
     const { done } = await reader.read();
     expect(done).toBe(true);
@@ -238,7 +302,7 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
     expect(text2).toContain("event: complete");
   });
 
-  it("an unknown job answers 404 JSON, never an SSE stream (#145)", async () => {
+  it("an unknown job answers 404 JSON, never an SSE stream", async () => {
     const channel = createJobEventChannel();
     const directory = createLocalJobDirectory(channel, () => false);
     ({ server } = await startServer(directory));
@@ -272,8 +336,7 @@ describe("labels.router (#139, #140) — end-to-end over real HTTP", () => {
       text.includes("event: complete")
     );
     expect(text).toContain('"status":"done"');
-    // Watch, not collect (#145): the terminal marker never carries
-    // the case.
+    // Watch, not collect: terminal marker never carries the case.
     expect(text).not.toContain("patient");
     expect(text).not.toContain('"case"');
 

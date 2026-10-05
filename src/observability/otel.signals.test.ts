@@ -1,11 +1,6 @@
-// Issue #141 — the real OTel SDK, no mocks: `InMemorySpanExporter` +
-// `SimpleSpanProcessor` on a `BasicTracerProvider` (sdk-trace-base), and
-// `InMemoryLogRecordExporter` + `SimpleLogRecordProcessor` on a
-// `LoggerProvider` (sdk-logs). This proves the actual wire-shaped behaviour
-// `otel.test.ts`'s mocked constructor-call assertions cannot: that the log
-// record really does correlate to the span by trace_id/span_id, that no
-// span attribute ever carries the node's output text, and that a truncated
-// payload's marker actually reaches the log body.
+// Real OTel SDK, no mocks: in-memory span and log exporters. Proves what mocked
+// `otel.test.ts` cannot: log correlates to span by trace_id/span_id, no span
+// attribute carries output text, truncation marker reaches log body.
 import { describe, expect, it } from "vitest";
 import {
   BasicTracerProvider,
@@ -22,7 +17,7 @@ import { createNodeTracer } from "./otel.js";
 import { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import { EventBus } from "@/core/event-bus.js";
 import { runWithContext } from "@/core/graph/utils/context.js";
-import { encodeText } from "@/core/graph/models/ContentPart.js";
+import { encodeText } from "@/core/graph/shared/domain/ContentPart.js";
 
 function setup() {
   const spanExporter = new InMemorySpanExporter();
@@ -42,7 +37,7 @@ function setup() {
   return { spanExporter, logExporter, nodeTracer };
 }
 
-describe("OTel signals end to end (#141) — real SDK, no mocks", () => {
+describe("OTel signals end to end — real SDK, no mocks", () => {
   it("a node's output is a correlated log record, never a span attribute", async () => {
     const { spanExporter, logExporter, nodeTracer } = setup();
     const bus = new EventBus();
@@ -79,15 +74,15 @@ describe("OTel signals end to end (#141) — real SDK, no mocks", () => {
     expect(log.spanContext?.spanId).toBe(span.spanContext().spanId);
   });
 
-  it("a ContentPart's bytes never reach the log body, only its decoded/alt text", async () => {
+  it("a ContentPart reaches the log body as { type, bytes } only: no bytes, no alt, no text", async () => {
     const { logExporter, nodeTracer } = setup();
     const bus = new EventBus();
     const traceNode = createTraceNode(bus, nodeTracer);
     const wrapped = traceNode(
-      "chief_complaint_generate",
+      "chief_complaint_phase",
       async () => ({
         chiefComplaint: [
-          { type: "text/plain", value: encodeText("hello"), alt: "hello" },
+          { type: "text/plain", value: encodeText("hello"), alt: "greeting" },
         ],
       }),
       "Generating chief complaint"
@@ -97,9 +92,9 @@ describe("OTel signals end to end (#141) — real SDK, no mocks", () => {
 
     const logs = logExporter.getFinishedLogRecords();
     expect(logs).toHaveLength(1);
-    const body = String(logs[0]!.body);
-    expect(body).toContain("hello");
-    expect(body).not.toContain('"0":');
+    expect(JSON.parse(String(logs[0]!.body))).toEqual({
+      chiefComplaint: [{ type: "text/plain", bytes: 5 }],
+    });
   });
 
   it("an output over the 50 KB cap becomes a truncated marker in both the log body and its attribute", async () => {

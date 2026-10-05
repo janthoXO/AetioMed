@@ -1,11 +1,8 @@
 import { z } from "zod/v4";
 
 /**
- * A client-supplied job id. It is an idempotency key (a duplicate never
- * starts a second generation) and, on NATS, a subject token
- * (`cases.result.<jobId>`), so it must not contain `.`, `*`, `>` or
- * whitespace — any of those would silently address a different subject.
- * A UUID fits.
+ * Client-supplied job id. Idempotency key and, on NATS, subject token
+ * (`cases.result.<jobId>`): no `.`, `*`, `>` or whitespace. UUID fits.
  */
 export const JobIdSchema = z
   .string()

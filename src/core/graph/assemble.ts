@@ -33,6 +33,7 @@ import type { MedicalBasisProvider } from "@/core/graph/02-plan/01-basis/ports.j
 import {
   OutlineSegmentsSchema,
   type OutlineSegments,
+  type PresentationSections,
 } from "@/core/graph/shared/outline/segments.js";
 import {
   RunModeSchema,
@@ -71,6 +72,7 @@ const CaseStateSchema = CaseGenerationStateSchema.pick({
   generationFlags: true,
   difficulty: true,
   case: true,
+  outlineSections: true,
 }).extend({
   /** The prompt-ready outline text (`joinOutline`) every generator reads. */
   outline: z.string(),
@@ -350,6 +352,7 @@ export function buildCaseGraph(
         userInstructions: opts.userInstructions,
         difficulty: opts.difficulty,
         outline: opts.outline,
+        outlineSections: opts.outlineSections,
       },
       invokeOptions()
     );
@@ -407,4 +410,6 @@ export type RenderCaseInput = {
   difficulty?: Difficulty | undefined;
   /** Prompt-ready outline text (`joinOutline`). */
   outline: string;
+  /** Blinded solver's view of fields not generated (`presentationSections`, #205). */
+  outlineSections: PresentationSections;
 };

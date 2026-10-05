@@ -13,12 +13,13 @@ import type { Patient } from "@/core/graph/shared/domain/Patient.js";
 /**
  * Patient presentation as seen by blinded solver, no diagnosis. Text
  * projection, not domain `Case`: bytes never reach a prompt. Built only by
- * `presentationOf` (`graph.ts`) via `altOf`.
+ * `presentationOf` (`graph.ts`): generated field via `altOf`, field not
+ * generated as its raw outline section (the `string` variants, #205).
  */
 export type Presentation = {
-  patient?: Patient | undefined;
+  patient?: Patient | string | undefined;
   chiefComplaint?: string | undefined;
-  anamnesis?: { category: string; answer: string }[] | undefined;
+  anamnesis?: { category: string; answer: string }[] | string | undefined;
 };
 
 export type BlindedProcedureStepResult =

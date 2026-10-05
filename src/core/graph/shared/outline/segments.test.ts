@@ -7,6 +7,7 @@ import {
   outlineSkeleton,
   OUTLINE_SECTIONS,
   parseTaggedOutline,
+  presentationSections,
   renderTaggedOutline,
   restoreSkeletonHeadings,
   type OutlineSegments,
@@ -340,5 +341,40 @@ describe("restoreSkeletonHeadings", () => {
       anamnesisCategories: categories,
     });
     expect(restored).toEqual(wrong);
+  });
+});
+
+describe("presentationSections", () => {
+  const outline = (categories: string[]) =>
+    parseTaggedOutline(
+      [
+        "<fixed>## General</fixed>\n\nGENERAL-NOTE",
+        "<fixed>## Patient</fixed>\n\n58, male.",
+        "<fixed>## Chief complaint</fixed>\n\nSharp pain.",
+        "<fixed>## Anamnesis</fixed>\n\nNo relevant history.",
+        ...categories.map((c) => `<fixed>### ${c}</fixed>\n\n${c} body.`),
+        "<fixed>## Procedures</fixed>\n\nPROCEDURES-NOTE",
+      ].join("\n\n")
+    );
+
+  it("slices patient, chief complaint and anamnesis (with category subsections)", () => {
+    const sections = presentationSections(outline(["History", "Allergies"]));
+    expect(sections).toEqual({
+      patient: "58, male.",
+      chiefComplaint: "Sharp pain.",
+      anamnesis:
+        "No relevant history.\n\n### History\n\nHistory body.\n\n### Allergies\n\nAllergies body.",
+    });
+    const all = Object.values(sections).join("\n");
+    expect(all).not.toContain("GENERAL-NOTE");
+    expect(all).not.toContain("PROCEDURES-NOTE");
+  });
+
+  it("works with zero categories", () => {
+    expect(presentationSections(outline([]))).toEqual({
+      patient: "58, male.",
+      chiefComplaint: "Sharp pain.",
+      anamnesis: "No relevant history.",
+    });
   });
 });

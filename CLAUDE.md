@@ -107,18 +107,14 @@ exists for REST's POST stream (#143): a caller can subscribe to the job's events
 node runs, and learns about a duplicate jobId before it has committed to a response format
 (SSE headers already flushed vs. a plain JSON 409).
 
-It also owns **generation-flag normalisation**
-(`shared/domain/GenerationFlags.ts`: `expandFlagsForSolver` / `projectCaseToFlags`). A
-`generationFlags: ["procedures"]` request cannot be served literally — the blinded solver
-reasons from the patient presentation, and would otherwise be handed an empty one after the
-plan and its judge loop had already been paid for. So the three presentation fields are
-generated **internally** and projected back out of the response, and the caller gets exactly
-the fields they asked for. The cheaper-looking alternative — reusing the plan outline as the
-solver's presentation — is unsafe: the outline is a tag-delimited markdown skeleton (see
-"Outline segments" below, #159) whose fixed procedures section, by construction, describes how
-results should be shaped to reach the diagnosis, so slicing a presentation out of it by heading
-is a parse whose failure mode is silently leaking that section into the _blinded_ solver. See
-`expandFlagsForSolver`'s doc comment.
+It passes `generationFlags` through unchanged. For a field the caller did not request, the
+blinded solver reads that field's **outline section** instead of a rendered field
+(`presentationSections`, `shared/outline/segments.ts`, #205): Patient, Chief complaint and
+Anamnesis only (with its `### category` subsections), sliced by position now that the outline is
+segments (#159) and handed to `renderCase` as `outlineSections`. Never `## General` — the home of
+every pedagogical note (hallmarks, distractors, difficulty reasoning); the outline prompt and
+judge keep the field sections to facts only — and never `## Procedures`, the results strategy,
+written knowing the diagnosis. A field that _is_ generated wins over its section (`altOf`).
 
 **The generator is stateless between calls (#159).** A call carries everything it needs — the
 request, and optionally a `plan` — and nothing survives it: no job record, no checkpoint, no

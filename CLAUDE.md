@@ -972,7 +972,10 @@ in delivery guarantees:
 ### Data Files
 
 `CATALOG_DIR` (default `data/`) contains the files synced into the SQLite cache at startup
-(only re-parsed when changed). Paths below are relative to it:
+(only re-parsed when changed). **Every file is optional**: a missing file is treated exactly
+like an empty one (`syncSource`, `adapters/persistence/db.ts`), so the server boots with an
+empty `CATALOG_DIR` — catalogues go freeform, ICD-only requests 400, symptoms come from the
+LLM. Paths below are relative to it:
 
 - `procedures.yml` / `proceduresTranslations.yml` — approved procedure catalogue, a tree of
   categories (any depth) and procedures (when set, LLM must select from this tree only, placed
@@ -1050,8 +1053,10 @@ Concretely:
   validator from it. `makeCaseGenerationRequestSchema(config)` validates a request's `language`
   against `config.LANGUAGES`, so an unsupported language is a **400** from the API boundary,
   never a 500 from deep in the graph. `validateCatalogsOrExit` (extended, not duplicated, from
-  its existing per-language summary) exits non-zero naming any catalogue that has zero
-  translation entries for a configured non-English language, and warns (does not fail) for a
+  its existing per-language summary) exits non-zero naming any catalogue whose translations
+  file declares other languages but has zero entries for a configured non-English one — a
+  file declaring no language at all (missing or empty) passes, its keys LLM-translated at
+  runtime or falling back to English — and warns (does not fail) for a
   translated language that is declared in a YAML file but not in `LANGUAGES`.
 - **ALS, not state — except `callerSuppliedFreeText`, which is state, not ALS (issue 12 §3).**
   `runWithContext` stores the request's `language` on the same `AsyncLocalStorage`-carried

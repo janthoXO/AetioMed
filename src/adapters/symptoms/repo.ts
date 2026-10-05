@@ -26,7 +26,9 @@ function preloadDiagnosisAnamnesisMap(
 ): z.infer<typeof SymptomMapSchema> {
   const filepath = catalogFile(catalogDir, "diagnosis_symptoms.json");
 
-  const translationsObject = JSON.parse(fs.readFileSync(filepath, "utf-8"));
+  // Missing or empty file = no symptom floor; the LLM symptom provider covers every ICD.
+  const raw = fs.existsSync(filepath) ? fs.readFileSync(filepath, "utf-8") : "";
+  const translationsObject = raw.trim() ? JSON.parse(raw) : {};
 
   const parseResult = SymptomMapSchema.safeParse(translationsObject);
   if (!parseResult.success) {

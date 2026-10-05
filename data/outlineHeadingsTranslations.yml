@@ -3,7 +3,7 @@
 # never written back to this file.
 German:
   General: Allgemein
-  Patient: Patient
+  Patient: Patient:in
   Chief complaint: Vorstellungsgrund
   Anamnesis: Anamnese
-  Procedures: Prozeduren
+  Procedures: Untersuchungen

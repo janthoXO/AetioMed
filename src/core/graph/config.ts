@@ -15,6 +15,7 @@ interface LlmRoleConfig {
   model: string;
   apiKey?: string | undefined;
   url?: string | undefined;
+  enableThinking?: boolean | undefined;
 }
 
 /**
@@ -60,6 +61,7 @@ function resolveRole(
     model: fields.model ?? general.model,
     apiKey: fields.apiKey ?? general.apiKey,
     url: fields.url ?? general.url,
+    enableThinking: general.enableThinking,
   };
 }
 
@@ -71,6 +73,13 @@ export const ConfigSchema = z
     LLM_MODEL: z.string().optional(),
     LLM_API_KEY: z.string().optional(),
     LLM_URL: z.url().optional(),
+    /** Hidden reasoning for every role: unset = server default. `false` cuts latency a lot on thinking models (qwen3). */
+    LLM_ENABLE_THINKING: z
+      .enum(["true", "false", "1", "0"])
+      .optional()
+      .transform((v) =>
+        v === undefined ? undefined : v === "true" || v === "1"
+      ),
 
     LLM_GENERATOR_PROVIDER: PossibleProvidersSchema.optional(),
     LLM_GENERATOR_MODEL: z.string().optional(),
@@ -179,6 +188,7 @@ export const ConfigSchema = z
       LLM_MODEL,
       LLM_API_KEY,
       LLM_URL,
+      LLM_ENABLE_THINKING,
       LLM_GENERATOR_PROVIDER,
       LLM_GENERATOR_MODEL,
       LLM_GENERATOR_API_KEY,
@@ -213,6 +223,7 @@ export const ConfigSchema = z
       model: LLM_MODEL,
       apiKey: LLM_API_KEY,
       url: LLM_URL,
+      enableThinking: LLM_ENABLE_THINKING,
     };
 
     const roleFields: Record<

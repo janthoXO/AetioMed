@@ -28,6 +28,19 @@ describe("ConfigSchema — LLM role resolution", () => {
     });
   });
 
+  it("LLM_ENABLE_THINKING applies to every role, overrides included", () => {
+    const config = ConfigSchema.parse({
+      LLM_PROVIDER: "ollama",
+      LLM_MODEL: "qwen3:14b",
+      LLM_JUDGE_MODEL: "qwen3:4b",
+      LLM_ENABLE_THINKING: "false",
+    });
+
+    for (const role of LLM_ROLES) {
+      expect(config.llmRoles?.[role].enableThinking).toBe(false);
+    }
+  });
+
   it("per-field fallback: LLM_JUDGE_MODEL alone inherits general provider/key/url", () => {
     const config = ConfigSchema.parse({
       LLM_PROVIDER: "ollama",

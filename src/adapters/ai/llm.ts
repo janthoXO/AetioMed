@@ -101,7 +101,12 @@ function getLLM(
     ...llmConfig,
   });
 
-  console.debug("LLM Configuration:", fullConfig, { temperature });
+  const { apiKey, ...loggable } = fullConfig;
+  console.debug(
+    "LLM Configuration:",
+    { ...loggable, apiKey: apiKey && "<redacted>" },
+    { temperature }
+  );
 
   let chat: BaseChatModel;
   switch (fullConfig.provider) {

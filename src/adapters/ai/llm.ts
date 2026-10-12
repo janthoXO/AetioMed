@@ -34,6 +34,8 @@ export function createLlmPort(config: Config): LlmPort {
   );
 }
 
+const OLLAMA_NUM_CTX = 16384;
+
 /** `LlmPort` over any LangChain chat-model factory. Real port uses `getLLM`; tests pass a fake model. */
 export function chatModelLlmPort(
   modelFor: (
@@ -109,6 +111,10 @@ function getLLM(
       const ollamaConfig: ChatOllamaInput = {
         model: fullConfig.model,
         temperature,
+        // Ollama default 4096 ctx keeps ~2k prompt tokens and silently drops
+        // the oldest (system prompt first); procedure prompts reach ~2.5k.
+        // ponytail: fixed size, make configurable if a 16k KV cache won't fit.
+        numCtx: OLLAMA_NUM_CTX,
       };
 
       if (!fullConfig || fullConfig?.outputFormat === "json") {
@@ -154,6 +160,9 @@ function getLLM(
         apiKey: fullConfig.apiKey,
         model: fullConfig.model,
         temperature,
+        // Stream so a slow server keeps sending tokens: proxies in front of
+        // vLLM (e.g. Open WebUI) cut a silent request after ~300s.
+        streaming: true,
       };
 
       if (fullConfig.url) {

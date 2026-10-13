@@ -233,7 +233,7 @@ export async function evaluateOutline(
 
     section(
       "Dimension 2: Clinical consistency",
-      `1. Diagnosis Secrecy (Pedagogical): The target diagnosis MUST NOT be explicitly named anywhere in the blueprint's field content (the student is supposed to deduce it). In addition, the Patient, Chief complaint and Anamnesis sections must state facts only: flag any pedagogical annotation or hint there — a symptom labelled as hallmark, classic, typical, a distractor or red herring, or any remark on what a finding suggests. Such notes belong in General only. Also flag a field section that relies on General for a fact it needs instead of stating that fact itself.
+      `1. Diagnosis Secrecy (Pedagogical): The Patient, Chief complaint, Anamnesis and Procedures sections must not say or imply that THIS patient has the target diagnosis — e.g. "diagnosed with X", "suspected X", "known X", "X confirmed", or a procedure result that states the diagnosis. Naming means the diagnosis itself, a synonym or its abbreviation; physiological states, symptoms, findings, lab values and differential diagnoses do NOT name it. The same disease in a relative (family history) or as a known risk factor is NOT a leak: it is a clinical clue — weigh it under Obviousness only. The General section is the author's teaching design: it may describe hallmark signs, distractors, the difficulty strategy and the intended diagnosis — never reject because of content in General. The Patient, Chief complaint and Anamnesis sections must state facts only: flag a pedagogical label there (hallmark, classic, typical, distractor, red herring, or a remark on what a finding suggests). Also flag a field section that relies on General for a fact it needs instead of stating that fact itself.
 2. Clinical Coherence: Do the planned fields logically align? (e.g., Does the workup strategy make sense for the chief complaint? Does the planned anamnesis contradict the patient's age/gender?)
 3. Realism: Are there impossible biometric values (e.g., a 2-year-old weighing 70kg), contradictory timelines, or medical hallucinations?
 
@@ -242,8 +242,10 @@ IMPORTANT: Distractor symptoms, omitted hallmark symptoms, and ambiguous or bord
 
     section(
       "Requirements",
-      `- Be thorough but fair. Only flag genuine problems, not stylistic choices.
-- If the blueprint is rejected, list concrete reasons and give ONE actionable suggestion describing exactly how to revise it.`
+      `- Only flag genuine problems a downstream author must fix, not stylistic choices or things you would merely have done differently.
+- Every reason must name its section and quote the exact offending text. If you cannot quote it, it is not a problem.
+- When in doubt, accept.
+- If the blueprint is rejected, give ONE actionable suggestion describing exactly how to revise it.`
     ),
 
     section(

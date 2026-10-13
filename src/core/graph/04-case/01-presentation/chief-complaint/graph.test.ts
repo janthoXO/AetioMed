@@ -177,7 +177,6 @@ describe("chiefComplaintGraph — single-provider registry", () => {
 
     const result = (await graph.invoke({
       outlineSections: SECTIONS,
-      userInstructions: undefined,
       case: {},
     })) as { case: Case };
 

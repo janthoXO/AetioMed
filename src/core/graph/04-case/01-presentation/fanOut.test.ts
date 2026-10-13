@@ -1,5 +1,5 @@
 // Compiled subgraph writes back ENTIRE state unless `output` declared. Parallel `Send` fan-out of
-// `chief_complaint_phase`/`anamnesis_phase` would give `userInstructions`, `outlineSections` (`LastValue`)
+// `chief_complaint_phase`/`anamnesis_phase` would give `outlineSections` (`LastValue`)
 // two values per superstep -> `INVALID_CONCURRENT_GRAPH_UPDATE`. Mounts REAL subgraphs under a parent mirroring
 // `buildFieldGenerationSends`'s payload, so dropping a write can't pass.
 import { chatModelLlmPort } from "@/adapters/ai/llm.js";
@@ -147,11 +147,9 @@ describe("chief_complaint_phase + anamnesis_phase fanned out together", () => {
       .addConditionalEdges(START, (state) => [
         new Send("chief_complaint_phase", {
           outlineSections: state.outlineSections,
-          userInstructions: state.userInstructions,
         }),
         new Send("anamnesis_phase", {
           outlineSections: state.outlineSections,
-          userInstructions: state.userInstructions,
         }),
       ])
       .addEdge("chief_complaint_phase", END)
@@ -240,11 +238,9 @@ describe("chief_complaint_phase + anamnesis_phase fan-out labels", () => {
       .addConditionalEdges(START, (state) => [
         new Send("chief_complaint_phase", {
           outlineSections: state.outlineSections,
-          userInstructions: state.userInstructions,
         }),
         new Send("anamnesis_phase", {
           outlineSections: state.outlineSections,
-          userInstructions: state.userInstructions,
         }),
       ])
       .addEdge("chief_complaint_phase", END)
@@ -336,6 +332,12 @@ describe("buildFieldGenerationGraph", () => {
     await graph.invoke({
       diagnosis: { name: "Zebra syndrome", icd: "ZZ00" },
       generationFlags: ["patient", "chiefComplaint", "anamnesis"],
+      userInstructions: {
+        general: "INSTR_MARK",
+        chiefComplaint: "INSTR_MARK",
+        anamnesis: "INSTR_MARK",
+        patient: "INSTR_MARK",
+      },
       outlineSections: {
         patient: "PATIENT_MARK",
         chiefComplaint: "CC_MARK",
@@ -352,5 +354,7 @@ describe("buildFieldGenerationGraph", () => {
     }
     expect(all).not.toContain("Zebra syndrome");
     expect(all).not.toContain("PROC_MARK");
+    // The outline absorbed the instructions (#220): no case node receives them.
+    expect(all).not.toContain("INSTR_MARK");
   });
 });

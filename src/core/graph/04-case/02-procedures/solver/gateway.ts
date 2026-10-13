@@ -131,7 +131,6 @@ export async function generateBlindedProcedureStep(
   presentation: Presentation,
   previousProcedures: PreviousProcedureFinding[],
   ruledOutDiagnoses: string[],
-  userInstructions?: string,
   iterationsRemaining?: number,
   context?: RequestContext,
   allowDiagnose = true
@@ -171,8 +170,6 @@ ${renderSchemaForPrompt(
     presentationSection(presentation),
 
     candidates.render(),
-
-    section("Additional instructions", userInstructions),
 
     previousProceduresSection(previousProcedures),
 
@@ -260,7 +257,6 @@ export type LevelSelectionView =
       presentation: Presentation;
       previousProcedures: PreviousProcedureFinding[];
       ruledOutDiagnoses: string[];
-      userInstructions?: string | undefined;
       iterationsRemaining: number;
       allowDiagnose: boolean;
     }
@@ -269,7 +265,6 @@ export type LevelSelectionView =
       presentation: Presentation;
       diagnosis: Diagnosis;
       previousProcedures: PreviousProcedureFinding[];
-      userInstructions?: string | undefined;
     };
 
 function levelItemLabel(item: LevelItem): string {
@@ -354,7 +349,6 @@ ${renderSchemaForPrompt(
       "Catalogue level (choose by exact label)",
       items.map(renderLevelItem).join("\n")
     ),
-    section("Additional instructions", view.userInstructions),
     previousProceduresSection(view.previousProcedures),
     view.mode === "blinded"
       ? ruledOutSection(view.ruledOutDiagnoses)
@@ -441,7 +435,6 @@ export async function pickBridgeProcedures(
   presentation: Presentation,
   diagnosis: Diagnosis,
   previousProcedures: PreviousProcedureFinding[],
-  userInstructions?: string,
   context?: RequestContext
 ): Promise<ProcedureRef[]> {
   if (candidates.isEmpty()) {
@@ -480,8 +473,6 @@ ${renderSchemaForPrompt(buildBridgePickSchema(candidates.promptSchema()))}`
     section("True diagnosis", diagnosisLabel(diagnosis)),
 
     candidates.render(),
-
-    section("Additional instructions", userInstructions),
 
     previousProceduresSection(previousProcedures),
 

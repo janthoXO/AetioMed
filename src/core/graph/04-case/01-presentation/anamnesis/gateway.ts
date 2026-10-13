@@ -30,7 +30,6 @@ export async function planAnamnesis(
   language: Language | undefined,
   sections: { patient: string; anamnesis: string },
   providers: ModalityProvider<unknown>[],
-  userInstructions?: string,
   context?: RequestContext
 ): Promise<ModalityPlan> {
   // `undefined` = freeform (no category catalogue): planner names unit keys.
@@ -79,9 +78,7 @@ ${renderSchemaForPrompt(schema)}`
   const userPrompt = buildPrompt(
     section("Patient", sections.patient),
 
-    section("Anamnesis", sections.anamnesis),
-
-    section("Additional instructions", userInstructions)
+    section("Anamnesis", sections.anamnesis)
   );
 
   console.debug(

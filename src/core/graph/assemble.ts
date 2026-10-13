@@ -64,14 +64,12 @@ const PlanStateSchema = CaseGenerationStateSchema.pick({
 // Plan graph hands back everything case graph needs, in working language (English after translate-in).
 const PlanOutputSchema = PlanStateSchema.pick({
   diagnosis: true,
-  userInstructions: true,
   outlineSegments: true,
   outlineAccepted: true,
 });
 
 const CaseStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
-  userInstructions: true,
   generationFlags: true,
   difficulty: true,
   case: true,
@@ -332,7 +330,6 @@ export function buildCaseGraph(
 
     return {
       diagnosis: result.diagnosis,
-      userInstructions: result.userInstructions,
       outlineSegments: result.outlineSegments,
       outlineAccepted: result.outlineAccepted,
     };
@@ -340,15 +337,14 @@ export function buildCaseGraph(
 
   /**
    * Run the case graph from an outline: field fan-out, procedures and (sandwich
-   * on, when needed) translate-out. `diagnosis`/`userInstructions` must be the
-   * working-language values {@link planCase} returned.
+   * on, when needed) translate-out. `diagnosis` must be the working-language
+   * value {@link planCase} returned.
    */
   async function renderCase(opts: RenderCaseInput): Promise<Case> {
     const result = await graphs.case.invoke(
       {
         diagnosis: opts.diagnosis,
         generationFlags: opts.generationFlags,
-        userInstructions: opts.userInstructions,
         difficulty: opts.difficulty,
         outlineSections: opts.outlineSections,
       },
@@ -388,14 +384,13 @@ export type PlanCaseInput = {
   difficulty?: Difficulty | undefined;
   callerSuppliedFreeText: boolean;
   mode?: RunMode | undefined;
-  /** Plan handed in with request, in English: planning skipped, only translate-in runs; result's `outlineSegments` is this plan, `diagnosis`/`userInstructions` in working language. */
+  /** Plan handed in with request, in English: planning skipped, only translate-in runs; result's `outlineSegments` is this plan, `diagnosis` in working language. */
   outline?: OutlineSegments | undefined;
 };
 
 export type PlanResult = {
   /** Working language: English after translate-in (sandwich on). */
   diagnosis: Diagnosis;
-  userInstructions?: UserInstructions | undefined;
   outlineSegments: OutlineSegments;
   /** `false` when the judge loop ended on its iteration cap. */
   outlineAccepted: boolean;
@@ -404,7 +399,6 @@ export type PlanResult = {
 export type RenderCaseInput = {
   diagnosis: Diagnosis;
   generationFlags: GenerationFlag[];
-  userInstructions?: UserInstructions | undefined;
   difficulty?: Difficulty | undefined;
   /** Per-field outline sections (`outlineSections`); each case node reads only its own (#215). */
   outlineSections: OutlineSections;

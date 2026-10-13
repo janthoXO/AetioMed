@@ -101,7 +101,8 @@ This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents g
 3. The Patient, Chief complaint and Anamnesis sections state FACTS ONLY, as the patient's record would: no pedagogical annotations, no hints, no labels such as "hallmark", "classic sign", "distractor" or "red herring", and no reasoning about what a finding suggests. Each of these sections must be self-contained: repeat in it every fact its field needs (onset, duration, severity, timeline), even when General already describes it — a reader of only that section must get every fact.
 4. Make sure that all sections are clinically coherent with each other.
 5. The diagnosis must never be explicitly named anywhere in the outline's content — the student must deduce it.
-6. Return ONLY the outline. Do not include introductory text, acknowledgments, or conversational filler.`
+6. Additional instructions, when given, come from the case author. Write every fact or requirement they contain into the section it belongs to (e.g. a requested lab finding into Procedures, a requested medication into Anamnesis). Downstream authors never see the instructions — only this outline.
+7. Return ONLY the outline. Do not include introductory text, acknowledgments, or conversational filler.`
     ),
 
     section(
@@ -242,6 +243,7 @@ export async function evaluateOutline(
       `1. Diagnosis Secrecy (Pedagogical): The Patient, Chief complaint, Anamnesis and Procedures sections must not say or imply that THIS patient has the target diagnosis — e.g. "diagnosed with X", "suspected X", "known X", "X confirmed", or a procedure result that states the diagnosis. Naming means the diagnosis itself, a synonym or its abbreviation; physiological states, symptoms, findings, lab values and differential diagnoses do NOT name it. The same disease in a relative (family history) or as a known risk factor is NOT a leak: it is a clinical clue — weigh it under Obviousness only. The General section is the author's teaching design: it may describe hallmark signs, distractors, the difficulty strategy and the intended diagnosis — never reject because of content in General. The Patient, Chief complaint and Anamnesis sections must state facts only: flag a pedagogical label there (hallmark, classic, typical, distractor, red herring, or a remark on what a finding suggests). Also flag a field section that relies on General for a fact it needs instead of stating that fact itself.
 2. Clinical Coherence: Do the planned fields logically align? (e.g., Does the workup strategy make sense for the chief complaint? Does the planned anamnesis contradict the patient's age/gender?)
 3. Realism: Are there impossible biometric values (e.g., a 2-year-old weighing 70kg), contradictory timelines, or medical hallucinations?
+4. Author instructions: when Additional instructions are given, every fact or requirement in them must be stated in the section it belongs to. Flag one that is missing or contradicted.
 
 IMPORTANT: Distractor symptoms, omitted hallmark symptoms, and ambiguous or borderline findings planned per the difficulty strategy are INTENTIONAL pedagogical design — do NOT flag them as inconsistencies.`
     ),

@@ -29,7 +29,6 @@ const BlindedSolverStateSchema = z.object({
     )
     .default([]),
   ruledOutDiagnoses: z.array(z.string()).default([]),
-  userInstructions: z.string().optional(),
   iterationsRemaining: z.number(),
   /** Output-only: the strategy's decision, set by the graph's single node. */
   move: z.custom<SolverMove>().optional(),
@@ -47,7 +46,6 @@ export function buildBlindedSolverGraph(strategy: ProcedureStrategy) {
         presentation: state.presentation,
         previousProcedures: state.previousProcedures,
         ruledOutDiagnoses: state.ruledOutDiagnoses,
-        userInstructions: state.userInstructions,
         iterationsRemaining: state.iterationsRemaining,
         context: lgRuntime?.context,
       });

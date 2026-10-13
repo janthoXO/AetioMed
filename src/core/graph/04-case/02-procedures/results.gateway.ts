@@ -79,7 +79,6 @@ export async function planProcedureResults(
   procedureSteps: ProcedureRef[],
   providers: ModalityProvider<unknown>[],
   proceduresStrategy?: string, // the outline's `## Procedures` section
-  userInstructions?: string,
   context?: RequestContext
 ): Promise<PlannedProcedure[]> {
   const procedureLabels = procedureSteps.map(refLabel);
@@ -133,8 +132,6 @@ ${proceduresStrategy}`
     presentationSection(presentation),
 
     section("True diagnosis", diagnosisLabel(diagnosis)),
-
-    section("Additional instructions", userInstructions),
 
     section(
       "Procedures ordered together in this batch",

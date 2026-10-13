@@ -8,10 +8,7 @@ import {
   RequestContextSchema,
   type RequestContext,
 } from "@/core/graph/utils/context.js";
-import {
-  renderUserInstructions,
-  boundLanguage,
-} from "@/core/graph/shared/prompt/prompt.js";
+import { boundLanguage } from "@/core/graph/shared/prompt/prompt.js";
 import {
   PlannedPartSchema,
   type ModalityProvider,
@@ -23,7 +20,6 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 const ChiefComplaintGraphStateSchema = CaseGenerationStateSchema.pick({
-  userInstructions: true,
   case: true,
 }).extend({
   outlineSections: OutlineSectionsSchema,
@@ -33,7 +29,7 @@ const ChiefComplaintGraphStateSchema = CaseGenerationStateSchema.pick({
 
 type ChiefComplaintGraphState = z.infer<typeof ChiefComplaintGraphStateSchema>;
 
-// Mounted in `buildFieldGenerationGraph`, `Send`-fanned in parallel with `anamnesisGraph`. Subgraph writes back ENTIRE state unless `output` set; parallel writes to `userInstructions`/`outlineSections` (`LastValue`) throw `INVALID_CONCURRENT_GRAPH_UPDATE`. `.pick()` off own state schema keeps reducer registration.
+// Mounted in `buildFieldGenerationGraph`, `Send`-fanned in parallel with `anamnesisGraph`. Subgraph writes back ENTIRE state unless `output` set; parallel writes to `outlineSections` (`LastValue`) throw `INVALID_CONCURRENT_GRAPH_UPDATE`. `.pick()` off own state schema keeps reducer registration.
 const ChiefComplaintOutputSchema = ChiefComplaintGraphStateSchema.pick({
   case: true,
 });
@@ -43,10 +39,7 @@ function makePlanContent(
   providers: ModalityProvider<unknown>[]
 ) {
   return async function planContent(
-    state: Pick<
-      ChiefComplaintGraphState,
-      "outlineSections" | "userInstructions"
-    >,
+    state: Pick<ChiefComplaintGraphState, "outlineSections">,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Pick<ChiefComplaintGraphState, "plan">> {
     const plan = await planChiefComplaint(
@@ -57,7 +50,6 @@ function makePlanContent(
         chiefComplaint: state.outlineSections.chiefComplaint,
       },
       providers,
-      renderUserInstructions(state.userInstructions),
       lgRuntime?.context
     );
     return { plan };

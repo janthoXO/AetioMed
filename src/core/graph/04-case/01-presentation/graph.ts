@@ -17,7 +17,6 @@ import {
 import type { PickNested } from "@/core/graph/utils/pickNested.js";
 import { generatePatient as generatePatientGateway } from "./patient.gateway.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
-import { renderUserInstructions } from "@/core/graph/shared/prompt/prompt.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
 import { buildChiefComplaintGraph } from "@/core/graph/04-case/01-presentation/chief-complaint/graph.js";
@@ -37,23 +36,9 @@ const GenerationOutputSchema = GenerationGraphStateSchema.pick({
 
 // ─── fan-out ──────────────────────────────────────────────────────────────────
 
-function filterUserInstructions(
-  userInstructions: GenerationGraphState["userInstructions"],
-  keys: string[]
-) {
-  return userInstructions
-    ? Object.fromEntries(
-        Object.entries(userInstructions).filter(([k]) => keys.includes(k))
-      )
-    : undefined;
-}
-
-/** Builds the fan-out Sends to the field generators: sections and instructions only, never the diagnosis (#215). */
+/** Builds the fan-out Sends to the field generators: sections only, never the diagnosis or instructions (#215). */
 function buildFieldGenerationSends(
-  state: Pick<
-    GenerationGraphState,
-    "generationFlags" | "outlineSections" | "userInstructions"
-  >
+  state: Pick<GenerationGraphState, "generationFlags" | "outlineSections">
 ): Send[] {
   const sends: Send[] = [];
 
@@ -61,10 +46,6 @@ function buildFieldGenerationSends(
     sends.push(
       new Send("patient_generate", {
         outlineSections: state.outlineSections,
-        userInstructions: filterUserInstructions(state.userInstructions, [
-          "patient",
-          "general",
-        ]),
       })
     );
   }
@@ -72,10 +53,6 @@ function buildFieldGenerationSends(
     sends.push(
       new Send("chief_complaint_phase", {
         outlineSections: state.outlineSections,
-        userInstructions: filterUserInstructions(state.userInstructions, [
-          "chiefComplaint",
-          "general",
-        ]),
       })
     );
   }
@@ -83,10 +60,6 @@ function buildFieldGenerationSends(
     sends.push(
       new Send("anamnesis_phase", {
         outlineSections: state.outlineSections,
-        userInstructions: filterUserInstructions(state.userInstructions, [
-          "anamnesis",
-          "general",
-        ]),
       })
     );
   }
@@ -96,10 +69,7 @@ function buildFieldGenerationSends(
 
 // ─── fan-out field nodes ──────────────────────────────────────────────────────
 
-type PatientNodeInput = Pick<
-  GenerationGraphState,
-  "outlineSections" | "userInstructions"
->;
+type PatientNodeInput = Pick<GenerationGraphState, "outlineSections">;
 
 // `patient` stays a plain function node, not a subgraph: structured `Patient` object, not `ContentPart[]`; no `alt` to render, nothing for a modality provider.
 function makeGeneratePatient(runtime: GraphRuntime) {
@@ -111,7 +81,6 @@ function makeGeneratePatient(runtime: GraphRuntime) {
     const patient = await generatePatientGateway(
       runtime,
       state.outlineSections.patient,
-      renderUserInstructions(state.userInstructions),
       lgRuntime?.context
     ).catch((error) => {
       runtime.log.error(`[GenerationGraph] Error generating patient: ${error}`);

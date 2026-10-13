@@ -306,6 +306,23 @@ describe("continuation, plan mode + sandwich on", () => {
     );
   });
 
+  it("ignores userInstructions sent with a plan: planCase gets none (#220)", async () => {
+    const fake = fakeGraph();
+    const { service } = build(fake);
+    const planned = await service.generate(request({ jobId: "cont-4" }));
+
+    await service.generate(
+      request({
+        jobId: "cont-4",
+        plan: planned.plan,
+        userInstructions: { general: "add a lab finding" },
+      })
+    );
+
+    expect(fake.planCalls[1]!.userInstructions).toBeUndefined();
+    expect(fake.planCalls[1]!.callerSuppliedFreeText).toBe(true); // diagnosis name, not the instructions
+  });
+
   it("a broken skeleton fails with INVALID_PLAN, 400", async () => {
     const fake = fakeGraph();
     const { service } = build(fake);

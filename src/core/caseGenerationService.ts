@@ -311,9 +311,11 @@ export function createCaseGenerationService(
     // Translate-in trigger: caller supplied a diagnosis name or
     // `userInstructions`. Compute BEFORE ICD→name resolution, which would
     // make ICD-only look like free text.
+    // A plan already absorbed the instructions (#220): only its first call reads them.
     const callerSuppliedFreeText =
       Boolean(req.diagnosis) ||
-      (req.userInstructions !== undefined &&
+      (!req.plan &&
+        req.userInstructions !== undefined &&
         Object.keys(req.userInstructions).length > 0);
 
     let diagnosisName = req.diagnosis;
@@ -354,7 +356,7 @@ export function createCaseGenerationService(
         const planned = await graph.planCase({
           diagnosis: { name: diagnosisName, icd: req.icd },
           generationFlags,
-          userInstructions: req.userInstructions,
+          userInstructions: req.plan ? undefined : req.userInstructions,
           language,
           difficulty: req.difficulty,
           callerSuppliedFreeText,
@@ -388,7 +390,6 @@ export function createCaseGenerationService(
         const generatedCase = await graph.renderCase({
           diagnosis: planned.diagnosis,
           generationFlags,
-          userInstructions: planned.userInstructions,
           difficulty: req.difficulty,
           // Each case node reads only its own sections (#215).
           outlineSections: outlineSections(outline),

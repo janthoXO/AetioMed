@@ -15,7 +15,6 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 export async function generatePatient(
   runtime: GraphRuntime,
   patientSection: string,
-  userInstructions?: string, // provided by the user | undefined
   context?: RequestContext
 ): Promise<Patient> {
   // Internal (English): no free text left in `Patient`, only numbers, an enum and a name.
@@ -40,11 +39,7 @@ ${renderSchemaForPrompt(PatientSchema)}`
     )
   );
 
-  const userPrompt = buildPrompt(
-    section("Patient", patientSection),
-
-    section("Additional instructions", userInstructions)
-  );
+  const userPrompt = buildPrompt(section("Patient", patientSection));
 
   console.debug(
     `[GeneratePatientFromOutline] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`

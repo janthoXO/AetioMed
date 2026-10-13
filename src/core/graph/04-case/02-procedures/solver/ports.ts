@@ -13,7 +13,6 @@ export type BlindedView = {
   presentation: Presentation;
   previousProcedures: PreviousProcedureFinding[];
   ruledOutDiagnoses: string[];
-  userInstructions?: string | undefined;
   iterationsRemaining: number;
   context?: RequestContext | undefined;
 };
@@ -25,7 +24,6 @@ export type OracleView = {
   previousProcedures: PreviousProcedureFinding[];
   /** The outline's `## Procedures` section (#215). */
   proceduresStrategy?: string | undefined;
-  userInstructions?: string | undefined;
   context?: RequestContext | undefined;
 };
 

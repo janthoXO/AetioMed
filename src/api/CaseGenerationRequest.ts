@@ -31,7 +31,7 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
       .optional()
       .describe("Name of the diagnosis diagnosis"),
     userInstructions: UserInstructionsSchema.optional().describe(
-      "Additional context for case generation"
+      "Additional context for case generation. Absorbed into the plan: ignored when 'plan' is set."
     ),
     generationFlags: z
       .array(GenerationFlagSchema)

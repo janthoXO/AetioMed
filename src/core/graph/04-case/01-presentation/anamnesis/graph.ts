@@ -8,10 +8,7 @@ import {
   RequestContextSchema,
   type RequestContext,
 } from "@/core/graph/utils/context.js";
-import {
-  renderUserInstructions,
-  boundLanguage,
-} from "@/core/graph/shared/prompt/prompt.js";
+import { boundLanguage } from "@/core/graph/shared/prompt/prompt.js";
 import {
   PlannedPartSchema,
   type ModalityPlan,
@@ -24,7 +21,6 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 const AnamnesisGraphStateSchema = CaseGenerationStateSchema.pick({
-  userInstructions: true,
   case: true,
 }).extend({
   outlineSections: OutlineSectionsSchema,
@@ -52,7 +48,7 @@ function makePlanContent(
   providers: ModalityProvider<unknown>[]
 ) {
   return async function planContent(
-    state: Pick<AnamnesisGraphState, "outlineSections" | "userInstructions">,
+    state: Pick<AnamnesisGraphState, "outlineSections">,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Pick<AnamnesisGraphState, "plan">> {
     const plan = await planAnamnesis(
@@ -63,7 +59,6 @@ function makePlanContent(
         anamnesis: state.outlineSections.anamnesis,
       },
       providers,
-      renderUserInstructions(state.userInstructions),
       lgRuntime?.context
     );
     return { plan };

@@ -1,5 +1,5 @@
 // Compiled subgraph writes back ENTIRE state unless `output` declared. Parallel `Send` fan-out of
-// `chief_complaint_phase`/`anamnesis_phase` would give `diagnosis`, `userInstructions`, `outline` (`LastValue`)
+// `chief_complaint_phase`/`anamnesis_phase` would give `userInstructions`, `outlineSections` (`LastValue`)
 // two values per superstep -> `INVALID_CONCURRENT_GRAPH_UPDATE`. Mounts REAL subgraphs under a parent mirroring
 // `buildFieldGenerationSends`'s payload, so dropping a write can't pass.
 import { chatModelLlmPort } from "@/adapters/ai/llm.js";
@@ -17,7 +17,7 @@ import { createJobEventChannel } from "@/core/jobEvents/channel.js";
 import { wireLabels, type LabelEvent } from "@/core/jobEvents/labels.js";
 import { buildChiefComplaintGraph } from "@/core/graph/04-case/01-presentation/chief-complaint/graph.js";
 import { buildAnamnesisGraph } from "@/core/graph/04-case/01-presentation/anamnesis/graph.js";
-import { caseFanIn } from "./graph.js";
+import { buildFieldGenerationGraph, caseFanIn } from "./graph.js";
 import { CaseGenerationStateSchema } from "@/core/graph/shared/caseGenerationState.js";
 import type { ModalityProvider } from "@/core/graph/shared/modality/ports.js";
 import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
@@ -77,6 +77,13 @@ function textProvider(): ModalityProvider<unknown> {
       ),
   };
 }
+
+const SECTIONS = {
+  patient: "58, male.",
+  chiefComplaint: "Sharp pain.",
+  anamnesis: "No history.",
+  procedures: "Order an ECG.",
+};
 
 describe("chief_complaint_phase + anamnesis_phase fanned out together", () => {
   it("resolves and yields both chiefComplaint and anamnesis, instead of throwing INVALID_CONCURRENT_GRAPH_UPDATE", async () => {
@@ -139,13 +146,11 @@ describe("chief_complaint_phase + anamnesis_phase fanned out together", () => {
       )
       .addConditionalEdges(START, (state) => [
         new Send("chief_complaint_phase", {
-          diagnosis: state.diagnosis,
-          outline: state.outline,
+          outlineSections: state.outlineSections,
           userInstructions: state.userInstructions,
         }),
         new Send("anamnesis_phase", {
-          diagnosis: state.diagnosis,
-          outline: state.outline,
+          outlineSections: state.outlineSections,
           userInstructions: state.userInstructions,
         }),
       ])
@@ -156,7 +161,7 @@ describe("chief_complaint_phase + anamnesis_phase fanned out together", () => {
     const result = (await parent.invoke({
       diagnosis: { name: "Influenza", icd: "1E32" },
       generationFlags: ["chiefComplaint", "anamnesis"],
-      outline: "outline text",
+      outlineSections: SECTIONS,
       case: {},
     })) as { case: Case };
 
@@ -234,13 +239,11 @@ describe("chief_complaint_phase + anamnesis_phase fan-out labels", () => {
       )
       .addConditionalEdges(START, (state) => [
         new Send("chief_complaint_phase", {
-          diagnosis: state.diagnosis,
-          outline: state.outline,
+          outlineSections: state.outlineSections,
           userInstructions: state.userInstructions,
         }),
         new Send("anamnesis_phase", {
-          diagnosis: state.diagnosis,
-          outline: state.outline,
+          outlineSections: state.outlineSections,
           userInstructions: state.userInstructions,
         }),
       ])
@@ -253,7 +256,7 @@ describe("chief_complaint_phase + anamnesis_phase fan-out labels", () => {
         parent.invoke({
           diagnosis: { name: "Influenza", icd: "1E32" },
           generationFlags: ["chiefComplaint", "anamnesis"],
-          outline: "outline text",
+          outlineSections: SECTIONS,
           case: {},
         }),
       jobId
@@ -294,5 +297,60 @@ describe("case_fan_in", () => {
   it("writes nothing — a join point produces no update", () => {
     // `case_fan_in` is a plain join returning `{}`; field nodes already wrote `case`.
     expect(caseFanIn()).toEqual({});
+  });
+});
+
+describe("buildFieldGenerationGraph", () => {
+  it("presentation planners read only their own sections, never the diagnosis", async () => {
+    const prompts: string[] = [];
+    const plan = (key: string) => ({
+      plans: {
+        [key]: {
+          requests: [
+            { provider: "text", input: { instruction: "x" }, alt: "x" },
+          ],
+        },
+      },
+    });
+    const llm: LlmPort = {
+      async structured(_call, { system, user }) {
+        prompts.push(`${system}\n${user}`);
+        if (system.includes("patient demographics")) {
+          return { name: "A", age: 1, gender: "male" } as never;
+        }
+        return plan(
+          system.includes("chief complaint") ? "chiefComplaint" : "History"
+        ) as never;
+      },
+      async text() {
+        throw new Error("unexpected text call");
+      },
+    };
+    const registry = [textProvider()];
+    const graph = buildFieldGenerationGraph(
+      buildFakeRuntime(llm),
+      { chiefComplaint: registry, anamnesis: registry } as never,
+      createTraceNode(new EventBus())
+    );
+
+    await graph.invoke({
+      diagnosis: { name: "Zebra syndrome", icd: "ZZ00" },
+      generationFlags: ["patient", "chiefComplaint", "anamnesis"],
+      outlineSections: {
+        patient: "PATIENT_MARK",
+        chiefComplaint: "CC_MARK",
+        anamnesis: "ANA_MARK",
+        procedures: "PROC_MARK",
+      },
+      case: {},
+    });
+
+    expect(prompts).toHaveLength(3);
+    const all = prompts.join("\n");
+    for (const mark of ["PATIENT_MARK", "CC_MARK", "ANA_MARK"]) {
+      expect(all).toContain(mark);
+    }
+    expect(all).not.toContain("Zebra syndrome");
+    expect(all).not.toContain("PROC_MARK");
   });
 });

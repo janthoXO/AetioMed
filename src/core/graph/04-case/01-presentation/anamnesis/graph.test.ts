@@ -15,7 +15,6 @@ import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
-import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
 
 function makeQueuedLlmPort(
@@ -76,7 +75,12 @@ function makeCountingTextProvider(): {
   return { provider, calls };
 }
 
-const diagnosis: Diagnosis = { name: "Influenza", icd: "1E32" };
+const SECTIONS = {
+  patient: "58, male.",
+  chiefComplaint: "Sharp pain.",
+  anamnesis: "No history.",
+  procedures: "Order an ECG.",
+};
 
 function buildGraph(
   llm: LlmPort,
@@ -152,8 +156,7 @@ describe("anamnesisGraph", () => {
     );
 
     const result = (await graph.invoke({
-      diagnosis,
-      outline: "outline text",
+      outlineSections: SECTIONS,
       case: {},
     })) as { case: Case };
 
@@ -206,8 +209,7 @@ describe("anamnesisGraph", () => {
     );
 
     await graph.invoke({
-      diagnosis,
-      outline: "outline text",
+      outlineSections: SECTIONS,
       case: {},
     });
 
@@ -259,8 +261,7 @@ describe("anamnesisGraph", () => {
 
     const graph = buildGraph(llm, [slow, fast], ["Current Symptoms"]);
     const result = (await graph.invoke({
-      diagnosis,
-      outline: "outline text",
+      outlineSections: SECTIONS,
       case: {},
     })) as { case: Case };
 

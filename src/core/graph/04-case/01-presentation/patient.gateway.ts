@@ -1,4 +1,3 @@
-import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
 import {
   PatientSchema,
   type Patient,
@@ -15,8 +14,7 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 
 export async function generatePatient(
   runtime: GraphRuntime,
-  diagnosis: Diagnosis, // provided by the user
-  outline: string,
+  patientSection: string,
   userInstructions?: string, // provided by the user | undefined
   context?: RequestContext
 ): Promise<Patient> {
@@ -25,13 +23,13 @@ export async function generatePatient(
     section(
       "Role",
       `You are an expert medical educator authoring a realistic clinical patient file for a medical training simulator.
-Your current task is to render the Patient Demographics specified in the provided Case Outline into the required JSON format. The outline is the single source of truth — you do not decide any clinical facts yourself.`
+Your current task is to render the patient demographics from the provided Patient section of a case outline into the required JSON format. The section is the single source of truth — you do not decide any clinical facts yourself.`
     ),
 
     section(
       "Requirements",
-      `- Take the demographics and biometrics (Age, Gender, Height in cm, Weight in kg) EXACTLY as specified in the outline. Do not change or invent any of these values.
-- Your only own contribution is a realistic, culturally appropriate full name matching the outline's demographics.
+      `- Take the demographics and biometrics (Age, Gender, Height in cm, Weight in kg) EXACTLY as specified in the section. Do not change or invent any of these values.
+- Your only own contribution is a realistic, culturally appropriate full name matching the section's demographics.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
 
@@ -43,9 +41,7 @@ ${renderSchemaForPrompt(PatientSchema)}`
   );
 
   const userPrompt = buildPrompt(
-    section("Target diagnosis", `${diagnosis.name} ${diagnosis.icd ?? ""}`),
-
-    section("Case outline", outline),
+    section("Patient", patientSection),
 
     section("Additional instructions", userInstructions)
   );

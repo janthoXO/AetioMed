@@ -440,6 +440,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
         patient: "58, male.",
         chiefComplaint: "Sharp pain.",
         anamnesis: "No history.",
+        procedures: "Order an ECG.",
       },
     });
 
@@ -468,6 +469,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
         patient: "58, male.",
         chiefComplaint: "Sharp pain.",
         anamnesis: "No history.",
+        procedures: "Order an ECG.",
       },
     });
 

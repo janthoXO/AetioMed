@@ -1,6 +1,9 @@
 import { END, START, StateGraph, type Runtime } from "@langchain/langgraph";
 import z from "zod";
-import { CaseGenerationStateSchema } from "@/core/graph/shared/caseGenerationState.js";
+import {
+  CaseGenerationStateSchema,
+  OutlineSectionsSchema,
+} from "@/core/graph/shared/caseGenerationState.js";
 import {
   RequestContextSchema,
   type RequestContext,
@@ -21,11 +24,10 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 const AnamnesisGraphStateSchema = CaseGenerationStateSchema.pick({
-  diagnosis: true,
   userInstructions: true,
   case: true,
 }).extend({
-  outline: z.string(),
+  outlineSections: OutlineSectionsSchema,
   // Category name -> ORDERED planned render requests. Planner enumerates categories (`planAnamnesis`).
   plan: z.record(z.string(), z.array(PlannedPartSchema)).default({}),
 });
@@ -50,17 +52,16 @@ function makePlanContent(
   providers: ModalityProvider<unknown>[]
 ) {
   return async function planContent(
-    state: Pick<
-      AnamnesisGraphState,
-      "diagnosis" | "outline" | "userInstructions"
-    >,
+    state: Pick<AnamnesisGraphState, "outlineSections" | "userInstructions">,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Pick<AnamnesisGraphState, "plan">> {
     const plan = await planAnamnesis(
       runtime,
       boundLanguage(runtime),
-      state.diagnosis,
-      state.outline,
+      {
+        patient: state.outlineSections.patient,
+        anamnesis: state.outlineSections.anamnesis,
+      },
       providers,
       renderUserInstructions(state.userInstructions),
       lgRuntime?.context

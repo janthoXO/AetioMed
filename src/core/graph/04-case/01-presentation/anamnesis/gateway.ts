@@ -7,7 +7,6 @@ import {
   section,
   summarizeValidationError,
 } from "@/core/graph/shared/prompt/prompt.js";
-import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
 import { retry } from "@/core/graph/shared/prompt/retry.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
@@ -29,8 +28,7 @@ import type {
 export async function planAnamnesis(
   runtime: GraphRuntime,
   language: Language | undefined,
-  diagnosis: Diagnosis,
-  outline: string,
+  sections: { patient: string; anamnesis: string },
   providers: ModalityProvider<unknown>[],
   userInstructions?: string,
   context?: RequestContext
@@ -46,14 +44,15 @@ export async function planAnamnesis(
     section(
       "Role",
       `You are an AI planning data for a medical training simulator.
-Your current task is to plan how the Anamnesis (medical history) facts from the provided Case Outline should be rendered, in the patient's own voice. The outline is the single source of truth — you do not decide any clinical facts yourself, only how to present them.`
+Your current task is to plan how the Anamnesis (medical history) facts from the provided Anamnesis section of a case outline should be rendered, in the patient's own voice. The section is the single source of truth — you do not decide any clinical facts yourself, only how to present them.`
     ),
 
     section(
       "Requirements",
-      `- The rendered text must read as the PATIENT filling out an intake form: subjective voice, layman's terms, personal tone (e.g., "My chest feels heavy" instead of "Patient presents with angina"), adapted to the patient's age and demographic as defined in the outline.
+      `- The rendered text must read as the PATIENT filling out an intake form: subjective voice, layman's terms, personal tone (e.g., "My chest feels heavy" instead of "Patient presents with angina"), adapted to the patient's age and demographics from the Patient section.
 - Plan exactly one content unit per required intake form category, keyed by that category's exact name.
-- Use ONLY the facts specified in the outline. Do not invent symptoms, history items, medications, or details beyond the outline; your job is voice, format and rendering choice.
+- Use ONLY the facts in the Anamnesis section. Do not invent symptoms, history items, medications, or details beyond the section; your job is voice, format and rendering choice.
+- If the section reports the patient's own belief about what they have, keep it as the patient's belief, in their words (e.g. "I read it might be my gallbladder"). Never name, suggest or hint at a diagnosis the section does not state.
 - Prefer a single request against the "text" provider carrying each category's whole answer, unless another available provider would clearly add value.
 - Each request's "alt" is the complete content of that part: every fact the rendered part states, written out in full, in the patient voice above. Later diagnostic steps read ONLY "alt", never the rendered part, so a fact missing from "alt" does not exist for them. The provider renders "alt" into the final wording and never invents facts; give the "text" provider an empty input object.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
@@ -78,9 +77,9 @@ ${renderSchemaForPrompt(schema)}`
   );
 
   const userPrompt = buildPrompt(
-    section("Target diagnosis", `${diagnosis.name} ${diagnosis.icd ?? ""}`),
+    section("Patient", sections.patient),
 
-    section("Case outline", outline),
+    section("Anamnesis", sections.anamnesis),
 
     section("Additional instructions", userInstructions)
   );

@@ -214,21 +214,23 @@ export function checkSkeleton(
   return { ok: true };
 }
 
-/** Outline section text per presentation field: what the blinded solver reads for a field not generated (#205). */
-export type PresentationSections = {
+/** Outline section text per case-graph field (#215). */
+export type OutlineSections = {
   patient: string;
   chiefComplaint: string;
   anamnesis: string;
+  procedures: string;
 };
 
 /**
- * Slices the presentation sections out of a skeleton-checked outline, by
- * position: anamnesis keeps its `### <category>` subsections. Never `## General`
- * (pedagogy) or `## Procedures` (results strategy, written knowing the diagnosis).
+ * Slices a skeleton-checked outline into per-field section text, by position:
+ * anamnesis keeps its `### <category>` subsections. Each case-graph node reads
+ * only its own sections (#215): presentation planners and the blinded solver
+ * (fields not generated, #205) the presentation sections; the result planner
+ * and bridge `procedures`, the results strategy written knowing the diagnosis.
+ * Never `## General`: read only by the outline judge loop.
  */
-export function presentationSections(
-  segments: OutlineSegments
-): PresentationSections {
+export function outlineSections(segments: OutlineSegments): OutlineSections {
   const fixed = segments.flatMap((s, i) => (s.fixed ? [i] : []));
   const categoryCount = fixed.length - SECTION_KEYS.length;
   const anchor = SECTION_KEYS.indexOf(CATEGORY_ANCHOR);
@@ -242,6 +244,7 @@ export function presentationSections(
     patient: body("patient"),
     chiefComplaint: body("chiefComplaint"),
     anamnesis: body("anamnesis"),
+    procedures: body("procedures"),
   };
 }
 

@@ -7,6 +7,13 @@ import { registry } from "@langchain/langgraph/zod";
 import { UserInstructionsSchema } from "@/core/graph/shared/domain/UserInstructions.js";
 import { DifficultySchema } from "@/core/graph/shared/domain/Difficulty.js";
 
+export const OutlineSectionsSchema = z.object({
+  patient: z.string(),
+  chiefComplaint: z.string(),
+  anamnesis: z.string(),
+  procedures: z.string(),
+});
+
 export const CaseGenerationStateSchema = z.object({
   diagnosis: DiagnosisSchema,
   userInstructions: UserInstructionsSchema.optional(),
@@ -30,20 +37,12 @@ export const CaseGenerationStateSchema = z.object({
   /** Medical-basis fragments in registry order. Empty when registry empty (no `basis_resolve` node). */
   basisFragments: BasisFragmentSchema.array().default([]),
 
-  /** Case blueprint. Threaded to field and procedure-result generation, never to blinded solver. */
-  outline: z.string().optional(),
-
   /**
-   * Outline's presentation sections (`presentationSections`): the blinded
-   * solver's view of a field not generated (#205). Never `## General` or `## Procedures`.
+   * Per-field outline sections (`outlineSections`), each node reads only its
+   * own (#215); the blinded solver reads the presentation ones for a field not
+   * generated (#205). Never `## General`.
    */
-  outlineSections: z
-    .object({
-      patient: z.string(),
-      chiefComplaint: z.string(),
-      anamnesis: z.string(),
-    })
-    .optional(),
+  outlineSections: OutlineSectionsSchema.optional(),
 });
 
 export type CaseGenerationState = z.infer<typeof CaseGenerationStateSchema>;

@@ -7,7 +7,6 @@ import {
   section,
   summarizeValidationError,
 } from "@/core/graph/shared/prompt/prompt.js";
-import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
 import { retry } from "@/core/graph/shared/prompt/retry.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
@@ -33,8 +32,7 @@ export const CHIEF_COMPLAINT_UNIT_KEY = "chiefComplaint";
 export async function planChiefComplaint(
   runtime: GraphRuntime,
   language: Language | undefined,
-  diagnosis: Diagnosis,
-  outline: string,
+  sections: { patient: string; chiefComplaint: string },
   providers: ModalityProvider<unknown>[],
   userInstructions?: string,
   context?: RequestContext
@@ -47,13 +45,14 @@ export async function planChiefComplaint(
     section(
       "Role",
       `You are an expert attending physician documenting a patient's presentation for a medical training simulator.
-Your current task is to plan how the Chief Complaint facts from the provided Case Outline should be rendered. The outline is the single source of truth — you do not decide any clinical facts yourself, only how to present them.`
+Your current task is to plan how the chief complaint from the provided outline sections should be rendered. The sections are the single source of truth — you do not decide any clinical facts yourself, only how to present them.`
     ),
 
     section(
       "Requirements",
       `- The chief complaint is written from the perspective of a medical professional writing in a clinical chart: concise, objective clinical language and standard medical terminology (e.g., "acute onset dyspnea" instead of "shortness of breath").
-- Use ONLY the facts specified in the outline (chief complaint, demographics, symptom timeline). Do not add clinical facts not present in the outline.
+- Use ONLY the facts in the Chief complaint section, plus the demographics from the Patient section. Do not add clinical facts.
+- A referral and any suspected diagnosis it states are facts of the chief complaint: render them exactly as the section words them, and keep a suspicion a suspicion (e.g. "V.a. ...", "suspected ..."). Never name, suggest or hint at a diagnosis the section does not state.
 - Plan exactly one content unit, keyed "${CHIEF_COMPLAINT_UNIT_KEY}".
 - Prefer a single request against the "text" provider carrying the whole chief complaint, unless another available provider would clearly add value.
 - Each request's "alt" is the complete content of that part: every fact the rendered part states, written out in full, in the clinical-chart voice above. Later diagnostic steps read ONLY "alt", never the rendered part, so a fact missing from "alt" does not exist for them. The provider renders "alt" into the final wording and never invents facts; give the "text" provider an empty input object.
@@ -70,9 +69,9 @@ ${renderSchemaForPrompt(schema)}`
   );
 
   const userPrompt = buildPrompt(
-    section("Target diagnosis", `${diagnosis.name} ${diagnosis.icd ?? ""}`),
+    section("Patient", sections.patient),
 
-    section("Case outline", outline),
+    section("Chief complaint", sections.chiefComplaint),
 
     section("Additional instructions", userInstructions)
   );

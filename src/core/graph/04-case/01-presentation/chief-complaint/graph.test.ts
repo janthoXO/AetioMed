@@ -14,7 +14,6 @@ import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js"
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
-import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
 
 // ─── Fakes ──────────────────────────────────────────────────────────────────
@@ -81,7 +80,12 @@ function imageProvider(): ModalityProvider<unknown> {
   };
 }
 
-const diagnosis: Diagnosis = { name: "Influenza", icd: "1E32" };
+const SECTIONS = {
+  patient: "58, male.",
+  chiefComplaint: "Sharp pain.",
+  anamnesis: "No history.",
+  procedures: "Order an ECG.",
+};
 
 async function nodeIds(graph: {
   getGraphAsync: (opts: { xray: boolean }) => Promise<{
@@ -172,8 +176,7 @@ describe("chiefComplaintGraph — single-provider registry", () => {
     const graph = buildGraph(llm, [textProvider()], bus);
 
     const result = (await graph.invoke({
-      diagnosis,
-      outline: "outline text",
+      outlineSections: SECTIONS,
       userInstructions: undefined,
       case: {},
     })) as { case: Case };
@@ -217,8 +220,7 @@ describe("chiefComplaintGraph — single-provider registry", () => {
 
     const graph = buildGraph(llm, [fakeProvider]);
     const result = (await graph.invoke({
-      diagnosis,
-      outline: "outline text",
+      outlineSections: SECTIONS,
       case: {},
     })) as { case: Case };
 
@@ -274,8 +276,7 @@ describe("chiefComplaintGraph — multi-provider registry: planned order, not co
 
     const graph = buildGraph(llm, [slow, fast]);
     const result = (await graph.invoke({
-      diagnosis,
-      outline: "outline text",
+      outlineSections: SECTIONS,
       case: {},
     })) as { case: Case };
 

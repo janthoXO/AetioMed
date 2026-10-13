@@ -22,7 +22,7 @@ import {
 } from "@/core/graph/shared/domain/ProcedureTree.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
 import { altOf } from "@/core/graph/shared/domain/ContentPart.js";
-import type { PresentationSections } from "@/core/graph/shared/outline/segments.js";
+import type { OutlineSections } from "@/core/graph/shared/outline/segments.js";
 import { matchDiagnosis } from "./match.gateway.js";
 import { invokeLogged } from "./solver/invokeLogged.js";
 import { buildBlindedSolverGraph } from "./solver/graph.js";
@@ -53,7 +53,6 @@ const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
   userInstructions: true,
   case: true,
-  outline: true,
   outlineSections: true,
 }).extend({
   /** Iterations remaining before the bridge step is forced. */
@@ -91,7 +90,7 @@ type BlindedSolverGraph = ReturnType<typeof buildBlindedSolverGraph>;
  */
 function presentationOf(
   c: Case,
-  sections: PresentationSections | undefined
+  sections: OutlineSections | undefined
 ): Presentation {
   const patient = c.patient ?? sections?.patient;
   const chiefComplaint =
@@ -302,7 +301,7 @@ function makeResultStep(
       state.diagnosis,
       pending,
       providers,
-      state.outline,
+      state.outlineSections?.procedures,
       userInstructionsForProcedures(state.userInstructions),
       lgRuntime?.context
     ).catch((error) => {
@@ -355,6 +354,7 @@ function makeBridge(runtime: GraphRuntime, strategy: ProcedureStrategy) {
       presentation,
       diagnosis: state.diagnosis,
       previousProcedures,
+      proceduresStrategy: state.outlineSections?.procedures,
       userInstructions,
       context: lgRuntime?.context,
     });

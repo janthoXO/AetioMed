@@ -193,7 +193,7 @@ export class DrillDownPick implements ProcedureStrategy {
         view.diagnosis,
         procedures,
         this.providers,
-        undefined,
+        view.proceduresStrategy,
         view.userInstructions,
         view.context
       ),

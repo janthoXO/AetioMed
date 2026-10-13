@@ -23,6 +23,8 @@ export type OracleView = {
   presentation: Presentation;
   diagnosis: Diagnosis;
   previousProcedures: PreviousProcedureFinding[];
+  /** The outline's `## Procedures` section (#215). */
+  proceduresStrategy?: string | undefined;
   userInstructions?: string | undefined;
   context?: RequestContext | undefined;
 };

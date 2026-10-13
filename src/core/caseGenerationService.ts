@@ -14,8 +14,7 @@ import { getRequestContext, runWithContext } from "./graph/utils/context.js";
 import { AppError, OutlineNotAcceptedError } from "./graph/errors/AppError.js";
 import {
   checkSkeleton,
-  joinOutline,
-  presentationSections,
+  outlineSections,
   restoreSkeletonHeadings,
   OutlineSegmentsSchema,
   type OutlineSegments,
@@ -391,9 +390,8 @@ export function createCaseGenerationService(
           generationFlags,
           userInstructions: planned.userInstructions,
           difficulty: req.difficulty,
-          outline: joinOutline(outline),
-          // Blinded solver reads these for fields not generated (#205).
-          outlineSections: presentationSections(outline),
+          // Each case node reads only its own sections (#215).
+          outlineSections: outlineSections(outline),
         });
         return { jobId, status: "done", case: generatedCase, language };
       },

@@ -28,7 +28,6 @@ import type {
   ModalityProvider,
   PlannedPart,
 } from "@/core/graph/shared/modality/ports.js";
-import { OUTLINE_SECTIONS } from "@/core/graph/shared/outline/segments.js";
 import {
   presentationSection,
   diagnosisLabel,
@@ -79,7 +78,7 @@ export async function planProcedureResults(
   diagnosis: Diagnosis,
   procedureSteps: ProcedureRef[],
   providers: ModalityProvider<unknown>[],
-  outline?: string,
+  proceduresStrategy?: string, // the outline's `## Procedures` section
   userInstructions?: string,
   context?: RequestContext
 ): Promise<PlannedProcedure[]> {
@@ -106,6 +105,11 @@ These procedures were chosen by a separate, BLINDED solver who does not know the
   - "obligatory": essential to establishing or confirming this diagnosis.
   - "optional": clinically reasonable and supportive, but not required for this diagnosis.
   - "contraindicated": not indicated, or potentially harmful/misleading, given this diagnosis — even if the blinded solver had a reasonable reason to order it without knowing the diagnosis.
+- Results are reports to the physician who ordered them: no advice such as "discuss with your doctor".
+- Laboratory results: value, unit, reference range and a high/low flag; no interpretation.
+- Imaging and other reports: findings, then an impression. Name the true diagnosis only in the impression of a procedure that is diagnostic for it, hedged as the results strategy specifies (e.g. "consistent with ...", "most likely ..., differential ...", or non-committal). Never name it in passing in any other procedure, and never negate it ("no evidence of <true diagnosis>").
+- A report may state its clinical question only by echoing a diagnosis already named in the patient presentation verbatim, or at symptom level. Never state a suspicion of your own.
+- "No evidence of <X>" is fine for a diagnosis named in the presentation or for any alternative, never for the true diagnosis.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
 
@@ -119,13 +123,12 @@ ${renderSchemaForPrompt(schema)}`
   );
 
   const userPrompt = buildPrompt(
-    outline
-      ? section(
-          "Case blueprint",
-          `Single source of truth — follow its "${OUTLINE_SECTIONS.procedures}" section, including any difficulty-driven ambiguity or borderline values it specifies:
-${outline}`
-        )
-      : undefined,
+    section(
+      "Results strategy",
+      proceduresStrategy &&
+        `From the case blueprint, written knowing the diagnosis. Follow it, including any difficulty-driven ambiguity, borderline values or impression hedging it specifies:
+${proceduresStrategy}`
+    ),
 
     presentationSection(presentation),
 

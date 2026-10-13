@@ -14,8 +14,7 @@ import type {
   RenderCaseInput,
 } from "@/core/graph/appContext.js";
 import {
-  joinOutline,
-  presentationSections,
+  outlineSections,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
@@ -204,9 +203,8 @@ describe("normal mode", () => {
       language: "German",
       plan: OUTLINE,
     } satisfies PlanPayload);
-    expect(fake.renderCalls[0]!.outline).toBe(joinOutline(OUTLINE));
     expect(fake.renderCalls[0]!.outlineSections).toEqual(
-      presentationSections(OUTLINE)
+      outlineSections(OUTLINE)
     );
     // Normal mode: no reviewer, no outline translation.
     expect(fake.translateCalls).toHaveLength(0);
@@ -240,7 +238,9 @@ describe("continuation, plan mode + sandwich on", () => {
       fake.translateCalls.filter((c) => c.direction === "in")
     ).toHaveLength(0);
     expect(fake.planCalls[1]!.outline).toEqual(OUTLINE);
-    expect(fake.renderCalls[0]!.outline).toBe(joinOutline(OUTLINE));
+    expect(fake.renderCalls[0]!.outlineSections).toEqual(
+      outlineSections(OUTLINE)
+    );
   });
 
   it("only the edited editable segment is translated in; a fixed heading is restored to English even if it also misses the cache and the translator mangles it", async () => {
@@ -290,7 +290,7 @@ describe("continuation, plan mode + sandwich on", () => {
     expect(fake.planCalls[1]!.outline).toEqual(expectedOutline);
   });
 
-  it("planCase receives outline = the English plan; renderCase receives joinOutline(englishPlan)", async () => {
+  it("planCase receives outline = the English plan; renderCase receives its sections", async () => {
     const fake = fakeGraph();
     const { service } = build(fake);
     const planned = await service.generate(request({ jobId: "cont-3" }));
@@ -301,7 +301,9 @@ describe("continuation, plan mode + sandwich on", () => {
 
     expect(result.status).toBe("done");
     expect(fake.planCalls[1]!.outline).toEqual(OUTLINE);
-    expect(fake.renderCalls[0]!.outline).toBe(joinOutline(OUTLINE));
+    expect(fake.renderCalls[0]!.outlineSections).toEqual(
+      outlineSections(OUTLINE)
+    );
   });
 
   it("a broken skeleton fails with INVALID_PLAN, 400", async () => {
@@ -368,7 +370,9 @@ describe("continuation, sandwich off (any mode)", () => {
 
     expect(result.status).toBe("done");
     expect(fake.planCalls[1]!.outline).toEqual(edited);
-    expect(fake.renderCalls[1]!.outline).toBe(joinOutline(edited));
+    expect(fake.renderCalls[1]!.outlineSections).toEqual(
+      outlineSections(edited)
+    );
   });
 });
 

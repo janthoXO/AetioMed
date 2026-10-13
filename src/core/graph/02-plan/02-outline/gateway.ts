@@ -28,11 +28,12 @@ import {
   OutlineEvaluationSchema,
   type OutlineEvaluation,
 } from "./outlineEvaluation.js";
+import { instruction, rubric, type Recipe } from "./recipe.js";
 
 const DIFFICULTY_STRATEGY: Record<Difficulty, string> = {
   easy: `- Feature a clear, classic subset of this diagnosis's hallmark symptoms only. Do not include distractor symptoms from other conditions.
 - Procedure/workup results should be definitive and textbook — clearly consistent with the diagnosis, with no ambiguity.
-- The clinical picture should point toward the diagnosis fairly directly, while still never naming it.`,
+- The clinical picture should point toward the diagnosis fairly directly, while still never naming it outside the diagnostic label.`,
   medium: `- Feature a clinically coherent subset of this diagnosis's hallmark symptoms, and additionally introduce 1–2 distractor symptoms drawn from a plausible differential diagnosis.
 - Introduce minor or borderline changes in procedure/workup results (e.g. a value just outside normal range, a partially non-specific finding) so the picture is not immediately conclusive.
 - The overall presentation should require some deductive reasoning; it should not be solvable from the chief complaint alone.`,
@@ -55,6 +56,8 @@ export async function generateCaseOutline(
   basisFragments: BasisFragment[],
   difficulty: Difficulty,
   opts: {
+    /** Diagnostic label the server rolled (#216); none when unset. */
+    recipe?: Recipe | undefined;
     userInstructions?: string | undefined;
     feedback?: string[] | undefined;
     previousOutline?: OutlineSegments | undefined;
@@ -100,7 +103,7 @@ This blueprint will act as the SINGLE SOURCE OF TRUTH for downstream AI agents g
 2. Downstream generators must be able to write their field using ONLY facts from this outline. Any fact not specified here does not exist. Do not leave placeholders or vague descriptions.
 3. The Patient, Chief complaint and Anamnesis sections state FACTS ONLY, as the patient's record would: no pedagogical annotations, no hints, no labels such as "hallmark", "classic sign", "distractor" or "red herring", and no reasoning about what a finding suggests. Each of these sections must be self-contained: repeat in it every fact its field needs (onset, duration, severity, timeline), even when General already describes it — a reader of only that section must get every fact.
 4. Make sure that all sections are clinically coherent with each other.
-5. The diagnosis must never be explicitly named anywhere in the outline's content — the student must deduce it.
+5. Follow the "Diagnostic label" section exactly: it decides whether the presentation carries a suspected diagnosis, where, and how it relates to the true one. The student must still deduce the diagnosis.
 6. Additional instructions, when given, come from the case author. Write every fact or requirement they contain into the section it belongs to (e.g. a requested lab finding into Procedures, a requested medication into Anamnesis). Downstream authors never see the instructions — only this outline.
 7. Return ONLY the outline. Do not include introductory text, acknowledgments, or conversational filler.`
     ),
@@ -121,6 +124,11 @@ ${structure.join("\n")}`
       `Difficulty strategy (${difficulty})`,
       `This controls how unclear the diagnosis must remain to a student working through the case, both in the presentation AND in any workup/procedure results:
 ${DIFFICULTY_STRATEGY[difficulty]}`
+    ),
+
+    section(
+      "Diagnostic label (decided by the server)",
+      instruction(opts.recipe ?? [], diagnosis)
     ),
 
     anamnesisCategories
@@ -204,9 +212,9 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
 }
 
 const DIFFICULTY_EXPECTATION: Record<Difficulty, string> = {
-  easy: `At "easy" difficulty, the blueprint is EXPECTED to point fairly directly toward the diagnosis via a classic subset of hallmark symptoms. Only flag it as too obvious if the diagnosis name itself, or an unambiguous synonym/abbreviation of it, is leaked in the outline text.`,
-  medium: `At "medium" difficulty, the blueprint should require some deductive reasoning: a subset of hallmark symptoms plus at least one distractor symptom or a borderline procedure-result change. Flag it as too obvious if the presentation is a textbook, unambiguous match for the diagnosis with no distractors or ambiguity at all, or if the diagnosis name is leaked.`,
-  hard: `At "hard" difficulty, the blueprint must present an atypical picture: at least one omitted hallmark symptom, multiple distractor/differential symptoms, and ambiguous procedure results. Flag it as too obvious if the presentation is a clean or typical match for the diagnosis, if there are no meaningful distractors, or if the diagnosis name is leaked.`,
+  easy: `At "easy" difficulty, the blueprint is EXPECTED to point fairly directly toward the diagnosis via a classic subset of hallmark symptoms. Only flag it as too obvious if the diagnosis name itself, or an unambiguous synonym/abbreviation of it, is leaked outside the diagnostic label.`,
+  medium: `At "medium" difficulty, the blueprint should require some deductive reasoning: a subset of hallmark symptoms plus at least one distractor symptom or a borderline procedure-result change. Flag it as too obvious if the presentation is a textbook, unambiguous match for the diagnosis with no distractors or ambiguity at all, or if the diagnosis name is leaked outside the diagnostic label.`,
+  hard: `At "hard" difficulty, the blueprint must present an atypical picture: at least one omitted hallmark symptom, multiple distractor/differential symptoms, and ambiguous procedure results. Flag it as too obvious if the presentation is a clean or typical match for the diagnosis, if there are no meaningful distractors, or if the diagnosis name is leaked outside the diagnostic label.`,
 };
 
 /**
@@ -220,6 +228,8 @@ export async function evaluateOutline(
   diagnosis: Diagnosis,
   outline: string,
   difficulty: Difficulty,
+  /** The label the generator was told to place (#216). */
+  recipe: Recipe,
   userInstructions?: string,
   context?: RequestContext,
   /** Language outline was written in: English except plan mode, sandwich off (request language). */
@@ -235,12 +245,12 @@ export async function evaluateOutline(
 
     section(
       "Dimension 1: Obviousness",
-      `Judge whether the blueprint makes the diagnosis too easy to guess for the requested difficulty level. Evaluate it holistically: the symptom selection, any distractors present, and the planned workup/procedure-result strategy described in it.`
+      `Judge whether the blueprint makes the diagnosis too easy to guess for the requested difficulty level. Evaluate it holistically: the symptom selection, any distractors present, and the planned workup/procedure-result strategy described in it. A diagnostic label the server decided (see "Diagnostic label") is a hypothesis to the student, not an answer, even when correct: judge obviousness on the rest of the picture.`
     ),
 
     section(
       "Dimension 2: Clinical consistency",
-      `1. Diagnosis Secrecy (Pedagogical): The Patient, Chief complaint, Anamnesis and Procedures sections must not say or imply that THIS patient has the target diagnosis — e.g. "diagnosed with X", "suspected X", "known X", "X confirmed", or a procedure result that states the diagnosis. Naming means the diagnosis itself, a synonym or its abbreviation; physiological states, symptoms, findings, lab values and differential diagnoses do NOT name it. The same disease in a relative (family history) or as a known risk factor is NOT a leak: it is a clinical clue — weigh it under Obviousness only. The General section is the author's teaching design: it may describe hallmark signs, distractors, the difficulty strategy and the intended diagnosis — never reject because of content in General. The Patient, Chief complaint and Anamnesis sections must state facts only: flag a pedagogical label there (hallmark, classic, typical, distractor, red herring, or a remark on what a finding suggests). Also flag a field section that relies on General for a fact it needs instead of stating that fact itself.
+      `1. Diagnostic label and secrecy (Pedagogical): the blueprint must realise the "Diagnostic label" exactly as described there. Naming means the diagnosis itself, a synonym or its abbreviation; physiological states, symptoms, findings, lab values and differential diagnoses do NOT name it. The same disease in a relative (family history) or as a known risk factor is NOT a leak: it is a clinical clue — weigh it under Obviousness only. The Procedures section is the results strategy, read only by an author who knows the diagnosis: it may name the target diagnosis, e.g. as the hedged impression of the test diagnostic for it — never a leak. The General section is the author's teaching design: it may describe hallmark signs, distractors, the difficulty strategy, the label and the intended diagnosis — never reject because of content in General. The Patient, Chief complaint and Anamnesis sections must state facts only: flag a pedagogical label there (hallmark, classic, typical, distractor, red herring, or a remark on what a finding suggests). Also flag a field section that relies on General for a fact it needs instead of stating that fact itself.
 2. Clinical Coherence: Do the planned fields logically align? (e.g., Does the workup strategy make sense for the chief complaint? Does the planned anamnesis contradict the patient's age/gender?)
 3. Realism: Are there impossible biometric values (e.g., a 2-year-old weighing 70kg), contradictory timelines, or medical hallucinations?
 4. Author instructions: when Additional instructions are given, every fact or requirement in them must be stated in the section it belongs to. Flag one that is missing or contradicted.
@@ -269,6 +279,11 @@ ${renderSchemaForPrompt(OutlineEvaluationSchema)}`
     section(
       `Requested difficulty (${difficulty})`,
       DIFFICULTY_EXPECTATION[difficulty]
+    ),
+
+    section(
+      "Diagnostic label (decided by the server)",
+      rubric(recipe, diagnosis)
     ),
 
     section("Blueprint to evaluate", outline),

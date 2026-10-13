@@ -100,7 +100,8 @@ describe("GraphRuntime with a fake LlmPort", () => {
       runtime,
       { name: "Influenza" },
       "Some blueprint",
-      "medium"
+      "medium",
+      []
     );
     await generateSymptomsOneShot(runtime, { name: "Influenza" });
 

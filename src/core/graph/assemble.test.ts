@@ -250,6 +250,40 @@ describe("plan graph — outline and judge loop", () => {
     expect(result.outlineSegments[1]!.text).toBe("## General\n\nthird");
     expect(result.outlineSegments[2]!.text).toBe("");
   });
+
+  it("rolls the case recipe once: judge and revision read the same label (#216)", async () => {
+    const rejected = JSON.stringify({ accepted: false, reasons: ["x"] });
+    const runtime = scriptedRuntime(
+      [taggedOutlineFixture(), taggedOutlineFixture()],
+      [rejected, JSON.stringify({ accepted: true, reasons: [] })]
+    );
+    // medium, r = 0.99: patient source, wrong class.
+    const random = vi.fn(() => 0.99);
+    const prompts: string[] = [];
+    const { llm } = runtime;
+    const recording: GraphRuntime = {
+      ...runtime,
+      random,
+      llm: {
+        structured: (call, prompt, schema, context) => {
+          prompts.push(prompt.user);
+          return llm.structured(call, prompt, schema, context);
+        },
+        text: (call, prompt, context) => {
+          prompts.push(prompt.user);
+          return llm.text(call, prompt, context);
+        },
+      },
+    };
+
+    await buildPlanGraph(recording, createTraceNode(new EventBus())).invoke(
+      input
+    );
+
+    expect(random).toHaveBeenCalledTimes(2);
+    expect(prompts).toHaveLength(4); // generate, judge, regenerate, judge
+    for (const prompt of prompts) expect(prompt).toContain("look-alike");
+  });
 });
 
 describe("assembleCaseGraphs", () => {

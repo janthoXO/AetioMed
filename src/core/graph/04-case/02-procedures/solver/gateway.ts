@@ -55,15 +55,32 @@ ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
 const BLINDED_ROLE = `You are an attending physician working up a patient in a clinical training simulator.
 You do NOT know the final diagnosis - reason purely from the patient's presentation and the results of procedures ordered so far.
 You work under real-world time and cost constraints: every procedure costs time and money, so run a focused, high-yield workup — not an exhaustive one.
-Your goal: reach a confident working diagnosis with as few procedures as possible.`;
+Your goal: reach a confident working diagnosis with as few procedures as possible.
+A diagnosis named in the presentation (a referral's suspicion, the patient's own belief) is a hypothesis to test, never evidence: it may be right, too broad, or wrong.`;
 
-const DIAGNOSE_RULE = `- "diagnose": Commit to a diagnosis as soon as one clearly best explains the presentation and the evidence so far (roughly 90% confidence). You do NOT need certainty, and you do NOT need to rule out every alternative — a real physician stops testing once the leading diagnosis is well supported and no dangerous alternative remains plausible. When in doubt between ordering another marginal procedure and diagnosing, prefer to diagnose.`;
+const DIAGNOSE_RULE = `- "diagnose": Commit to a diagnosis only when all of these hold:
+  1. at least one ordered procedure result supports it — name that procedure in "supportingResult";
+  2. no major finding in the presentation or the results is left unexplained;
+  3. the dangerous (can't-miss) alternatives for the presenting complaint have been tested.
+  You do NOT need certainty, and you do NOT need to rule out every unlikely alternative. A diagnosis named in the presentation counts only once a result supports it.`;
 
-const DiagnoseActionSchema = z.object({
-  action: z.literal("diagnose"),
-  diagnosisName: z.string().describe("the diagnosis you commit to"),
-  reasoning: z.string().optional().describe("brief clinical reasoning"),
-});
+/**
+ * `supportingResult` is an exact label of an ordered procedure, so a commit
+ * names the result it rests on (#213). Diagnose is only offered once something
+ * was ordered; the `z.string()` fallback just keeps the schema buildable.
+ */
+function diagnoseActionSchema(previousProcedures: PreviousProcedureFinding[]) {
+  const labels = previousProcedures.map(refLabel);
+  return z.object({
+    action: z.literal("diagnose"),
+    diagnosisName: z.string().describe("the diagnosis you commit to"),
+    supportingResult: (labels.length > 0
+      ? z.literal(labels)
+      : z.string()
+    ).describe("exact name of the ordered procedure whose result supports it"),
+    reasoning: z.string().optional().describe("brief clinical reasoning"),
+  });
+}
 
 // ─── Procedure grouping (category-aware prompting) ───────────────────────────
 
@@ -73,7 +90,7 @@ function workupBudgetSection(iterationsRemaining: number | undefined) {
     ? undefined
     : section(
         "Workup budget",
-        `You have ${iterationsRemaining} diagnostic step(s) remaining. A thorough workup that uses every step is a FAILURE mode, not diligence — commit to a diagnosis as soon as one is well supported (roughly 90% confidence), and do not spend steps on marginal or merely confirmatory procedures.`
+        `You have ${iterationsRemaining} diagnostic step(s) remaining. A thorough workup that uses every step is a FAILURE mode, not diligence — commit as soon as the rules for diagnosing are met, and do not spend steps on marginal procedures.`
       );
 }
 
@@ -81,7 +98,8 @@ function workupBudgetSection(iterationsRemaining: number | undefined) {
 
 function buildStepSchema(
   procedureFieldSchema: z.ZodTypeAny,
-  allowDiagnose: boolean
+  allowDiagnose: boolean,
+  previousProcedures: PreviousProcedureFinding[]
 ) {
   const order = z.object({
     action: z.literal("procedure"),
@@ -89,7 +107,10 @@ function buildStepSchema(
     reasoning: z.string().optional().describe("brief clinical reasoning"),
   });
   return allowDiagnose
-    ? z.discriminatedUnion("action", [order, DiagnoseActionSchema])
+    ? z.discriminatedUnion("action", [
+        order,
+        diagnoseActionSchema(previousProcedures),
+      ])
     : z.discriminatedUnion("action", [order]);
 }
 
@@ -140,7 +161,9 @@ Do NOT re-order any procedure that already appears in the workup so far.`
     section(
       "Output format",
       `Return ONLY a valid JSON object matching one of these shapes:
-${renderSchemaForPrompt(buildStepSchema(candidates.promptSchema(), allowDiagnose))}`
+${renderSchemaForPrompt(
+  buildStepSchema(candidates.promptSchema(), allowDiagnose, previousProcedures)
+)}`
     )
   );
 
@@ -165,7 +188,11 @@ ${renderSchemaForPrompt(buildStepSchema(candidates.promptSchema(), allowDiagnose
   );
 
   try {
-    const StepSchema = buildStepSchema(candidates.grammar(), allowDiagnose);
+    const StepSchema = buildStepSchema(
+      candidates.grammar(),
+      allowDiagnose,
+      previousProcedures
+    );
 
     const rawResult = await retry(
       async (attempt, previousError) => {
@@ -219,6 +246,7 @@ export type LevelSelection =
   | {
       action: "diagnose";
       diagnosisName: string;
+      supportingResult: string;
       reasoning?: string | undefined;
     };
 
@@ -276,8 +304,9 @@ export async function selectProcedureLevel(
       .describe("exact labels of the categories and procedures to keep"),
     reasoning: z.string().optional().describe("brief clinical reasoning"),
   });
+  const diagnose = diagnoseActionSchema(view.previousProcedures);
   const schema = allowDiagnose
-    ? z.discriminatedUnion("action", [select, DiagnoseActionSchema])
+    ? z.discriminatedUnion("action", [select, diagnose])
     : z.discriminatedUnion("action", [select]);
   const promptSchema = z.object({
     action: z.literal("select"),
@@ -310,7 +339,7 @@ ${DIAGNOSE_RULE}`
       `Return ONLY a valid JSON object matching ${allowDiagnose ? "one of these shapes" : "this shape"}:
 ${renderSchemaForPrompt(
   allowDiagnose
-    ? z.discriminatedUnion("action", [promptSchema, DiagnoseActionSchema])
+    ? z.discriminatedUnion("action", [promptSchema, diagnose])
     : promptSchema
 )}`
     )
@@ -354,7 +383,12 @@ ${renderSchemaForPrompt(
         context
       )) as
         | { action: "select"; items: string[]; reasoning?: string }
-        | { action: "diagnose"; diagnosisName: string; reasoning?: string };
+        | {
+            action: "diagnose";
+            diagnosisName: string;
+            supportingResult: string;
+            reasoning?: string;
+          };
       console.debug(
         `[SelectProcedureLevel] [Attempt ${attempt}] Response:\n`,
         JSON.stringify(res, null, 2)

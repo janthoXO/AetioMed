@@ -44,6 +44,8 @@ export type SolverMove =
   | {
       action: "diagnose";
       diagnosisName: string;
+      /** Ordered procedure the commit rests on (#213); logged with the move. */
+      supportingResult?: string | undefined;
       reasoning?: string | undefined;
     }
   | { action: "exhausted"; reason: string };

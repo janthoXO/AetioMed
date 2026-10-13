@@ -19,6 +19,7 @@ export function toSolverMove(step: BlindedProcedureStepResult): SolverMove {
     return {
       action: "diagnose",
       diagnosisName: step.diagnosisName,
+      supportingResult: step.supportingResult,
       reasoning: step.reasoning,
     };
   }

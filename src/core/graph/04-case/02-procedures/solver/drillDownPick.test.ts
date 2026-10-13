@@ -197,7 +197,11 @@ describe("DrillDownPick.nextStep", () => {
   it("offers a diagnosis once something has been ordered", async () => {
     const model = new CapturingChatModel({
       responses: [
-        JSON.stringify({ action: "diagnose", diagnosisName: "Diabetes" }),
+        JSON.stringify({
+          action: "diagnose",
+          diagnosisName: "Diabetes",
+          supportingResult: "HbA1c",
+        }),
       ],
     });
     const move = await pickWith(model).nextStep({
@@ -214,6 +218,32 @@ describe("DrillDownPick.nextStep", () => {
     expect(move).toMatchObject({
       action: "diagnose",
       diagnosisName: "Diabetes",
+      supportingResult: "HbA1c",
     });
+  });
+
+  it("rejects a commit whose supporting result was never ordered", async () => {
+    const commit = (supportingResult: string) =>
+      JSON.stringify({
+        action: "diagnose",
+        diagnosisName: "Diabetes",
+        supportingResult,
+      });
+    const model = new CapturingChatModel({
+      responses: [commit("Fasting glucose"), commit("HbA1c")],
+    });
+    const move = await pickWith(model).nextStep({
+      ...view,
+      previousProcedures: [
+        {
+          path: [],
+          name: "HbA1c",
+          relevance: "obligatory",
+          result: "HbA1c 8.1 %",
+        },
+      ],
+    });
+    expect(model.calls).toHaveLength(2);
+    expect(move).toMatchObject({ supportingResult: "HbA1c" });
   });
 });

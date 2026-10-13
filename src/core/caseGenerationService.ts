@@ -15,6 +15,7 @@ import { AppError, OutlineNotAcceptedError } from "./graph/errors/AppError.js";
 import {
   checkSkeleton,
   outlineSections,
+  withHeading,
   restoreSkeletonHeadings,
   OutlineSegmentsSchema,
   type OutlineSegments,
@@ -214,7 +215,9 @@ export function createCaseGenerationService(
       ? translatePlanOut(outline, headings, language)
       : outline.map((segment, i) => ({
           fixed: segment.fixed,
-          text: headings.get(i) ?? segment.text,
+          text: headings.has(i)
+            ? withHeading(headings.get(i)!, segment.text)
+            : segment.text,
         }));
   }
 
@@ -223,17 +226,28 @@ export function createCaseGenerationService(
     headings: Map<number, string>,
     language: Language
   ): Promise<OutlineSegments> {
+    // A localized heading carries its body (frozen General, #221): the
+    // dictionary owns the heading line, the translator only the body.
+    const bodyOf = (text: string) => text.slice(text.indexOf("\n") + 1).trim();
     const translated = await graph.translateOutline!(
       Object.fromEntries(
-        english.flatMap((segment, i) =>
-          headings.has(i) ? [] : [[String(i), segment.text]]
-        )
+        english.flatMap((segment, i) => {
+          if (!headings.has(i)) return [[String(i), segment.text]];
+          const body = segment.text.includes("\n") ? bodyOf(segment.text) : "";
+          return body ? [[String(i), body]] : [];
+        })
       ),
       "out"
     );
     const expires = now() + PLAN_CACHE_TTL_MS;
     return english.map((segment, i) => {
-      const text = headings.get(i) ?? translated[String(i)] ?? segment.text;
+      const heading = headings.get(i);
+      const text =
+        heading === undefined
+          ? (translated[String(i)] ?? segment.text)
+          : translated[String(i)]
+            ? `${heading}\n\n${translated[String(i)]}`
+            : heading;
       planCache.delete(cacheKey(language, text)); // refresh insertion order
       planCache.set(cacheKey(language, text), {
         english: segment.text,

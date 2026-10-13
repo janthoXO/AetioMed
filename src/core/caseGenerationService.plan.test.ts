@@ -14,6 +14,7 @@ import type {
   RenderCaseInput,
 } from "@/core/graph/appContext.js";
 import {
+  freezeGeneral,
   outlineSections,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
@@ -59,7 +60,11 @@ type Fake = {
 
 /** Graph faked at plan/case seam. `translateOutline`: out prefixes `DE:`, in swaps it for `EN:`. */
 function fakeGraph(
-  opts: { sandwich?: boolean; accepted?: boolean } = {}
+  opts: {
+    sandwich?: boolean;
+    accepted?: boolean;
+    outline?: OutlineSegments;
+  } = {}
 ): Fake {
   const planCalls: PlanCaseInput[] = [];
   const renderCalls: RenderCaseInput[] = [];
@@ -96,7 +101,7 @@ function fakeGraph(
       return {
         diagnosis: input.diagnosis,
         userInstructions: input.userInstructions,
-        outlineSegments: input.outline ?? OUTLINE,
+        outlineSegments: input.outline ?? opts.outline ?? OUTLINE,
         outlineAccepted: input.outline ? true : (opts.accepted ?? true),
       };
     },
@@ -183,6 +188,36 @@ describe("plan mode — the stop at a plan", () => {
     expect(result.status).toBe("planned");
     expect(result.plan).toEqual(localized(OUTLINE));
     expect(translateSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe("plan mode — frozen General (#221)", () => {
+  const frozen = freezeGeneral(OUTLINE);
+
+  it("sandwich on: dictionary heading, translated body", async () => {
+    const fake = fakeGraph({ outline: frozen });
+    const { service } = build(fake);
+
+    const result = await service.generate(request());
+
+    expect(result.plan![1]).toEqual({
+      fixed: true,
+      text: "## Allgemein\n\nDE:Chest pain for two hours.",
+    });
+    expect(fake.translateCalls[0]!.values["1"]).toBe(
+      "Chest pain for two hours."
+    );
+  });
+
+  it("sandwich off: heading swapped, body kept", async () => {
+    const fake = fakeGraph({ sandwich: false, outline: frozen });
+    const { service } = build(fake);
+
+    const result = await service.generate(request());
+
+    expect(result.plan![1]!.text).toBe(
+      "## Allgemein\n\nChest pain for two hours."
+    );
   });
 });
 

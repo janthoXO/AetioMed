@@ -203,6 +203,8 @@ describe("plan graph — outline and judge loop", () => {
 
     expect(result.outlineAccepted).toBe(true);
     expect(result.outlineSegments.filter((s) => s.fixed)).toHaveLength(5);
+    expect(result.outlineSegments[1]!.text).toMatch(/^## General\n\n/);
+    expect(result.outlineSegments[2]!.text).toBe("");
   });
 
   it("ends not accepted, with the last outline, once the judge loop hits its cap", async () => {
@@ -225,7 +227,8 @@ describe("plan graph — outline and judge loop", () => {
     ).invoke(input);
 
     expect(result.outlineAccepted).toBe(false);
-    expect(result.outlineSegments[2]!.text).toBe("third");
+    expect(result.outlineSegments[1]!.text).toBe("## General\n\nthird");
+    expect(result.outlineSegments[2]!.text).toBe("");
   });
 
   it("judges the last revision too: accepted on the final try", async () => {
@@ -244,7 +247,8 @@ describe("plan graph — outline and judge loop", () => {
     ).invoke(input);
 
     expect(result.outlineAccepted).toBe(true);
-    expect(result.outlineSegments[2]!.text).toBe("third");
+    expect(result.outlineSegments[1]!.text).toBe("## General\n\nthird");
+    expect(result.outlineSegments[2]!.text).toBe("");
   });
 });
 

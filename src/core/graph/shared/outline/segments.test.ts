@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   checkSkeleton,
+  freezeGeneral,
   isCanonicalShape,
   joinOutline,
   OutlineFormatError,
@@ -405,5 +406,62 @@ describe("outlineSections", () => {
       anamnesis: "No relevant history.",
       procedures: "PROCEDURES-NOTE",
     });
+  });
+});
+
+describe("freezeGeneral (#221)", () => {
+  const outline = () =>
+    parseTaggedOutline(
+      [
+        "<fixed>## General</fixed>\n\n  GENERAL-NOTE  ",
+        "<fixed>## Patient</fixed>\n\n58, male.",
+        "<fixed>## Chief complaint</fixed>\n\nSharp pain.",
+        "<fixed>## Anamnesis</fixed>\n\nNo history.",
+        "<fixed>## Procedures</fixed>\n\nNOTE",
+      ].join("\n\n")
+    );
+
+  it("merges the General body into its fixed segment", () => {
+    const frozen = freezeGeneral(outline());
+    expect(frozen[1]).toEqual({
+      fixed: true,
+      text: "## General\n\nGENERAL-NOTE",
+    });
+    expect(frozen[2]).toEqual({ fixed: false, text: "" });
+    expect(frozen).toHaveLength(outline().length);
+    expect(isCanonicalShape(frozen)).toBe(true);
+  });
+
+  it("leaves a blank body as the bare heading", () => {
+    const blank = outline();
+    blank[2] = { fixed: false, text: "  " };
+    const frozen = freezeGeneral(blank);
+    expect(frozen[1]!.text).toBe("## General");
+    expect(frozen[2]!.text).toBe("");
+  });
+
+  it("is idempotent", () => {
+    const once = freezeGeneral(outline());
+    expect(freezeGeneral(once)).toEqual(once);
+  });
+
+  it("checkSkeleton accepts a frozen General, rejects a body on Patient", () => {
+    expect(checkSkeleton(freezeGeneral(outline()), {})).toEqual({ ok: true });
+    const bad = outline();
+    bad[3] = { fixed: true, text: "## Patient\n\nbody" };
+    expect(checkSkeleton(bad, {}).ok).toBe(false);
+  });
+
+  it("restoreSkeletonHeadings keeps the General body and restores its heading", () => {
+    const translated = freezeGeneral(outline());
+    translated[1] = { fixed: true, text: "## Allgemein\n\nGENERAL-NOTE" };
+    const restored = restoreSkeletonHeadings(translated, {});
+    expect(restored[1]!.text).toBe("## General\n\nGENERAL-NOTE");
+  });
+
+  it("outlineSections ignores the freeze", () => {
+    expect(outlineSections(freezeGeneral(outline()))).toEqual(
+      outlineSections(outline())
+    );
   });
 });

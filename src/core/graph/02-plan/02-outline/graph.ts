@@ -20,6 +20,7 @@ import { renderUserInstructions } from "@/core/graph/shared/prompt/prompt.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import {
   OutlineSegmentsSchema,
+  freezeGeneral,
   joinOutline,
 } from "@/core/graph/shared/outline/segments.js";
 import { RunModeSchema } from "@/core/graph/shared/domain/RunMode.js";
@@ -110,7 +111,14 @@ function makeOutlineEvaluate(runtime: GraphRuntime) {
     );
 
     if (evaluation.accepted) {
-      return new Command({ update: { outlineAccepted: true }, goto: END });
+      // General is read only by this loop: frozen for the reviewer (#221).
+      return new Command({
+        update: {
+          outlineAccepted: true,
+          outlineSegments: freezeGeneral(state.outlineSegments),
+        },
+        goto: END,
+      });
     }
 
     // Cap checked after judging: last revision gets judged too, not discarded.
@@ -118,7 +126,14 @@ function makeOutlineEvaluate(runtime: GraphRuntime) {
       runtime.log.info(
         `[PlanGraph] Outline evaluation iteration cap reached — the outline was not accepted.`
       );
-      return new Command({ update: { outlineAccepted: false }, goto: END });
+      // General is read only by this loop: frozen for the reviewer (#221).
+      return new Command({
+        update: {
+          outlineAccepted: false,
+          outlineSegments: freezeGeneral(state.outlineSegments),
+        },
+        goto: END,
+      });
     }
 
     const feedback = evaluation.suggestion

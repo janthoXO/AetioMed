@@ -174,6 +174,37 @@ export function outlineSkeleton(opts: {
   ];
 }
 
+/** First line of a fixed segment: its heading. Only `## General` carries text after it (#221). */
+export function fixedHeading(text: string): string {
+  return text.split("\n", 1)[0]!;
+}
+
+/** `text` with its first line replaced by `heading`, the rest kept (#221). */
+export function withHeading(heading: string, text: string): string {
+  const nl = text.indexOf("\n");
+  return nl === -1 ? heading : heading + text.slice(nl);
+}
+
+/**
+ * Freezes `## General` into one fixed segment, heading plus trimmed body, and
+ * empties the editable gap after it (#221): read only while planning, so the
+ * reviewer sees it but cannot edit it. Idempotent; assumes a skeleton-checked
+ * outline (General is the first fixed segment, index 1).
+ */
+export function freezeGeneral(segments: OutlineSegments): OutlineSegments {
+  const body = (segments[2]?.text ?? "").trim();
+  return segments.map((segment, i) =>
+    i === 1
+      ? {
+          fixed: true,
+          text: body ? `${segment.text.trimEnd()}\n\n${body}` : segment.text,
+        }
+      : i === 2
+        ? { fixed: false, text: "" }
+        : segment
+  );
+}
+
 /** Fixed texts between the sections before and after the categories. */
 function categoryHeadings(fixedTexts: string[]): string[] {
   return fixedTexts.slice(
@@ -204,7 +235,9 @@ export function checkSkeleton(
   const expected = outlineSkeleton({ anamnesisCategories });
 
   for (let i = 0; i < Math.max(expected.length, fixedTexts.length); i++) {
-    if (expected[i] !== fixedTexts[i]) {
+    // General alone may carry a body after its heading (#221).
+    const actual = i === 0 ? fixedHeading(fixedTexts[i] ?? "") : fixedTexts[i];
+    if (expected[i] !== actual) {
       return {
         ok: false,
         message: `Fixed section mismatch at index ${i}: expected ${JSON.stringify(expected[i] ?? "<none>")}, got ${JSON.stringify(fixedTexts[i] ?? "<none>")}`,
@@ -286,6 +319,8 @@ export function restoreSkeletonHeadings(
   ];
   let k = 0;
   return segments.map((segment) =>
-    segment.fixed ? { fixed: true, text: expected[k++]! } : segment
+    segment.fixed
+      ? { fixed: true, text: withHeading(expected[k++]!, segment.text) }
+      : segment
   );
 }

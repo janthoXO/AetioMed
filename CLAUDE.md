@@ -400,7 +400,10 @@ empty string), odd indices are fixed (`fixed: true`). The skeleton (`outlineSkel
 `checkSkeleton`) is server-owned and always has the same five top-level sections — `## General`,
 `## Patient`, `## Chief complaint`, `## Anamnesis`, `## Procedures` — plus, between Anamnesis and
 Procedures, one `### <category>` heading per configured anamnesis catalogue category (or
-LLM-named ones, in order, when the catalogue is freeform).
+LLM-named ones, in order, when the catalogue is freeform). After the judge loop (accepted or
+capped) `## General` is frozen into one fixed segment, heading plus body (`freezeGeneral`, #221): it
+is read only while planning, so a reviewer sees it but cannot edit it; `checkSkeleton` accepts a
+body on General only.
 
 **A plan handed back into a later call is validated, not diffed.** `checkSkeleton` is the one
 check a plan must pass — both freshly generated (the retry signal for an LLM that emits a
@@ -436,7 +439,7 @@ configured anamnesis categories from the `AnamnesisCatalog`. A title missing for
 translated in one LLM call and persisted (`source: generated`), so every later plan shows the same
 heading; the YAML is the ground truth and overwrites a generated value on its next sync
 (`translationStore.ts`). Only the body crosses the sandwich (`translatePlanOut` skips the
-localized headings); with the sandwich off the body is already in the request language, so only
+localized heading lines; a frozen General's body is translated, its heading line is not); with the sandwich off the body is already in the request language, so only
 the headings are swapped. Either way a handed-back plan's headings go back to English by position
 (`restoreSkeletonHeadings`). LLM-named (freeform) category headings are case content: translated
 with the body under the sandwich, written in the request language without it.

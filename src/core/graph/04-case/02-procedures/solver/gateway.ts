@@ -46,7 +46,7 @@ function ruledOutSection(ruledOutDiagnoses: string[]) {
   return ruledOutDiagnoses.length > 0
     ? section(
         "Ruled-out diagnoses",
-        `The following diagnoses have already been ruled out — do NOT propose any of these again:
+        `The following diagnoses were not accepted as the final diagnosis. Each may still be present as a finding, or be too unspecific. Do NOT propose any of these names again: name a more specific diagnosis or order further procedures.
 ${ruledOutDiagnoses.map((d, i) => `${i + 1}. ${d}`).join("\n")}`
       )
     : undefined;

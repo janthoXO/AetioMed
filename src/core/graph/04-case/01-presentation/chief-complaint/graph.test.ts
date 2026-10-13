@@ -1,5 +1,6 @@
 // Drives compiled `chiefComplaintGraph` directly (no Send, filesystem, real LLM); fake `LlmPort` throws on anything unscripted.
 import { chatModelLlmPort } from "@/adapters/ai/llm.js";
+import { createChiefComplaintProviders } from "./providers.js";
 import { describe, expect, it } from "vitest";
 import z from "zod";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
@@ -289,5 +290,28 @@ describe("chiefComplaintGraph — multi-provider registry: planned order, not co
     for (const part of parts) {
       expect(part.alt.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("createChiefComplaintProviders", () => {
+  it("renders a referral part in the referring physician's voice (#219)", async () => {
+    const systems: string[] = [];
+    const llm: LlmPort = {
+      async structured(_call, { system }) {
+        systems.push(system);
+        return { texts: ["rendered"] } as never;
+      },
+      async text() {
+        throw new Error("unexpected text call");
+      },
+    };
+    const providers = createChiefComplaintProviders(buildFakeRuntime(llm));
+    const byId = new Map(providers.map((p) => [p.id, p]));
+
+    await byId.get("referral")!.render([{ input: {}, alt: "V.a. ACS" }], {});
+    await byId.get("text")!.render([{ input: {}, alt: "Chest pain" }], {});
+
+    expect(systems[0]).toContain("referring physician");
+    expect(systems[1]).toContain("clinical-chart voice");
   });
 });

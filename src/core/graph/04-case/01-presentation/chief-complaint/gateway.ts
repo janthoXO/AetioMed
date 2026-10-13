@@ -53,7 +53,7 @@ Your current task is to plan how the chief complaint from the provided outline s
 - Use ONLY the facts in the Chief complaint section, plus the demographics from the Patient section. Do not add clinical facts.
 - A referral and any suspected diagnosis it states are facts of the chief complaint: render them exactly as the section words them, and keep a suspicion a suspicion (e.g. "V.a. ...", "suspected ..."). Never name, suggest or hint at a diagnosis the section does not state.
 - Plan exactly one content unit, keyed "${CHIEF_COMPLAINT_UNIT_KEY}".
-- Prefer a single request against the "text" provider carrying the whole chief complaint, unless another available provider would clearly add value.
+- When the Chief complaint section contains a referral and a "referral" provider is available, plan the referral as its own part with that provider, first, and the rest of the chief complaint (the intake by the admitting doctor), if any, as a "text" part. Otherwise prefer a single request against the "text" provider carrying the whole chief complaint, unless another available provider would clearly add value.
 - Each request's "alt" is the complete content of that part: every fact the rendered part states, written out in full, in the clinical-chart voice above. Later diagnostic steps read ONLY "alt", never the rendered part, so a fact missing from "alt" does not exist for them. The provider renders "alt" into the final wording and never invents facts; give the "text" provider an empty input object.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`
     ),
@@ -118,6 +118,12 @@ ${renderSchemaForPrompt(schema)}`
   );
 }
 
+/** Who writes a chief complaint text part: the admitting doctor's chart, or the referring doctor's note (#219). */
+const VOICE = {
+  chart: `Write in clinical-chart voice: concise, objective clinical language and standard medical terminology (e.g., "acute onset dyspnea" instead of "shortness of breath").`,
+  referral: `Write as the referring physician's brief referral note (e.g. a general practitioner's hospital referral): reason for referral and relevant findings, and a suspected diagnosis only if the content states one — exactly as given, worded as a suspicion.`,
+};
+
 /**
  * Text rendering for chief complaint: whole batch of planned `alt`s in
  * ONE LLM call, per `ModalityProvider.render` batch contract. Renders exactly
@@ -127,7 +133,8 @@ export async function renderChiefComplaintTexts(
   runtime: GraphRuntime,
   language: Language | undefined,
   contents: string[],
-  context?: RequestContext
+  context?: RequestContext,
+  voice: keyof typeof VOICE = "chart"
 ): Promise<string[]> {
   const schema = z.object({
     texts: z
@@ -148,7 +155,7 @@ You will be given one or more contents, each the complete facts of one chief com
 
     section(
       "Requirements",
-      `- Write in clinical-chart voice: concise, objective clinical language and standard medical terminology (e.g., "acute onset dyspnea" instead of "shortness of breath").
+      `- ${VOICE[voice]}
 - Render each content into its own text; invent nothing beyond what the content states.
 - Return exactly ${contents.length} text(s), in the same order as the contents.
 - Return ONLY the JSON object, no additional text like prefix or suffix.`

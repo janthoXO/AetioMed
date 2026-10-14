@@ -7,7 +7,8 @@ import {
 } from "@langchain/core/messages";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { ModelUnreachableError } from "@/core/graph/errors/AppError.js";
-import { chatModelLlmPort } from "./llm.js";
+import type { Config } from "@/core/graph/config.js";
+import { chatModelLlmPort, createLlmPort } from "./llm.js";
 
 function fakePort(invoke: ReturnType<typeof vi.fn>) {
   const withStructuredOutput = vi.fn().mockReturnValue({ invoke });
@@ -67,5 +68,26 @@ describe("chatModelLlmPort", () => {
     });
     expect(withStructuredOutput).not.toHaveBeenCalled();
     expect(invoke.mock.calls[0]![1]).toBeUndefined();
+  });
+});
+
+describe("createLlmPort", () => {
+  it("never logs the API key", async () => {
+    const debug = vi.spyOn(console, "debug").mockImplementation(() => {});
+    const port = createLlmPort({} as Config);
+    await port
+      .text(call, prompt, {
+        llmConfig: {
+          provider: "openai",
+          model: "m",
+          apiKey: "sk-secret",
+          url: "http://127.0.0.1:1",
+        },
+        signal: AbortSignal.abort(),
+      })
+      .catch(() => {});
+    expect(debug).toHaveBeenCalled();
+    expect(JSON.stringify(debug.mock.calls)).not.toContain("sk-secret");
+    debug.mockRestore();
   });
 });

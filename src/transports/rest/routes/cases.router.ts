@@ -77,7 +77,7 @@ export default function createCasesRouter(
     const bodyResult = CaseGenerationRequestSchema.safeParse(req.body);
 
     if (!bodyResult.success) {
-      console.error("Invalid request body", req.body);
+      console.error("Invalid request body", bodyResult.error.issues);
       res.status(400).json({
         error: {
           code: "INVALID_REQUEST_BODY",

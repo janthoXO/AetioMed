@@ -14,8 +14,8 @@ import { getRequestContext, runWithContext } from "./graph/utils/context.js";
 import { AppError, OutlineNotAcceptedError } from "./graph/errors/AppError.js";
 import {
   checkSkeleton,
-  joinOutline,
-  presentationSections,
+  outlineSections,
+  withHeading,
   restoreSkeletonHeadings,
   OutlineSegmentsSchema,
   type OutlineSegments,
@@ -215,7 +215,9 @@ export function createCaseGenerationService(
       ? translatePlanOut(outline, headings, language)
       : outline.map((segment, i) => ({
           fixed: segment.fixed,
-          text: headings.get(i) ?? segment.text,
+          text: headings.has(i)
+            ? withHeading(headings.get(i)!, segment.text)
+            : segment.text,
         }));
   }
 
@@ -224,17 +226,28 @@ export function createCaseGenerationService(
     headings: Map<number, string>,
     language: Language
   ): Promise<OutlineSegments> {
+    // A localized heading carries its body (frozen General, #221): the
+    // dictionary owns the heading line, the translator only the body.
+    const bodyOf = (text: string) => text.slice(text.indexOf("\n") + 1).trim();
     const translated = await graph.translateOutline!(
       Object.fromEntries(
-        english.flatMap((segment, i) =>
-          headings.has(i) ? [] : [[String(i), segment.text]]
-        )
+        english.flatMap((segment, i) => {
+          if (!headings.has(i)) return [[String(i), segment.text]];
+          const body = segment.text.includes("\n") ? bodyOf(segment.text) : "";
+          return body ? [[String(i), body]] : [];
+        })
       ),
       "out"
     );
     const expires = now() + PLAN_CACHE_TTL_MS;
     return english.map((segment, i) => {
-      const text = headings.get(i) ?? translated[String(i)] ?? segment.text;
+      const heading = headings.get(i);
+      const text =
+        heading === undefined
+          ? (translated[String(i)] ?? segment.text)
+          : translated[String(i)]
+            ? `${heading}\n\n${translated[String(i)]}`
+            : heading;
       planCache.delete(cacheKey(language, text)); // refresh insertion order
       planCache.set(cacheKey(language, text), {
         english: segment.text,
@@ -312,9 +325,11 @@ export function createCaseGenerationService(
     // Translate-in trigger: caller supplied a diagnosis name or
     // `userInstructions`. Compute BEFORE ICD→name resolution, which would
     // make ICD-only look like free text.
+    // A plan already absorbed the instructions (#220): only its first call reads them.
     const callerSuppliedFreeText =
       Boolean(req.diagnosis) ||
-      (req.userInstructions !== undefined &&
+      (!req.plan &&
+        req.userInstructions !== undefined &&
         Object.keys(req.userInstructions).length > 0);
 
     let diagnosisName = req.diagnosis;
@@ -355,7 +370,7 @@ export function createCaseGenerationService(
         const planned = await graph.planCase({
           diagnosis: { name: diagnosisName, icd: req.icd },
           generationFlags,
-          userInstructions: req.userInstructions,
+          userInstructions: req.plan ? undefined : req.userInstructions,
           language,
           difficulty: req.difficulty,
           callerSuppliedFreeText,
@@ -389,11 +404,9 @@ export function createCaseGenerationService(
         const generatedCase = await graph.renderCase({
           diagnosis: planned.diagnosis,
           generationFlags,
-          userInstructions: planned.userInstructions,
           difficulty: req.difficulty,
-          outline: joinOutline(outline),
-          // Blinded solver reads these for fields not generated (#205).
-          outlineSections: presentationSections(outline),
+          // Each case node reads only its own sections (#215).
+          outlineSections: outlineSections(outline),
         });
         return { jobId, status: "done", case: generatedCase, language };
       },

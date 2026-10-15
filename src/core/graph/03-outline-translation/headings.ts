@@ -3,6 +3,7 @@ import {
   CATEGORY_PREFIX,
   OUTLINE_SECTIONS,
   SECTION_PREFIX,
+  fixedHeading,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
 import type { OutlineHeadingCatalog } from "@/core/graph/catalog/ports.js";
@@ -37,9 +38,10 @@ export async function localizeHeadings(
 
   const slots = segments.flatMap((segment, index) => {
     if (!segment.fixed) return [];
+    const heading = fixedHeading(segment.text);
     for (const [prefix, known, catalog] of levels) {
-      const english = segment.text.slice(prefix.length);
-      if (segment.text.startsWith(prefix) && known.has(english)) {
+      const english = heading.slice(prefix.length);
+      if (heading.startsWith(prefix) && known.has(english)) {
         return [
           { index, prefix, english, catalog: catalog as OutlineHeadingCatalog },
         ];

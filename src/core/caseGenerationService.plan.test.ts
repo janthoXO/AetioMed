@@ -14,8 +14,8 @@ import type {
   RenderCaseInput,
 } from "@/core/graph/appContext.js";
 import {
-  joinOutline,
-  presentationSections,
+  freezeGeneral,
+  outlineSections,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
@@ -60,7 +60,11 @@ type Fake = {
 
 /** Graph faked at plan/case seam. `translateOutline`: out prefixes `DE:`, in swaps it for `EN:`. */
 function fakeGraph(
-  opts: { sandwich?: boolean; accepted?: boolean } = {}
+  opts: {
+    sandwich?: boolean;
+    accepted?: boolean;
+    outline?: OutlineSegments;
+  } = {}
 ): Fake {
   const planCalls: PlanCaseInput[] = [];
   const renderCalls: RenderCaseInput[] = [];
@@ -97,7 +101,7 @@ function fakeGraph(
       return {
         diagnosis: input.diagnosis,
         userInstructions: input.userInstructions,
-        outlineSegments: input.outline ?? OUTLINE,
+        outlineSegments: input.outline ?? opts.outline ?? OUTLINE,
         outlineAccepted: input.outline ? true : (opts.accepted ?? true),
       };
     },
@@ -187,6 +191,36 @@ describe("plan mode — the stop at a plan", () => {
   });
 });
 
+describe("plan mode — frozen General (#221)", () => {
+  const frozen = freezeGeneral(OUTLINE);
+
+  it("sandwich on: dictionary heading, translated body", async () => {
+    const fake = fakeGraph({ outline: frozen });
+    const { service } = build(fake);
+
+    const result = await service.generate(request());
+
+    expect(result.plan![1]).toEqual({
+      fixed: true,
+      text: "## Allgemein\n\nDE:Chest pain for two hours.",
+    });
+    expect(fake.translateCalls[0]!.values["1"]).toBe(
+      "Chest pain for two hours."
+    );
+  });
+
+  it("sandwich off: heading swapped, body kept", async () => {
+    const fake = fakeGraph({ sandwich: false, outline: frozen });
+    const { service } = build(fake);
+
+    const result = await service.generate(request());
+
+    expect(result.plan![1]!.text).toBe(
+      "## Allgemein\n\nChest pain for two hours."
+    );
+  });
+});
+
 describe("normal mode", () => {
   it("hands onPlan the English outline (mode 'normal') before the case is rendered", async () => {
     const fake = fakeGraph();
@@ -204,9 +238,8 @@ describe("normal mode", () => {
       language: "German",
       plan: OUTLINE,
     } satisfies PlanPayload);
-    expect(fake.renderCalls[0]!.outline).toBe(joinOutline(OUTLINE));
     expect(fake.renderCalls[0]!.outlineSections).toEqual(
-      presentationSections(OUTLINE)
+      outlineSections(OUTLINE)
     );
     // Normal mode: no reviewer, no outline translation.
     expect(fake.translateCalls).toHaveLength(0);
@@ -240,7 +273,9 @@ describe("continuation, plan mode + sandwich on", () => {
       fake.translateCalls.filter((c) => c.direction === "in")
     ).toHaveLength(0);
     expect(fake.planCalls[1]!.outline).toEqual(OUTLINE);
-    expect(fake.renderCalls[0]!.outline).toBe(joinOutline(OUTLINE));
+    expect(fake.renderCalls[0]!.outlineSections).toEqual(
+      outlineSections(OUTLINE)
+    );
   });
 
   it("only the edited editable segment is translated in; a fixed heading is restored to English even if it also misses the cache and the translator mangles it", async () => {
@@ -290,7 +325,7 @@ describe("continuation, plan mode + sandwich on", () => {
     expect(fake.planCalls[1]!.outline).toEqual(expectedOutline);
   });
 
-  it("planCase receives outline = the English plan; renderCase receives joinOutline(englishPlan)", async () => {
+  it("planCase receives outline = the English plan; renderCase receives its sections", async () => {
     const fake = fakeGraph();
     const { service } = build(fake);
     const planned = await service.generate(request({ jobId: "cont-3" }));
@@ -301,7 +336,26 @@ describe("continuation, plan mode + sandwich on", () => {
 
     expect(result.status).toBe("done");
     expect(fake.planCalls[1]!.outline).toEqual(OUTLINE);
-    expect(fake.renderCalls[0]!.outline).toBe(joinOutline(OUTLINE));
+    expect(fake.renderCalls[0]!.outlineSections).toEqual(
+      outlineSections(OUTLINE)
+    );
+  });
+
+  it("ignores userInstructions sent with a plan: planCase gets none (#220)", async () => {
+    const fake = fakeGraph();
+    const { service } = build(fake);
+    const planned = await service.generate(request({ jobId: "cont-4" }));
+
+    await service.generate(
+      request({
+        jobId: "cont-4",
+        plan: planned.plan,
+        userInstructions: { general: "add a lab finding" },
+      })
+    );
+
+    expect(fake.planCalls[1]!.userInstructions).toBeUndefined();
+    expect(fake.planCalls[1]!.callerSuppliedFreeText).toBe(true); // diagnosis name, not the instructions
   });
 
   it("a broken skeleton fails with INVALID_PLAN, 400", async () => {
@@ -368,7 +422,9 @@ describe("continuation, sandwich off (any mode)", () => {
 
     expect(result.status).toBe("done");
     expect(fake.planCalls[1]!.outline).toEqual(edited);
-    expect(fake.renderCalls[1]!.outline).toBe(joinOutline(edited));
+    expect(fake.renderCalls[1]!.outlineSections).toEqual(
+      outlineSections(edited)
+    );
   });
 });
 

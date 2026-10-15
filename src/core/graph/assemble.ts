@@ -10,7 +10,10 @@ import type { GenerationFlag } from "@/core/graph/shared/domain/GenerationFlags.
 import type { UserInstructions } from "@/core/graph/shared/domain/UserInstructions.js";
 import { buildCaseGenerationGraph } from "@/core/graph/04-case/graph.js";
 import { buildPlanningPhaseGraph } from "@/core/graph/02-plan/graph.js";
-import { CaseGenerationStateSchema } from "@/core/graph/shared/caseGenerationState.js";
+import {
+  CaseGenerationStateSchema,
+  OutlineSectionsSchema,
+} from "@/core/graph/shared/caseGenerationState.js";
 import { DrillDownPick } from "@/core/graph/04-case/02-procedures/solver/drillDownPick.js";
 import { buildCaseTranslationFromEnglishGraph } from "@/core/graph/05-translate-out/graph.js";
 import type { Language } from "@/core/graph/shared/domain/Language.js";
@@ -33,7 +36,7 @@ import type { MedicalBasisProvider } from "@/core/graph/02-plan/01-basis/ports.j
 import {
   OutlineSegmentsSchema,
   type OutlineSegments,
-  type PresentationSections,
+  type OutlineSections,
 } from "@/core/graph/shared/outline/segments.js";
 import {
   RunModeSchema,
@@ -61,22 +64,16 @@ const PlanStateSchema = CaseGenerationStateSchema.pick({
 // Plan graph hands back everything case graph needs, in working language (English after translate-in).
 const PlanOutputSchema = PlanStateSchema.pick({
   diagnosis: true,
-  userInstructions: true,
   outlineSegments: true,
   outlineAccepted: true,
 });
 
 const CaseStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
-  userInstructions: true,
   generationFlags: true,
   difficulty: true,
   case: true,
-  outlineSections: true,
-}).extend({
-  /** The prompt-ready outline text (`joinOutline`) every generator reads. */
-  outline: z.string(),
-});
+}).extend({ outlineSections: OutlineSectionsSchema });
 
 const CaseOutputSchema = CaseStateSchema.pick({ case: true });
 
@@ -333,7 +330,6 @@ export function buildCaseGraph(
 
     return {
       diagnosis: result.diagnosis,
-      userInstructions: result.userInstructions,
       outlineSegments: result.outlineSegments,
       outlineAccepted: result.outlineAccepted,
     };
@@ -341,17 +337,15 @@ export function buildCaseGraph(
 
   /**
    * Run the case graph from an outline: field fan-out, procedures and (sandwich
-   * on, when needed) translate-out. `diagnosis`/`userInstructions` must be the
-   * working-language values {@link planCase} returned.
+   * on, when needed) translate-out. `diagnosis` must be the working-language
+   * value {@link planCase} returned.
    */
   async function renderCase(opts: RenderCaseInput): Promise<Case> {
     const result = await graphs.case.invoke(
       {
         diagnosis: opts.diagnosis,
         generationFlags: opts.generationFlags,
-        userInstructions: opts.userInstructions,
         difficulty: opts.difficulty,
-        outline: opts.outline,
         outlineSections: opts.outlineSections,
       },
       invokeOptions()
@@ -390,14 +384,13 @@ export type PlanCaseInput = {
   difficulty?: Difficulty | undefined;
   callerSuppliedFreeText: boolean;
   mode?: RunMode | undefined;
-  /** Plan handed in with request, in English: planning skipped, only translate-in runs; result's `outlineSegments` is this plan, `diagnosis`/`userInstructions` in working language. */
+  /** Plan handed in with request, in English: planning skipped, only translate-in runs; result's `outlineSegments` is this plan, `diagnosis` in working language. */
   outline?: OutlineSegments | undefined;
 };
 
 export type PlanResult = {
   /** Working language: English after translate-in (sandwich on). */
   diagnosis: Diagnosis;
-  userInstructions?: UserInstructions | undefined;
   outlineSegments: OutlineSegments;
   /** `false` when the judge loop ended on its iteration cap. */
   outlineAccepted: boolean;
@@ -406,10 +399,7 @@ export type PlanResult = {
 export type RenderCaseInput = {
   diagnosis: Diagnosis;
   generationFlags: GenerationFlag[];
-  userInstructions?: UserInstructions | undefined;
   difficulty?: Difficulty | undefined;
-  /** Prompt-ready outline text (`joinOutline`). */
-  outline: string;
-  /** Blinded solver's view of fields not generated (`presentationSections`, #205). */
-  outlineSections: PresentationSections;
+  /** Per-field outline sections (`outlineSections`); each case node reads only its own (#215). */
+  outlineSections: OutlineSections;
 };

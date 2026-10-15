@@ -22,15 +22,12 @@ import {
 } from "@/core/graph/shared/domain/ProcedureTree.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
 import { altOf } from "@/core/graph/shared/domain/ContentPart.js";
-import type { PresentationSections } from "@/core/graph/shared/outline/segments.js";
+import type { OutlineSections } from "@/core/graph/shared/outline/segments.js";
 import { matchDiagnosis } from "./match.gateway.js";
 import { invokeLogged } from "./solver/invokeLogged.js";
 import { buildBlindedSolverGraph } from "./solver/graph.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
-import {
-  renderUserInstructions,
-  boundLanguage,
-} from "@/core/graph/shared/prompt/prompt.js";
+import { boundLanguage } from "@/core/graph/shared/prompt/prompt.js";
 import { planProcedureResults } from "./results.gateway.js";
 import type { Presentation, PreviousProcedureFinding } from "./prompt.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
@@ -51,9 +48,7 @@ const SOLVER_MAX_ITERATIONS = 6;
 
 const ProcedureGraphStateSchema = CaseGenerationStateSchema.pick({
   diagnosis: true,
-  userInstructions: true,
   case: true,
-  outline: true,
   outlineSections: true,
 }).extend({
   /** Iterations remaining before the bridge step is forced. */
@@ -91,7 +86,7 @@ type BlindedSolverGraph = ReturnType<typeof buildBlindedSolverGraph>;
  */
 function presentationOf(
   c: Case,
-  sections: PresentationSections | undefined
+  sections: OutlineSections | undefined
 ): Presentation {
   const patient = c.patient ?? sections?.patient;
   const chiefComplaint =
@@ -124,19 +119,6 @@ function projectPreviousProcedures(
     relevance: p.relevance,
     result: altOf(p.parts),
   }));
-}
-
-/** Serialise only the procedure/general keys from userInstructions. */
-function userInstructionsForProcedures(
-  userInstructions: ProcedureGraphState["userInstructions"]
-): string | undefined {
-  if (!userInstructions) return undefined;
-  const filtered = Object.fromEntries(
-    Object.entries(userInstructions).filter(
-      ([key]) => key === "procedures" || key === "general"
-    )
-  );
-  return renderUserInstructions(filtered);
 }
 
 /**
@@ -182,9 +164,6 @@ function makeBlindedStep(
     const previousProcedures = projectPreviousProcedures(
       state.plannedProcedures
     );
-    const userInstructions = userInstructionsForProcedures(
-      state.userInstructions
-    );
 
     // No `diagnosis` field to pass, by construction.
     const { move: rawMove } = await blindedSolverGraph.invoke(
@@ -192,7 +171,6 @@ function makeBlindedStep(
         presentation,
         previousProcedures,
         ruledOutDiagnoses: state.ruledOutDiagnoses,
-        userInstructions,
         iterationsRemaining: state.solverIterationsRemaining,
       },
       childInvokeConfig(lgRuntime?.context)
@@ -302,8 +280,7 @@ function makeResultStep(
       state.diagnosis,
       pending,
       providers,
-      state.outline,
-      userInstructionsForProcedures(state.userInstructions),
+      state.outlineSections?.procedures,
       lgRuntime?.context
     ).catch((error) => {
       runtime.log.error(
@@ -346,16 +323,13 @@ function makeBridge(runtime: GraphRuntime, strategy: ProcedureStrategy) {
     const previousProcedures = projectPreviousProcedures(
       state.plannedProcedures
     );
-    const userInstructions = userInstructionsForProcedures(
-      state.userInstructions
-    );
 
     // `strategy.bridge()` picks confirmatory procedures and plans their results; no rendering.
     const bridgeProcedures = await strategy.bridge({
       presentation,
       diagnosis: state.diagnosis,
       previousProcedures,
-      userInstructions,
+      proceduresStrategy: state.outlineSections?.procedures,
       context: lgRuntime?.context,
     });
 

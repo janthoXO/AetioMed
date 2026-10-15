@@ -174,6 +174,37 @@ export function outlineSkeleton(opts: {
   ];
 }
 
+/** First line of a fixed segment: its heading. Only `## General` carries text after it (#221). */
+export function fixedHeading(text: string): string {
+  return text.split("\n", 1)[0]!;
+}
+
+/** `text` with its first line replaced by `heading`, the rest kept (#221). */
+export function withHeading(heading: string, text: string): string {
+  const nl = text.indexOf("\n");
+  return nl === -1 ? heading : heading + text.slice(nl);
+}
+
+/**
+ * Freezes `## General` into one fixed segment, heading plus trimmed body, and
+ * empties the editable gap after it (#221): read only while planning, so the
+ * reviewer sees it but cannot edit it. Idempotent; assumes a skeleton-checked
+ * outline (General is the first fixed segment, index 1).
+ */
+export function freezeGeneral(segments: OutlineSegments): OutlineSegments {
+  const body = (segments[2]?.text ?? "").trim();
+  return segments.map((segment, i) =>
+    i === 1
+      ? {
+          fixed: true,
+          text: body ? `${segment.text.trimEnd()}\n\n${body}` : segment.text,
+        }
+      : i === 2
+        ? { fixed: false, text: "" }
+        : segment
+  );
+}
+
 /** Fixed texts between the sections before and after the categories. */
 function categoryHeadings(fixedTexts: string[]): string[] {
   return fixedTexts.slice(
@@ -204,7 +235,9 @@ export function checkSkeleton(
   const expected = outlineSkeleton({ anamnesisCategories });
 
   for (let i = 0; i < Math.max(expected.length, fixedTexts.length); i++) {
-    if (expected[i] !== fixedTexts[i]) {
+    // General alone may carry a body after its heading (#221).
+    const actual = i === 0 ? fixedHeading(fixedTexts[i] ?? "") : fixedTexts[i];
+    if (expected[i] !== actual) {
       return {
         ok: false,
         message: `Fixed section mismatch at index ${i}: expected ${JSON.stringify(expected[i] ?? "<none>")}, got ${JSON.stringify(fixedTexts[i] ?? "<none>")}`,
@@ -214,21 +247,23 @@ export function checkSkeleton(
   return { ok: true };
 }
 
-/** Outline section text per presentation field: what the blinded solver reads for a field not generated (#205). */
-export type PresentationSections = {
+/** Outline section text per case-graph field (#215). */
+export type OutlineSections = {
   patient: string;
   chiefComplaint: string;
   anamnesis: string;
+  procedures: string;
 };
 
 /**
- * Slices the presentation sections out of a skeleton-checked outline, by
- * position: anamnesis keeps its `### <category>` subsections. Never `## General`
- * (pedagogy) or `## Procedures` (results strategy, written knowing the diagnosis).
+ * Slices a skeleton-checked outline into per-field section text, by position:
+ * anamnesis keeps its `### <category>` subsections. Each case-graph node reads
+ * only its own sections (#215): presentation planners and the blinded solver
+ * (fields not generated, #205) the presentation sections; the result planner
+ * and bridge `procedures`, the results strategy written knowing the diagnosis.
+ * Never `## General`: read only by the outline judge loop.
  */
-export function presentationSections(
-  segments: OutlineSegments
-): PresentationSections {
+export function outlineSections(segments: OutlineSegments): OutlineSections {
   const fixed = segments.flatMap((s, i) => (s.fixed ? [i] : []));
   const categoryCount = fixed.length - SECTION_KEYS.length;
   const anchor = SECTION_KEYS.indexOf(CATEGORY_ANCHOR);
@@ -242,6 +277,7 @@ export function presentationSections(
     patient: body("patient"),
     chiefComplaint: body("chiefComplaint"),
     anamnesis: body("anamnesis"),
+    procedures: body("procedures"),
   };
 }
 
@@ -283,6 +319,8 @@ export function restoreSkeletonHeadings(
   ];
   let k = 0;
   return segments.map((segment) =>
-    segment.fixed ? { fixed: true, text: expected[k++]! } : segment
+    segment.fixed
+      ? { fixed: true, text: withHeading(expected[k++]!, segment.text) }
+      : segment
   );
 }

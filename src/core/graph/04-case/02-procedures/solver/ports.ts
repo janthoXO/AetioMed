@@ -13,7 +13,6 @@ export type BlindedView = {
   presentation: Presentation;
   previousProcedures: PreviousProcedureFinding[];
   ruledOutDiagnoses: string[];
-  userInstructions?: string | undefined;
   iterationsRemaining: number;
   context?: RequestContext | undefined;
 };
@@ -23,7 +22,8 @@ export type OracleView = {
   presentation: Presentation;
   diagnosis: Diagnosis;
   previousProcedures: PreviousProcedureFinding[];
-  userInstructions?: string | undefined;
+  /** The outline's `## Procedures` section (#215). */
+  proceduresStrategy?: string | undefined;
   context?: RequestContext | undefined;
 };
 
@@ -44,6 +44,8 @@ export type SolverMove =
   | {
       action: "diagnose";
       diagnosisName: string;
+      /** Ordered procedure the commit rests on (#213); logged with the move. */
+      supportingResult?: string | undefined;
       reasoning?: string | undefined;
     }
   | { action: "exhausted"; reason: string };

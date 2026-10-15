@@ -2,7 +2,6 @@ import { GenerationFlagSchema } from "@/core/graph/shared/domain/GenerationFlags
 import z from "zod";
 import { CaseSchema } from "@/core/graph/shared/domain/Case.js";
 import { DiagnosisSchema } from "@/core/graph/shared/domain/Diagnosis.js";
-import { UserInstructionsSchema } from "@/core/graph/shared/domain/UserInstructions.js";
 import { registry } from "@langchain/langgraph/zod";
 
 /** Catalog-backed translations of controlled vocabulary. Written only by `translate_defined`; kept off `case`. */
@@ -16,8 +15,6 @@ export type DefinedTranslations = z.infer<typeof DefinedTranslationsSchema>;
 // No `language` field: target language lives on ALS (`utils/context.ts`).
 export const CaseTranslationFromEnglishStateSchema = z.object({
   diagnosis: DiagnosisSchema,
-
-  userInstructions: UserInstructionsSchema.optional(),
 
   generationFlags: z.array(GenerationFlagSchema).min(1),
 

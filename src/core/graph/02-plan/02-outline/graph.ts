@@ -20,10 +20,12 @@ import { renderUserInstructions } from "@/core/graph/shared/prompt/prompt.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import {
   OutlineSegmentsSchema,
+  freezeGeneral,
   joinOutline,
 } from "@/core/graph/shared/outline/segments.js";
 import { RunModeSchema } from "@/core/graph/shared/domain/RunMode.js";
 import { boundLanguage } from "@/core/graph/shared/prompt/prompt.js";
+import { RecipeSchema, roll } from "./recipe.js";
 
 const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
 
@@ -45,6 +47,8 @@ export const PlanGraphStateSchema = CaseGenerationStateSchema.pick({
     .default(OUTLINE_EVALUATION_MAX_ITERATIONS),
   /** The judge's feedback, fed into the next revision. */
   outlineFeedback: z.array(z.string()).default([]),
+  /** Rolled once by the first generation; judge and revisions read the same value, never re-roll (#216). */
+  recipe: RecipeSchema.default([]),
 });
 
 /** Plan mode binds the outline prompts to the request language; normal mode leaves them English. */
@@ -64,13 +68,18 @@ function makeGenerateCaseOutline(runtime: GraphRuntime) {
   return async function generateCaseOutline(
     state: PlanGraphState,
     lgRuntime?: Runtime<RequestContext>
-  ): Promise<Pick<PlanGraphState, "outlineSegments">> {
+  ): Promise<Pick<PlanGraphState, "outlineSegments" | "recipe">> {
+    const recipe = roll(state.difficulty, runtime.random ?? Math.random);
+    // Never returned to the client; logged (with the job) for solver metrics.
+    runtime.log.info(`[PlanGraph] Case recipe: ${JSON.stringify(recipe)}`);
+
     const outlineSegments = await generateCaseOutlineGateway(
       runtime,
       state.diagnosis,
       state.basisFragments,
       state.difficulty,
       {
+        recipe,
         userInstructions: renderUserInstructions(state.userInstructions),
         language: languageOf(state, runtime),
       },
@@ -83,7 +92,7 @@ function makeGenerateCaseOutline(runtime: GraphRuntime) {
     runtime.log.info(
       `[PlanGraph] Case outline generated:\n\`\`\` ${joinOutline(outlineSegments)}\`\`\``
     );
-    return { outlineSegments };
+    return { outlineSegments, recipe };
   };
 }
 
@@ -97,6 +106,7 @@ function makeOutlineEvaluate(runtime: GraphRuntime) {
       state.diagnosis,
       joinOutline(state.outlineSegments),
       state.difficulty,
+      state.recipe,
       renderUserInstructions(state.userInstructions),
       lgRuntime?.context,
       languageOf(state, runtime)
@@ -110,7 +120,14 @@ function makeOutlineEvaluate(runtime: GraphRuntime) {
     );
 
     if (evaluation.accepted) {
-      return new Command({ update: { outlineAccepted: true }, goto: END });
+      // General is read only by this loop: frozen for the reviewer (#221).
+      return new Command({
+        update: {
+          outlineAccepted: true,
+          outlineSegments: freezeGeneral(state.outlineSegments),
+        },
+        goto: END,
+      });
     }
 
     // Cap checked after judging: last revision gets judged too, not discarded.
@@ -118,7 +135,14 @@ function makeOutlineEvaluate(runtime: GraphRuntime) {
       runtime.log.info(
         `[PlanGraph] Outline evaluation iteration cap reached — the outline was not accepted.`
       );
-      return new Command({ update: { outlineAccepted: false }, goto: END });
+      // General is read only by this loop: frozen for the reviewer (#221).
+      return new Command({
+        update: {
+          outlineAccepted: false,
+          outlineSegments: freezeGeneral(state.outlineSegments),
+        },
+        goto: END,
+      });
     }
 
     const feedback = evaluation.suggestion
@@ -143,6 +167,7 @@ function makeOutlineRegenerate(runtime: GraphRuntime) {
       state.basisFragments,
       state.difficulty,
       {
+        recipe: state.recipe,
         userInstructions: renderUserInstructions(state.userInstructions),
         feedback: state.outlineFeedback,
         previousOutline: state.outlineSegments,

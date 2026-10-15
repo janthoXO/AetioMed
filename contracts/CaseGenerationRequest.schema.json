@@ -20,7 +20,7 @@
       "type": "string"
     },
     "userInstructions": {
-      "description": "Additional context for case generation",
+      "description": "Additional context for case generation. Absorbed into the plan: ignored when 'plan' is set.",
       "type": "object",
       "propertyNames": {
         "anyOf": [

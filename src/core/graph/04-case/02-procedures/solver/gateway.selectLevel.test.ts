@@ -58,11 +58,11 @@ const text = (messages: BaseMessage[]) =>
   messages.map((m) => String(m.content)).join("\n");
 
 describe("selectProcedureLevel", () => {
-  it("maps chosen labels back to level items, dropping repeats and labels not on this level", async () => {
+  it("maps chosen labels back to level items, dropping repeats", async () => {
     const model = new CapturingChatModel([
       JSON.stringify({
         action: "select",
-        items: ["Lab", "Invented", "Vitals", "Lab"],
+        items: ["Lab", "Vitals", "Lab"],
       }),
     ]);
     const selection = await selectProcedureLevel(

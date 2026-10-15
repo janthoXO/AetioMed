@@ -1,14 +1,14 @@
 import { END, START, StateGraph, type Runtime } from "@langchain/langgraph";
 import z from "zod";
-import { CaseGenerationStateSchema } from "@/core/graph/shared/caseGenerationState.js";
+import {
+  CaseGenerationStateSchema,
+  OutlineSectionsSchema,
+} from "@/core/graph/shared/caseGenerationState.js";
 import {
   RequestContextSchema,
   type RequestContext,
 } from "@/core/graph/utils/context.js";
-import {
-  renderUserInstructions,
-  boundLanguage,
-} from "@/core/graph/shared/prompt/prompt.js";
+import { boundLanguage } from "@/core/graph/shared/prompt/prompt.js";
 import {
   PlannedPartSchema,
   type ModalityProvider,
@@ -20,18 +20,16 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 
 const ChiefComplaintGraphStateSchema = CaseGenerationStateSchema.pick({
-  diagnosis: true,
-  userInstructions: true,
   case: true,
 }).extend({
-  outline: z.string(),
+  outlineSections: OutlineSectionsSchema,
   // Content-unit key -> ORDERED planned render requests.
   plan: z.record(z.string(), z.array(PlannedPartSchema)).default({}),
 });
 
 type ChiefComplaintGraphState = z.infer<typeof ChiefComplaintGraphStateSchema>;
 
-// Mounted in `buildFieldGenerationGraph`, `Send`-fanned in parallel with `anamnesisGraph`. Subgraph writes back ENTIRE state unless `output` set; parallel writes to `diagnosis`/`userInstructions`/`outline` (`LastValue`) throw `INVALID_CONCURRENT_GRAPH_UPDATE`. `.pick()` off own state schema keeps reducer registration.
+// Mounted in `buildFieldGenerationGraph`, `Send`-fanned in parallel with `anamnesisGraph`. Subgraph writes back ENTIRE state unless `output` set; parallel writes to `outlineSections` (`LastValue`) throw `INVALID_CONCURRENT_GRAPH_UPDATE`. `.pick()` off own state schema keeps reducer registration.
 const ChiefComplaintOutputSchema = ChiefComplaintGraphStateSchema.pick({
   case: true,
 });
@@ -41,19 +39,17 @@ function makePlanContent(
   providers: ModalityProvider<unknown>[]
 ) {
   return async function planContent(
-    state: Pick<
-      ChiefComplaintGraphState,
-      "diagnosis" | "outline" | "userInstructions"
-    >,
+    state: Pick<ChiefComplaintGraphState, "outlineSections">,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Pick<ChiefComplaintGraphState, "plan">> {
     const plan = await planChiefComplaint(
       runtime,
       boundLanguage(runtime),
-      state.diagnosis,
-      state.outline,
+      {
+        patient: state.outlineSections.patient,
+        chiefComplaint: state.outlineSections.chiefComplaint,
+      },
       providers,
-      renderUserInstructions(state.userInstructions),
       lgRuntime?.context
     );
     return { plan };

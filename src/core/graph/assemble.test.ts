@@ -203,6 +203,8 @@ describe("plan graph — outline and judge loop", () => {
 
     expect(result.outlineAccepted).toBe(true);
     expect(result.outlineSegments.filter((s) => s.fixed)).toHaveLength(5);
+    expect(result.outlineSegments[1]!.text).toMatch(/^## General\n\n/);
+    expect(result.outlineSegments[2]!.text).toBe("");
   });
 
   it("ends not accepted, with the last outline, once the judge loop hits its cap", async () => {
@@ -225,7 +227,8 @@ describe("plan graph — outline and judge loop", () => {
     ).invoke(input);
 
     expect(result.outlineAccepted).toBe(false);
-    expect(result.outlineSegments[2]!.text).toBe("third");
+    expect(result.outlineSegments[1]!.text).toBe("## General\n\nthird");
+    expect(result.outlineSegments[2]!.text).toBe("");
   });
 
   it("judges the last revision too: accepted on the final try", async () => {
@@ -244,7 +247,42 @@ describe("plan graph — outline and judge loop", () => {
     ).invoke(input);
 
     expect(result.outlineAccepted).toBe(true);
-    expect(result.outlineSegments[2]!.text).toBe("third");
+    expect(result.outlineSegments[1]!.text).toBe("## General\n\nthird");
+    expect(result.outlineSegments[2]!.text).toBe("");
+  });
+
+  it("rolls the case recipe once: judge and revision read the same label (#216)", async () => {
+    const rejected = JSON.stringify({ accepted: false, reasons: ["x"] });
+    const runtime = scriptedRuntime(
+      [taggedOutlineFixture(), taggedOutlineFixture()],
+      [rejected, JSON.stringify({ accepted: true, reasons: [] })]
+    );
+    // medium, r = 0.99: patient source, wrong class.
+    const random = vi.fn(() => 0.99);
+    const prompts: string[] = [];
+    const { llm } = runtime;
+    const recording: GraphRuntime = {
+      ...runtime,
+      random,
+      llm: {
+        structured: (call, prompt, schema, context) => {
+          prompts.push(prompt.user);
+          return llm.structured(call, prompt, schema, context);
+        },
+        text: (call, prompt, context) => {
+          prompts.push(prompt.user);
+          return llm.text(call, prompt, context);
+        },
+      },
+    };
+
+    await buildPlanGraph(recording, createTraceNode(new EventBus())).invoke(
+      input
+    );
+
+    expect(random).toHaveBeenCalledTimes(2);
+    expect(prompts).toHaveLength(4); // generate, judge, regenerate, judge
+    for (const prompt of prompts) expect(prompt).toContain("look-alike");
   });
 });
 

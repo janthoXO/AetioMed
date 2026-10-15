@@ -14,19 +14,17 @@ type GraphFake = Pick<
 /**
  * Adapt whole-pipeline fake (`generateCase`) to plan/case split: `planCase`
  * always accepts, `renderCase` calls `generateCase` with options `planCase`
- * received. Options travel inside outline text (the editable segment after the
- * last heading), so concurrent jobs never mix. The outline is the real
+ * received. Options travel inside the outline text (the editable segment after the
+ * last heading, i.e. the `procedures` section), so concurrent jobs never mix. The outline is the real
  * (freeform, no categories) skeleton, so a handed-back plan passes
  * `checkSkeleton`.
  */
 export function planAndRenderFrom(generateCase: GenerateCaseFn): GraphFake {
   const headings = outlineSkeleton({});
-  const last = headings.at(-1)!;
   return {
     async planCase(opts) {
       return {
         diagnosis: opts.diagnosis,
-        userInstructions: opts.userInstructions,
         outlineAccepted: true,
         outlineSegments: [
           ...headings.flatMap((text) => [
@@ -37,9 +35,8 @@ export function planAndRenderFrom(generateCase: GenerateCaseFn): GraphFake {
         ],
       };
     },
-    async renderCase({ outline }) {
-      const json = outline.slice(outline.lastIndexOf(last) + last.length);
-      return generateCase(JSON.parse(json));
+    async renderCase({ outlineSections }) {
+      return generateCase(JSON.parse(outlineSections.procedures));
     },
     translateOutline: undefined,
   };

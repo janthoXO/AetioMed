@@ -31,6 +31,7 @@ export type BlindedProcedureStepResult =
   | {
       action: "diagnose";
       diagnosisName?: string | undefined;
+      supportingResult?: string | undefined;
       reasoning?: string | undefined;
     };
 

@@ -1,5 +1,6 @@
 // Drives compiled `chiefComplaintGraph` directly (no Send, filesystem, real LLM); fake `LlmPort` throws on anything unscripted.
 import { chatModelLlmPort } from "@/adapters/ai/llm.js";
+import { createChiefComplaintProviders } from "./providers.js";
 import { describe, expect, it } from "vitest";
 import z from "zod";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
@@ -14,7 +15,6 @@ import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js"
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
-import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
 
 // ─── Fakes ──────────────────────────────────────────────────────────────────
@@ -81,7 +81,12 @@ function imageProvider(): ModalityProvider<unknown> {
   };
 }
 
-const diagnosis: Diagnosis = { name: "Influenza", icd: "1E32" };
+const SECTIONS = {
+  patient: "58, male.",
+  chiefComplaint: "Sharp pain.",
+  anamnesis: "No history.",
+  procedures: "Order an ECG.",
+};
 
 async function nodeIds(graph: {
   getGraphAsync: (opts: { xray: boolean }) => Promise<{
@@ -172,9 +177,7 @@ describe("chiefComplaintGraph — single-provider registry", () => {
     const graph = buildGraph(llm, [textProvider()], bus);
 
     const result = (await graph.invoke({
-      diagnosis,
-      outline: "outline text",
-      userInstructions: undefined,
+      outlineSections: SECTIONS,
       case: {},
     })) as { case: Case };
 
@@ -217,8 +220,7 @@ describe("chiefComplaintGraph — single-provider registry", () => {
 
     const graph = buildGraph(llm, [fakeProvider]);
     const result = (await graph.invoke({
-      diagnosis,
-      outline: "outline text",
+      outlineSections: SECTIONS,
       case: {},
     })) as { case: Case };
 
@@ -274,8 +276,7 @@ describe("chiefComplaintGraph — multi-provider registry: planned order, not co
 
     const graph = buildGraph(llm, [slow, fast]);
     const result = (await graph.invoke({
-      diagnosis,
-      outline: "outline text",
+      outlineSections: SECTIONS,
       case: {},
     })) as { case: Case };
 
@@ -289,5 +290,28 @@ describe("chiefComplaintGraph — multi-provider registry: planned order, not co
     for (const part of parts) {
       expect(part.alt.length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("createChiefComplaintProviders", () => {
+  it("renders a referral part in the referring physician's voice (#219)", async () => {
+    const systems: string[] = [];
+    const llm: LlmPort = {
+      async structured(_call, { system }) {
+        systems.push(system);
+        return { texts: ["rendered"] } as never;
+      },
+      async text() {
+        throw new Error("unexpected text call");
+      },
+    };
+    const providers = createChiefComplaintProviders(buildFakeRuntime(llm));
+    const byId = new Map(providers.map((p) => [p.id, p]));
+
+    await byId.get("referral")!.render([{ input: {}, alt: "V.a. ACS" }], {});
+    await byId.get("text")!.render([{ input: {}, alt: "Chest pain" }], {});
+
+    expect(systems[0]).toContain("referring physician");
+    expect(systems[1]).toContain("clinical-chart voice");
   });
 });

@@ -16,15 +16,16 @@ const MatchSchema = z.object({
   matches: z
     .boolean()
     .describe(
-      "true if the proposed name refers to the same or an equivalent condition, false otherwise"
+      "true only if the proposed name is the true diagnosis, an equivalent name for it, or a more specific form of it; false if it is broader, related, or different"
     ),
   reasoning: z.string().optional().describe("brief explanation"),
 });
 
 /**
- * LLM judge: determines whether a proposed diagnosis name is equivalent to the
- * true diagnosis, accounting for synonyms, alternative names, abbreviations,
- * and specificity differences (e.g. "Type 2 Diabetes" ≡ "Diabetes Mellitus Type 2").
+ * LLM judge, strict and boolean (#214): does the proposed diagnosis name the
+ * true one? Synonyms, abbreviations and a more specific form match; a broader
+ * term ("ACS" for NSTEMI) does not. Only the boolean leaves this function: a
+ * reason (too broad, a finding) would hint at the answer.
  */
 export async function matchDiagnosis(
   runtime: GraphRuntime,
@@ -36,8 +37,14 @@ export async function matchDiagnosis(
   const systemPrompt = buildPrompt(
     section(
       "Role",
-      `You are a medical knowledge expert. Determine whether a proposed diagnosis is equivalent to the true diagnosis.
-Consider synonyms, alternative names, abbreviations, and different levels of specificity.`
+      `You are a strict medical examiner. Decide whether a proposed final diagnosis is accepted as the true diagnosis.`
+    ),
+
+    section(
+      "Rules",
+      `- Accept (true) when the proposed name is the true diagnosis, a synonym, an abbreviation, an alternative name, or a more specific form of it that is still consistent with it.
+- Reject (false) when the proposed name is broader than the true diagnosis (a parent category, e.g. "Acute coronary syndrome" for "NSTEMI", "Diabetes mellitus" for "Type 1 diabetes mellitus").
+- Reject (false) when the proposed name is a finding, complication, cause or consequence of the true diagnosis (e.g. "Pneumonia" for "Bronchial carcinoma"), or a different condition.`
     ),
 
     section(

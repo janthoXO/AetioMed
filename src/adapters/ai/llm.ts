@@ -50,13 +50,16 @@ export function chatModelLlmPort(
       schema: z.ZodType<T>,
       context?: RequestContext
     ): Promise<T> {
-      return (await modelFor(call, context?.llmConfig)
+      const result = await modelFor(call, context?.llmConfig)
         .withStructuredOutput(schema)
         .invoke(
           [new SystemMessage(prompt.system), new HumanMessage(prompt.user)],
           context?.signal !== undefined ? { signal: context.signal } : undefined
         )
-        .catch((error: Error) => handleLangchainError(error))) as T;
+        .catch((error: Error) => handleLangchainError(error));
+      // Not every provider's parser validates against the schema; gateways'
+      // retries rely on a validation error here.
+      return schema.parse(result);
     },
     async text(call, prompt, context) {
       const result = await modelFor(call, {

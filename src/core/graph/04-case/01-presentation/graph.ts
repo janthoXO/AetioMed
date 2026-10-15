@@ -5,7 +5,10 @@ import {
   StateGraph,
   type Runtime,
 } from "@langchain/langgraph";
-import { CaseGenerationStateSchema } from "@/core/graph/shared/caseGenerationState.js";
+import {
+  CaseGenerationStateSchema,
+  OutlineSectionsSchema,
+} from "@/core/graph/shared/caseGenerationState.js";
 import z from "zod";
 import {
   RequestContextSchema,
@@ -14,79 +17,49 @@ import {
 import type { PickNested } from "@/core/graph/utils/pickNested.js";
 import { generatePatient as generatePatientGateway } from "./patient.gateway.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
-import { renderUserInstructions } from "@/core/graph/shared/prompt/prompt.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
 import { buildChiefComplaintGraph } from "@/core/graph/04-case/01-presentation/chief-complaint/graph.js";
 import { buildAnamnesisGraph } from "@/core/graph/04-case/01-presentation/anamnesis/graph.js";
 
-// Outline arrives as input from plan graph (`02-plan/`); this graph only fans it out.
+// Outline sections arrive as input (`02-plan/`'s outline, sliced by the service); this graph only fans them out. Each target reads only its own sections and never the diagnosis (#215).
 const GenerationGraphStateSchema = CaseGenerationStateSchema.extend({
-  outline: z.string(),
+  outlineSections: OutlineSectionsSchema,
 });
 
 type GenerationGraphState = z.infer<typeof GenerationGraphStateSchema>;
 
-// Mounted as `presentation_phase`. `.pick()` off own state schema. `outline` input only.
+// Mounted as `presentation_phase`. `.pick()` off own state schema. `outlineSections` input only.
 const GenerationOutputSchema = GenerationGraphStateSchema.pick({
   case: true,
 });
 
 // ─── fan-out ──────────────────────────────────────────────────────────────────
 
-function filterUserInstructions(
-  userInstructions: GenerationGraphState["userInstructions"],
-  keys: string[]
-) {
-  return userInstructions
-    ? Object.fromEntries(
-        Object.entries(userInstructions).filter(([k]) => keys.includes(k))
-      )
-    : undefined;
-}
-
-/** Builds the fan-out Sends to the field generators from the handed-in outline. */
+/** Builds the fan-out Sends to the field generators: sections only, never the diagnosis or instructions (#215). */
 function buildFieldGenerationSends(
-  state: Pick<
-    GenerationGraphState,
-    "generationFlags" | "diagnosis" | "outline" | "userInstructions"
-  >
+  state: Pick<GenerationGraphState, "generationFlags" | "outlineSections">
 ): Send[] {
   const sends: Send[] = [];
 
   if (state.generationFlags.includes("patient")) {
     sends.push(
       new Send("patient_generate", {
-        diagnosis: state.diagnosis,
-        outline: state.outline,
-        userInstructions: filterUserInstructions(state.userInstructions, [
-          "patient",
-          "general",
-        ]),
+        outlineSections: state.outlineSections,
       })
     );
   }
   if (state.generationFlags.includes("chiefComplaint")) {
     sends.push(
       new Send("chief_complaint_phase", {
-        diagnosis: state.diagnosis,
-        outline: state.outline,
-        userInstructions: filterUserInstructions(state.userInstructions, [
-          "chiefComplaint",
-          "general",
-        ]),
+        outlineSections: state.outlineSections,
       })
     );
   }
   if (state.generationFlags.includes("anamnesis")) {
     sends.push(
       new Send("anamnesis_phase", {
-        diagnosis: state.diagnosis,
-        outline: state.outline,
-        userInstructions: filterUserInstructions(state.userInstructions, [
-          "anamnesis",
-          "general",
-        ]),
+        outlineSections: state.outlineSections,
       })
     );
   }
@@ -96,10 +69,7 @@ function buildFieldGenerationSends(
 
 // ─── fan-out field nodes ──────────────────────────────────────────────────────
 
-type PatientNodeInput = Pick<
-  GenerationGraphState,
-  "diagnosis" | "outline" | "userInstructions"
->;
+type PatientNodeInput = Pick<GenerationGraphState, "outlineSections">;
 
 // `patient` stays a plain function node, not a subgraph: structured `Patient` object, not `ContentPart[]`; no `alt` to render, nothing for a modality provider.
 function makeGeneratePatient(runtime: GraphRuntime) {
@@ -110,9 +80,7 @@ function makeGeneratePatient(runtime: GraphRuntime) {
     runtime.log.info(`[GenerationGraph] Generating patient…`);
     const patient = await generatePatientGateway(
       runtime,
-      state.diagnosis,
-      state.outline,
-      renderUserInstructions(state.userInstructions),
+      state.outlineSections.patient,
       lgRuntime?.context
     ).catch((error) => {
       runtime.log.error(`[GenerationGraph] Error generating patient: ${error}`);

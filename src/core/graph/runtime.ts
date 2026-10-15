@@ -29,6 +29,8 @@ export interface GraphRuntime {
   log: Logger;
   /** So tests can freeze time. */
   clock: () => Date;
+  /** Dice for the case recipe (#216), so tests can seed it. `Math.random` when unset. */
+  random?: () => number;
   /**
    * Language user-facing prompts write in (`boundLanguage`), instead of ambient
    * ALS language. Bound at graph-assembly time per compiled

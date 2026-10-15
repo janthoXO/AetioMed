@@ -104,7 +104,6 @@ export class DrillDownPick implements ProcedureStrategy {
               presentation: view.presentation,
               previousProcedures: view.previousProcedures,
               ruledOutDiagnoses: view.ruledOutDiagnoses,
-              userInstructions: view.userInstructions,
               iterationsRemaining: view.iterationsRemaining,
               allowDiagnose: first && allowDiagnose,
             },
@@ -127,7 +126,6 @@ export class DrillDownPick implements ProcedureStrategy {
         view.presentation,
         view.previousProcedures,
         view.ruledOutDiagnoses,
-        view.userInstructions,
         view.iterationsRemaining,
         view.context,
         allowDiagnose
@@ -155,7 +153,6 @@ export class DrillDownPick implements ProcedureStrategy {
               presentation: view.presentation,
               diagnosis: view.diagnosis,
               previousProcedures: view.previousProcedures,
-              userInstructions: view.userInstructions,
             },
             items,
             view.context
@@ -176,7 +173,6 @@ export class DrillDownPick implements ProcedureStrategy {
         view.presentation,
         view.diagnosis,
         view.previousProcedures,
-        view.userInstructions,
         view.context
       ),
       "Error picking bridge procedures"
@@ -193,8 +189,7 @@ export class DrillDownPick implements ProcedureStrategy {
         view.diagnosis,
         procedures,
         this.providers,
-        undefined,
-        view.userInstructions,
+        view.proceduresStrategy,
         view.context
       ),
       "Error planning bridge procedure results"

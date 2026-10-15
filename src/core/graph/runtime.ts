@@ -37,6 +37,30 @@ export interface GraphRuntime {
    * unmodified runtime.
    */
   languageOverride?: Language;
+  /**
+   * System One decider (Jev wire, e.g. an Ollama decision model) for the blinded procedure pick. Absent: the
+   * LLM picks (`DrillDownPick`). Not a topology flag: same nodes either way.
+   */
+  systemOne?: {
+    port: SystemOnePort;
+    /** A candidate is ordered when its P(yes) ≥ this. */
+    pickThreshold: number;
+    /** At most this many procedures per batch, highest P first. */
+    pickMax: number;
+  };
+}
+
+/**
+ * System One model: typed questions answered in one parallel pass, no text
+ * generation. Only `noul` (P(yes)) is used so far.
+ */
+export interface SystemOnePort {
+  /** P(yes) per question key, for yes/no `questions` asked about `state`. */
+  noul(
+    state: string,
+    questions: Record<string, string>,
+    context?: RequestContext
+  ): Promise<Record<string, number>>;
 }
 
 export const LLM_ROLES = ["generator", "judge", "translator"] as const;

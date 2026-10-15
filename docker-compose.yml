@@ -55,6 +55,14 @@ services:
       # ─── Concurrency ─────────────────────────────────────────────────
       - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS:-4}
 
+      # ─── System One (blinded procedure pick) ─────────────────────────
+      # No default; http://ollama:11434 to use the ollama service's decision model.
+      - SYSTEM_ONE_URL
+      - SYSTEM_ONE_MODEL=${SYSTEM_ONE_MODEL:-nimble}
+      - SYSTEM_ONE_API_KEY
+      - SYSTEM_ONE_PICK_THRESHOLD
+      - SYSTEM_ONE_PICK_MAX
+
       # ─── OpenTelemetry ───────────────────────────────────────────────
       - OTEL_SDK_DISABLED
       - OTEL_EXPORTER_OTLP_ENDPOINT
@@ -68,15 +76,16 @@ services:
     restart: unless-stopped
 
   ollama:
-    image: ollama/ollama:0.21.2
+    image: ollama/ollama:0.35.0
     ports:
       - "11434:11434"
     volumes:
       - ollama_data:/root/.ollama
     environment:
       - MODEL_NAME=${LLM_MODEL:-llama3.1}
+      - SYSTEM_ONE_MODEL=${SYSTEM_ONE_MODEL:-nimble}
     entrypoint: >
-      sh -c "ollama serve & sleep 5 && ollama pull $$MODEL_NAME && wait"
+      sh -c "ollama serve & sleep 5 && ollama pull $$MODEL_NAME && ollama pull $$SYSTEM_ONE_MODEL && wait"
 
   nats:
     profiles: [NATS]

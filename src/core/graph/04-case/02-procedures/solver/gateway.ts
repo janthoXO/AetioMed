@@ -29,7 +29,7 @@ import {
  * Renders `name -> result` per prior procedure, for blinded and bridge steps.
  * Omits `relevance`: relative to TRUE diagnosis, would leak it to blinded solver.
  */
-function previousProceduresSection(
+export function previousProceduresSection(
   previousProcedures: PreviousProcedureFinding[]
 ) {
   return section(
@@ -42,7 +42,7 @@ function previousProceduresSection(
   );
 }
 
-function ruledOutSection(ruledOutDiagnoses: string[]) {
+export function ruledOutSection(ruledOutDiagnoses: string[]) {
   return ruledOutDiagnoses.length > 0
     ? section(
         "Ruled-out diagnoses",
@@ -210,6 +210,90 @@ ${renderSchemaForPrompt(buildStepSchema(candidates.promptSchema(), allowDiagnose
     console.error("[GenerateBlindedProcedureStep] Error:", error);
     throw error;
   }
+}
+
+// ─── decideBlindedCommit ───────────────────────────────────────────────────────
+
+/**
+ * The commit half of a blinded step, for a System One pick (`SystemOnePick`):
+ * diagnose now, or continue and let the decider pick. System One cannot name
+ * a diagnosis, so this stays an LLM call; the LLM picker fuses both halves
+ * into {@link generateBlindedProcedureStep} instead.
+ */
+export async function decideBlindedCommit(
+  runtime: GraphRuntime,
+  presentation: Presentation,
+  previousProcedures: PreviousProcedureFinding[],
+  ruledOutDiagnoses: string[],
+  userInstructions?: string,
+  iterationsRemaining?: number,
+  context?: RequestContext
+): Promise<
+  | { action: "continue"; reasoning?: string | undefined }
+  | z.infer<typeof DiagnoseActionSchema>
+> {
+  const schema = z.discriminatedUnion("action", [
+    z.object({
+      action: z.literal("continue"),
+      reasoning: z.string().optional().describe("brief clinical reasoning"),
+    }),
+    DiagnoseActionSchema,
+  ]);
+
+  // Internal: blinded solver, English always.
+  const systemPrompt = buildPrompt(
+    section("Role", BLINDED_ROLE),
+    section(
+      "Rules",
+      `Choose ONE action:
+- "continue": More procedures are needed before a diagnosis is well supported. A later step chooses which.
+${DIAGNOSE_RULE}`
+    ),
+    section(
+      "Output format",
+      `Return ONLY a valid JSON object matching one of these shapes:
+${renderSchemaForPrompt(schema)}`
+    )
+  );
+
+  const userPrompt = buildPrompt(
+    presentationSection(presentation),
+    section("Additional instructions", userInstructions),
+    previousProceduresSection(previousProcedures),
+    ruledOutSection(ruledOutDiagnoses),
+    workupBudgetSection(iterationsRemaining),
+    `Based on the patient's presentation and the workup so far, do you diagnose now or continue the workup?`
+  );
+
+  console.debug(
+    `[DecideBlindedCommit] SystemPrompt:\n${systemPrompt}\nUserPrompt:\n${userPrompt}`
+  );
+
+  return retry(
+    async (attempt, previousError) => {
+      const res = await runtime.llm.structured(
+        { role: "generator", temperature: "balanced" },
+        {
+          system: systemPrompt,
+          user: userPrompt + errorFeedback(previousError),
+        },
+        schema,
+        context
+      );
+      console.debug(
+        `[DecideBlindedCommit] [Attempt ${attempt}] Response:\n`,
+        JSON.stringify(res, null, 2)
+      );
+      return res;
+    },
+    2,
+    0,
+    (error, attempt) => {
+      const msg = `[DecideBlindedCommit] Attempt ${attempt} failed: ${error.message}`;
+      console.error(msg);
+      runtime.log.error(msg);
+    }
+  );
 }
 
 // ─── selectProcedureLevel ─────────────────────────────────────────────────────

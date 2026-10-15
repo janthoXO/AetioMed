@@ -3,6 +3,7 @@ import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import { z } from "zod";
+import { HealthSchema } from "@/api/index.js";
 import createCasesRouter from "./routes/cases.router.js";
 import createDiagnosisRouter from "./routes/diagnosis.router.js";
 import createProceduresRouter from "./routes/procedures.router.js";
@@ -55,7 +56,10 @@ export function createRestApp(opts: RestAppOptions): express.Express {
 
   const apiRouter = express.Router();
   apiRouter.get("/health", (_req, res) =>
-    res.json({ status: "ok", timestamp: new Date().toISOString() })
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+    } satisfies z.infer<typeof HealthSchema>)
   );
   apiRouter.get("/features", (_req, res) => res.json(readModel.features()));
   app.use("/api", apiRouter);

@@ -13,7 +13,12 @@ export default function createGraphRouter(
       .then((structure) => res.json(structure))
       .catch((error) => {
         console.error("[rest] Failed to build graph structure", error);
-        res.status(500).json({ error: "Failed to build graph structure" });
+        res.status(500).json({
+          error: {
+            code: "INTERNAL_ERROR",
+            message: "Failed to build graph structure",
+          },
+        });
       });
   });
 

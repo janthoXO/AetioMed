@@ -8,3 +8,13 @@ export {
 export { CaseGenerationResponseSchema } from "./CaseGenerationResponse.js";
 
 export { JobIdSchema } from "./JobId.js";
+
+export { ErrorResponseSchema } from "./ErrorResponse.js";
+
+export {
+  CancelReplySchema,
+  JobStatusReplySchema,
+  type JobStatusReply,
+} from "./JobReplies.js";
+
+export { HealthSchema } from "./Health.js";

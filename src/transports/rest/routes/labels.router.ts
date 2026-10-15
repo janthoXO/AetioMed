@@ -1,5 +1,7 @@
 import express from "express";
+import { JobIdSchema } from "@/api/index.js";
 import type { JobDirectory } from "@/core/jobEvents/index.js";
+import { invalidJobIdBody } from "./cases.router.js";
 import { openSse } from "../sse.js";
 
 /**
@@ -19,9 +21,15 @@ export default function createLabelsRouter(
   const router = express.Router();
 
   router.get("/:jobId/labels", async (req, res) => {
+    const parsedJobId = JobIdSchema.safeParse(req.params.jobId);
+    if (!parsedJobId.success) {
+      res.status(400).json(invalidJobIdBody);
+      return;
+    }
+    const jobId = parsedJobId.data;
     let watch;
     try {
-      watch = await directory.watch(req.params.jobId);
+      watch = await directory.watch(jobId);
     } catch (error) {
       console.error("[rest] Could not reach the job's owner", error);
       res.status(504).json({

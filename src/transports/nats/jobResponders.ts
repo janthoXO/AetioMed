@@ -1,15 +1,13 @@
 import type { NatsConnection, Subscription } from "@nats-io/transport-node";
-import { JobIdSchema } from "@/api/index.js";
-import type { CaseGenerationService } from "@/core/caseGenerationService.js";
+import type { z } from "zod";
 import {
-  TOMBSTONE_MS,
-  type JobEventChannel,
-  type JobPeek,
-} from "@/core/jobEvents/index.js";
+  JobIdSchema,
+  type CancelReplySchema,
+  type JobStatusReply,
+} from "@/api/index.js";
+import type { CaseGenerationService } from "@/core/caseGenerationService.js";
+import { TOMBSTONE_MS, type JobEventChannel } from "@/core/jobEvents/index.js";
 import { cancelSubject, statusSubject } from "./subjects.js";
-
-/** What `cases.status.<jobId>` answers — never `unknown`: nobody answers then. */
-export type JobStatusReply = Exclude<JobPeek, { state: "unknown" }>;
 
 /**
  * Answer per-job requests for every job this process runs, any transport.
@@ -63,7 +61,11 @@ export function startJobResponders(opts: {
             console.log(
               `[NATS] Cancel for jobId=${jobId}: ${cancelled ? "aborted" : "already finished"}`
             );
-            msg.respond(JSON.stringify({ cancelled }));
+            msg.respond(
+              JSON.stringify({ cancelled } satisfies z.infer<
+                typeof CancelReplySchema
+              >)
+            );
           },
         })
       );

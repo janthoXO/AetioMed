@@ -11,7 +11,8 @@ export const CaseGenerationResponseSchema = z.union([
     // Echoed so client can retry with explicit `language`.
     language: z.string(),
   }),
-  ErrorResponseSchema,
+  // NATS `cases.result.<jobId>` failures carry the jobId; REST errors don't.
+  ErrorResponseSchema.extend({ jobId: z.string().optional() }),
 ]);
 
 export type CaseGenerationResponse = z.infer<

@@ -6,12 +6,13 @@ import {
 } from "@nats-io/transport-node";
 import {
   createBufferedWatch,
+  JobCompleteEventSchema,
+  LabelEventSchema,
   type CancelResult,
   type JobDirectory,
   type WatchResult,
-  type WatchedEvent,
 } from "@/core/jobEvents/index.js";
-import type { JobStatusReply } from "./jobResponders.js";
+import { CancelReplySchema, JobStatusReplySchema } from "@/api/index.js";
 import { cancelSubject, progressWildcard, statusSubject } from "./subjects.js";
 
 /** How long to wait for the owning replica to answer a status/cancel request. */
@@ -38,18 +39,23 @@ export function createNatsJobDirectory(nc: NatsConnection): JobDirectory {
       (async () => {
         for await (const msg of subscription) {
           const type = msg.subject.split(".").pop();
-          if (type !== "label" && type !== "complete") continue;
-          buffered.push({ type, data: msg.json() } as WatchedEvent);
-          if (type === "complete") subscription.unsubscribe();
+          if (type === "label") {
+            const data = LabelEventSchema.safeParse(msg.json());
+            if (data.success) buffered.push({ type, data: data.data });
+          } else if (type === "complete") {
+            const data = JobCompleteEventSchema.safeParse(msg.json());
+            if (data.success) buffered.push({ type, data: data.data });
+            subscription.unsubscribe();
+          }
         }
       })().catch(() => undefined);
 
-      let reply: JobStatusReply;
+      let reply;
       try {
         const msg = await nc.request(statusSubject(jobId), "", {
           timeout: DIRECTORY_REQUEST_TIMEOUT_MS,
         });
-        reply = msg.json<JobStatusReply>();
+        reply = JobStatusReplySchema.parse(msg.json());
       } catch (error) {
         subscription.unsubscribe();
         if (isNoResponders(error)) return { state: "unknown" };
@@ -66,7 +72,7 @@ export function createNatsJobDirectory(nc: NatsConnection): JobDirectory {
         const msg = await nc.request(cancelSubject(jobId), "", {
           timeout: DIRECTORY_REQUEST_TIMEOUT_MS,
         });
-        return msg.json<{ cancelled: boolean }>().cancelled
+        return CancelReplySchema.parse(msg.json()).cancelled
           ? "cancelled"
           : "finished";
       } catch (error) {

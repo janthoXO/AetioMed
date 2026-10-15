@@ -1,10 +1,14 @@
+import { z } from "zod";
 import type { EventBus } from "./event-bus.js";
 import type { JobEventChannel, JobOutcome } from "./jobEvents/index.js";
 import { createLimiter, type Release } from "./concurrency.js";
 import type { GraphAppContext } from "./graph/appContext.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
 import type { Language } from "@/core/graph/shared/domain/Language.js";
-import type { RunMode } from "@/core/graph/shared/domain/RunMode.js";
+import {
+  RunModeSchema,
+  type RunMode,
+} from "@/core/graph/shared/domain/RunMode.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
 import { getRequestContext, runWithContext } from "./graph/utils/context.js";
 import { AppError, OutlineNotAcceptedError } from "./graph/errors/AppError.js";
@@ -13,6 +17,7 @@ import {
   joinOutline,
   presentationSections,
   restoreSkeletonHeadings,
+  OutlineSegmentsSchema,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
 import { localizeHeadings } from "./graph/03-outline-translation/headings.js";
@@ -31,12 +36,14 @@ export type CaseGenerationResultError = {
  * Outline as positional segment array. Plan-mode plan: request language;
  * normal-mode plan: always English. No language tag needed on hand-back.
  */
-export type PlanPayload = {
-  jobId: string;
-  mode: RunMode;
-  language: Language;
-  plan: OutlineSegments;
-};
+export const PlanPayloadSchema = z.object({
+  jobId: z.string(),
+  mode: RunModeSchema,
+  language: z.string(),
+  plan: OutlineSegmentsSchema,
+});
+
+export type PlanPayload = z.infer<typeof PlanPayloadSchema>;
 
 export type CaseGenerationResult = {
   jobId: string;

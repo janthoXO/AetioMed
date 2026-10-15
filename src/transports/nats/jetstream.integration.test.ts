@@ -354,7 +354,7 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
   return {
     config: {
       llm: { provider: "ollama", model: "test-model" },
-      allowedLlms: ["ollama:llama3.1"],
+      allowedLlms: { ollama: ["llama3.1"] },
       MAX_CONTENT_PART_BYTES: 5_000_000,
       LANGUAGES: ["English", "German"],
       LANGUAGE_AUTO_DETECT: false,

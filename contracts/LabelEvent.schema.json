@@ -1,0 +1,36 @@
+{
+  "title": "LabelEvent",
+  "description": "SSE `event: label`; NATS cases.progress.<jobId>.label.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "jobId": {
+      "type": "string"
+    },
+    "nodeId": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "started",
+        "completed",
+        "failed"
+      ]
+    },
+    "label": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "jobId",
+    "nodeId",
+    "status",
+    "label",
+    "timestamp"
+  ],
+  "additionalProperties": false
+}

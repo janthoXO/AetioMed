@@ -1,0 +1,20 @@
+{
+  "title": "AllowedLlms",
+  "description": "GET /api/allowedLlms; NATS meta.allowedLlms.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "propertyNames": {
+    "type": "string",
+    "enum": [
+      "ollama",
+      "google",
+      "openai"
+    ]
+  },
+  "additionalProperties": {
+    "type": "array",
+    "items": {
+      "type": "string"
+    }
+  }
+}

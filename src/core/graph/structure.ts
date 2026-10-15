@@ -1,28 +1,32 @@
 // Compiled topology of the served variant plus each node's English label key.
 // Served as `GET /api/graph` (REST) and `meta.graph` (NATS); always on.
+import { z } from "zod";
 import type { CompiledCaseGraphs } from "./assemble.js";
 import { getNodeLabels } from "./utils/nodeWrapper.js";
 
 /** One node of the compiled graph, as reported to a client. */
-export interface StructureNode {
-  id: string;
+export const StructureNodeSchema = z.object({
+  id: z.string(),
   /**
    * English label key; undefined if no label recorded. Never localized:
    * structure stays language-independent and cacheable. Localized labels come
    * on the per-job `label` event.
    */
-  labelKey?: string;
-}
+  labelKey: z.string().optional(),
+});
+export type StructureNode = z.infer<typeof StructureNodeSchema>;
 
-export interface StructureEdge {
-  source: string;
-  target: string;
-}
+export const StructureEdgeSchema = z.object({
+  source: z.string(),
+  target: z.string(),
+});
+export type StructureEdge = z.infer<typeof StructureEdgeSchema>;
 
-export interface GraphStructure {
-  nodes: StructureNode[];
-  edges: StructureEdge[];
-}
+export const GraphStructureSchema = z.object({
+  nodes: z.array(StructureNodeSchema),
+  edges: z.array(StructureEdgeSchema),
+});
+export type GraphStructure = z.infer<typeof GraphStructureSchema>;
 
 /** LangGraph's synthetic `__start__`/`__end__` nodes never emit events; excluded. */
 function isSynthetic(nodeId: string): boolean {

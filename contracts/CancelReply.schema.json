@@ -1,0 +1,15 @@
+{
+  "title": "CancelReply",
+  "description": "NATS cases.cancel.<jobId> reply.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "cancelled": {
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "cancelled"
+  ],
+  "additionalProperties": false
+}

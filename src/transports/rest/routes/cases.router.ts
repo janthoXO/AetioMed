@@ -1,5 +1,5 @@
 import express from "express";
-import { makeCaseGenerationRequestSchema } from "@/api/index.js";
+import { JobIdSchema, makeCaseGenerationRequestSchema } from "@/api/index.js";
 import { CaseGenerationResponseSchema } from "@/api/index.js";
 import { encodeCase } from "@/api/contentWire.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
@@ -28,6 +28,11 @@ function errorBody(result: CaseGenerationResult) {
     },
   };
 }
+
+/** jobId is a NATS subject token too: `*`/`>`/`.` would address other jobs' subjects. */
+export const invalidJobIdBody = {
+  error: { code: "INVALID_JOB_ID", message: "Invalid jobId" },
+};
 
 /** Plan-mode stop; same payload as normal-mode `event: plan`. */
 function planBody(result: CaseGenerationResult): PlanPayload {
@@ -127,7 +132,7 @@ export default function createCasesRouter(
 
     const sse = openSse(res);
     stream.sse = sse;
-    sse.event("accepted", { jobId });
+    sse.event("accepted", { jobId, timestamp: new Date().toISOString() });
 
     // Synchronous after `start` opened the channel: nothing has run yet.
     const subscription = jobEvents.subscribe(jobId, (event) => {
@@ -171,7 +176,12 @@ export default function createCasesRouter(
    * started or finished), 504 owner unreachable.
    */
   router.delete("/:jobId", async (req, res) => {
-    const { jobId } = req.params;
+    const parsedJobId = JobIdSchema.safeParse(req.params.jobId);
+    if (!parsedJobId.success) {
+      res.status(400).json(invalidJobIdBody);
+      return;
+    }
+    const jobId = parsedJobId.data;
     let result;
     try {
       result = await directory.cancel(jobId);

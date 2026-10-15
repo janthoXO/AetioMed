@@ -1,0 +1,49 @@
+{
+  "title": "PlanPayload",
+  "description": "Plan-mode POST /api/cases 200; SSE `event: plan`; NATS cases.plan.<jobId>.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "jobId": {
+      "type": "string"
+    },
+    "mode": {
+      "type": "string",
+      "enum": [
+        "normal",
+        "plan"
+      ]
+    },
+    "language": {
+      "type": "string"
+    },
+    "plan": {
+      "maxItems": 200,
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "fixed": {
+            "type": "boolean"
+          },
+          "text": {
+            "type": "string",
+            "maxLength": 20000
+          }
+        },
+        "required": [
+          "fixed",
+          "text"
+        ],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": [
+    "jobId",
+    "mode",
+    "language",
+    "plan"
+  ],
+  "additionalProperties": false
+}

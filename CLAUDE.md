@@ -15,6 +15,7 @@ pnpm lint:fix     # eslint --fix
 pnpm format       # prettier --write src (markdown, package.json, workflows and scripts/ are not covered)
 pnpm format:check # prettier --check src
 pnpm graph:export # export LangGraph diagrams as SVGs (scripts/exportGraphs.ts)
+pnpm contracts:export # write JSON Schemas of src/api/ to contracts/ (CI fails when stale)
 pnpm db:generate  # drizzle-kit generate — regenerate SQL migrations in drizzle/
 ```
 

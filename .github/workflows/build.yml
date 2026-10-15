@@ -4,6 +4,8 @@ on:
   pull_request:
     paths:
       - "src/**"
+      - "contracts/**"
+      - "scripts/exportContracts.ts"
       - ".github/workflows/build.yml"
 
 jobs:
@@ -34,6 +36,15 @@ jobs:
 
       - name: Lint
         run: pnpm run lint
+
+      - name: Check API contracts
+        run: |
+          pnpm contracts:export
+          if [ -n "$(git status --porcelain contracts/)" ]; then
+            git diff contracts/
+            echo "::error::contracts/ out of date with src/api/ Zod schemas. Run pnpm contracts:export and commit."
+            exit 1
+          fi
 
       - name: Start NATS
         run: |

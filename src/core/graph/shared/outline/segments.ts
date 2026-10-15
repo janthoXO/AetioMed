@@ -83,6 +83,19 @@ export function parseTaggedOutline(markdown: string): OutlineSegments {
   return segments;
 }
 
+/** Wraps a line that is exactly an expected heading in `<fixed>` tags: small models (qwen3.5:9b) drop the tags on `###` subheadings while keeping heading, order and content right. */
+export function tagBareHeadings(markdown: string, headings: string[]): string {
+  const expected = new Set(headings);
+  return markdown
+    .split("\n")
+    .map((line) =>
+      expected.has(line.trim())
+        ? `${FIXED_OPEN}${line.trim()}${FIXED_CLOSE}`
+        : line
+    )
+    .join("\n");
+}
+
 /** Inverse of {@link parseTaggedOutline}, for feeding an outline back to the LLM. Exact round-trip for trimmed canonical segments. */
 export function renderTaggedOutline(segments: OutlineSegments): string {
   const parts: string[] = [];

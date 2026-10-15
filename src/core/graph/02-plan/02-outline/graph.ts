@@ -92,13 +92,6 @@ function makeOutlineEvaluate(runtime: GraphRuntime) {
     state: PlanGraphState,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Command> {
-    if (state.outlineEvaluationIterationsRemaining <= 0) {
-      runtime.log.info(
-        `[PlanGraph] Outline evaluation iteration cap reached — the outline was not accepted.`
-      );
-      return new Command({ update: { outlineAccepted: false }, goto: END });
-    }
-
     const evaluation = await evaluateOutline(
       runtime,
       state.diagnosis,
@@ -118,6 +111,14 @@ function makeOutlineEvaluate(runtime: GraphRuntime) {
 
     if (evaluation.accepted) {
       return new Command({ update: { outlineAccepted: true }, goto: END });
+    }
+
+    // Cap checked after judging: last revision gets judged too, not discarded.
+    if (state.outlineEvaluationIterationsRemaining <= 0) {
+      runtime.log.info(
+        `[PlanGraph] Outline evaluation iteration cap reached — the outline was not accepted.`
+      );
+      return new Command({ update: { outlineAccepted: false }, goto: END });
     }
 
     const feedback = evaluation.suggestion

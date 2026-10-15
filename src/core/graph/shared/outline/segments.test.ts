@@ -10,6 +10,7 @@ import {
   presentationSections,
   renderTaggedOutline,
   restoreSkeletonHeadings,
+  tagBareHeadings,
   type OutlineSegments,
 } from "./segments.js";
 
@@ -186,6 +187,33 @@ function skeletonSegments(categories: string[]): OutlineSegments {
   }
   return segments;
 }
+
+describe("tagBareHeadings", () => {
+  it("tags bare expected headings so the skeleton check passes", () => {
+    const anamnesisCategories = ["Medications", "Allergies"];
+    const skeleton = outlineSkeleton({ anamnesisCategories });
+    const llmOutput = skeleton
+      .map((h) =>
+        h.startsWith("### ") ? `${h}\nfacts` : `<fixed>${h}</fixed>\nfacts`
+      )
+      .join("\n");
+
+    expect(
+      checkSkeleton(parseTaggedOutline(llmOutput), { anamnesisCategories }).ok
+    ).toBe(false);
+    const segments = parseTaggedOutline(tagBareHeadings(llmOutput, skeleton));
+    expect(checkSkeleton(segments, { anamnesisCategories })).toEqual({
+      ok: true,
+    });
+  });
+
+  it("leaves tagged headings and other lines alone", () => {
+    const text = "<fixed>## General</fixed>\n## General notes\n  ## Patient  ";
+    expect(tagBareHeadings(text, ["## General", "## Patient"])).toBe(
+      "<fixed>## General</fixed>\n## General notes\n<fixed>## Patient</fixed>"
+    );
+  });
+});
 
 describe("checkSkeleton", () => {
   it("accepts an exact skeleton match with configured categories", () => {

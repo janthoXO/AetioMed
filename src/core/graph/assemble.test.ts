@@ -217,7 +217,7 @@ describe("plan graph — outline and judge loop", () => {
         taggedOutlineFixture({ body: "second" }),
         taggedOutlineFixture({ body: "third" }),
       ],
-      [rejected, rejected]
+      [rejected, rejected, rejected]
     );
     const result = await buildPlanGraph(
       runtime,
@@ -225,6 +225,25 @@ describe("plan graph — outline and judge loop", () => {
     ).invoke(input);
 
     expect(result.outlineAccepted).toBe(false);
+    expect(result.outlineSegments[2]!.text).toBe("third");
+  });
+
+  it("judges the last revision too: accepted on the final try", async () => {
+    const rejected = JSON.stringify({ accepted: false, reasons: ["x"] });
+    const runtime = scriptedRuntime(
+      [
+        taggedOutlineFixture({ body: "first" }),
+        taggedOutlineFixture({ body: "second" }),
+        taggedOutlineFixture({ body: "third" }),
+      ],
+      [rejected, rejected, JSON.stringify({ accepted: true, reasons: [] })]
+    );
+    const result = await buildPlanGraph(
+      runtime,
+      createTraceNode(new EventBus())
+    ).invoke(input);
+
+    expect(result.outlineAccepted).toBe(true);
     expect(result.outlineSegments[2]!.text).toBe("third");
   });
 });

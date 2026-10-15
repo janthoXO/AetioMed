@@ -18,6 +18,7 @@ import {
   checkSkeleton,
   outlineSkeleton,
   parseTaggedOutline,
+  tagBareHeadings,
   renderTaggedOutline,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
@@ -173,7 +174,12 @@ ${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
         );
 
         // Off-skeleton outline rejected; retry feeds mismatch back.
-        const segments = parseTaggedOutline(result);
+        const segments = parseTaggedOutline(
+          tagBareHeadings(
+            result,
+            outlineSkeleton({ anamnesisCategories: anamnesisCategories ?? [] })
+          )
+        );
         const check = checkSkeleton(segments, { anamnesisCategories });
         if (!check.ok) {
           throw new OutlineFormatError(

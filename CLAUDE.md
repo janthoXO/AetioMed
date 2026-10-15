@@ -176,7 +176,11 @@ history.
 function, not plugins: `transports/rest/` (`createRestApp`/`startRestServer` — see the REST
 Layer section below for its always-on routes), `transports/nats/` (`startNatsTransport`), and
 `observability/` (`otel.ts`, `tracePayload.ts` — the OTel operator channel; see below). `src/api/`
-holds the shared request/response Zod schemas.
+holds the shared request/response Zod schemas. **Every shape that crosses the process boundary
+is a Zod schema** — inbound or outbound, REST, SSE or NATS, including replies from another replica
+(parsed, never cast); core-owned ones (`PlanPayloadSchema`, the job events, `GraphStructureSchema`,
+the read model's) live next to their type, transport-only ones in `src/api/`.
+`scripts/exportContracts.ts` lists them all and writes `contracts/`; CI fails when it is stale.
 
 The typed **`EventBus`** (`src/core/event-bus.ts`) is kept — it genuinely decouples the label
 and OTel channels from the graph. Modules augment its `EventMap` interface via TypeScript

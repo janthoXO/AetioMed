@@ -1,5 +1,6 @@
 {
   "title": "CaseGenerationResponse",
+  "description": "Case or error: POST /api/cases 200 / SSE `event: result`; NATS cases.result.<jobId>.",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "anyOf": [
     {
@@ -211,6 +212,9 @@
             "message"
           ],
           "additionalProperties": false
+        },
+        "jobId": {
+          "type": "string"
         }
       },
       "required": [

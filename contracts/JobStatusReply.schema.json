@@ -1,0 +1,139 @@
+{
+  "title": "JobStatusReply",
+  "description": "NATS cases.status.<jobId> reply.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "const": "active"
+        }
+      },
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "const": "terminal"
+        },
+        "complete": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "jobId": {
+                  "type": "string"
+                },
+                "timestamp": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "done"
+                }
+              },
+              "required": [
+                "jobId",
+                "timestamp",
+                "status"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "jobId": {
+                  "type": "string"
+                },
+                "timestamp": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "planned"
+                }
+              },
+              "required": [
+                "jobId",
+                "timestamp",
+                "status"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "jobId": {
+                  "type": "string"
+                },
+                "timestamp": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "cancelled"
+                }
+              },
+              "required": [
+                "jobId",
+                "timestamp",
+                "status"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "jobId": {
+                  "type": "string"
+                },
+                "timestamp": {
+                  "type": "string"
+                },
+                "status": {
+                  "type": "string",
+                  "const": "failed"
+                },
+                "error": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "code",
+                    "message"
+                  ],
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "jobId",
+                "timestamp",
+                "status",
+                "error"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        }
+      },
+      "required": [
+        "state",
+        "complete"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

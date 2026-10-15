@@ -1,4 +1,5 @@
 // Per-job event channel. Core owns it; transports subscribe.
+import { z } from "zod";
 import type { LabelEvent } from "./labels.js";
 
 /**
@@ -21,23 +22,35 @@ export type JobEvent = {
   [K in JobEventType]: { type: K; data: JobEventMap[K] };
 }[JobEventType];
 
-export type JobAcceptedEvent = { jobId: string; timestamp: string };
+const eventBase = { jobId: z.string(), timestamp: z.string() };
+
+export const JobAcceptedEventSchema = z.object(eventBase);
+export type JobAcceptedEvent = z.infer<typeof JobAcceptedEventSchema>;
+
+// Outcome fields spread into each variant, not intersected: JSON Schema's
+// `additionalProperties: false` on both halves of an `allOf` rejects everything.
+const outcomeSchema = <S extends z.ZodRawShape>(base: S) =>
+  z.discriminatedUnion("status", [
+    z.object({ ...base, status: z.literal("done") }),
+    z.object({ ...base, status: z.literal("planned") }),
+    z.object({ ...base, status: z.literal("cancelled") }),
+    z.object({
+      ...base,
+      status: z.literal("failed"),
+      error: z.object({ code: z.string(), message: z.string() }),
+    }),
+  ]);
 
 /**
  * `planned`: plan-mode call stopped at its plan. Job over; a later call
  * carrying the plan may reuse this jobId (see {@link JobEventChannel.open}).
  */
-export type JobOutcome =
-  | { status: "done" }
-  | { status: "planned" }
-  | { status: "cancelled" }
-  | { status: "failed"; error: { code: string; message: string } };
+export const JobOutcomeSchema = outcomeSchema({});
+export type JobOutcome = z.infer<typeof JobOutcomeSchema>;
 
 /** Terminal marker, **without** the case: observers are not the requester. */
-export type JobCompleteEvent = {
-  jobId: string;
-  timestamp: string;
-} & JobOutcome;
+export const JobCompleteEventSchema = outcomeSchema(eventBase);
+export type JobCompleteEvent = z.infer<typeof JobCompleteEventSchema>;
 
 export type JobListener = (event: JobEvent) => void;
 export type GlobalJobListener = (jobId: string, event: JobEvent) => void;

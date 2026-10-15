@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { EventBus } from "../event-bus.js";
 import type { LabelCatalog } from "../graph/catalog/ports.js";
 import type { Language } from "@/core/graph/shared/domain/Language.js";
@@ -7,14 +8,16 @@ import type { JobEventChannel } from "./channel.js";
  * End-user progress event: one short localized phrase per node execution,
  * keyed by `nodeId` as in `GET /api/graph`. Never carries node output.
  */
-export type LabelEvent = {
-  jobId: string;
-  nodeId: string;
-  status: "started" | "completed" | "failed";
+export const LabelEventSchema = z.object({
+  jobId: z.string(),
+  nodeId: z.string(),
+  status: z.enum(["started", "completed", "failed"]),
   /** Localized, falling back to English — see {@link localizeLabel}. */
-  label: string;
-  timestamp: string;
-};
+  label: z.string(),
+  timestamp: z.string(),
+});
+
+export type LabelEvent = z.infer<typeof LabelEventSchema>;
 
 /**
  * Localize English label key to request language; falls back to English.

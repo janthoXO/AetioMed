@@ -9,7 +9,7 @@ import { planAndRenderFrom } from "@/testing/graphFakes.js";
 function fakeGraph(): GraphAppContext {
   return {
     config: {
-      allowedLlms: ["ollama:llama3.1"],
+      allowedLlms: { ollama: ["llama3.1"] },
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
@@ -57,12 +57,12 @@ describe("createReadModel", () => {
     });
   });
 
-  it("procedures() passes through undefined when the catalog is freeform", () => {
+  it("procedures() is null when the catalog is freeform", () => {
     const graph = fakeGraph();
     (graph.runtime.catalogs.procedures as { tree: () => undefined }).tree =
       () => undefined;
     const readModel = createReadModel(graph, new Set());
-    expect(readModel.procedures()).toBeUndefined();
+    expect(readModel.procedures()).toBeNull();
   });
 
   it("features() reflects the feature set passed in", () => {
@@ -72,14 +72,14 @@ describe("createReadModel", () => {
 
   it("allowedLlms() delegates to config.allowedLlms", () => {
     const readModel = createReadModel(fakeGraph(), new Set());
-    expect(readModel.allowedLlms()).toEqual(["ollama:llama3.1"]);
+    expect(readModel.allowedLlms()).toEqual({ ollama: ["llama3.1"] });
   });
 
-  it("allowedLlms() falls back to [] when unset", () => {
+  it("allowedLlms() falls back to {} when unset", () => {
     const graph = fakeGraph();
     (graph.config as { allowedLlms?: unknown }).allowedLlms = undefined;
     const readModel = createReadModel(graph, new Set());
-    expect(readModel.allowedLlms()).toEqual([]);
+    expect(readModel.allowedLlms()).toEqual({});
   });
 
   it("graph() delegates to buildGraphStructure, filtering synthetic nodes", async () => {

@@ -6,6 +6,8 @@ export {
   type JobEventMap,
   type JobEventType,
   type JobEvent,
+  JobAcceptedEventSchema,
+  JobCompleteEventSchema,
   type JobAcceptedEvent,
   type JobCompleteEvent,
   type JobOutcome,
@@ -23,4 +25,9 @@ export {
   type ActiveWatch,
   type CancelResult,
 } from "./directory.js";
-export { wireLabels, localizeLabel, type LabelEvent } from "./labels.js";
+export {
+  wireLabels,
+  localizeLabel,
+  LabelEventSchema,
+  type LabelEvent,
+} from "./labels.js";

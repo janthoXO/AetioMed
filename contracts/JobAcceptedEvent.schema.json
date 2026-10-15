@@ -1,0 +1,19 @@
+{
+  "title": "JobAcceptedEvent",
+  "description": "SSE `event: accepted` on POST /api/cases; NATS cases.progress.<jobId>.accepted.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "jobId": {
+      "type": "string"
+    },
+    "timestamp": {
+      "type": "string"
+    }
+  },
+  "required": [
+    "jobId",
+    "timestamp"
+  ],
+  "additionalProperties": false
+}

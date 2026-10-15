@@ -315,6 +315,25 @@ describe("labels.router — end-to-end over real HTTP", () => {
     expect(body.error.code).toBe("NOT_FOUND");
   });
 
+  it("a jobId that is no subject token is a 400, never reaching the directory", async () => {
+    const watch = vi.fn();
+    const app = express();
+    app.use(
+      "/api/cases",
+      createLabelsRouter({ watch, cancel: vi.fn() } as JobDirectory)
+    );
+    server = app.listen(0, "127.0.0.1");
+    await new Promise<void>((resolve) => server!.once("listening", resolve));
+    const port = (server!.address() as AddressInfo).port;
+
+    // `>` would subscribe to every job's progress over NATS.
+    const res = await fetch(`http://127.0.0.1:${port}/api/cases/%3E/labels`);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { code: string } };
+    expect(body.error.code).toBe("INVALID_JOB_ID");
+    expect(watch).not.toHaveBeenCalled();
+  });
+
   it("a terminal job's stream (no live subscriber) ends with its complete event", async () => {
     const { service, directory, release } = createHarness();
     ({ server } = await startServer(directory));

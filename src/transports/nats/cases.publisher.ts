@@ -1,4 +1,5 @@
 import { encodeCase } from "@/api/contentWire.js";
+import type { CaseGenerationResponse } from "@/api/CaseGenerationResponse.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type {
   CaseGenerationResult,
@@ -10,10 +11,10 @@ import { planSubject, resultSubject } from "./subjects.js";
 /** Publish result to `cases.result.<jobId>`. `msgID` dedupes redelivered job's second result. */
 export async function publishCaseResult(
   jobId: string,
-  response: Record<string, unknown>
+  response: CaseGenerationResponse
 ): Promise<void> {
   const js = getJetStreamClient();
-  const payload = { jobId, ...response };
+  const payload: CaseGenerationResponse = { jobId, ...response };
 
   console.log(`[NATS] Publishing result for jobId=${jobId}`);
 
@@ -52,7 +53,7 @@ export async function publishStop(
   if (result.status === "done") {
     await publishCaseResult(result.jobId, {
       ...encodeCase(result.case!, graph.config.MAX_CONTENT_PART_BYTES),
-      language: result.language,
+      language: result.language!,
     });
     return;
   }

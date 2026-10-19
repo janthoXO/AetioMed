@@ -162,6 +162,17 @@ export const ConfigSchema = z
       .int()
       .positive()
       .default(5_000_000),
+    /** WHO ICD-11 API base URL (container). Set = ICD on: diagnoses resolve through ICD. */
+    // `""` = unset: `docker-compose.prod.yml` passes every variable, empty when absent.
+    ICD_API_URL: z.preprocess((v) => v || undefined, z.url().optional()),
+    /** ICD-11 release id, e.g. `2026-01`. Required with `ICD_API_URL`; must match the container's `include`. */
+    ICD_RELEASE: z.preprocess(
+      (v) => v || undefined,
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}$/)
+        .optional()
+    ),
     ALLOWED_LLMS: z
       .string()
       .regex(allowedLlmsRegex)
@@ -213,6 +224,11 @@ export const ConfigSchema = z
       LLM_TRANSLATOR_URL,
       ...rest
     } = env;
+    if (rest.ICD_API_URL && !rest.ICD_RELEASE) {
+      throw new Error(
+        "ICD_RELEASE is required when ICD_API_URL is set (e.g. 2026-01; must match the container's include)"
+      );
+    }
     if (FEATURES?.includes("ALLOW_LLMS")) {
       return {
         ...rest,

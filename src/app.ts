@@ -27,6 +27,7 @@ import { createRepos } from "./adapters/repos.js";
 import { createYamlCatalogs } from "./adapters/catalog/index.js";
 import { validateCatalogsOrExit } from "./adapters/catalog/startupValidation.js";
 import { createLlmPort } from "./adapters/ai/llm.js";
+import { createIcdClient, probeIcd } from "./adapters/icd/client.js";
 import { createTinyldDetector } from "./adapters/language/tinyldDetector.js";
 
 const AppEnvSchema = z
@@ -52,6 +53,8 @@ const AppEnvSchema = z
  * Composition root: constructs everything explicitly, in order. `FEATURES`
  * flags (`REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`) each gate one construction.
  *
+ * With `ICD_API_URL` set, probes the ICD container first (fatal on failure).
+ *
  * `shutdown()` closes everything started, in reverse construction order:
  * REST, NATS, DB last. Registers no signal handler; `src/index.ts` does via
  * `installSignalHandlers`. Unstarted feature contributes no closer.
@@ -68,6 +71,16 @@ export async function createApp(): Promise<{
   const features = new Set(featureList);
   console.log(`[app] Feature flags: ${[...features].join(", ") || "none"}`);
   const graphConfig = GraphConfigSchema.parse(process.env);
+  if (graphConfig.ICD_API_URL && graphConfig.ICD_RELEASE) {
+    await probeIcd(
+      createIcdClient({
+        url: graphConfig.ICD_API_URL,
+        release: graphConfig.ICD_RELEASE,
+      }),
+      graphConfig.ICD_API_URL,
+      graphConfig.LANGUAGES
+    );
+  }
   const bus = new EventBus();
   // Operator channel, gated by standard OTel env vars, not `FEATURES`.
   // `DEBUG` only picks the console exporter when no OTLP endpoint set.

@@ -68,10 +68,8 @@ export function createDiagnosisRepo(
       catalogFile(catalogDir, "diagnosis.yml"),
       (parsed) => {
         const diagnosisEntries = z
-          .record(
-            ICDCodeSchema,
-            DiagnosisEntrySchema.optional().catch(undefined)
-          )
+          // Key unchecked: an entry with an invalid `code` is dropped by `.catch`, not the whole file.
+          .record(z.string(), DiagnosisEntrySchema.optional().catch(undefined))
           .transform((entries) => Object.values(entries).filter((e) => !!e))
           .safeParse(parsed);
 

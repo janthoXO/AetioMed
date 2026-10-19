@@ -2,7 +2,6 @@ import {
   SymptomSchema,
   type Symptom,
 } from "@/core/graph/02-plan/01-basis/symptom.js";
-import { ICDCodeSchema } from "@/core/graph/shared/domain/Diagnosis.js";
 import fs from "fs";
 import z from "zod";
 import { eq } from "drizzle-orm";
@@ -14,8 +13,9 @@ import type {
   UmlsSymptomFloor,
 } from "@/core/graph/02-plan/01-basis/ports.js";
 
+// Keys are data, not request input: not held to the ICD-11 stem shape.
 const SymptomMapSchema = z.record(
-  ICDCodeSchema,
+  z.string(),
   z.object({
     symptoms: z.array(SymptomSchema),
   })

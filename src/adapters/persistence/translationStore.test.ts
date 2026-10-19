@@ -12,7 +12,7 @@ import { translation } from "@/adapters/persistence/schema.js";
 let dbHandle: DbHandle;
 let tmpDir: string;
 
-const LANG: ForeignLanguage = "German";
+const LANG: ForeignLanguage = "de";
 
 beforeAll(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aetiomed-translationStore-"));
@@ -192,7 +192,7 @@ describe("provenance", () => {
 
     fs.writeFileSync(
       yamlPath,
-      `German:\n  "Curated Term": "Kuratierter Begriff"\n`
+      `de:\n  "Curated Term": "Kuratierter Begriff"\n`
     );
 
     const store1 = createTranslationStore(dbHandle, {
@@ -245,7 +245,7 @@ describe("provenance", () => {
     // file content -> triggers a re-parse).
     fs.writeFileSync(
       yamlPath,
-      `German:\n  "Curated Term": "Kuratierter Begriff"\n  "Runtime Term": "Kuratierte Version"\n`
+      `de:\n  "Curated Term": "Kuratierter Begriff"\n  "Runtime Term": "Kuratierte Version"\n`
     );
 
     createTranslationStore(dbHandle, {

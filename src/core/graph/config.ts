@@ -1,4 +1,5 @@
 import z from "zod";
+import { languageName } from "./shared/domain/Language.js";
 import { LLM_ROLES, type LlmRole } from "./runtime.js";
 
 const PossibleProvidersSchema = z.enum(["ollama", "google", "openai"]);
@@ -105,8 +106,9 @@ export const ConfigSchema = z
       .transform((v) => v !== "false" && v !== "0"),
     /**
      * Supported languages, comma-separated. Trimmed, de-duplicated, order
-     * preserved. Default `["English", "German"]`. "English" mandatory (pivot
-     * language, base catalogue identity space); parse fails without it.
+     * preserved. ISO 639-1 codes, default `["en", "de"]`. `"en"` mandatory (pivot
+     * language, base catalogue identity space); parse fails without it or on
+     * anything that is not a known two-letter code.
      */
     LANGUAGES: z
       .string()
@@ -118,11 +120,19 @@ export const ConfigSchema = z
                 .split(",")
                 .map((s) => s.trim())
                 .filter(Boolean)
-            : ["English", "German"];
+            : ["en", "de"];
         const languages = [...new Set(raw)];
-        if (!languages.includes("English")) {
+        const bad = languages.filter(
+          (l) => !/^[a-z]{2}$/.test(l) || languageName(l) === undefined
+        );
+        if (bad.length > 0) {
           throw new Error(
-            `LANGUAGES must include "English" — it is the pivot language the ` +
+            `LANGUAGES must be ISO 639-1 codes (e.g. "en,de"). Unknown: ${bad.join(", ")}`
+          );
+        }
+        if (!languages.includes("en")) {
+          throw new Error(
+            `LANGUAGES must include "en" — it is the pivot language the ` +
               `translation sandwich turns on and the base catalogue's identity ` +
               `space. Got: ${languages.length > 0 ? languages.join(", ") : "(empty)"}`
           );

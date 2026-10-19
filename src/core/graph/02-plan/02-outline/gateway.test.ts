@@ -161,21 +161,21 @@ describe("generateCaseOutline skeleton", () => {
     await runWithContext(
       () =>
         generateCaseOutline(runtime, { name: "Grippe" }, [], "medium", {
-          language: "German",
+          language: "de",
         }),
       "job",
       undefined,
-      "German"
+      "de"
     );
     await runWithContext(
       () => generateCaseOutline(runtime, { name: "Grippe" }, [], "medium"),
       "job",
       undefined,
-      "German"
+      "de"
     );
 
     expect(String(model.calls[0]![0]!.content)).toContain(
-      "Output language: German"
+      "Output language: German (de)"
     );
     expect(String(model.calls[1]![0]!.content)).not.toContain(
       "Output language"

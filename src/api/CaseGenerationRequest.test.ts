@@ -44,23 +44,32 @@ describe("CaseGenerationRequestSchema — language", () => {
       ConfigSchema.parse({
         LLM_PROVIDER: "ollama",
         LLM_MODEL: "llama3.1",
-        LANGUAGES: "English,German,French",
+        LANGUAGES: "en,de,fr",
       })
     );
 
     const result = configuredSchema.safeParse({
       diagnosis: "Influenza",
-      language: "French",
+      language: "fr",
     });
 
     expect(result.success).toBe(true);
   });
 
   it("rejects a language outside the deployment's configured LANGUAGES as a validation (400-worthy) failure, not a 500", () => {
-    // Default LANGUAGES is English, German — Spanish is not configured.
+    // Default LANGUAGES is en,de — es is not configured.
     const result = schema.safeParse({
       diagnosis: "Influenza",
-      language: "Spanish",
+      language: "es",
+    });
+
+    expect(result.success).toBe(false);
+  });
+
+  it("rejects a language name: the wire value is a code", () => {
+    const result = schema.safeParse({
+      diagnosis: "Influenza",
+      language: "German",
     });
 
     expect(result.success).toBe(false);

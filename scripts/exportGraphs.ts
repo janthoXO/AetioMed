@@ -81,7 +81,7 @@ const minimalConfig: Config = {
   },
   allowedLlms: undefined,
   TRANSLATION_SANDWICH: true,
-  LANGUAGES: ["English", "German"],
+  LANGUAGES: ["en", "de"],
   LANGUAGE_AUTO_DETECT: false,
   LANGUAGE_DETECT_LLM_FALLBACK: false,
   MAX_CONTENT_PART_BYTES: 5_000_000,

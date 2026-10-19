@@ -72,7 +72,7 @@ function fakeGraph(generateCase: GenerateCaseFn = vi.fn()): GraphAppContext {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
@@ -356,7 +356,7 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: { ollama: ["llama3.1"] },
       MAX_CONTENT_PART_BYTES: 5_000_000,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
@@ -711,7 +711,7 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
       MAX_CONTENT_PART_BYTES: 5_000_000,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
@@ -1182,7 +1182,7 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS", () => {
             jobId: "job-plan-1",
             diagnosis: "Influenza",
             mode: "plan",
-            language: "English",
+            language: "en",
           })
         );
 
@@ -1202,7 +1202,7 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS", () => {
             jobId: "job-plan-1",
             diagnosis: "Influenza",
             mode: "plan",
-            language: "English",
+            language: "en",
             plan: (plan as { plan: unknown }).plan,
           })
         );

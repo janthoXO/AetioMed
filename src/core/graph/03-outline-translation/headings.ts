@@ -7,7 +7,10 @@ import {
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
 import type { OutlineHeadingCatalog } from "@/core/graph/catalog/ports.js";
-import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
+import {
+  promptLanguage,
+  type ForeignLanguage,
+} from "@/core/graph/shared/domain/Language.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 
@@ -58,7 +61,7 @@ export async function localizeHeadings(
       logTag: "TranslateOutlineHeadings",
       taskDescription:
         "Translate the provided section headings of a clinical case outline from English to a target language. Each is a short heading title: translate it as a heading, without markdown.",
-      contextLines: [`Target language: ${language}`],
+      contextLines: [`Target language: ${promptLanguage(language)}`],
       terms: [...new Set(missing.map((slot) => slot.english))],
       context,
     });

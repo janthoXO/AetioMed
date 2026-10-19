@@ -137,34 +137,46 @@ describe("ConfigSchema — LANGUAGES", () => {
 
   it("defaults to English, German when unset", () => {
     const config = ConfigSchema.parse(base);
-    expect(config.LANGUAGES).toEqual(["English", "German"]);
+    expect(config.LANGUAGES).toEqual(["en", "de"]);
   });
 
   it("parses a comma-separated list, trimming whitespace", () => {
     const config = ConfigSchema.parse({
       ...base,
-      LANGUAGES: "English, German , French",
+      LANGUAGES: "en, de , fr",
     });
-    expect(config.LANGUAGES).toEqual(["English", "German", "French"]);
+    expect(config.LANGUAGES).toEqual(["en", "de", "fr"]);
   });
 
   it("de-duplicates while preserving first-seen order", () => {
     const config = ConfigSchema.parse({
       ...base,
-      LANGUAGES: "German,English,German,French,English",
+      LANGUAGES: "de,en,de,fr,en",
     });
-    expect(config.LANGUAGES).toEqual(["German", "English", "French"]);
+    expect(config.LANGUAGES).toEqual(["de", "en", "fr"]);
   });
 
-  it("rejects a set that omits English", () => {
+  it("rejects a set that omits en", () => {
     expect(() =>
-      ConfigSchema.parse({ ...base, LANGUAGES: "German,French" })
-    ).toThrowError(/must include "English"/);
+      ConfigSchema.parse({ ...base, LANGUAGES: "de,fr" })
+    ).toThrowError(/must include "en"/);
+  });
+
+  it("rejects an unknown code, naming it", () => {
+    expect(() =>
+      ConfigSchema.parse({ ...base, LANGUAGES: "en,xx" })
+    ).toThrowError(/Unknown: xx/);
+  });
+
+  it("rejects language names", () => {
+    expect(() =>
+      ConfigSchema.parse({ ...base, LANGUAGES: "English,German" })
+    ).toThrowError(/Unknown: English, German/);
   });
 
   it("treats a blank LANGUAGES string as unset, falling back to the default", () => {
     // Blank = unset, not a rejection.
     const config = ConfigSchema.parse({ ...base, LANGUAGES: "   " });
-    expect(config.LANGUAGES).toEqual(["English", "German"]);
+    expect(config.LANGUAGES).toEqual(["en", "de"]);
   });
 });

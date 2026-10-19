@@ -188,7 +188,7 @@ export function createCaseGenerationService(
 
   /** Whether a plan-mode plan is shown in a non-English language. */
   function localizesPlan(mode: RunMode, language: Language): boolean {
-    return mode === "plan" && language !== "English";
+    return mode === "plan" && language !== "en";
   }
 
   /** Whether a plan-mode plan's body crosses the sandwich for this request. */

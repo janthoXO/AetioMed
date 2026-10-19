@@ -29,7 +29,7 @@ describe("translateUserInstructionsToEnglish", () => {
         general: "Halte es einfach.",
         procedures: "Bestelle nur obligatorische Tests.",
       },
-      language: "German",
+      language: "de",
     });
 
     expect(result).toEqual({
@@ -49,7 +49,7 @@ describe("translateUserInstructionsToEnglish", () => {
 
     const result = await translateUserInstructionsToEnglish(throwingRuntime, {
       userInstructions: {},
-      language: "German",
+      language: "de",
     });
 
     expect(result).toEqual({});

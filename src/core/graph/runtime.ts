@@ -34,7 +34,7 @@ export interface GraphRuntime {
   /**
    * Language user-facing prompts write in (`boundLanguage`), instead of ambient
    * ALS language. Bound at graph-assembly time per compiled
-   * variant, never per request. `assembleCaseGraph` sets `"English"` for the
+   * variant, never per request. `assembleCaseGraph` sets `"en"` for the
    * generation phase when sandwich compiled in; translate-out uses the
    * unmodified runtime.
    */

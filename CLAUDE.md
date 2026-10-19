@@ -458,8 +458,7 @@ directly in the request language instead (see "Outline segments" above). `genera
 sandwich _on_, the two conditional edges remain (whether this deployment can translate is the
 deployer's choice; whether this request needs to is the caller's). Whether a _particular_
 plan-mode request enters the compiled-in middle layer is itself a runtime branch, made outside
-the graph: `CaseGenerationService.translatesOutline(data)` (`sandwich && language !==
-"English"`) decides per job, in the job's status machine, not as a conditional edge — there is
+the graph: `CaseGenerationService.translatesOutline(data)` (`sandwich && language !== "en"`) decides per job, in the job's status machine, not as a conditional edge — there is
 no seam inside either top-level graph where that decision belongs, since the middle layer is
 invoked between them, never mounted in either. They are two **different** predicates, not one
 reused twice (issue 12 §3):
@@ -468,7 +467,7 @@ ALS — generation always runs in English under the sandwich, so the response is
 regardless of how the request arrived. `requestNeedsTranslationIn(state)` (before generation)
 additionally requires `state.callerSuppliedFreeText`: an ICD-only request already resolves an
 English name from the catalogue, so translating it "to English" anyway used to pollute the
-translation store with identity entries (`German: { "Diabetes": "Diabetes" }`) — a real bug, not
+translation store with identity entries (`de: { "Diabetes": "Diabetes" }`) — a real bug, not
 a hypothetical one. `callerSuppliedFreeText` is true when the request supplied a diagnosis
 **name** (rather than only an `icd`) or any `userInstructions`; only `CaseGenerationService`
 knows this; it computes the flag before ICD→name resolution and passes it into `planCase`'s
@@ -1059,7 +1058,7 @@ not, so a narrower context schema would not actually stop a leak — removing th
 Concretely:
 
 - **`LANGUAGES`** (env, `config.ts`) is the deployer-declared supported set — comma-separated,
-  trimmed, de-duplicated, order preserved, defaulting to `English,German`. `English` is
+  trimmed, de-duplicated, order preserved, defaulting to `en,de`, ISO 639-1 codes (validated: two letters, known to `Intl.DisplayNames`). `en` is
   mandatory (startup fails otherwise): it is the pivot language the translation sandwich turns
   on and the base catalogue's identity space. `shared/domain/Language.ts`'s `Language`/
   `ForeignLanguage` are plain `string` aliases (not a literal-union enum) precisely because the
@@ -1104,7 +1103,7 @@ language`), so the choice is visible at every call site instead of hidden in the
 - **Sandwich-on forces English at the port, not per call.** With `TRANSLATION_SANDWICH` on,
   generation must run entirely in English regardless of the request's real target language —
   `assembleCaseGraph` builds the generation phase from a runtime with
-  `languageOverride: "English"` (`GraphRuntime.languageOverride`, `runtime.ts`), which
+  `languageOverride: "en"` (`GraphRuntime.languageOverride`, `runtime.ts`), which
   `boundLanguage` prefers over the ambient ALS language. That is a compile-time binding (one per
   compiled variant), not a per-request branch. It binds the internal calls and the planners
   (so `alt` is English); renderers are exempt by design and always write the target language
@@ -1152,12 +1151,10 @@ language`), so the choice is visible at every call site instead of hidden in the
   `LanguageDetector` port (`languageDetection/port.ts`) so it is fakeable in tests and swappable
   later — offline, TypeScript-native, and `detectAll()` returns an explicit
   `{ lang, accuracy }[]` distribution (`accuracy` reads directly as this port's confidence)
-  rather than `franc`'s relative distances. ISO 639-1 codes are mapped to this deployment's
-  configured language **names** in exactly one place, `languageDetection/mapping.ts`; a
-  configured language the table does not know simply never wins step 2 — it stays fully usable
-  passed explicitly at step 1 — and `validateCatalogsOrExit` (the same reporter as the
-  `LANGUAGES` validation above, not a second one) warns about it by name at startup without
-  failing. The resolved language is echoed back as `language` in
+  rather than `franc`'s relative distances. The detector's ISO 639-1 code is compared to the configured codes directly (a code outside
+  `LANGUAGES` never wins step 2). Language names exist only at the prompt seam: `promptLanguage`
+  (`shared/domain/Language.ts`, `Intl.DisplayNames`) writes `German (de)` wherever a language goes
+  into an LLM prompt. The resolved language is echoed back as `language` in
   `CaseGenerationResponseSchema`'s success branch and the NATS success payload (and on
   `CaseGenerationResult`), so a client can notice a wrong auto-detect guess and retry explicitly.
 
@@ -1176,7 +1173,7 @@ language`), so the choice is visible at every call site instead of hidden in the
 | `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`                 | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                                                                       |
 | `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`            | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                  |
 | `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                            |
-| `LANGUAGES`                                                           | `English,German`        | Comma-separated deployment language set, trimmed/de-duplicated/order-preserved; must include `English`. Validated at startup and against every request's `language` (see Language section below) |
+| `LANGUAGES`                                                           | `en,de`                 | Comma-separated ISO 639-1 codes, trimmed/de-duplicated/order-preserved; must include `en`. Validated at startup and against every request's `language` (see Language section below) |
 | `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                 |
 | `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                            |
 | `ALLOWED_LLMS`                                                        | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                               |

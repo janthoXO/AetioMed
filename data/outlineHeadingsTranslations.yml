@@ -1,7 +1,7 @@
 # Curated outline section-title translations; they always win over generated
 # ones. Titles not listed here are translated on demand and cached in the DB,
 # never written back to this file.
-German:
+de:
   General: Allgemein
   Patient: Patient:in
   Chief complaint: Vorstellungsgrund

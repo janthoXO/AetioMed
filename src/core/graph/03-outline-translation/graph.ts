@@ -7,6 +7,7 @@ import {
   RequestContextSchema,
   getRequestContext,
 } from "@/core/graph/utils/context.js";
+import { promptLanguage } from "@/core/graph/shared/domain/Language.js";
 import { translateRecordKeyed } from "@/core/graph/shared/translation/translate.js";
 import type { createTraceNode } from "@/core/graph/utils/nodeWrapper.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
@@ -60,15 +61,15 @@ function makeTranslateOutline(runtime: GraphRuntime, direction: "out" | "in") {
       return { translations: identity };
     }
 
-    const sourceLanguage = direction === "out" ? "English" : language;
-    const targetLanguage = direction === "out" ? language : "English";
+    const sourceLanguage = direction === "out" ? "en" : language;
+    const targetLanguage = direction === "out" ? language : "en";
 
     const translated = await translateRecordKeyed(runtime, {
       logTag: direction === "out" ? "TranslateOutlineOut" : "TranslateReviewIn",
       taskDescription: TASK_DESCRIPTION,
       contextLines: [
-        `Source language: ${sourceLanguage}`,
-        `Target language: ${targetLanguage}`,
+        `Source language: ${promptLanguage(sourceLanguage)}`,
+        `Target language: ${promptLanguage(targetLanguage)}`,
       ],
       values: nonEmpty,
       context: getRequestContext(),

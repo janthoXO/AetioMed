@@ -82,17 +82,17 @@ const CaseOutputSchema = CaseStateSchema.pick({ case: true });
  */
 function requestNeedsTranslationOut(): "translate" | "skip" {
   const language = getRequestContext()?.language;
-  return language && language !== "English" ? "translate" : "skip";
+  return language && language !== "en" ? "translate" : "skip";
 }
 
 /**
- * Translate-**in** edge (before generation): enter only when language differs **and** caller supplied free text (`state.callerSuppliedFreeText`). ICD-only names are already catalogue English; translating would pollute store with identity entries (`German: { "Diabetes": "Diabetes" }`).
+ * Translate-**in** edge (before generation): enter only when language differs **and** caller supplied free text (`state.callerSuppliedFreeText`). ICD-only names are already catalogue English; translating would pollute store with identity entries (`de: { "Diabetes": "Diabetes" }`).
  */
 function requestNeedsTranslationIn(state: {
   callerSuppliedFreeText: boolean;
 }): "translate" | "skip" {
   const language = getRequestContext()?.language;
-  return language && language !== "English" && state.callerSuppliedFreeText
+  return language && language !== "en" && state.callerSuppliedFreeText
     ? "translate"
     : "skip";
 }
@@ -155,7 +155,7 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
   // Sandwich on: generation runs English (`languageOverride` binding, read by `boundLanguage`); real target
   // language reaches only translate-out, built from unmodified `runtime`.
   const generationRuntime: GraphRuntime = flags.translationSandwich
-    ? { ...runtime, languageOverride: "English" }
+    ? { ...runtime, languageOverride: "en" }
     : runtime;
 
   // Scoped to match mount names below; see `TraceNodeFn.scope` in `nodeWrapper.ts`.

@@ -1,5 +1,8 @@
 import z from "zod";
-import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
+import {
+  promptLanguage,
+  type ForeignLanguage,
+} from "@/core/graph/shared/domain/Language.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import {
   buildPrompt,
@@ -36,8 +39,8 @@ ${renderSchemaForPrompt(responseSchema)}`
   );
 
   const userPrompt = buildPrompt(
-    section("Source language", language),
-    section("Target language", "English"),
+    section("Source language", promptLanguage(language)),
+    section("Target language", promptLanguage("en")),
     section("Diagnosis to translate", diagnosis)
   );
 
@@ -98,7 +101,10 @@ export async function translateUserInstructionsToEnglish(
     logTag: "TranslateUserInstructionsToEnglish",
     taskDescription:
       "Translate the provided free-text user instructions from the given language to English.",
-    contextLines: [`Source language: ${language}`, `Target language: English`],
+    contextLines: [
+      `Source language: ${promptLanguage(language)}`,
+      `Target language: ${promptLanguage("en")}`,
+    ],
     values: userInstructions,
     context,
   });

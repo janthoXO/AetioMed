@@ -437,7 +437,7 @@ describe("language routing reads ALS, never graph state", () => {
   }
 
   it("a German request bound on ALS enters the translate-to-English phase", async () => {
-    const nodes = await startedNodes({ alsLanguage: "German" });
+    const nodes = await startedNodes({ alsLanguage: "de" });
     expect(nodes).toContain("translate_in_phase:translate_diagnosis");
   });
 
@@ -451,7 +451,7 @@ describe("language routing reads ALS, never graph state", () => {
     // read state, this would translate; it must not.
     const nodes = await startedNodes({
       alsLanguage: undefined,
-      stateLanguage: "German",
+      stateLanguage: "de",
     });
     expect(nodes).not.toContain("translate_in_phase:translate_diagnosis");
   });
@@ -481,7 +481,7 @@ describe("translate-in trigger reads provenance, not just language", () => {
       },
       undefined,
       undefined,
-      "German"
+      "de"
     );
 
     expect(started).toContain("translate_in_phase:translate_diagnosis");
@@ -520,14 +520,14 @@ describe("translate-in trigger reads provenance, not just language", () => {
       },
       undefined,
       undefined,
-      "German"
+      "de"
     );
 
     expect(started).not.toContain("translate_in_phase:translate_diagnosis");
     // Assert on translation store itself, not mock call counts: predicate must not pollute it with
-    // identity entries like `German: { "Influenza": "Influenza" }`.
+    // identity entries like `de: { "Influenza": "Influenza" }`.
     expect(saveTranslations).not.toHaveBeenCalled();
-    expect(diagnosisCatalog.toEnglish("Influenza", "German")).toBeUndefined();
+    expect(diagnosisCatalog.toEnglish("Influenza", "de")).toBeUndefined();
   });
 });
 

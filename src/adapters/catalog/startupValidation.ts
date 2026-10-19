@@ -2,7 +2,6 @@ import { readDeclaredTranslations } from "../persistence/predefinedList.js";
 import { OUTLINE_SECTIONS } from "@/core/graph/shared/outline/segments.js";
 import type { Repos } from "../repos.js";
 import { getKnownLabels } from "@/core/graph/utils/nodeWrapper.js";
-import { unmappableLanguages } from "@/core/languageDetection/mapping.js";
 import {
   duplicateSiblings,
   nodeKey,
@@ -165,7 +164,7 @@ export function findMissingLanguages(
 ): MissingLanguageProblem[] {
   const problems: MissingLanguageProblem[] = [];
   for (const language of languages) {
-    if (language === "English") continue;
+    if (language === "en") continue;
     for (const spec of specs) {
       if (Object.keys(spec.translations).length === 0) continue;
       const entries = spec.translations[language];
@@ -227,21 +226,6 @@ export function warnUnconfiguredLanguages(
 }
 
 /**
- * Warn (never fail) for each configured language missing from the
- * language-detection mapping (`languageDetection/mapping.ts`). It never wins
- * auto-detect but stays usable when passed explicitly.
- */
-function warnUndetectableLanguages(languages: string[]): void {
-  for (const language of unmappableLanguages(languages)) {
-    console.warn(
-      `[catalog] "${language}" is not in the language-detector's ISO↔name mapping ` +
-        `table — it will never be selected by language auto-detection, but stays ` +
-        `fully usable when passed explicitly as "language".`
-    );
-  }
-}
-
-/**
  * Procedures' translation/base keys are `nodeKey(path)` — `JSON.stringify` of a
  * segment array — which is unreadable in an error message. Render it back as
  * a `Cardiology › Resting ECG` style path; falls back to the raw string if it
@@ -285,7 +269,6 @@ export function validateCatalogsOrExit(
 
   printSummary(specs);
   warnUnconfiguredLanguages(specs, languages);
-  warnUndetectableLanguages(languages);
 
   const unknownKeyProblems: CatalogProblem[] = specs
     .filter((spec) => spec.enforceUnknownKeys)

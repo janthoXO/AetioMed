@@ -37,9 +37,9 @@ function fakeCatalogs(opts: {
   categories?: Record<string, string>;
 }): { anamnesis: AnamnesisCatalog; procedures: ProcedureCatalog } {
   const anamnesis = new InMemoryAnamnesisCatalog();
-  anamnesis.saveTranslations(opts.categories ?? {}, "German");
+  anamnesis.saveTranslations(opts.categories ?? {}, "de");
   const procedures = new InMemoryProcedureCatalog();
-  procedures.saveTranslations(opts.procedureTranslations ?? {}, "German");
+  procedures.saveTranslations(opts.procedureTranslations ?? {}, "de");
   return { anamnesis, procedures };
 }
 
@@ -103,7 +103,7 @@ async function invoke(
       }),
     undefined,
     undefined,
-    "German"
+    "de"
   );
 }
 
@@ -237,7 +237,7 @@ describe("buildCaseTranslationFromEnglishGraph — the bug fix", () => {
         }),
       undefined,
       undefined,
-      "German"
+      "de"
     );
 
     const defined = completed.find((s) => s.node === "translate_defined");

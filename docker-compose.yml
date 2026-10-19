@@ -37,7 +37,7 @@ services:
       - TRANSLATION_SANDWICH=${TRANSLATION_SANDWICH:-true}
 
       # ─── Language ────────────────────────────────────────────────────
-      - LANGUAGES=${LANGUAGES:-English,German}
+      - LANGUAGES=${LANGUAGES:-en,de}
       - LANGUAGE_AUTO_DETECT=${LANGUAGE_AUTO_DETECT:-false}
       - LANGUAGE_DETECT_LLM_FALLBACK=${LANGUAGE_DETECT_LLM_FALLBACK:-false}
 

@@ -109,7 +109,7 @@ describe("translateRestValues — no bytes reach the prompt", () => {
       }),
     ]);
 
-    await translateRestValues(runtime, { values, language: "French" });
+    await translateRestValues(runtime, { values, language: "fr" });
 
     // Only the single-string "SystemPrompt/UserPrompt" debug call — not
     // every debug call, several of which log non-string values whose
@@ -131,7 +131,7 @@ describe("translateRestValues — no bytes reach the prompt", () => {
   it("returns {} and never calls the LLM when there is nothing to translate", async () => {
     const result = await translateRestValues(throwingRuntime(), {
       values: {},
-      language: "French",
+      language: "fr",
     });
     expect(result).toEqual({});
   });
@@ -158,7 +158,7 @@ describe("translateProcedureNodesFromEnglish — cache-first, unchanged", () => 
             name: "Chest X-ray",
           },
         ],
-        language: "German",
+        language: "de",
       }
     );
 
@@ -196,7 +196,7 @@ describe("translateProcedureNodesFromEnglish — cache-first, unchanged", () => 
           name: "Chest X-ray",
         },
       ],
-      language: "German",
+      language: "de",
     });
 
     expect(result).toEqual({
@@ -220,7 +220,7 @@ describe("translateAnamnesisCategoriesFromEnglish — cache-first, unchanged", (
 
     const result = await translateAnamnesisCategoriesFromEnglish(
       withCatalogs(throwingRuntime(), { anamnesis: catalog }),
-      { categories: ["History"], language: "German" }
+      { categories: ["History"], language: "de" }
     );
 
     expect(result).toEqual({ History: "Anamnese" });

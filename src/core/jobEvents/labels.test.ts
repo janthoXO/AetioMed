@@ -27,7 +27,7 @@ describe("wireLabels", () => {
     const channel = createJobEventChannel();
     const labelCatalog = new InMemoryLabelCatalog({
       "Resolving medical basis": {
-        German: "Medizinische Basis wird aufgelöst",
+        de: "Medizinische Basis wird aufgelöst",
       },
     });
     wireLabels(bus, channel, labelCatalog);
@@ -38,7 +38,7 @@ describe("wireLabels", () => {
       node: "basis_resolve",
       label: "Resolving medical basis",
       jobId: "job-1",
-      language: "German",
+      language: "de",
       timestamp: "t0",
     });
     await bus.emit("Node Completed", {
@@ -46,7 +46,7 @@ describe("wireLabels", () => {
       label: "Resolving medical basis",
       result: { basisFragments: ["x"] },
       jobId: "job-1",
-      language: "German",
+      language: "de",
       timestamp: "t1",
     });
 
@@ -75,7 +75,7 @@ describe("wireLabels", () => {
       node: "basis_resolve",
       label: "Resolving medical basis",
       jobId: "job-2",
-      language: "German",
+      language: "de",
       timestamp: "t0",
     });
 
@@ -107,7 +107,7 @@ describe("wireLabels", () => {
     const bus = new EventBus();
     const channel = createJobEventChannel();
     const labelCatalog = new InMemoryLabelCatalog({
-      "Resolving medical basis": { German: "anders" },
+      "Resolving medical basis": { de: "anders" },
     });
     wireLabels(bus, channel, labelCatalog);
     channel.open("job-4");
@@ -117,7 +117,7 @@ describe("wireLabels", () => {
       node: "basis_resolve",
       label: "Resolving medical basis",
       jobId: "job-4",
-      language: "English",
+      language: "en",
       timestamp: "t0",
     });
 

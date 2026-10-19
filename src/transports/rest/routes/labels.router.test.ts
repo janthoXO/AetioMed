@@ -29,7 +29,7 @@ function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
@@ -196,7 +196,7 @@ describe("labels.router — end-to-end over real HTTP", () => {
       config: {
         llm: { provider: "ollama", model: "test-model" },
         allowedLlms: undefined,
-        LANGUAGES: ["English", "German"],
+        LANGUAGES: ["en", "de"],
         LANGUAGE_AUTO_DETECT: false,
         LANGUAGE_DETECT_LLM_FALLBACK: false,
       } as GraphAppContext["config"],
@@ -234,7 +234,7 @@ describe("labels.router — end-to-end over real HTTP", () => {
       generationFlags: ["patient"],
       jobId: "job-plan-labels",
       mode: "plan",
-      language: "English",
+      language: "en",
     });
 
     const res = await fetch(

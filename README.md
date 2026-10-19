@@ -101,7 +101,7 @@ To run fully locally instead, set `LLM_PROVIDER=ollama` and `LLM_MODEL=llama3.1`
 ```bash
 curl -X POST http://localhost:3030/api/cases \
   -H 'Content-Type: application/json' \
-  -d '{"diagnosis": "Influenza", "difficulty": "easy", "language": "English"}'
+  -d '{"diagnosis": "Influenza", "difficulty": "easy", "language": "en"}'
 ```
 
 The response is a JSON case with `patient`, `chiefComplaint`, `anamnesis` and `procedures`. Send `Accept: text/event-stream` to receive live progress events on the same request. See the [Developer Guide](README-DEV.md) for every configuration option, the full REST and NATS APIs, and local development setup.
@@ -251,12 +251,12 @@ planning entirely.
 ```bash
 curl -X POST http://localhost:3030/api/cases \
   -H 'Content-Type: application/json' \
-  -d '{"jobId": "job-1", "diagnosis": "Influenza", "mode": "plan", "language": "German"}'
-# → 200 {"jobId": "job-1", "mode": "plan", "language": "German", "plan": [...]}
+  -d '{"jobId": "job-1", "diagnosis": "Influenza", "mode": "plan", "language": "de"}'
+# → 200 {"jobId": "job-1", "mode": "plan", "language": "de", "plan": [...]}
 
 curl -X POST http://localhost:3030/api/cases \
   -H 'Content-Type: application/json' \
-  -d '{"jobId": "job-1", "diagnosis": "Influenza", "language": "German", "plan": [...]}'
+  -d '{"jobId": "job-1", "diagnosis": "Influenza", "language": "de", "plan": [...]}'
 # → 200, the finished case
 ```
 
@@ -317,7 +317,7 @@ Yes. With Ollama as the provider, the whole pipeline runs self-hosted. `docker c
 
 ### Which languages does AetioMed support?
 
-The deployer configures the language set (`LANGUAGES`, default `English,German`). English is always included. Cases are either generated in English and translated, or generated directly in the target language.
+The deployer configures the language set (`LANGUAGES`, default `en,de`). `en` (English) is always included. Cases are either generated in English and translated, or generated directly in the target language.
 
 ### Does AetioMed include a user interface?
 

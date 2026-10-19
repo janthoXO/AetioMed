@@ -5,9 +5,10 @@ import {
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { AnamnesisCategory } from "@/core/graph/shared/domain/Anamnesis.js";
-import type {
-  Language,
-  ForeignLanguage,
+import {
+  promptLanguage,
+  type Language,
+  type ForeignLanguage,
 } from "@/core/graph/shared/domain/Language.js";
 
 // ─── translate_anamnesis_categories_from_english ──────────────────────────────
@@ -97,7 +98,7 @@ export async function translateRestValues(
     logTag: "TranslateRestValues",
     taskDescription:
       "Translate the provided medical case text fragments from English to a target language. Each fragment is independent free text (a chief complaint, an anamnesis answer, or a procedure result) — translate its meaning faithfully, preserving clinical accuracy.",
-    contextLines: [`Target language: ${language}`],
+    contextLines: [`Target language: ${promptLanguage(language)}`],
     values,
     context,
   });
@@ -118,7 +119,7 @@ export async function generateAnamnesisCategoriesFromEnglish(
   return translateTermsKeyed(runtime, {
     logTag: "GenerateAnamnesisCategoriesFromEnglish",
     taskDescription: `Translate the provided anamnesis categories from English to a target language.`,
-    contextLines: [`Target language: ${language}`],
+    contextLines: [`Target language: ${promptLanguage(language)}`],
     terms: englishCategories,
     context,
   });
@@ -139,8 +140,8 @@ export async function generateProceduresFromEnglish(
 ): Promise<Record<string, string>> {
   return translateRecordKeyed(runtime, {
     logTag: "GenerateProceduresFromEnglish",
-    taskDescription: `Translate the provided items from English to a target language. Each key is the item's path in a medical procedure catalogue (a JSON array of category/procedure names from the root, ending in the item's own name) — it is context only. Translate ONLY the value, the item's own English name, into ${language}.`,
-    contextLines: [`Target language: ${language}`],
+    taskDescription: `Translate the provided items from English to a target language. Each key is the item's path in a medical procedure catalogue (a JSON array of category/procedure names from the root, ending in the item's own name) — it is context only. Translate ONLY the value, the item's own English name, into ${promptLanguage(language)}.`,
+    contextLines: [`Target language: ${promptLanguage(language)}`],
     values: byNodeKey,
     context,
   });

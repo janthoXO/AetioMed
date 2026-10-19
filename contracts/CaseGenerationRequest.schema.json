@@ -64,11 +64,11 @@
       }
     },
     "language": {
-      "description": "Language to generate the case in. One of: English, German.",
+      "description": "Language to generate the case in. One of: en, de.",
       "type": "string",
       "enum": [
-        "English",
-        "German"
+        "en",
+        "de"
       ]
     },
     "difficulty": {

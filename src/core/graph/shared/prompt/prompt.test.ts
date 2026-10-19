@@ -66,7 +66,7 @@ describe("buildSystemPrompt", () => {
   });
 
   it("gets no directive for English", () => {
-    expect(buildSystemPrompt("English", "body text")).not.toContain(
+    expect(buildSystemPrompt("en", "body text")).not.toContain(
       "Output language"
     );
   });
@@ -78,9 +78,10 @@ describe("buildSystemPrompt", () => {
   });
 
   it("gets the directive naming the foreign language", () => {
-    const prompt = buildSystemPrompt("German", "body text");
-    expect(prompt).toContain("Output language: German.");
+    const prompt = buildSystemPrompt("de", "body text");
+    expect(prompt).toContain("Output language: German (de).");
     expect(prompt.startsWith("body text")).toBe(true);
+    expect(buildSystemPrompt("en", "body text")).not.toContain("German");
   });
 });
 
@@ -92,9 +93,7 @@ describe("boundLanguage", () => {
   }
 
   it("reads the ambient request language", () => {
-    expect(withLanguage("German", () => boundLanguage(fakeRuntime))).toBe(
-      "German"
-    );
+    expect(withLanguage("de", () => boundLanguage(fakeRuntime))).toBe("de");
   });
 
   it("is undefined when no language is bound", () => {
@@ -105,11 +104,11 @@ describe("boundLanguage", () => {
 
   it("languageOverride: English wins over a foreign ambient language — the sandwich-on binding", () => {
     const englishOnlyRuntime = {
-      languageOverride: "English",
+      languageOverride: "en",
     } as GraphRuntime;
 
-    expect(
-      withLanguage("German", () => boundLanguage(englishOnlyRuntime))
-    ).toBe("English");
+    expect(withLanguage("de", () => boundLanguage(englishOnlyRuntime))).toBe(
+      "en"
+    );
   });
 });

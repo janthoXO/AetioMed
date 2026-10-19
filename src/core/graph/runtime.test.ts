@@ -72,14 +72,14 @@ describe("GraphRuntime with a fake LlmPort", () => {
 
     const result = await translateDiagnosisToEnglish(runtime, {
       diagnosis: { name: "Grippe" },
-      language: "German",
+      language: "de",
     });
 
     expect(result.name).toBe("Influenza");
     expect(callCount()).toBe(1);
 
     // Cached on InMemoryDiagnosisCatalog.
-    const cached = runtime.catalogs.diagnosis.toEnglish("Grippe", "German");
+    const cached = runtime.catalogs.diagnosis.toEnglish("Grippe", "de");
     expect(cached).toBe("Influenza");
   });
 

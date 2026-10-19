@@ -1,0 +1,316 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "b04dd75b-3e0d-45a4-955a-0190dad26e14",
+  "prevIds": [
+    "5a720cd9-563e-466c-a164-4d84c7166b19"
+  ],
+  "ddl": [
+    {
+      "name": "diagnosis",
+      "entityType": "tables"
+    },
+    {
+      "name": "icd_entity",
+      "entityType": "tables"
+    },
+    {
+      "name": "_meta",
+      "entityType": "tables"
+    },
+    {
+      "name": "predefined_item",
+      "entityType": "tables"
+    },
+    {
+      "name": "symptom_cache",
+      "entityType": "tables"
+    },
+    {
+      "name": "translation",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "icd",
+      "entityType": "columns",
+      "table": "diagnosis"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "diagnosis"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "alternative_names",
+      "entityType": "columns",
+      "table": "diagnosis"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "release",
+      "entityType": "columns",
+      "table": "icd_entity"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "code",
+      "entityType": "columns",
+      "table": "icd_entity"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lang",
+      "entityType": "columns",
+      "table": "icd_entity"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "title",
+      "entityType": "columns",
+      "table": "icd_entity"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "_meta"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "hash",
+      "entityType": "columns",
+      "table": "_meta"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "predefined_item"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "position",
+      "entityType": "columns",
+      "table": "predefined_item"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "value",
+      "entityType": "columns",
+      "table": "predefined_item"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "icd",
+      "entityType": "columns",
+      "table": "symptom_cache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "symptoms",
+      "entityType": "columns",
+      "table": "symptom_cache"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "symptom_cache"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "domain",
+      "entityType": "columns",
+      "table": "translation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "lang",
+      "entityType": "columns",
+      "table": "translation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "english",
+      "entityType": "columns",
+      "table": "translation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "translated",
+      "entityType": "columns",
+      "table": "translation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'curated'",
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "translation"
+    },
+    {
+      "columns": [
+        "release",
+        "code",
+        "lang"
+      ],
+      "nameExplicit": false,
+      "name": "icd_entity_pk",
+      "entityType": "pks",
+      "table": "icd_entity"
+    },
+    {
+      "columns": [
+        "source",
+        "position"
+      ],
+      "nameExplicit": false,
+      "name": "predefined_item_pk",
+      "entityType": "pks",
+      "table": "predefined_item"
+    },
+    {
+      "columns": [
+        "domain",
+        "lang",
+        "english"
+      ],
+      "nameExplicit": false,
+      "name": "translation_pk",
+      "entityType": "pks",
+      "table": "translation"
+    },
+    {
+      "columns": [
+        "icd"
+      ],
+      "nameExplicit": false,
+      "name": "diagnosis_pk",
+      "table": "diagnosis",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "source"
+      ],
+      "nameExplicit": false,
+      "name": "_meta_pk",
+      "table": "_meta",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "icd"
+      ],
+      "nameExplicit": false,
+      "name": "symptom_cache_pk",
+      "table": "symptom_cache",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "domain",
+          "isExpression": false
+        },
+        {
+          "value": "lang",
+          "isExpression": false
+        },
+        {
+          "value": "translated",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "idx_translation_reverse",
+      "entityType": "indexes",
+      "table": "translation"
+    }
+  ],
+  "renames": []
+}

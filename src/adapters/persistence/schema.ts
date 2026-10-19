@@ -88,3 +88,19 @@ export const symptomCache = sqliteTable("symptom_cache", {
   symptoms: text("symptoms").notNull(),
   updatedAt: int("updated_at").notNull(),
 });
+
+/**
+ * Cache-aside store for WHO ICD-11 entities (`adapters/icd/port.ts`). An
+ * entity inside a pinned release never changes, so rows never expire; a new
+ * `ICD_RELEASE` simply uses new keys.
+ */
+export const icdEntity = sqliteTable(
+  "icd_entity",
+  {
+    release: text("release").notNull(),
+    code: text("code").notNull(),
+    lang: text("lang").notNull(),
+    title: text("title").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.release, table.code, table.lang] })]
+);

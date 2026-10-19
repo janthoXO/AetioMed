@@ -26,7 +26,10 @@ export function createIcdClient(opts: {
     async get(
       path: string,
       lang: string,
-      init?: { signal?: AbortSignal; query?: Record<string, string> }
+      init?: {
+        signal?: AbortSignal | undefined;
+        query?: Record<string, string>;
+      }
     ): Promise<unknown> {
       const qs = init?.query ? `?${new URLSearchParams(init.query)}` : "";
       const res = await doFetch(`${base}${path}${qs}`, {

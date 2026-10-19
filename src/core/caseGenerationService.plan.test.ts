@@ -82,7 +82,7 @@ function fakeGraph(
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { byIcd: () => undefined },
+        diagnosis: { toEnglish: (name: string) => name },
         anamnesis: { list: () => undefined },
         outlineHeadings: new InMemoryOutlineHeadingCatalog({
           de: {
@@ -355,7 +355,6 @@ describe("continuation, plan mode + sandwich on", () => {
     );
 
     expect(fake.planCalls[1]!.userInstructions).toBeUndefined();
-    expect(fake.planCalls[1]!.callerSuppliedFreeText).toBe(true); // diagnosis name, not the instructions
   });
 
   it("a broken skeleton fails with INVALID_PLAN, 400", async () => {

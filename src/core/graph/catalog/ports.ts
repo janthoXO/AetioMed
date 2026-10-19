@@ -111,7 +111,7 @@ export interface LabelCatalog {
 
 /**
  * Predefined ICD-11 diagnoses and their translations, as consumed by
- * `01-translate-in/gateway.ts`, `catalog/diagnosis/repo.ts`'s
+ * `core/diagnosis/resolve.ts`, `catalog/diagnosis/repo.ts`'s
  * other consumers and the `/diagnosis` REST route.
  */
 export interface DiagnosisCatalog {

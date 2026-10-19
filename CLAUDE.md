@@ -96,10 +96,22 @@ LangGraph's runtime context. Nothing under `src/core/graph/` imports a mutable m
 singleton.
 
 **`CaseGenerationService`** (`src/core/caseGenerationService.ts`) is what both transports
-call. It owns ICD→name resolution, jobId minting, `runWithContext`, terminal event emission
+call. It owns diagnosis resolution, jobId minting, `runWithContext`, terminal event emission
 (`Generation Completed` / `Failure` / `Cancelled`) and error→status mapping, and returns a
 job shape (`{ jobId, status, case?, error? }`) rather than a bare `Case`. Transports are
 protocol translation only.
+
+**Diagnosis resolution happens before the graph (#237).** `resolveDiagnosis`
+(`src/core/diagnosis/resolve.ts`) turns the request's `{ icd?, name? }` into the English
+`Diagnosis` the graph runs on, inside `runWithContext` and after language resolution. With
+ICD configured (`ICD_API_URL`; `IcdPort`, `core/diagnosis/icd.ts`, adapter
+`adapters/icd/port.ts` with the cache-aside `icd_entity` table) everything goes through ICD:
+`icd` wins over `name`; a name must hit an ICD title or `Synonym` **exactly** (case- and
+whitespace-insensitive) in the request language, else once more after one LLM translation to
+English — never a fuzzy best match, which would silently swap the teaching diagnosis; a miss or
+unknown code is a 400, an unreachable ICD `ICD_UNAVAILABLE` (503). Without ICD the name goes to
+English through the translation store (`diagnosisTranslations.yml` prefill, LLM on a miss) and
+`icd` passes through as an opaque tag. The graph never translates the diagnosis.
 
 `start(req, opts?)` is the synchronous primitive: it reserves the jobId and opens its event
 channel **before returning**, handing back a `StartedJob` (`{ accepted: true, jobId, result:
@@ -331,15 +343,14 @@ from one. The seam between them is where a plan-mode call stops and hands the ou
 `CaseGenerationService` never runs the case graph in that call; normal mode runs straight from
 one into the other in the same call. With `TRANSLATION_SANDWICH` on:
 
-- **plan graph**: `01-translate-in/` (mounted at `START`, conditional — see
-  below) → `plan_phase` (mounts `02-plan/02-outline/`'s outline ⇄ judge loop; see below)
+- **plan graph**: `translate_user_instructions` (`01-translate-in/`, at `START`, conditional —
+  see below) → `plan_phase` (mounts `02-plan/02-outline/`'s outline ⇄ judge loop; see below)
 - **case graph**: `case_phase` (mounts the field fan-out and procedures; see below) →
   `05-translate-out/` (conditional on the response actually needing translation)
 
-`01-translate-in/` translates `diagnosis.name` and, alongside it, every
-`userInstructions` value, to English — two disjoint-channel `Send` nodes
-(`translate_diagnosis`/`translate_user_instructions`) run in parallel from `START`, each writing
-only its own top-level field, no merge needed. User instructions are read only up to the
+`01-translate-in/` is one plain node, `translate_user_instructions`, translating every
+`userInstructions` value to English — the diagnosis arrives English already (#237), and a
+one-node phase subgraph would only collapse in `GET /api/graph`'s xray. User instructions are read only up to the
 outline (#220): the outline absorbs them, no case-graph node receives them, and a request
 carrying a `plan` has its `userInstructions` ignored (language detection may still read them).
 `05-translate-out/` is three
@@ -372,8 +383,7 @@ outlineSegments, outlineAccepted }` (all in the working language: English after 
 graph state or LangGraph's own runtime context — by the time either entry point runs,
 `runWithContext` (called by `CaseGenerationService`) has already bound it on
 `AsyncLocalStorage`, which is what the translation-routing edges and every generation gateway
-actually read. `callerSuppliedFreeText` **is** threaded into the plan graph's state — see the
-Language section below for why the two differ.
+actually read.
 
 **`plan_phase`** (`buildPlanningPhaseGraph`, `02-plan/graph.ts` / `04-case/graph.ts`) runs up to two
 steps — the first compiled in only when the medical-basis registry is non-empty:
@@ -386,7 +396,7 @@ outline as **input** (no outline generation happens here any more — that moved
 `plan_phase` above) and runs up to two phases:
 
 - **`presentation_phase`** — `04-case/01-presentation/` fans the outline straight out via `Send` to `patient_generate` / `chief_complaint_phase` / `anamnesis_phase` (gated per `generationFlags`), joining at `case_fan_in`. There is no post-fan-out consistency check — that judgment already happened on the outline, in `plan_phase`, before any field exists. `chief_complaint_phase` and `anamnesis_phase` are **compiled subgraphs** (`chiefComplaint/index.ts`, `anamnesis/index.ts`), not function nodes — see "Modality Planning and Rendering" below for their internal `plan_content → render_parts` shape. `patient_generate` stays a plain function node: `patient` is not a `ContentPart[]` field (it stayed a structured `Patient` object through issue 11), so there is nothing for a modality provider to render — the `Send` payload (`{ outlineSections }`) is identical across all three targets either way, whether the target is a function or a compiled subgraph. Each target reads only its own sections and never the diagnosis (#215).
-- **Subgraph output schemas (issue 17).** A compiled subgraph mounted with `addNode` writes back its **entire state schema** by default, not just the channels its nodes actually touched. `chief_complaint_phase` and `anamnesis_phase` are `Send`-fanned out in parallel above, so both writing back the whole state made their shared `outlineSections` `LastValue` channel receive two values in one superstep — `INVALID_CONCURRENT_GRAPH_UPDATE` on every default request. The rule: **a compiled subgraph's state schema is its input surface; its `output` schema is its write surface, and the write surface must be declared explicitly** — every `addNode`'d or `.invoke()`d subgraph in `02graphs/` gets an `output` built with `.pick()` off that graph's own state schema (never a hand-written duplicate, so the picked channel keeps the identical reducer registration). `chiefComplaintGraph`/`anamnesisGraph` output `{ case }`; `presentation_phase` (`buildFieldGenerationGraph`) outputs `{ case }` only now (#159 — it used to also output `outline`, when `04-case/02-procedures/`'s `result_step` still read it out of `case_phase`'s own state; the outline sections reach `renderCase` as input instead); `outline_phase` (`buildPlanGraph`) outputs `{ outlineSegments, outlineAccepted }`, and `plan_phase` around it outputs the same `{ outlineSegments, outlineAccepted }`; `procedures_phase`/`case_phase`/`translate_out_phase` output `{ case }`; `translate_in_phase` outputs `{ diagnosis, userInstructions }`, since translating those two is its entire job; the blinded solver's child graph (`.invoke()`d, not mounted) outputs `{ move }`. `case_fan_in` used to be `passthrough` (echoing the whole incoming state as its "update"); a join point produces no update, so it is now a node returning `{}`.
+- **Subgraph output schemas (issue 17).** A compiled subgraph mounted with `addNode` writes back its **entire state schema** by default, not just the channels its nodes actually touched. `chief_complaint_phase` and `anamnesis_phase` are `Send`-fanned out in parallel above, so both writing back the whole state made their shared `outlineSections` `LastValue` channel receive two values in one superstep — `INVALID_CONCURRENT_GRAPH_UPDATE` on every default request. The rule: **a compiled subgraph's state schema is its input surface; its `output` schema is its write surface, and the write surface must be declared explicitly** — every `addNode`'d or `.invoke()`d subgraph in `02graphs/` gets an `output` built with `.pick()` off that graph's own state schema (never a hand-written duplicate, so the picked channel keeps the identical reducer registration). `chiefComplaintGraph`/`anamnesisGraph` output `{ case }`; `presentation_phase` (`buildFieldGenerationGraph`) outputs `{ case }` only now (#159 — it used to also output `outline`, when `04-case/02-procedures/`'s `result_step` still read it out of `case_phase`'s own state; the outline sections reach `renderCase` as input instead); `outline_phase` (`buildPlanGraph`) outputs `{ outlineSegments, outlineAccepted }`, and `plan_phase` around it outputs the same `{ outlineSegments, outlineAccepted }`; `procedures_phase`/`case_phase`/`translate_out_phase` output `{ case }`; the blinded solver's child graph (`.invoke()`d, not mounted) outputs `{ move }`. `case_fan_in` used to be `passthrough` (echoing the whole incoming state as its "update"); a join point produces no update, so it is now a node returning `{}`.
 - **`04-case/02-procedures/`** — only when the `procedures` flag is set. A **blinded solver** loop (max 6 iterations) with 4 nodes: `blinded_step` orders procedures without knowing the true diagnosis, `result_step` _plans_ their results non-blinded (issue 21 — nothing renders inside the loop; see "Modality Planning and Rendering" below), and the terminal `render_results` renders every procedure's parts in one grouped pass and is the only node that writes `case.procedures`; when the solver commits to a diagnosis, an LLM judge checks the match (loop continues with `ruledOutDiagnoses` on mismatch). On exhaustion, a `bridge` node generates confirmatory procedures for the true diagnosis. The approved catalogue is presented (and picked) as its category tree: the pick grammar mirrors the tree (`{ procedures?: [...], categories?: { "<name>": <same shape> } }`), for both the blinded pick and the (non-blinded) bridge pick. Procedure selection is a `ProcedureStrategy` port (`04-case/02-procedures/solver/`: `ports.ts`, `drillDownPick.ts`) — `blinded_step` and `bridge` call `strategy.nextStep()` / `strategy.bridge()`; `DrillDownPick` (the only implementation; the port stays as the graph tests' seam for fake strategies) is constructed directly at graph-assembly time. It picks in one call when fewer than `MAX_PICK_CANDIDATES` (255) procedures are left; otherwise `drillDown` narrows first, one `selectProcedureLevel` call per level: the model keeps whole categories (shown with size and sample names) and single procedures, kept procedures stay, kept categories open one level deeper, until the pool is under the threshold or nothing is left to open — then the pick runs over that pool. Only the first call of a blinded step may diagnose (the level selection when there is one, else the pick), and never before the first batch has been ordered: a correct first-step guess would otherwise end the loop with `case.procedures` empty. The bridge narrows the same way with the diagnosis known. Known ceiling: a single category with ≥ 255 direct procedures still produces an oversized level. The blinded step's own compiled child graph (built once, invoked — not added as a node — from inside `blinded_step`) has a state schema that structurally omits `diagnosis`: the `BlindedView` type already makes passing it a compile error, and the child graph is a runtime backstop on top of that (LangGraph filters input against a graph's state schema before it reaches a channel). `matchDiagnosis` stays in the parent node, outside the blinded path, since it's an oracle call. Additional guard: already-ordered procedures are excluded from every candidate list/grammar (duplicate orders are impossible by construction).
 
 ### Outline segments
@@ -466,15 +476,9 @@ reused twice (issue 12 §3):
 `requestNeedsTranslationOut()` (after generation) reads only `getRequestContext()?.language` off
 ALS — generation always runs in English under the sandwich, so the response is translated back
 regardless of how the request arrived. `requestNeedsTranslationIn(state)` (before generation)
-additionally requires `state.callerSuppliedFreeText`: an ICD-only request already resolves an
-English name from the catalogue, so translating it "to English" anyway used to pollute the
-translation store with identity entries (`de: { "Diabetes": "Diabetes" }`) — a real bug, not
-a hypothetical one. `callerSuppliedFreeText` is true when the request supplied a diagnosis
-**name** (rather than only an `icd`) or any `userInstructions`; only `CaseGenerationService`
-knows this; it computes the flag before ICD→name resolution and passes it into `planCase`'s
-options object. Unlike `language`, `callerSuppliedFreeText` **is** a `CaseStateSchema` field —
-it is per-request routing input the caller supplied, not a property of the bound ports (see the
-Language section below for that distinction). The conditional edge on the `procedures`
+additionally requires non-empty `state.userInstructions`, the only free text left once the
+diagnosis is resolved before the graph (#237) — routing input the caller supplied, read from
+state, not ALS. The conditional edge on the `procedures`
 generation flag stays a conditional edge in every variant, for the same "deployer compiles,
 caller branches" reason.
 
@@ -757,7 +761,7 @@ file viewer shows the pipeline top to bottom; siblings that run in parallel
 because there is no order to encode.
 
 ```
-01-translate-in/          translate_in_phase
+01-translate-in/          translate_user_instructions (plain node)
 02-plan/                  plan_phase
   01-basis/               basis_resolve: medical-basis registry and its providers
   02-outline/             outline_phase
@@ -1072,17 +1076,16 @@ Concretely:
   file declaring no language at all (missing or empty) passes, its keys LLM-translated at
   runtime or falling back to English — and warns (does not fail) for a
   translated language that is declared in a YAML file but not in `LANGUAGES`.
-- **ALS, not state — except `callerSuppliedFreeText`, which is state, not ALS (issue 12 §3).**
+- **ALS, not state — except `userInstructions`, which is state, not ALS (issue 12 §3).**
   `runWithContext` stores the request's `language` on the same `AsyncLocalStorage`-carried
   `RequestContext` that already carries `llmConfig` and the abort `signal`. `CaseStateSchema`
   (`assemble.ts`) has no `language` field; the translate-out conditional edge calls
   `requestNeedsTranslationOut()`, which reads `getRequestContext()?.language`. The translation
-  subgraphs (`01-translate-in/`, `05-translate-out/`) likewise have
+  nodes (`01-translate-in/`, `05-translate-out/`) likewise have
   no `language` state field and read it off ALS inside their node functions. `language` stays on
   ALS because it is a property of the _bound ports_ — the same value for every node in a request,
-  decided before the graph ever runs. `callerSuppliedFreeText` is different: it is per-request
-  **routing input the caller supplied** (did they send a diagnosis name or userInstructions, as
-  opposed to only an `icd`?), so it lives on `CaseStateSchema` and the translate-**in** edge
+  decided before the graph ever runs. Whether `userInstructions` were sent is different: it is
+  per-request **routing input the caller supplied**, so the translate-**in** edge
   (`requestNeedsTranslationIn(state)`) reads it from state, not ALS — "branch on what the caller
   asked for" (the assembly rule above) applies to routing inputs, not only to deployer flags.
   Known limitation, carried over from `llmConfig`: ALS-carried values are invisible to
@@ -1136,13 +1139,13 @@ language`), so the choice is visible at every call site instead of hidden in the
   This lives in the communication/service layer because its output _selects the ports_
   generation binds, and binding happens before invoke — a detection node inside the graph could
   not inform the thing its answer is for. It is also request normalisation, so it sits beside
-  the ICD→name resolution the service already does; it is **not** a graph flag and never adds a
+  the diagnosis resolution the service already does; it is **not** a graph flag and never adds a
   compiled variant. `LANGUAGE_AUTO_DETECT` gates steps 2–3 together; step 3 needs its own further
   opt-in, `LANGUAGE_DETECT_LLM_FALLBACK`, so a deployer never pays LLM calls unknowingly just for
   turning on auto-detect.
 
   Detection runs on `userInstructions` only, **never the diagnosis name** — two decisive
-  reasons: an ICD-only request's diagnosis name is resolved from our own English catalogue, so
+  reasons: an ICD-only request's diagnosis name is resolved to English by the service, so
   detecting on it would be circular; and diagnosis names are 2-3 words and frequently Latin
   (_"Diabetes mellitus"_ is byte-identical in English, German and Spanish). `UserInstructions` is
   a per-field record of strings, concatenated into one blob for detection; text under ~30

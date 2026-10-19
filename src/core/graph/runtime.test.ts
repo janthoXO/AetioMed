@@ -9,7 +9,7 @@ import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js"
 import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
-import { translateDiagnosisToEnglish } from "@/core/graph/01-translate-in/gateway.js";
+import { resolveDiagnosis } from "@/core/diagnosis/resolve.js";
 import { ConfigSchema, type Config } from "@/core/graph/config.js";
 import { evaluateOutline } from "@/core/graph/02-plan/02-outline/gateway.js";
 import { generateSymptomsOneShot } from "@/core/graph/02-plan/01-basis/providers/llmSymptoms.gateway.js";
@@ -70,10 +70,11 @@ describe("GraphRuntime with a fake LlmPort", () => {
     );
     const runtime = buildFakeRuntime(llm);
 
-    const result = await translateDiagnosisToEnglish(runtime, {
-      diagnosis: { name: "Grippe" },
-      language: "de",
-    });
+    const result = await resolveDiagnosis(
+      { icd: undefined, runtime },
+      { name: "Grippe" },
+      "de"
+    );
 
     expect(result.name).toBe("Influenza");
     expect(callCount()).toBe(1);

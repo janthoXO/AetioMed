@@ -21,12 +21,6 @@ export type GenerateCaseFn = (opts: {
   userInstructions?: UserInstructions | undefined;
   language?: Language | undefined;
   difficulty?: Difficulty | undefined;
-  /**
-   * Caller supplied free text: diagnosis name (not just `icd`) or any
-   * `userInstructions`. Only `CaseGenerationService` knows; it does ICD→name
-   * resolution first.
-   */
-  callerSuppliedFreeText: boolean;
 }) => Promise<Case>;
 
 /**

@@ -78,7 +78,7 @@ function loadCatalogueSpecs(repos: Repos): CatalogueSpec[] {
       baseKeys: everyDiagnosisKey(repos),
       translations: readDeclaredTranslations(repos.diagnosis.translationsFile),
       // Exempt from the unknown-key rule: diagnosis store is also an input index.
-      // `getDiagnosisTranslationToEnglish` (01-translate-in/gateway.ts)
+      // `getDiagnosisTranslationToEnglish` (via `core/diagnosis/resolve.ts`)
       // normalises user-supplied names to English, so keys outside the curated
       // `diagnosis.yml` are legitimate. `diagnosis.yml` is a curated subset,
       // `diagnosisTranslations.yml` the full ICD-11 extraction; enforcing would flag ~1500 terms.

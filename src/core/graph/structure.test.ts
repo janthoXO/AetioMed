@@ -91,8 +91,12 @@ describe("GET /api/graph structure", () => {
     const offIds = off.nodes.map((n) => n.id);
     const onIds = on.nodes.map((n) => n.id);
 
-    expect(offIds.some((id) => id.includes("translate_diagnosis"))).toBe(false);
-    expect(onIds.some((id) => id.includes("translate_diagnosis"))).toBe(true);
+    expect(
+      offIds.some((id) => id.includes("translate_user_instructions"))
+    ).toBe(false);
+    expect(onIds.some((id) => id.includes("translate_user_instructions"))).toBe(
+      true
+    );
 
     // Sandwich-off = strict subset of sandwich-on (minus translation phases).
     for (const id of offIds) {

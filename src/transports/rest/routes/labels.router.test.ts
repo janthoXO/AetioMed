@@ -35,7 +35,7 @@ function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { byIcd: () => undefined },
+        diagnosis: { toEnglish: (name: string) => name },
       },
       llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
@@ -201,7 +201,7 @@ describe("labels.router — end-to-end over real HTTP", () => {
         LANGUAGE_DETECT_LLM_FALLBACK: false,
       } as GraphAppContext["config"],
       runtime: {
-        catalogs: { diagnosis: { byIcd: () => undefined } },
+        catalogs: { diagnosis: { toEnglish: (name: string) => name } },
         llm: { structured: vi.fn(), text: vi.fn() },
       } as unknown as GraphAppContext["runtime"],
       async planCase(opts: { diagnosis: unknown; userInstructions: unknown }) {

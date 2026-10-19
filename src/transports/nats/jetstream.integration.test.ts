@@ -78,7 +78,7 @@ function fakeGraph(generateCase: GenerateCaseFn = vi.fn()): GraphAppContext {
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { byIcd: () => undefined },
+        diagnosis: { toEnglish: (name: string) => name },
         anamnesis: { list: () => undefined },
       },
       llm: { structured: vi.fn(), text: vi.fn() },
@@ -363,7 +363,7 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
     runtime: {
       catalogs: {
         diagnosis: {
-          byIcd: () => undefined,
+          toEnglish: (name: string) => name,
           all: () => [{ icd: "1A00", name: "Cholera" }],
         },
         procedures: {
@@ -717,7 +717,7 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { byIcd: () => undefined },
+        diagnosis: { toEnglish: (name: string) => name },
       },
       llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],

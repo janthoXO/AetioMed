@@ -30,11 +30,13 @@ import { buildFieldGenerationGraph } from "@/core/graph/04-case/01-presentation/
 import { buildCaseGenerationGraph } from "@/core/graph/04-case/graph.js";
 import { buildPlanningPhaseGraph } from "@/core/graph/02-plan/graph.js";
 import { buildPlanGraph } from "@/core/graph/02-plan/02-outline/graph.js";
-import { buildCaseTranslationToEnglishGraph } from "@/core/graph/01-translate-in/graph.js";
 import { DrillDownPick } from "@/core/graph/04-case/02-procedures/solver/drillDownPick.js";
 import { taggedOutlineFixture } from "@/core/graph/shared/outline/fixtures.js";
 
-const TRANSLATION_NODES = ["translate_in_phase", "translate_out_phase"];
+const TRANSLATION_NODES = [
+  "translate_user_instructions",
+  "translate_out_phase",
+];
 
 /** The one production-shaped provider: batch-in, batch-out, `{instruction}` input. */
 function fakeTextProvider(): ModalityProvider<unknown> {
@@ -143,18 +145,6 @@ describe("phase-level graphs — output surface", () => {
     expect([...graph.outputChannels].sort()).toEqual([
       "outlineAccepted",
       "outlineSegments",
-    ]);
-  });
-
-  it("translate_in_phase (buildCaseTranslationToEnglishGraph) writes back `diagnosis` and `userInstructions`, not `case`", async () => {
-    const deps = buildDeps();
-    const graph = buildCaseTranslationToEnglishGraph(
-      deps.runtime,
-      deps.traceNode
-    );
-    expect([...graph.outputChannels].sort()).toEqual([
-      "diagnosis",
-      "userInstructions",
     ]);
   });
 });
@@ -398,8 +388,8 @@ describe("language routing reads ALS, never graph state", () => {
     alsLanguage?: string;
     /** Passed as an (unschemad) extra key on the invoke input — must be a no-op. */
     stateLanguage?: string;
-    /** Provenance for translate-in edge. Defaults to `true` so German requests exercise translate-in. */
-    callerSuppliedFreeText?: boolean;
+    /** Translate-in edge input. Defaults to one instruction so German requests exercise translate-in. */
+    userInstructions?: Record<string, string>;
   }): Promise<string[]> {
     const bus = new EventBus();
     const started: string[] = [];
@@ -413,10 +403,11 @@ describe("language routing reads ALS, never graph state", () => {
         try {
           await graph.invoke({
             diagnosis: { name: "Influenza" },
-            userInstructions: undefined,
+            userInstructions: opts.userInstructions ?? {
+              general: "Mach es einfach.",
+            },
             generationFlags: ["patient"],
             difficulty: "medium",
-            callerSuppliedFreeText: opts.callerSuppliedFreeText ?? true,
             // Excess key: `PlanStateSchema` has no `language` field; input filtering must drop it silently,
             // so state cannot drive routing.
             ...(opts.stateLanguage !== undefined
@@ -438,12 +429,12 @@ describe("language routing reads ALS, never graph state", () => {
 
   it("a German request bound on ALS enters the translate-to-English phase", async () => {
     const nodes = await startedNodes({ alsLanguage: "de" });
-    expect(nodes).toContain("translate_in_phase:translate_diagnosis");
+    expect(nodes).toContain("translate_user_instructions");
   });
 
   it("an English (default) request bound on ALS enters neither translation phase", async () => {
     const nodes = await startedNodes({ alsLanguage: undefined });
-    expect(nodes).not.toContain("translate_in_phase:translate_diagnosis");
+    expect(nodes).not.toContain("translate_user_instructions");
   });
 
   it("a `language` key on the invoke input has no effect — only ALS is read", async () => {
@@ -453,13 +444,12 @@ describe("language routing reads ALS, never graph state", () => {
       alsLanguage: undefined,
       stateLanguage: "de",
     });
-    expect(nodes).not.toContain("translate_in_phase:translate_diagnosis");
+    expect(nodes).not.toContain("translate_user_instructions");
   });
 });
 
-describe("translate-in trigger reads provenance, not just language", () => {
-  it("a German request with callerSuppliedFreeText enters translate-to-English", async () => {
-    // Exercises routing predicate directly, not via `startedNodes` default.
+describe("translate-in trigger needs userInstructions, not just language", () => {
+  it("a German request without userInstructions skips translate-to-English: the diagnosis arrives English (#237)", async () => {
     const bus = new EventBus();
     const started: string[] = [];
     bus.on("Node Started", (e) => started.push(e.node));
@@ -470,49 +460,9 @@ describe("translate-in trigger reads provenance, not just language", () => {
       async () => {
         try {
           await graph.invoke({
-            diagnosis: { name: "Influenza" },
-            generationFlags: ["patient"],
-            difficulty: "medium",
-            callerSuppliedFreeText: true,
-          });
-        } catch {
-          // Expected: the fake LLM throws once real generation work starts.
-        }
-      },
-      undefined,
-      undefined,
-      "de"
-    );
-
-    expect(started).toContain("translate_in_phase:translate_diagnosis");
-  });
-
-  it("an ICD-only German request (no free text) skips translate-to-English entirely and writes no identity translations", async () => {
-    const bus = new EventBus();
-    const started: string[] = [];
-    bus.on("Node Started", (e) => started.push(e.node));
-
-    const diagnosisCatalog = new InMemoryDiagnosisCatalog([
-      { name: "Influenza", icd: "1E32" },
-    ]);
-    const saveTranslations = vi.spyOn(diagnosisCatalog, "saveTranslations");
-    const deps = buildDeps();
-    deps.runtime.catalogs.diagnosis = diagnosisCatalog;
-    const graph = assembleCaseGraphs(
-      { ...deps, traceNode: createTraceNode(bus) },
-      flags(true)
-    ).plan;
-
-    await runWithContext(
-      async () => {
-        try {
-          await graph.invoke({
-            // Resolved from the icd by `CaseGenerationService` before the
-            // graph ever runs — already the catalogue's English name.
             diagnosis: { name: "Influenza", icd: "1E32" },
             generationFlags: ["patient"],
             difficulty: "medium",
-            callerSuppliedFreeText: false,
           });
         } catch {
           // Expected: the fake LLM throws once real generation work starts.
@@ -523,11 +473,9 @@ describe("translate-in trigger reads provenance, not just language", () => {
       "de"
     );
 
-    expect(started).not.toContain("translate_in_phase:translate_diagnosis");
-    // Assert on translation store itself, not mock call counts: predicate must not pollute it with
-    // identity entries like `de: { "Influenza": "Influenza" }`.
-    expect(saveTranslations).not.toHaveBeenCalled();
-    expect(diagnosisCatalog.toEnglish("Influenza", "de")).toBeUndefined();
+    expect(started.some((n) => n === "translate_user_instructions")).toBe(
+      false
+    );
   });
 });
 

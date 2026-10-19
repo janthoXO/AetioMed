@@ -70,6 +70,13 @@ describe("createReadModel", () => {
     expect(readModel.features()).toEqual(["REST", "NATS"]);
   });
 
+  it("features() lists ICD when ICD_API_URL is configured", () => {
+    const graph = fakeGraph();
+    (graph.config as { ICD_API_URL?: string }).ICD_API_URL = "http://icd:80";
+    const readModel = createReadModel(graph, new Set(["REST"]));
+    expect(readModel.features()).toEqual(["REST", "ICD"]);
+  });
+
   it("allowedLlms() delegates to config.allowedLlms", () => {
     const readModel = createReadModel(fakeGraph(), new Set());
     expect(readModel.allowedLlms()).toEqual({ ollama: ["llama3.1"] });

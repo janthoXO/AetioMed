@@ -111,7 +111,10 @@ whitespace-insensitive) in the request language, else once more after one LLM tr
 English — never a fuzzy best match, which would silently swap the teaching diagnosis; a miss or
 unknown code is a 400, an unreachable ICD `ICD_UNAVAILABLE` (503). Without ICD the name goes to
 English through the translation store (`diagnosisTranslations.yml` prefill, LLM on a miss) and
-`icd` passes through as an opaque tag. The graph never translates the diagnosis.
+`icd` passes through as an opaque tag. The graph never translates the diagnosis. The request
+schema applies the same rule up front (#238): without ICD a `diagnosis` name is required, and
+`GET /api/features` / `meta.features` list `ICD` (injected by the read model, not a `FEATURES`
+flag) so a client knows an icd-only request resolves.
 
 `start(req, opts?)` is the synchronous primitive: it reserves the jobId and opens its event
 channel **before returning**, handing back a `StartedJob` (`{ accepted: true, jobId, result:

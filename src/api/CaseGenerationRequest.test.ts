@@ -75,3 +75,29 @@ describe("CaseGenerationRequestSchema — language", () => {
     expect(result.success).toBe(false);
   });
 });
+
+describe("CaseGenerationRequestSchema — diagnosis by ICD config (#238)", () => {
+  const base = { LLM_PROVIDER: "ollama", LLM_MODEL: "llama3.1" };
+  const withIcd = makeCaseGenerationRequestSchema(
+    ConfigSchema.parse({
+      ...base,
+      ICD_API_URL: "http://icd:80",
+      ICD_RELEASE: "2026-01",
+    })
+  );
+  const withoutIcd = makeCaseGenerationRequestSchema(ConfigSchema.parse(base));
+
+  it("ICD on: icd alone or a name alone is enough, neither is a 400", () => {
+    expect(withIcd.safeParse({ icd: "CA40" }).success).toBe(true);
+    expect(withIcd.safeParse({ diagnosis: "Pneumonia" }).success).toBe(true);
+    expect(withIcd.safeParse({}).success).toBe(false);
+  });
+
+  it("ICD off: a name is required, icd only rides along", () => {
+    expect(withoutIcd.safeParse({ icd: "CA40" }).success).toBe(false);
+    expect(withoutIcd.safeParse({ diagnosis: "Pneumonia" }).success).toBe(true);
+    expect(
+      withoutIcd.safeParse({ diagnosis: "Pneumonia", icd: "CA40" }).success
+    ).toBe(true);
+  });
+});

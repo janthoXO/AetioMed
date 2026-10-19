@@ -146,7 +146,7 @@ describe("warnUnconfiguredLanguages", () => {
       },
     ];
 
-    warnUnconfiguredLanguages(specs, ["en", "de"]);
+    warnUnconfiguredLanguages(specs, ["en", "de"], { icd: false });
 
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("es"));
     warnSpy.mockRestore();
@@ -165,7 +165,7 @@ describe("warnUnconfiguredLanguages", () => {
       },
     ];
 
-    warnUnconfiguredLanguages(specs, ["en", "de"]);
+    warnUnconfiguredLanguages(specs, ["en", "de"], { icd: false });
 
     expect(warnSpy).not.toHaveBeenCalled();
     warnSpy.mockRestore();
@@ -194,9 +194,6 @@ function fakeRepos(
     } as unknown as Repos["anamnesis"],
     diagnosis: {
       translationsFile: "diagnosisTranslations.yml",
-      getAllDiagnoses: () => [
-        { name: "Influenza", icd: "1E32", alternativeNames: [] },
-      ],
     } as unknown as Repos["diagnosis"],
     labels: {
       translationsFile: "labelTranslations.yml",
@@ -237,7 +234,7 @@ describe("validateCatalogsOrExit — end to end", () => {
       .mockImplementation(() => undefined as never);
     const errorSpy = vi.spyOn(console, "error");
 
-    validateCatalogsOrExit(fakeRepos(), ["en", "de"]);
+    validateCatalogsOrExit(fakeRepos(), ["en", "de"], { icd: false });
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     const errorOutput = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
@@ -253,7 +250,7 @@ describe("validateCatalogsOrExit — end to end", () => {
       .spyOn(process, "exit")
       .mockImplementation(() => undefined as never);
 
-    validateCatalogsOrExit(fakeRepos(), ["en", "de"]);
+    validateCatalogsOrExit(fakeRepos(), ["en", "de"], { icd: false });
 
     expect(exitSpy).not.toHaveBeenCalled();
     exitSpy.mockRestore();
@@ -289,9 +286,37 @@ describe("validateCatalogsOrExit — end to end", () => {
       .spyOn(process, "exit")
       .mockImplementation(() => undefined as never);
 
-    validateCatalogsOrExit(fakeRepos(), ["en", "de"]);
+    validateCatalogsOrExit(fakeRepos(), ["en", "de"], { icd: false });
 
     expect(exitSpy).not.toHaveBeenCalled();
+    exitSpy.mockRestore();
+  });
+
+  it("without ICD, diagnosis base keys are the translations file's own English keys", () => {
+    declared.set("diagnosisTranslations.yml", {
+      de: { Influenza: "Grippe" },
+      fr: { Influenza: "Grippe", Cholera: "Choléra" },
+    });
+    const log = vi.spyOn(console, "log").mockClear();
+    validateCatalogsOrExit(fakeRepos(), ["en"], { icd: false });
+    const out = log.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(out).toMatch(/diagnosis\s+2 entries/);
+  });
+
+  it("with ICD, skips the diagnosis catalogue and warns when the file has entries", () => {
+    declared.set("diagnosisTranslations.yml", { de: { Influenza: "Grippe" } });
+    const log = vi.spyOn(console, "log").mockClear();
+    const warn = vi.spyOn(console, "warn").mockClear();
+    const exitSpy = vi
+      .spyOn(process, "exit")
+      .mockImplementation(() => undefined as never);
+    // German is configured but absent elsewhere; only diagnosis' absence of check matters here.
+    validateCatalogsOrExit(fakeRepos(), ["en"], { icd: true });
+    const out = log.mock.calls.map((c) => String(c[0])).join("\n");
+    expect(out).not.toContain("diagnosis ");
+    expect(warn).toHaveBeenCalledWith(
+      "[catalog] diagnosisTranslations.yml is ignored: ICD is configured, diagnosis names come from ICD."
+    );
     exitSpy.mockRestore();
   });
 
@@ -323,7 +348,7 @@ describe("validateCatalogsOrExit — end to end", () => {
       .mockImplementation(() => undefined as never);
     const errorSpy = vi.spyOn(console, "error");
 
-    validateCatalogsOrExit(fakeRepos(nestedTree), ["en", "de"]);
+    validateCatalogsOrExit(fakeRepos(nestedTree), ["en", "de"], { icd: false });
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     const errorOutput = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");
@@ -352,7 +377,7 @@ describe("validateCatalogsOrExit — end to end", () => {
       .spyOn(process, "exit")
       .mockImplementation(() => undefined as never);
 
-    validateCatalogsOrExit(fakeRepos(nestedTree), ["en", "de"]);
+    validateCatalogsOrExit(fakeRepos(nestedTree), ["en", "de"], { icd: false });
 
     expect(exitSpy).not.toHaveBeenCalled();
     exitSpy.mockRestore();
@@ -379,7 +404,9 @@ describe("validateCatalogsOrExit — end to end", () => {
       .mockImplementation(() => undefined as never);
     const errorSpy = vi.spyOn(console, "error");
 
-    validateCatalogsOrExit(fakeRepos(duplicateTree), ["en", "de"]);
+    validateCatalogsOrExit(fakeRepos(duplicateTree), ["en", "de"], {
+      icd: false,
+    });
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     const errorOutput = errorSpy.mock.calls.map((c) => String(c[0])).join("\n");

@@ -1,12 +1,4 @@
-import z from "zod";
-import { asc, eq } from "drizzle-orm";
 import type { DbHandle } from "../../persistence/db.js";
-import { diagnosis } from "../../persistence/schema.js";
-import {
-  ICDCodeSchema,
-  type ICDCode,
-  type Diagnosis,
-} from "@/core/graph/shared/domain/Diagnosis.js";
 import { type ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import { createTranslationStore } from "../../persistence/translationStore.js";
 import { catalogFile } from "../../persistence/paths.js";
@@ -14,10 +6,6 @@ import { catalogFile } from "../../persistence/paths.js";
 export interface DiagnosisRepo {
   /** Absolute path of the translations YAML, for the startup catalogue validator. */
   readonly translationsFile: string;
-  /** Look up a predefined diagnosis by its ICD-11 code. */
-  getDiagnosisByIcd(icd: ICDCode): Diagnosis | undefined;
-  /** Every predefined diagnosis. Used by the `/diagnosis` listing endpoint. */
-  getAllDiagnoses(): Diagnosis[];
   /** Get the translation of a diagnosis name to English (reverse lookup). */
   getDiagnosisTranslationToEnglish(
     diagnosisName: string,
@@ -30,17 +18,8 @@ export interface DiagnosisRepo {
   ): void;
 }
 
-function rowToDiagnosis(row: typeof diagnosis.$inferSelect): Diagnosis {
-  return {
-    name: row.name,
-    icd: row.icd,
-    alternativeNames: JSON.parse(row.alternativeNames) as string[],
-  };
-}
-
 /**
- * Syncs `diagnosis.yml` / `diagnosisTranslations.yml` into `dbHandle`, exposes
- * lookups and translations. I/O here, not at import.
+ * Syncs `diagnosisTranslations.yml` into `dbHandle`, exposes translations. I/O here, not at import.
  */
 export function createDiagnosisRepo(
   dbHandle: DbHandle,
@@ -57,82 +36,8 @@ export function createDiagnosisRepo(
     yamlFile: translationsFile,
   });
 
-  function syncPredefinedDiagnoses() {
-    const DiagnosisEntrySchema = z.object({
-      code: ICDCodeSchema,
-      names: z.array(z.string()),
-    });
-
-    const synced = dbHandle.syncSource(
-      "diagnosis",
-      catalogFile(catalogDir, "diagnosis.yml"),
-      (parsed) => {
-        const diagnosisEntries = z
-          // Key unchecked: an entry with an invalid `code` is dropped by `.catch`, not the whole file.
-          .record(z.string(), DiagnosisEntrySchema.optional().catch(undefined))
-          .transform((entries) => Object.values(entries).filter((e) => !!e))
-          .safeParse(parsed);
-
-        if (!diagnosisEntries.success) {
-          console.error(diagnosisEntries.error);
-          console.error(
-            "[Diagnosis] Failed to load predefined diagnoses from YAML"
-          );
-          return;
-        }
-
-        // Read-only list: full replace keeps removed/renamed entries in sync.
-        dbHandle.db.delete(diagnosis).run();
-
-        const rows: (typeof diagnosis.$inferInsert)[] = [];
-        for (const entry of diagnosisEntries.data) {
-          if (!entry.names || entry.names.length === 0) {
-            console.warn(
-              `[Diagnosis] Skipping entry with code ${entry.code} due to missing names`
-            );
-            continue;
-          }
-          rows.push({
-            icd: entry.code,
-            name: entry.names[0]!,
-            alternativeNames: JSON.stringify(entry.names.slice(1)),
-          });
-        }
-
-        for (const batch of dbHandle.chunk(rows)) {
-          dbHandle.db.insert(diagnosis).values(batch).run();
-        }
-        console.info(
-          `[Diagnosis] Synced ${rows.length} predefined diagnoses from YAML`
-        );
-      }
-    );
-
-    if (!synced) {
-      console.info("[Diagnosis] diagnosis.yml unchanged, skipped YAML parse.");
-    }
-  }
-
-  syncPredefinedDiagnoses();
-
   return {
     translationsFile,
-    getDiagnosisByIcd(icd) {
-      const row = dbHandle.db
-        .select()
-        .from(diagnosis)
-        .where(eq(diagnosis.icd, icd))
-        .get();
-      return row ? rowToDiagnosis(row) : undefined;
-    },
-    getAllDiagnoses() {
-      return dbHandle.db
-        .select()
-        .from(diagnosis)
-        .orderBy(asc(diagnosis.icd))
-        .all()
-        .map(rowToDiagnosis);
-    },
     getDiagnosisTranslationToEnglish(diagnosisName, language) {
       return store.getToEnglish(diagnosisName, language);
     },

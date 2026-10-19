@@ -13,7 +13,6 @@ function fakeGraph(): GraphAppContext {
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { all: () => [{ icd: "1A00", name: "Cholera" }] },
         procedures: {
           tree: () => ({
             categories: [],
@@ -44,11 +43,6 @@ function fakeGraph(): GraphAppContext {
 }
 
 describe("createReadModel", () => {
-  it("diagnoses() delegates to the diagnosis catalog", () => {
-    const readModel = createReadModel(fakeGraph(), new Set());
-    expect(readModel.diagnoses()).toEqual([{ icd: "1A00", name: "Cholera" }]);
-  });
-
   it("procedures() delegates to the procedure catalog's tree", () => {
     const readModel = createReadModel(fakeGraph(), new Set());
     expect(readModel.procedures()).toEqual({

@@ -5,7 +5,6 @@ import morgan from "morgan";
 import { z } from "zod";
 import { HealthSchema } from "@/api/index.js";
 import createCasesRouter from "./routes/cases.router.js";
-import createDiagnosisRouter from "./routes/diagnosis.router.js";
 import createProceduresRouter from "./routes/procedures.router.js";
 import createLabelsRouter from "./routes/labels.router.js";
 import createGraphRouter from "./routes/graph.router.js";
@@ -73,7 +72,6 @@ export function createRestApp(opts: RestAppOptions): express.Express {
   // Labels and graph topology always on.
   apiRouter.use("/cases", createLabelsRouter(directory));
   apiRouter.use("/", createGraphRouter(readModel));
-  apiRouter.use("/diagnosis", createDiagnosisRouter(readModel));
   apiRouter.use("/procedures", createProceduresRouter(readModel));
   apiRouter.get("/allowedLlms", (_req, res) =>
     res.json(readModel.allowedLlms())

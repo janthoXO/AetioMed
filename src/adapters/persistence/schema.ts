@@ -51,17 +51,6 @@ export const translation = sqliteTable(
 );
 
 /**
- * Predefined ICD-11 diagnoses, fully replaced on each YAML sync (read-only
- * list, no runtime additions).
- */
-export const diagnosis = sqliteTable("diagnosis", {
-  icd: text("icd").primaryKey(),
-  name: text("name").notNull(),
-  // JSON-encoded string[]
-  alternativeNames: text("alternative_names").notNull(),
-});
-
-/**
  * Ordered, read-only lists synced from YAML: predefined procedure names and
  * default anamnesis categories, distinguished by `source`.
  */

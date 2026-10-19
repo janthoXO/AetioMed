@@ -323,7 +323,8 @@ Nothing in core reaches past a port (#188). The translation accessors translate-
 the ports themselves: `ProcedureCatalog.translation`/`saveTranslations` (keyed by
 `nodeKey(path)` — shared by categories and procedures since sibling uniqueness makes the key
 space unambiguous) and `AnamnesisCatalog.fromEnglish`/`saveTranslations`, next to
-`DiagnosisCatalog.toEnglish`/`saveTranslations`.
+`DiagnosisCatalog.toEnglish`/`saveTranslations` (which is only that: with ICD configured, names
+come from ICD and there is no diagnosis catalogue).
 
 `ProcedureCandidates` (`catalog/candidates.ts`, stays in core: it is domain logic) is where flat-vs-grouped
 presentation, category scoping, exclusion of already-ordered procedures, the literal-union
@@ -332,8 +333,9 @@ grammar and `"Category: Name"` reassembly live — the AI gateway only calls `re
 
 `adapters/catalog/startupValidation.ts` checks every translation file against its base catalogue at startup
 and exits non-zero naming every offending key, with a Levenshtein suggestion. **Diagnosis is
-exempt** — its store is also an input index for user-supplied diagnosis names, so keys
-outside the curated catalogue are legitimate. Validation runs after graph construction
+exempt** — it has no base catalogue (its base keys are the file's own English keys), and its
+store is an input index for user-supplied diagnosis names. With ICD configured,
+`diagnosisTranslations.yml` is skipped entirely and warned about if it has entries. Validation runs after graph construction
 because the labels catalogue's base key set is `getKnownLabels()`, populated by `traceNode`
 as the graph is built.
 
@@ -740,7 +742,7 @@ constructs them once, from `createApp()`.
 `src/adapters/persistence/`:
 
 - `db.ts` — `createDb(cacheDir)` opens the DB and runs migrations; `syncSource()` re-ingests a YAML file only when its sha256 changed (fingerprints in `_meta`, keyed on the domain name so moving `CATALOG_DIR` does not invalidate the cache)
-- `schema.ts` — tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`
+- `schema.ts` — tables: `_meta`, `translation`, `predefined_item`, `symptom_cache`
 - `translationStore.ts` — cache-aside translation store used by diagnosis, procedures, anamnesis categories and trace labels. In-flight work is deduped **per key**; retries live inside the shared promise; runtime fills insert-if-absent and read back (first-writer-wins), while a YAML sync overwrites. `source` marks a row `curated` or `generated`; generated values persist in the DB, never back into YAML
 - `paths.ts` — `resolveCatalogDir`/`resolveCacheDir` (`CATALOG_DIR`/`CACHE_DIR` resolution) and `catalogFile()`
 - `predefinedList.ts` — reads a translations YAML file directly (bypassing `syncSource`'s hash cache) for startup validation
@@ -803,7 +805,6 @@ below), never by reaching into `GraphAppContext` directly:
   `readModel.features()`/`readModel.allowedLlms()`
 - `routes/cases.router.ts` — `POST /api/cases` (content negotiation — see below) and
   `DELETE /api/cases/:jobId` (cancel, through the `JobDirectory` — see below)
-- `routes/diagnosis.router.ts` — `GET /api/diagnosis`, calling `readModel.diagnoses()`
 - `routes/procedures.router.ts` — `GET /api/procedures`, calling `readModel.procedures()`
 - `routes/labels.router.ts` — `GET /api/cases/:jobId/labels` (SSE, `event: label`, through the
   `JobDirectory` — see below) and `routes/graph.router.ts` — `GET /api/graph`, calling
@@ -941,7 +942,6 @@ in delivery guarantees:
 | REST                               | NATS                                                 |
 | ---------------------------------- | ---------------------------------------------------- |
 | SSE `event: label` on a job        | `cases.progress.<jobId>.<accepted\|label\|complete>` |
-| `GET /api/diagnosis`               | `catalog.diagnosis`                                  |
 | `GET /api/procedures`              | `catalog.procedures`                                 |
 | `GET /api/features`                | `meta.features`                                      |
 | `GET /api/allowedLlms`             | `meta.allowedLlms`                                   |
@@ -959,7 +959,7 @@ in delivery guarantees:
   invalid jobId (fails `JobIdSchema`, same guard as `jobResponders.ts`) is skipped with a
   once-per-job warning; a publish failure (e.g. a closing connection) is caught and logged — a
   side channel must never break generation.
-- **Request/reply meta service** (`metaService.ts`'s `startMetaService`) answers the five
+- **Request/reply meta service** (`metaService.ts`'s `startMetaService`) answers the four
   catalogue/feature/graph reads above using **`@nats-io/services`**, the NATS "micro" framework
   (`Svcm`/`Service`/`ServiceMsg`). Chosen over five bare `nc.subscribe` request/reply handlers
   because it gives a NATS-only client discovery (`$SRV.PING|INFO|STATS.aetiomed`), per-endpoint
@@ -972,7 +972,7 @@ in delivery guarantees:
   if unreadable). Every endpoint replies `JSON.stringify(value ?? null)`
   on success; the framework's default queue group is used (every replica answers reads
   identically). Subject constants live in `subjects.ts` alongside the others
-  (`CATALOG_DIAGNOSIS_SUBJECT`, `CATALOG_PROCEDURES_SUBJECT`, `META_FEATURES_SUBJECT`,
+  (`CATALOG_PROCEDURES_SUBJECT`, `META_FEATURES_SUBJECT`,
   `META_ALLOWED_LLMS_SUBJECT`, `META_GRAPH_SUBJECT`).
 - **Job directory** (`jobDirectory.ts`'s `createNatsJobDirectory(nc)`, #145) is the NATS-side
   half of the `JobDirectory` port (see "Composition Root" above for the port itself):
@@ -984,10 +984,10 @@ in delivery guarantees:
   distinction REST's routers turn into 404 vs. 504.
 - **Shared read model** (`src/core/readModel.ts`'s `createReadModel(graph, features)`) is what
   makes "the NATS endpoint returns the same payload as its REST counterpart" true **by
-  construction**: one object with `diagnoses()`, `procedures()`, `features()`, `allowedLlms()`
+  construction**: one object with `procedures()`, `features()`, `allowedLlms()`
   and `graph()`, constructed once in `app.ts` and handed to both `startRestServer` (as
   `createRestApp`'s `readModel` option) and `startNatsTransport`. REST's routers and the meta
-  service both call the same five functions rather than each reimplementing the read against
+  service both call the same four functions rather than each reimplementing the read against
   `GraphAppContext`.
 
 ### Data Files
@@ -1002,7 +1002,7 @@ LLM. Paths below are relative to it:
   categories (any depth) and procedures (when set, LLM must select from this tree only, placed
   under its exact category); translations mirror the same tree, each node keyed by its English
   `key` alongside its translated `name`
-- `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
+- `diagnosisTranslations.yml` — diagnosis name translations, used only without ICD (input index for user-supplied names)
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions (static config, no longer a request field)
 - `labelTranslations.yml` — trace-node label translations
 - `outlineHeadingsTranslations.yml` — plan-mode outline section-title translations (keys:
@@ -1011,8 +1011,6 @@ LLM. Paths below are relative to it:
   The embedded SQLite DB is generated under `CACHE_DIR` (default `data/cache/`), which is
   deliberately a separate directory so a deployer can mount their own catalogues over
   `CATALOG_DIR` without clobbering it.
-
-`scripts/extract-icd11*.ts` build the diagnosis YAML files from ICD-11 source data (run manually).
 
 ### Request Context
 

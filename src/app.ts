@@ -103,7 +103,9 @@ export async function createApp(): Promise<{
   // Must run after graph construction: labels' base key set is
   // `getKnownLabels()`, populated by `traceNode` while graph builds. Earlier =
   // empty set, silent pass.
-  validateCatalogsOrExit(repos, graphConfig.LANGUAGES);
+  validateCatalogsOrExit(repos, graphConfig.LANGUAGES, {
+    icd: icdClient !== undefined,
+  });
 
   // Per-job event channel: service opens/closes jobs, transports subscribe.
   // Labels always on.

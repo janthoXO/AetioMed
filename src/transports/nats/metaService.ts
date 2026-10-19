@@ -1,5 +1,5 @@
-// NATS counterpart of the REST read-only endpoints (`/api/diagnosis`,
-// `/procedures`, `/features`, `/allowedLlms`, `/graph`), on `@nats-io/services`
+// NATS counterpart of the REST read-only endpoints (`/api/procedures`,
+// `/features`, `/allowedLlms`, `/graph`), on `@nats-io/services`
 // (discovery via `$SRV.PING|INFO|STATS`, per-endpoint stats, `respondError`).
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -7,7 +7,6 @@ import type { NatsConnection } from "@nats-io/transport-node";
 import { Svcm, type Service, type ServiceMsg } from "@nats-io/services";
 import type { ReadModel } from "@/core/readModel.js";
 import {
-  CATALOG_DIAGNOSIS_SUBJECT,
   CATALOG_PROCEDURES_SUBJECT,
   META_FEATURES_SUBJECT,
   META_ALLOWED_LLMS_SUBJECT,
@@ -45,11 +44,6 @@ interface MetaEndpoint {
 
 function endpointsFor(readModel: ReadModel): MetaEndpoint[] {
   return [
-    {
-      name: "diagnosis",
-      subject: CATALOG_DIAGNOSIS_SUBJECT,
-      call: () => readModel.diagnoses(),
-    },
     {
       name: "procedures",
       subject: CATALOG_PROCEDURES_SUBJECT,

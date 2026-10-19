@@ -20,7 +20,6 @@ import {
 import { GraphStructureSchema } from "@/core/graph/structure.js";
 import {
   AllowedLlmsSchema,
-  DiagnosesSchema,
   FeaturesSchema,
   ProcedureCatalogSchema,
 } from "@/core/readModel.js";
@@ -64,7 +63,6 @@ const contracts: Record<string, [z.ZodType, string]> = {
   ],
   JobStatusReply: [JobStatusReplySchema, "NATS cases.status.<jobId> reply."],
   CancelReply: [CancelReplySchema, "NATS cases.cancel.<jobId> reply."],
-  Diagnoses: [DiagnosesSchema, "GET /api/diagnosis; NATS catalog.diagnosis."],
   ProcedureCatalog: [
     ProcedureCatalogSchema,
     "GET /api/procedures; NATS catalog.procedures.",

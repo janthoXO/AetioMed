@@ -28,18 +28,10 @@ export interface CatalogueSpec {
   enforceUnknownKeys: boolean;
 }
 
-function everyDiagnosisKey(repos: Repos): string[] {
-  const keys: string[] = [];
-  for (const diagnosis of repos.diagnosis.getAllDiagnoses()) {
-    keys.push(diagnosis.name);
-    for (const alt of diagnosis.alternativeNames ?? []) {
-      keys.push(alt);
-    }
-  }
-  return keys;
-}
-
-function loadCatalogueSpecs(repos: Repos): CatalogueSpec[] {
+function loadCatalogueSpecs(repos: Repos, icd: boolean): CatalogueSpec[] {
+  const diagnosisTranslations = readDeclaredTranslations(
+    repos.diagnosis.translationsFile
+  );
   return [
     {
       catalogue: "procedures",
@@ -72,18 +64,27 @@ function loadCatalogueSpecs(repos: Repos): CatalogueSpec[] {
       ),
       enforceUnknownKeys: true,
     },
-    {
-      catalogue: "diagnosis",
-      file: repos.diagnosis.translationsFile,
-      baseKeys: everyDiagnosisKey(repos),
-      translations: readDeclaredTranslations(repos.diagnosis.translationsFile),
-      // Exempt from the unknown-key rule: diagnosis store is also an input index.
-      // `getDiagnosisTranslationToEnglish` (via `core/diagnosis/resolve.ts`)
-      // normalises user-supplied names to English, so keys outside the curated
-      // `diagnosis.yml` are legitimate. `diagnosis.yml` is a curated subset,
-      // `diagnosisTranslations.yml` the full ICD-11 extraction; enforcing would flag ~1500 terms.
-      enforceUnknownKeys: false,
-    },
+    // With ICD, names come from ICD and the file is ignored (warned in `validateCatalogsOrExit`).
+    ...(icd
+      ? []
+      : [
+          {
+            catalogue: "diagnosis",
+            file: repos.diagnosis.translationsFile,
+            // No base catalogue: the file's own English keys.
+            baseKeys: [
+              ...new Set(
+                Object.values(diagnosisTranslations).flatMap((byKey) =>
+                  Object.keys(byKey ?? {})
+                )
+              ),
+            ],
+            translations: diagnosisTranslations,
+            // Exempt from the unknown-key rule: the file is an input index for
+            // user-supplied names (`core/diagnosis/resolve.ts`), not a curated list.
+            enforceUnknownKeys: false,
+          },
+        ]),
     {
       catalogue: "labels",
       file: repos.labels.translationsFile,
@@ -156,7 +157,7 @@ type MissingLanguageProblem = {
  * configured non-English language; otherwise that language was never wired up.
  * A file declaring no language at all (missing or empty) is a deliberately
  * untranslated catalogue: its keys are LLM-translated at runtime or fall back
- * to English. Diagnosis is not exempt here, only from the unknown-key check.
+ * to English. Diagnosis (without ICD) is not exempt here, only from the unknown-key check.
  */
 export function findMissingLanguages(
   specs: CatalogueSpec[],
@@ -263,9 +264,19 @@ function findDuplicateProcedureSiblings(repos: Repos): CatalogProblem[] {
  */
 export function validateCatalogsOrExit(
   repos: Repos,
-  languages: string[]
+  languages: string[],
+  opts: { icd: boolean }
 ): void {
-  const specs = loadCatalogueSpecs(repos);
+  const specs = loadCatalogueSpecs(repos, opts.icd);
+  if (opts.icd) {
+    const declared = readDeclaredTranslations(repos.diagnosis.translationsFile);
+    if (
+      Object.values(declared).some((byKey) => Object.keys(byKey ?? {}).length)
+    )
+      console.warn(
+        "[catalog] diagnosisTranslations.yml is ignored: ICD is configured, diagnosis names come from ICD."
+      );
+  }
 
   printSummary(specs);
   warnUnconfiguredLanguages(specs, languages);

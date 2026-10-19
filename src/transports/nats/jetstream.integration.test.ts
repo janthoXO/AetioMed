@@ -30,7 +30,6 @@ import {
   cancelSubject,
   progressSubject,
   planSubject,
-  CATALOG_DIAGNOSIS_SUBJECT,
   CATALOG_PROCEDURES_SUBJECT,
   META_FEATURES_SUBJECT,
   META_ALLOWED_LLMS_SUBJECT,
@@ -362,10 +361,7 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: {
-          toEnglish: (name: string) => name,
-          all: () => [{ icd: "1A00", name: "Cholera" }],
-        },
+        diagnosis: { toEnglish: (name: string) => name },
         procedures: {
           tree: () => ({
             categories: [],
@@ -605,7 +601,6 @@ describe.skipIf(!NATS_TEST_URL)("NATS parity", () => {
 
       try {
         const rows: [string, string][] = [
-          ["/api/diagnosis", CATALOG_DIAGNOSIS_SUBJECT],
           ["/api/procedures", CATALOG_PROCEDURES_SUBJECT],
           ["/api/features", META_FEATURES_SUBJECT],
           ["/api/allowedLlms", META_ALLOWED_LLMS_SUBJECT],

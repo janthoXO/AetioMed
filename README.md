@@ -312,7 +312,7 @@ AetioMed is a self-hostable, LLM-based generator of synthetic medical cases for 
 
 ### Does AetioMed use real patient data?
 
-No. Cases are fictional. The inputs are a diagnosis plus curated catalogues shipped in `data/` — an ICD-11 diagnosis list, a UMLS-derived symptom list, and approved procedure and anamnesis-category lists. No patient records are needed or stored.
+No. Cases are fictional. The inputs are a diagnosis plus curated catalogues shipped in `data/` — a UMLS-derived symptom list, and approved procedure and anamnesis-category lists. No patient records are needed or stored.
 
 ### Which LLMs does AetioMed support?
 

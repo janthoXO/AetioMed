@@ -47,6 +47,9 @@ services:
       - SYMPTOM_CACHE_TTL_DAYS=${SYMPTOM_CACHE_TTL_DAYS:-30}
       - MAX_CONTENT_PART_BYTES=${MAX_CONTENT_PART_BYTES:-5000000}
 
+      # ─── Referral letters (e.g. http://aetioreferral:8000/mcp with --profile REFERRAL) ─
+      - REFERRAL_MCP_URL
+
       # ─── NATS (only read when NATS is in FEATURES) ──────────────────
       - NATS_URL=${NATS_URL:-nats://nats:4222}
       - NATS_USER=${NATS_USER:-nats}
@@ -116,6 +119,14 @@ services:
       --http_port 8222
     volumes:
       - nats_data:/data
+    restart: unless-stopped
+
+  # PDF referral letters for the chief complaint (REFERRAL_MCP_URL=http://aetioreferral:8000/mcp)
+  aetioreferral:
+    profiles: [REFERRAL]
+    image: ghcr.io/janthoxo/aetioreferral/server:0.0.1
+    ports:
+      - "8000:8000"
     restart: unless-stopped
 
   # to debug nats

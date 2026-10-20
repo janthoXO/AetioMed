@@ -29,6 +29,8 @@ export type GenerateCaseFn = (opts: {
  */
 export interface GraphAppContext {
   config: Config;
+  /** ICD configured: diagnoses resolve through ICD, an icd-only request is valid (#238). */
+  icd: boolean;
   runtime: GraphRuntime;
   /** Run plan graph only: outline + judge loop, plus working-language inputs the case graph needs. */
   planCase: (opts: PlanCaseInput) => Promise<PlanResult>;

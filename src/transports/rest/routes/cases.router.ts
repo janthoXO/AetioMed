@@ -54,7 +54,8 @@ export default function createCasesRouter(
   const heartbeatMs = opts.heartbeatMs ?? HEARTBEAT_MS;
   const router = express.Router();
   const CaseGenerationRequestSchema = makeCaseGenerationRequestSchema(
-    graph.config
+    graph.config,
+    graph
   );
 
   const successBody = (result: CaseGenerationResult) =>

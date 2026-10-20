@@ -1,4 +1,22 @@
 import { z } from "zod";
+import { envGroup } from "../env.js";
+
+const IcdEnvSchema = z.object({
+  /** WHO ICD-11 API base URL (container). Set = ICD on: diagnoses resolve through ICD. */
+  ICD_API_URL: z.url(),
+  /** ICD-11 release id, e.g. `2026-01`; must match the container's `include`. */
+  ICD_RELEASE: z.string().regex(/^\d{4}-\d{2}$/),
+});
+
+/** Unset = no ICD: diagnosis names resolve through the translation store. */
+export function icdClientFromEnv(
+  env: NodeJS.ProcessEnv
+): IcdClient | undefined {
+  const cfg = envGroup(IcdEnvSchema, env);
+  return (
+    cfg && createIcdClient({ url: cfg.ICD_API_URL, release: cfg.ICD_RELEASE })
+  );
+}
 
 export class IcdHttpError extends Error {
   constructor(
@@ -22,6 +40,7 @@ export function createIcdClient(opts: {
   const doFetch = opts.fetch ?? fetch;
   const base = `${opts.url.replace(/\/$/, "")}/icd/release/11/${opts.release}/mms`;
   return {
+    url: opts.url,
     release: opts.release,
     async get(
       path: string,

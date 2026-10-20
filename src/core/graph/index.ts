@@ -76,6 +76,8 @@ export { ConfigSchema };
 export function initGraph(opts: {
   bus: EventBus;
   config: Config;
+  /** ICD client configured (`adapters/icd/`); resolution itself runs in the service. */
+  icd: boolean;
   llm: LlmPort;
   catalogs: GraphRuntime["catalogs"];
   umlsFloor: UmlsSymptomFloor;
@@ -83,7 +85,7 @@ export function initGraph(opts: {
   /** OTel port from `observability/otel.ts`'s `createOtelNodeTracer()`. Pass `noopNodeTracer` for silence. */
   tracer: NodeTracer;
   /** AetioReferral PDF letters (`adapters/referral/`); unset = no `referral_letter` provider. */
-  renderReferralLetter?: ReferralLetterRenderer;
+  renderReferralLetter?: ReferralLetterRenderer | undefined;
 }): GraphAppContext {
   const { bus, config, llm, catalogs, umlsFloor, symptomCache, tracer } = opts;
 
@@ -138,6 +140,7 @@ export function initGraph(opts: {
 
   return {
     config,
+    icd: opts.icd,
     runtime,
     planCase,
     renderCase,

@@ -4,7 +4,7 @@ import {
   ConfigSchema as GraphConfigSchema,
   initGraph,
 } from "@/core/graph/index.js";
-import { createMcpReferralLetterRenderer } from "./adapters/referral/mcp.js";
+import { referralLetterRendererFromEnv } from "./adapters/referral/mcp.js";
 import {
   resolveCatalogDir,
   resolveCacheDir,
@@ -28,7 +28,7 @@ import { createRepos } from "./adapters/repos.js";
 import { createYamlCatalogs } from "./adapters/catalog/index.js";
 import { validateCatalogsOrExit } from "./adapters/catalog/startupValidation.js";
 import { createLlmPort } from "./adapters/ai/llm.js";
-import { createIcdClient, probeIcd } from "./adapters/icd/client.js";
+import { icdClientFromEnv, probeIcd } from "./adapters/icd/client.js";
 import { createIcdPort } from "./adapters/icd/port.js";
 import { createTinyldDetector } from "./adapters/language/tinyldDetector.js";
 
@@ -42,8 +42,6 @@ const AppEnvSchema = z
       .int()
       .min(1)
       .default(DEFAULT_MAX_CONCURRENT_GENERATIONS),
-    // AetioReferral's MCP endpoint, e.g. http://localhost:8000/mcp. Unset = no PDF referral letters.
-    REFERRAL_MCP_URL: z.url().optional(),
   })
   .transform((env) => ({
     features: env.FEATURES.split(",")
@@ -51,14 +49,15 @@ const AppEnvSchema = z
       .filter(Boolean),
     symptomCacheTtlDays: env.SYMPTOM_CACHE_TTL_DAYS,
     maxConcurrentGenerations: env.MAX_CONCURRENT_GENERATIONS,
-    referralMcpUrl: env.REFERRAL_MCP_URL,
   }));
 
 /**
  * Composition root: constructs everything explicitly, in order. `FEATURES`
  * flags (`REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`) each gate one construction.
  *
- * With `ICD_API_URL` set, probes the ICD container first (fatal on failure).
+ * Adapters with their own env group (ICD, referral letters) parse it
+ * themselves: unset = off, half set = startup error. With ICD configured,
+ * probes the ICD container first (fatal on failure).
  *
  * `shutdown()` closes everything started, in reverse construction order:
  * REST, NATS, DB last. Registers no signal handler; `src/index.ts` does via
@@ -72,20 +71,13 @@ export async function createApp(): Promise<{
     features: featureList,
     symptomCacheTtlDays,
     maxConcurrentGenerations,
-    referralMcpUrl,
   } = AppEnvSchema.parse(process.env);
   const features = new Set(featureList);
   console.log(`[app] Feature flags: ${[...features].join(", ") || "none"}`);
   const graphConfig = GraphConfigSchema.parse(process.env);
-  const icdClient =
-    graphConfig.ICD_API_URL && graphConfig.ICD_RELEASE
-      ? createIcdClient({
-          url: graphConfig.ICD_API_URL,
-          release: graphConfig.ICD_RELEASE,
-        })
-      : undefined;
+  const icdClient = icdClientFromEnv(process.env);
   if (icdClient) {
-    await probeIcd(icdClient, graphConfig.ICD_API_URL!, graphConfig.LANGUAGES);
+    await probeIcd(icdClient, icdClient.url, graphConfig.LANGUAGES);
   }
   const bus = new EventBus();
   // Operator channel, gated by standard OTel env vars, not `FEATURES`.
@@ -99,14 +91,13 @@ export async function createApp(): Promise<{
   const graph = initGraph({
     bus,
     config: graphConfig,
+    icd: icdClient !== undefined,
     llm: createLlmPort(graphConfig),
     catalogs: createYamlCatalogs(repos),
     umlsFloor: repos.umlsFloor,
     symptomCache: repos.symptomCache,
     tracer: otel.tracer,
-    ...(referralMcpUrl && {
-      renderReferralLetter: createMcpReferralLetterRenderer(referralMcpUrl),
-    }),
+    renderReferralLetter: referralLetterRendererFromEnv(process.env),
   });
   // Must run after graph construction: labels' base key set is
   // `getKnownLabels()`, populated by `traceNode` while graph builds. Earlier =

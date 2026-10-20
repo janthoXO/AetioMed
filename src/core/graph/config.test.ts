@@ -180,32 +180,3 @@ describe("ConfigSchema — LANGUAGES", () => {
     expect(config.LANGUAGES).toEqual(["en", "de"]);
   });
 });
-
-describe("ConfigSchema — ICD", () => {
-  const base = { LLM_PROVIDER: "ollama", LLM_MODEL: "x" };
-  it("ICD_API_URL without ICD_RELEASE throws", () => {
-    expect(() =>
-      ConfigSchema.parse({ ...base, ICD_API_URL: "http://localhost:3001" })
-    ).toThrow(/ICD_RELEASE is required/);
-  });
-  it("both set, or neither, parses", () => {
-    expect(
-      ConfigSchema.parse({
-        ...base,
-        ICD_API_URL: "http://localhost:3001",
-        ICD_RELEASE: "2026-01",
-      }).ICD_RELEASE
-    ).toBe("2026-01");
-    expect(ConfigSchema.parse(base).ICD_API_URL).toBeUndefined();
-  });
-
-  it("empty ICD vars (prod compose passes every variable) mean ICD off", () => {
-    const config = ConfigSchema.parse({
-      ...base,
-      ICD_API_URL: "",
-      ICD_RELEASE: "",
-    });
-    expect(config.ICD_API_URL).toBeUndefined();
-    expect(config.ICD_RELEASE).toBeUndefined();
-  });
-});

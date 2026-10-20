@@ -70,9 +70,10 @@ export async function consumeCaseGenerateMessage(
       return;
     }
 
-    const request = makeCaseGenerationRequestSchema(graph.config).safeParse(
-      raw
-    );
+    const request = makeCaseGenerationRequestSchema(
+      graph.config,
+      graph
+    ).safeParse(raw);
     if (!request.success) {
       await publishCaseResult(jobId, {
         error: {

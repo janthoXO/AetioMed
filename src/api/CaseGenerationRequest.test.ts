@@ -3,7 +3,8 @@ import { makeCaseGenerationRequestSchema } from "./CaseGenerationRequest.js";
 import { ConfigSchema } from "@/core/graph/config.js";
 
 const schema = makeCaseGenerationRequestSchema(
-  ConfigSchema.parse({ LLM_PROVIDER: "ollama", LLM_MODEL: "llama3.1" })
+  ConfigSchema.parse({ LLM_PROVIDER: "ollama", LLM_MODEL: "llama3.1" }),
+  { icd: false }
 );
 
 describe("CaseGenerationRequestSchema — generationFlags", () => {
@@ -45,7 +46,8 @@ describe("CaseGenerationRequestSchema — language", () => {
         LLM_PROVIDER: "ollama",
         LLM_MODEL: "llama3.1",
         LANGUAGES: "en,de,fr",
-      })
+      }),
+      { icd: false }
     );
 
     const result = configuredSchema.safeParse({
@@ -78,14 +80,12 @@ describe("CaseGenerationRequestSchema — language", () => {
 
 describe("CaseGenerationRequestSchema — diagnosis by ICD config (#238)", () => {
   const base = { LLM_PROVIDER: "ollama", LLM_MODEL: "llama3.1" };
-  const withIcd = makeCaseGenerationRequestSchema(
-    ConfigSchema.parse({
-      ...base,
-      ICD_API_URL: "http://icd:80",
-      ICD_RELEASE: "2026-01",
-    })
-  );
-  const withoutIcd = makeCaseGenerationRequestSchema(ConfigSchema.parse(base));
+  const withIcd = makeCaseGenerationRequestSchema(ConfigSchema.parse(base), {
+    icd: true,
+  });
+  const withoutIcd = makeCaseGenerationRequestSchema(ConfigSchema.parse(base), {
+    icd: false,
+  });
 
   it("ICD on: icd alone or a name alone is enough, neither is a 400", () => {
     expect(withIcd.safeParse({ icd: "CA40" }).success).toBe(true);

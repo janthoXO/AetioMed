@@ -6,7 +6,7 @@ import { ICDCodeSchema } from "@/core/graph/shared/domain/Diagnosis.js";
 import { IcdUnavailableError, type IcdPort } from "@/core/diagnosis/icd.js";
 import { IcdHttpError, type IcdClient } from "./client.js";
 
-const CodeInfoSchema = z.object({ stemId: z.string() });
+const CodeInfoSchema = z.object({ code: z.string(), stemId: z.string() });
 const EntitySchema = z.object({ title: z.object({ "@value": z.string() }) });
 const SearchSchema = z.object({
   destinationEntities: z.array(
@@ -47,6 +47,31 @@ export function createIcdPort(client: IcdClient, dbHandle: DbHandle): IcdPort {
     }
   }
 
+  /**
+   * Title of one code, stem or cluster (a cluster's title is its stem's).
+   * `undefined`: not in the release, or a cluster ICD does not accept as is.
+   */
+  async function codeTitle(
+    code: string,
+    language: string,
+    signal: AbortSignal | undefined
+  ): Promise<string | undefined> {
+    const info = await get(`/codeinfo/${encodeURIComponent(code)}`, language, {
+      signal,
+    });
+    if (info === undefined) return undefined;
+    // stemId: http://id.who.int/icd/release/11/<release>/mms/<id>[/unspecified]
+    const { code: canonical, stemId } = CodeInfoSchema.parse(info);
+    // codeinfo 404s an extension outside the stem's value sets, but silently
+    // drops a second value on a single-value axis ("CA40.Z&XB22&XB25" comes
+    // back as "CA40.Z&XB25"): a changed code is a cluster ICD rejected.
+    if (canonical !== code) return undefined;
+    const path = stemId.slice(stemId.indexOf("/mms/") + "/mms".length);
+    const body = await get(path, language, { signal });
+    if (body === undefined) return undefined;
+    return EntitySchema.parse(body).title["@value"];
+  }
+
   return {
     async entity(code, language, signal) {
       const key = and(
@@ -57,14 +82,15 @@ export function createIcdPort(client: IcdClient, dbHandle: DbHandle): IcdPort {
       const cached = db.select().from(icdEntity).where(key).get();
       if (cached) return { code, title: cached.title };
 
-      const info = await get(`/codeinfo/${code}`, language, { signal });
-      if (info === undefined) return undefined;
-      // stemId: http://id.who.int/icd/release/11/<release>/mms/<id>[/unspecified]
-      const { stemId } = CodeInfoSchema.parse(info);
-      const path = stemId.slice(stemId.indexOf("/mms/") + "/mms".length);
-      const body = await get(path, language, { signal });
-      if (body === undefined) return undefined;
-      const title = EntitySchema.parse(body).title["@value"];
+      // A cluster's own title is only its stem's: "CA40.Z&XB22" would read
+      // "Pneumonia, organism unspecified". Name the added codes after it.
+      const [stem, ...added] = await Promise.all(
+        [code, ...code.split(/[&/]/).slice(1)].map((c) =>
+          codeTitle(c, language, signal)
+        )
+      );
+      if (stem === undefined || added.includes(undefined)) return undefined;
+      const title = added.length > 0 ? `${stem} (${added.join("; ")})` : stem;
 
       db.insert(icdEntity)
         .values({ release, code, lang: language, title })

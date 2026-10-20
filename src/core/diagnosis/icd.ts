@@ -13,13 +13,16 @@ export type IcdSearchHit = IcdEntity & { synonyms: string[] };
  * entity cache (`adapters/icd/`), in-memory for tests.
  */
 export interface IcdPort {
-  /** `undefined`: the code is not in the release. */
+  /**
+   * `undefined`: the code is not in the release, or a cluster ICD rejects.
+   * A cluster's title is its stem's, the added codes' titles in parentheses.
+   */
   entity(
     code: ICDCode,
     language: Language,
     signal?: AbortSignal
   ): Promise<IcdEntity | undefined>;
-  /** Hits in ICD's order; codeless (block) and post-coordinated hits dropped. */
+  /** Hits in ICD's order; codeless (block) hits dropped, indexed clusters kept. */
   search(
     text: string,
     language: Language,

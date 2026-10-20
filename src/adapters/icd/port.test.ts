@@ -74,6 +74,50 @@ describe("createIcdPort.entity", () => {
     expect(calls).toHaveLength(5);
   });
 
+  it("titles a cluster after its stem, the added codes in parentheses", async () => {
+    const { fetchFn, calls } = fakeFetch({
+      [`${BASE}/codeinfo/CA40.Z%26XB22`]: () =>
+        json({
+          code: "CA40.Z&XB22",
+          stemId:
+            "http://id.who.int/icd/release/11/2026-01/mms/142052508/unspecified",
+          stemCode: "CA40.Z",
+          causality: ["XB22"],
+        }),
+      [`${BASE}/142052508/unspecified`]: () =>
+        json({
+          title: { "@value": "Pneumonia, organism unspecified" },
+        }),
+      [`${BASE}/codeinfo/XB22`]: () =>
+        json({
+          code: "XB22",
+          stemId: "http://id.who.int/icd/release/11/2026-01/mms/339929010",
+        }),
+      [`${BASE}/339929010`]: () =>
+        json({ title: { "@value": "Community acquired" } }),
+    });
+
+    expect(await port(fetchFn).entity("CA40.Z&XB22", "en")).toEqual({
+      code: "CA40.Z&XB22",
+      title: "Pneumonia, organism unspecified (Community acquired)",
+    });
+    expect(calls).toContain(`${BASE}/codeinfo/CA40.Z%26XB22 en`);
+  });
+
+  it("rejects a cluster codeinfo changes (second value on a single-value axis)", async () => {
+    const { fetchFn } = fakeFetch({
+      [`${BASE}/codeinfo/CA40.Z%26XB22%26XB25`]: () =>
+        json({
+          code: "CA40.Z&XB25",
+          stemId:
+            "http://id.who.int/icd/release/11/2026-01/mms/142052508/unspecified",
+        }),
+    });
+    expect(
+      await port(fetchFn).entity("CA40.Z&XB22&XB25", "en")
+    ).toBeUndefined();
+  });
+
   it("returns undefined for a code the release does not have", async () => {
     const { fetchFn } = fakeFetch({});
     expect(await port(fetchFn).entity("ZZ99", "en")).toBeUndefined();
@@ -106,7 +150,7 @@ describe("createIcdPort.entity", () => {
 });
 
 describe("createIcdPort.search", () => {
-  it("keeps coded hits with their matched synonyms, drops blocks and clusters", async () => {
+  it("keeps coded hits (clusters too) with their matched synonyms, drops blocks", async () => {
     const { fetchFn, calls } = fakeFetch({
       [`${BASE}/search`]: () =>
         json({
@@ -133,6 +177,11 @@ describe("createIcdPort.search", () => {
         code: "BA41",
         title: "Acute myocardial infarction",
         synonyms: ["heart attack"],
+      },
+      {
+        code: "DB10.Y&XT1L",
+        title: "Other specified appendicitis [Subacute]",
+        synonyms: [],
       },
     ]);
     expect(calls[0]).toContain("q=heart+attack");

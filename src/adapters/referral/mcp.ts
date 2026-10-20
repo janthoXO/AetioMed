@@ -4,6 +4,20 @@ import {
 } from "@modelcontextprotocol/client";
 import z from "zod";
 import type { ReferralLetterRenderer } from "@/core/graph/04-case/01-presentation/chief-complaint/providers.js";
+import { envGroup } from "../env.js";
+
+const ReferralEnvSchema = z.object({
+  /** AetioReferral's MCP endpoint, e.g. http://localhost:8000/mcp. */
+  REFERRAL_MCP_URL: z.url(),
+});
+
+/** Unset = no PDF referral letters. */
+export function referralLetterRendererFromEnv(
+  env: NodeJS.ProcessEnv
+): ReferralLetterRenderer | undefined {
+  const cfg = envGroup(ReferralEnvSchema, env);
+  return cfg && createMcpReferralLetterRenderer(cfg.REFERRAL_MCP_URL);
+}
 
 /** AetioReferral's `render_referral_letter` result: one embedded PDF resource, base64. Parsed, never cast. */
 const RenderResultSchema = z.object({

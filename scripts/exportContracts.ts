@@ -34,7 +34,8 @@ const config = ConfigSchema.parse({
 // name -> [schema, where it travels]
 const contracts: Record<string, [z.ZodType, string]> = {
   CaseGenerationRequest: [
-    makeCaseGenerationRequestSchema(config),
+    // `icd` only picks a refine's message/path, which JSON Schema does not carry.
+    makeCaseGenerationRequestSchema(config, { icd: false }),
     "Body of POST /api/cases; NATS cases.request.generate (jobId required there).",
   ],
   CaseGenerationResponse: [

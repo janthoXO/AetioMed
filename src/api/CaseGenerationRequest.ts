@@ -78,15 +78,18 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
   });
 }
 
-export function makeCaseGenerationRequestSchema(config: Config) {
+export function makeCaseGenerationRequestSchema(
+  config: Config,
+  { icd }: { icd: boolean }
+) {
   return (
     makeBaseCaseGenerationRequestSchema(config)
       // ICD configured: a code alone resolves. Without ICD only a name does (#238).
-      .refine((data) => (config.ICD_API_URL && data.icd) || data.diagnosis, {
-        message: config.ICD_API_URL
+      .refine((data) => (icd && data.icd) || data.diagnosis, {
+        message: icd
           ? "Either 'icd' or 'diagnosis' must be provided"
           : "'diagnosis' is required: no ICD API is configured to resolve 'icd'",
-        path: config.ICD_API_URL ? ["icd"] : ["diagnosis"],
+        path: icd ? ["icd"] : ["diagnosis"],
       })
       .refine((data) => !data.plan || isCanonicalShape(data.plan), {
         message:

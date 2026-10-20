@@ -38,9 +38,9 @@ export function createReadModel(
       return graph.runtime.catalogs.procedures.tree() ?? null;
     },
     features() {
-      // ICD is switched on by `ICD_API_URL`, not a `FEATURES` flag; listed so a
+      // ICD is switched on by its env group, not a `FEATURES` flag; listed so a
       // client knows an icd-only request resolves.
-      return graph.config.ICD_API_URL ? [...features, "ICD"] : [...features];
+      return graph.icd ? [...features, "ICD"] : [...features];
     },
     allowedLlms() {
       return graph.config.allowedLlms ?? {};

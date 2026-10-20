@@ -106,6 +106,18 @@ describe("ConfigSchema — LLM role resolution", () => {
     expect(config.llm).toBeUndefined();
   });
 
+  it("ALLOWED_LLMS keeps colons inside the model tag", () => {
+    const config = ConfigSchema.parse({
+      FEATURES: "ALLOW_LLMS",
+      ALLOWED_LLMS: "ollama:gpt-oss:120b,google:gemini-2.0-flash",
+    });
+
+    expect(config.allowedLlms).toEqual({
+      ollama: ["gpt-oss:120b"],
+      google: ["gemini-2.0-flash"],
+    });
+  });
+
   it("under ALLOW_LLMS, a request llmConfig drives all three roles", async () => {
     const config = ConfigSchema.parse({
       FEATURES: "ALLOW_LLMS",

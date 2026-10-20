@@ -162,7 +162,10 @@ export const ConfigSchema = z
         const pairs = String(val).split(",");
         return pairs.reduce(
           (acc, pair) => {
-            const [provider, model] = pair.split(":", 2);
+            // Split on the first colon only: model tags carry their own (gpt-oss:120b).
+            const i = pair.indexOf(":");
+            const provider = pair.slice(0, i);
+            const model = pair.slice(i + 1);
             if (!provider || !model) {
               throw new Error(
                 `Invalid ALLOWED_LLMS format for pair "${pair}". Expected format is "PROVIDER:MODEL".`

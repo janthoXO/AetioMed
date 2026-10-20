@@ -1,5 +1,6 @@
 import z from "zod";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
+import { promptLanguage } from "@/core/graph/shared/domain/Language.js";
 
 /**
  * Step 3 of ladder: one deterministic LLM call picking which configured
@@ -15,7 +16,7 @@ export async function detectLanguageViaLlm(
   text: string,
   languages: readonly string[]
 ): Promise<string | undefined> {
-  // `languages` always non-empty (English mandatory); cast only satisfies `z.enum` tuple type.
+  // `languages` always non-empty (`en` mandatory); cast only satisfies `z.enum` tuple type.
   const choices = [...languages, "none"] as unknown as [string, ...string[]];
 
   try {
@@ -24,7 +25,8 @@ export async function detectLanguageViaLlm(
       {
         system:
           `Identify which of these languages the user's text is written in: ` +
-          `${languages.join(", ")}. Respond with "none" if you cannot tell.`,
+          `${languages.map(promptLanguage).join(", ")}. Answer with the code in parentheses, ` +
+          `or "none" if you cannot tell.`,
         user: text,
       },
       z.object({ language: z.enum(choices) })

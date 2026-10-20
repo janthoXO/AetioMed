@@ -15,14 +15,14 @@ function fakeRuntime(structuredResult: unknown): {
 
 describe("detectLanguageViaLlm (step 3)", () => {
   it("returns the language the model picked", async () => {
-    const { runtime, structured } = fakeRuntime({ language: "German" });
+    const { runtime, structured } = fakeRuntime({ language: "de" });
 
     const result = await detectLanguageViaLlm(runtime, "Bitte kurz halten.", [
-      "English",
-      "German",
+      "en",
+      "de",
     ]);
 
-    expect(result).toBe("German");
+    expect(result).toBe("de");
     expect(structured.mock.calls[0]![0]).toEqual({
       role: "translator",
       temperature: "deterministic",
@@ -32,10 +32,7 @@ describe("detectLanguageViaLlm (step 3)", () => {
   it('returns undefined when the model answers "none"', async () => {
     const { runtime } = fakeRuntime({ language: "none" });
 
-    const result = await detectLanguageViaLlm(runtime, "???", [
-      "English",
-      "German",
-    ]);
+    const result = await detectLanguageViaLlm(runtime, "???", ["en", "de"]);
 
     expect(result).toBeUndefined();
   });
@@ -48,10 +45,7 @@ describe("detectLanguageViaLlm (step 3)", () => {
     } as unknown as GraphRuntime;
     vi.spyOn(console, "warn").mockImplementation(() => {});
 
-    const result = await detectLanguageViaLlm(runtime, "text", [
-      "English",
-      "German",
-    ]);
+    const result = await detectLanguageViaLlm(runtime, "text", ["en", "de"]);
 
     expect(result).toBeUndefined();
   });

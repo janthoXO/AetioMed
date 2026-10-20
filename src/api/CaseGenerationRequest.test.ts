@@ -44,25 +44,60 @@ describe("CaseGenerationRequestSchema — language", () => {
       ConfigSchema.parse({
         LLM_PROVIDER: "ollama",
         LLM_MODEL: "llama3.1",
-        LANGUAGES: "English,German,French",
+        LANGUAGES: "en,de,fr",
       })
     );
 
     const result = configuredSchema.safeParse({
       diagnosis: "Influenza",
-      language: "French",
+      language: "fr",
     });
 
     expect(result.success).toBe(true);
   });
 
   it("rejects a language outside the deployment's configured LANGUAGES as a validation (400-worthy) failure, not a 500", () => {
-    // Default LANGUAGES is English, German — Spanish is not configured.
+    // Default LANGUAGES is en,de — es is not configured.
     const result = schema.safeParse({
       diagnosis: "Influenza",
-      language: "Spanish",
+      language: "es",
     });
 
     expect(result.success).toBe(false);
+  });
+
+  it("rejects a language name: the wire value is a code", () => {
+    const result = schema.safeParse({
+      diagnosis: "Influenza",
+      language: "German",
+    });
+
+    expect(result.success).toBe(false);
+  });
+});
+
+describe("CaseGenerationRequestSchema — diagnosis by ICD config (#238)", () => {
+  const base = { LLM_PROVIDER: "ollama", LLM_MODEL: "llama3.1" };
+  const withIcd = makeCaseGenerationRequestSchema(
+    ConfigSchema.parse({
+      ...base,
+      ICD_API_URL: "http://icd:80",
+      ICD_RELEASE: "2026-01",
+    })
+  );
+  const withoutIcd = makeCaseGenerationRequestSchema(ConfigSchema.parse(base));
+
+  it("ICD on: icd alone or a name alone is enough, neither is a 400", () => {
+    expect(withIcd.safeParse({ icd: "CA40" }).success).toBe(true);
+    expect(withIcd.safeParse({ diagnosis: "Pneumonia" }).success).toBe(true);
+    expect(withIcd.safeParse({}).success).toBe(false);
+  });
+
+  it("ICD off: a name is required, icd only rides along", () => {
+    expect(withoutIcd.safeParse({ icd: "CA40" }).success).toBe(false);
+    expect(withoutIcd.safeParse({ diagnosis: "Pneumonia" }).success).toBe(true);
+    expect(
+      withoutIcd.safeParse({ diagnosis: "Pneumonia", icd: "CA40" }).success
+    ).toBe(true);
   });
 });

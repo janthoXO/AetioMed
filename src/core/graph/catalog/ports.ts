@@ -4,10 +4,6 @@ import type {
   ProcedureRef,
   ProcedureTree,
 } from "@/core/graph/shared/domain/ProcedureTree.js";
-import type {
-  Diagnosis,
-  ICDCode,
-} from "@/core/graph/shared/domain/Diagnosis.js";
 import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import type { RequestContext } from "../utils/context.js";
 
@@ -110,13 +106,10 @@ export interface LabelCatalog {
 }
 
 /**
- * Predefined ICD-11 diagnoses and their translations, as consumed by
- * `01-translate-in/gateway.ts`, `catalog/diagnosis/repo.ts`'s
- * other consumers and the `/diagnosis` REST route.
+ * Translation of diagnosis names to English when no ICD is configured
+ * (`core/diagnosis/resolve.ts`).
  */
 export interface DiagnosisCatalog {
-  byIcd(icd: ICDCode): Diagnosis | undefined;
-  all(): Diagnosis[];
   /** Reverse lookup: a translated diagnosis name back to its English form. */
   toEnglish(diagnosis: string, lang: ForeignLanguage): string | undefined;
   saveTranslations(

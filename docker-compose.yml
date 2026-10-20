@@ -37,7 +37,7 @@ services:
       - TRANSLATION_SANDWICH=${TRANSLATION_SANDWICH:-true}
 
       # ─── Language ────────────────────────────────────────────────────
-      - LANGUAGES=${LANGUAGES:-English,German}
+      - LANGUAGES=${LANGUAGES:-en,de}
       - LANGUAGE_AUTO_DETECT=${LANGUAGE_AUTO_DETECT:-false}
       - LANGUAGE_DETECT_LLM_FALLBACK=${LANGUAGE_DETECT_LLM_FALLBACK:-false}
 
@@ -52,6 +52,10 @@ services:
       - NATS_USER=${NATS_USER:-nats}
       - NATS_PASSWORD=${NATS_PASSWORD:-nats}
 
+      # ─── ICD (on when ICD_API_URL is set) ───
+      - ICD_API_URL
+      - ICD_RELEASE=${ICD_RELEASE:-2026-01}
+
       # ─── Concurrency ─────────────────────────────────────────────────
       - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS:-4}
 
@@ -64,7 +68,11 @@ services:
       - OTEL_RESOURCE_ATTRIBUTES
 
     depends_on:
-      - ollama
+      ollama:
+        condition: service_started
+      icd:
+        condition: service_healthy
+        required: false
     restart: unless-stopped
 
   ollama:
@@ -77,6 +85,23 @@ services:
       - MODEL_NAME=${LLM_MODEL:-llama3.1}
     entrypoint: >
       sh -c "ollama serve & sleep 5 && ollama pull $$MODEL_NAME && wait"
+
+  icd:
+    profiles: [ICD]
+    image: whoicd/icd-api:2.6.0
+    ports:
+      - "${ICD_PORT:-3001}:80" # iluvi-api's own container already takes 3000
+    environment:
+      - acceptLicense=true
+      - saveAnalytics=false
+      - include=${ICD_RELEASE:-2026-01}_de-en # release_languages; must cover LANGUAGES
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null --header 'API-Version: v2' --header 'Accept: application/json' http://localhost/icd/release/11/${ICD_RELEASE:-2026-01}/mms || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+    restart: unless-stopped
 
   nats:
     profiles: [NATS]

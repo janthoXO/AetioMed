@@ -20,13 +20,13 @@ function fakeGraph(): GraphAppContext {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { byIcd: () => undefined },
+        diagnosis: { toEnglish: (name: string) => name },
       },
       llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],

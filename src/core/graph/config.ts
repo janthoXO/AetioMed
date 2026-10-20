@@ -1,4 +1,5 @@
 import z from "zod";
+import { languageName } from "./shared/domain/Language.js";
 import { LLM_ROLES, type LlmRole } from "./runtime.js";
 
 const PossibleProvidersSchema = z.enum(["ollama", "google", "openai"]);
@@ -105,8 +106,9 @@ export const ConfigSchema = z
       .transform((v) => v !== "false" && v !== "0"),
     /**
      * Supported languages, comma-separated. Trimmed, de-duplicated, order
-     * preserved. Default `["English", "German"]`. "English" mandatory (pivot
-     * language, base catalogue identity space); parse fails without it.
+     * preserved. ISO 639-1 codes, default `["en", "de"]`. `"en"` mandatory (pivot
+     * language, base catalogue identity space); parse fails without it or on
+     * anything that is not a known two-letter code.
      */
     LANGUAGES: z
       .string()
@@ -118,11 +120,19 @@ export const ConfigSchema = z
                 .split(",")
                 .map((s) => s.trim())
                 .filter(Boolean)
-            : ["English", "German"];
+            : ["en", "de"];
         const languages = [...new Set(raw)];
-        if (!languages.includes("English")) {
+        const bad = languages.filter(
+          (l) => !/^[a-z]{2}$/.test(l) || languageName(l) === undefined
+        );
+        if (bad.length > 0) {
           throw new Error(
-            `LANGUAGES must include "English" — it is the pivot language the ` +
+            `LANGUAGES must be ISO 639-1 codes (e.g. "en,de"). Unknown: ${bad.join(", ")}`
+          );
+        }
+        if (!languages.includes("en")) {
+          throw new Error(
+            `LANGUAGES must include "en" — it is the pivot language the ` +
               `translation sandwich turns on and the base catalogue's identity ` +
               `space. Got: ${languages.length > 0 ? languages.join(", ") : "(empty)"}`
           );
@@ -152,6 +162,17 @@ export const ConfigSchema = z
       .int()
       .positive()
       .default(5_000_000),
+    /** WHO ICD-11 API base URL (container). Set = ICD on: diagnoses resolve through ICD. */
+    // `""` = unset: `docker-compose.prod.yml` passes every variable, empty when absent.
+    ICD_API_URL: z.preprocess((v) => v || undefined, z.url().optional()),
+    /** ICD-11 release id, e.g. `2026-01`. Required with `ICD_API_URL`; must match the container's `include`. */
+    ICD_RELEASE: z.preprocess(
+      (v) => v || undefined,
+      z
+        .string()
+        .regex(/^\d{4}-\d{2}$/)
+        .optional()
+    ),
     ALLOWED_LLMS: z
       .string()
       .regex(allowedLlmsRegex)
@@ -206,6 +227,11 @@ export const ConfigSchema = z
       LLM_TRANSLATOR_URL,
       ...rest
     } = env;
+    if (rest.ICD_API_URL && !rest.ICD_RELEASE) {
+      throw new Error(
+        "ICD_RELEASE is required when ICD_API_URL is set (e.g. 2026-01; must match the container's include)"
+      );
+    }
     if (FEATURES?.includes("ALLOW_LLMS")) {
       return {
         ...rest,

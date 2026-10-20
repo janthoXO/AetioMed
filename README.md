@@ -101,7 +101,7 @@ To run fully locally instead, set `LLM_PROVIDER=ollama` and `LLM_MODEL=llama3.1`
 ```bash
 curl -X POST http://localhost:3030/api/cases \
   -H 'Content-Type: application/json' \
-  -d '{"diagnosis": "Influenza", "difficulty": "easy", "language": "English"}'
+  -d '{"diagnosis": "Influenza", "difficulty": "easy", "language": "en"}'
 ```
 
 The response is a JSON case with `patient`, `chiefComplaint`, `anamnesis` and `procedures`. Send `Accept: text/event-stream` to receive live progress events on the same request. See the [Developer Guide](README-DEV.md) for every configuration option, the full REST and NATS APIs, and local development setup.
@@ -171,13 +171,20 @@ See the [Developer Guide](README-DEV.md) for the module layout, the APIs and the
 All AI generation runs as two **LangGraph** state machines, assembled from the deployer's flags at boot: a **plan graph** that ends with the case outline, and a **case graph** that generates the case from it. Normal mode runs one straight into the other; plan mode stops between them for review (see [Plan Mode](#plan-mode)). With the translation sandwich enabled:
 
 ```
-plan graph: [translate diagnosis + instructions → English] → [medical basis → outline ⇄ judge]
+plan graph: [translate instructions → English] → [medical basis → outline ⇄ judge]
 case graph: [presentation → procedures] → [translate case → target language]
 ```
 
 With it disabled the translation phases are **not compiled into the graph at all**, and generation runs directly in the target language. Within a compiled graph, whether a given request is translated is still decided per request — a deployment that _can_ translate does not translate an English request.
 
 Generation runs up to three stages: **medical basis → presentation → procedures**.
+
+### Diagnosis
+
+Before any graph runs, the request's diagnosis is resolved to the English name generation works with.
+
+- **With ICD** (`ICD_API_URL` pointing at a [WHO ICD-11 API container](https://icd.who.int/docs/icd-api/ICDAPI-DockerContainer/)): everything goes through ICD. An `icd` code is looked up and wins over a sent name. A name must match an ICD-11 title or synonym **exactly** (ignoring case and extra whitespace) in the request language; if it does not, it is translated to English once and must then match exactly. Otherwise the request fails with 400. There is deliberately no fuzzy "best match": it would silently swap the diagnosis a teacher asked for, so `"Diabetes"` is rejected instead of becoming `"Diabetes mellitus, type unspecified"`. Send the ICD title or code instead.
+- **Without ICD**: the name is translated to English through `data/diagnosisTranslations.yml` (deterministic), or once by the LLM and cached; an `icd` is carried along unchecked.
 
 The full compiled pipeline, end to end, is in `docs/graphs/`, one diagram per run mode: [plan mode](docs/graphs/plan-mode.translation-sandwich.svg) and [normal mode](docs/graphs/normal-mode.translation-sandwich.svg) with the sandwich on, and [plan mode](docs/graphs/plan-mode.none.svg) and [normal mode](docs/graphs/normal-mode.none.svg) with it off.
 
@@ -228,7 +235,7 @@ Two properties are enforced structurally rather than by asking the model nicely:
 
 Generation always runs in English — prompts, restricted vocabularies, and clinical reasoning are all English-native — and translation brackets the pipeline on both sides:
 
-- **Inbound**: a caller-supplied diagnosis name and any user instructions are translated to English before anything else runs. This is triggered by _provenance_ — did the caller actually supply free text? — not by the language alone, so an ICD-only request is never "translated" from a name our own catalogue produced.
+- **Inbound**: user instructions are translated to English before anything else runs, only when the request carries any. The diagnosis is already English by then (see [Diagnosis](#diagnosis)).
 - **Outbound**: two passes over **disjoint** field sets run in parallel and are combined by a single merge step. The _defined_ pass resolves anamnesis category names and procedure names from the catalogue; the _rest_ pass sends only free-text content through the LLM. Because the sets are disjoint and only the merge writes the result, free-text output can never overwrite the controlled vocabulary.
 
 Translations are cache-aside. Known terms come from YAML translation files; anything missing is translated once by the LLM and persisted, so the same term is never paid for twice. The free-text pass is keyed by a stable field path, so a dropped or reordered entry is detected rather than silently mismatching, and binary content never enters a translation prompt at all.
@@ -251,12 +258,12 @@ planning entirely.
 ```bash
 curl -X POST http://localhost:3030/api/cases \
   -H 'Content-Type: application/json' \
-  -d '{"jobId": "job-1", "diagnosis": "Influenza", "mode": "plan", "language": "German"}'
-# → 200 {"jobId": "job-1", "mode": "plan", "language": "German", "plan": [...]}
+  -d '{"jobId": "job-1", "diagnosis": "Influenza", "mode": "plan", "language": "de"}'
+# → 200 {"jobId": "job-1", "mode": "plan", "language": "de", "plan": [...]}
 
 curl -X POST http://localhost:3030/api/cases \
   -H 'Content-Type: application/json' \
-  -d '{"jobId": "job-1", "diagnosis": "Influenza", "language": "German", "plan": [...]}'
+  -d '{"jobId": "job-1", "diagnosis": "Influenza", "language": "de", "plan": [...]}'
 # → 200, the finished case
 ```
 
@@ -305,7 +312,7 @@ AetioMed is a self-hostable, LLM-based generator of synthetic medical cases for 
 
 ### Does AetioMed use real patient data?
 
-No. Cases are fictional. The inputs are a diagnosis plus curated catalogues shipped in `data/` — an ICD-11 diagnosis list, a UMLS-derived symptom list, and approved procedure and anamnesis-category lists. No patient records are needed or stored.
+No. Cases are fictional. The inputs are a diagnosis plus curated catalogues shipped in `data/` — a UMLS-derived symptom list, and approved procedure and anamnesis-category lists. No patient records are needed or stored.
 
 ### Which LLMs does AetioMed support?
 
@@ -317,7 +324,7 @@ Yes. With Ollama as the provider, the whole pipeline runs self-hosted. `docker c
 
 ### Which languages does AetioMed support?
 
-The deployer configures the language set (`LANGUAGES`, default `English,German`). English is always included. Cases are either generated in English and translated, or generated directly in the target language.
+The deployer configures the language set (`LANGUAGES`, default `en,de`). `en` (English) is always included. Cases are either generated in English and translated, or generated directly in the target language.
 
 ### Does AetioMed include a user interface?
 

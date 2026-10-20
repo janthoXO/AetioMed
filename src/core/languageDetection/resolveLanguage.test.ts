@@ -25,16 +25,16 @@ describe("resolveLanguage — step 1: explicit language", () => {
     const detector = fakeDetector({ iso: "de", confidence: 1 });
 
     const result = await resolveLanguage({
-      explicitLanguage: "French",
+      explicitLanguage: "fr",
       userInstructions: { general: LONG_GERMAN_TEXT },
-      languages: ["English", "German", "French"],
+      languages: ["en", "de", "fr"],
       autoDetect: true,
       llmFallbackEnabled: true,
       detector,
       runtime: fakeRuntime(),
     });
 
-    expect(result).toBe("French");
+    expect(result).toBe("fr");
     expect(detector.detect).not.toHaveBeenCalled();
   });
 });
@@ -46,14 +46,14 @@ describe("resolveLanguage — LANGUAGE_AUTO_DETECT unset", () => {
     const result = await resolveLanguage({
       explicitLanguage: undefined,
       userInstructions: { general: LONG_GERMAN_TEXT },
-      languages: ["English", "German"],
+      languages: ["en", "de"],
       autoDetect: false,
       llmFallbackEnabled: false,
       detector,
       runtime: fakeRuntime(),
     });
 
-    expect(result).toBe("English");
+    expect(result).toBe("en");
     expect(detector.detect).not.toHaveBeenCalled();
   });
 });
@@ -65,14 +65,14 @@ describe("resolveLanguage — step 2: the offline detector", () => {
     const result = await resolveLanguage({
       explicitLanguage: undefined,
       userInstructions: undefined,
-      languages: ["English", "German"],
+      languages: ["en", "de"],
       autoDetect: true,
       llmFallbackEnabled: false,
       detector,
       runtime: fakeRuntime(),
     });
 
-    expect(result).toBe("English");
+    expect(result).toBe("en");
     expect(detector.detect).not.toHaveBeenCalled();
   });
 
@@ -82,14 +82,14 @@ describe("resolveLanguage — step 2: the offline detector", () => {
     const result = await resolveLanguage({
       explicitLanguage: undefined,
       userInstructions: { general: LONG_GERMAN_TEXT },
-      languages: ["English", "German"],
+      languages: ["en", "de"],
       autoDetect: true,
       llmFallbackEnabled: false,
       detector,
       runtime: fakeRuntime(),
     });
 
-    expect(result).toBe("German");
+    expect(result).toBe("de");
   });
 
   it("never passes the diagnosis name to the detector — only the concatenated userInstructions text", async () => {
@@ -101,7 +101,7 @@ describe("resolveLanguage — step 2: the offline detector", () => {
         general: LONG_GERMAN_TEXT,
         anamnesis: "Weitere Hinweise zur Anamnese, bitte ausführlich.",
       },
-      languages: ["English", "German"],
+      languages: ["en", "de"],
       autoDetect: true,
       llmFallbackEnabled: false,
       detector,
@@ -121,14 +121,14 @@ describe("resolveLanguage — step 2: the offline detector", () => {
     const result = await resolveLanguage({
       explicitLanguage: undefined,
       userInstructions: { general: LONG_GERMAN_TEXT },
-      languages: ["English", "German"],
+      languages: ["en", "de"],
       autoDetect: true,
       llmFallbackEnabled: false,
       detector,
       runtime: fakeRuntime(),
     });
 
-    expect(result).toBe("English");
+    expect(result).toBe("en");
   });
 
   it("does not make an LLM call when auto-detect is on but the LLM fallback is off, even on a below-threshold result", async () => {
@@ -138,7 +138,7 @@ describe("resolveLanguage — step 2: the offline detector", () => {
     await resolveLanguage({
       explicitLanguage: undefined,
       userInstructions: { general: LONG_GERMAN_TEXT },
-      languages: ["English", "German"],
+      languages: ["en", "de"],
       autoDetect: true,
       llmFallbackEnabled: false,
       detector,
@@ -148,30 +148,18 @@ describe("resolveLanguage — step 2: the offline detector", () => {
     expect(structuredSpy).not.toHaveBeenCalled();
   });
 
-  it("still works when passed explicitly, and never wins step 2, for a configured language the mapping table does not know", async () => {
-    // "Klingon" absent from mapping.ts: cannot win step 2, usable at step 1.
+  it("a detected code outside the configured set never wins step 2", async () => {
     const detector = fakeDetector({ iso: "de", confidence: 1 });
 
-    const viaDetection = await resolveLanguage({
+    const result = await resolveLanguage({
       explicitLanguage: undefined,
       userInstructions: { general: LONG_GERMAN_TEXT },
-      languages: ["English", "Klingon"],
+      languages: ["en", "fr"],
       autoDetect: true,
       llmFallbackEnabled: false,
       detector,
       runtime: fakeRuntime(),
     });
-    expect(viaDetection).toBe("English");
-
-    const viaExplicit = await resolveLanguage({
-      explicitLanguage: "Klingon",
-      userInstructions: undefined,
-      languages: ["English", "Klingon"],
-      autoDetect: true,
-      llmFallbackEnabled: false,
-      detector,
-      runtime: fakeRuntime(),
-    });
-    expect(viaExplicit).toBe("Klingon");
+    expect(result).toBe("en");
   });
 });

@@ -3,12 +3,8 @@
 import { z } from "zod";
 import type { GraphAppContext } from "./graph/appContext.js";
 import { buildGraphStructure, type GraphStructure } from "./graph/structure.js";
-import { DiagnosisSchema } from "./graph/shared/domain/Diagnosis.js";
 import { LLMConfigSchema } from "./graph/shared/domain/LLMConfig.js";
 import { procedureTreeSchema } from "./graph/shared/domain/ProcedureTree.js";
-
-export const DiagnosesSchema = z.array(DiagnosisSchema);
-export type Diagnoses = z.infer<typeof DiagnosesSchema>;
 
 /** `null`: freeform, no procedure catalogue configured. */
 export const ProcedureCatalogSchema = procedureTreeSchema(
@@ -26,7 +22,6 @@ export const AllowedLlmsSchema = z.partialRecord(
 export type AllowedLlms = z.infer<typeof AllowedLlmsSchema>;
 
 export interface ReadModel {
-  diagnoses(): Diagnoses;
   procedures(): ProcedureCatalog;
   features(): string[];
   allowedLlms(): AllowedLlms;
@@ -39,14 +34,13 @@ export function createReadModel(
   features: ReadonlySet<string>
 ): ReadModel {
   return {
-    diagnoses() {
-      return graph.runtime.catalogs.diagnosis.all();
-    },
     procedures() {
       return graph.runtime.catalogs.procedures.tree() ?? null;
     },
     features() {
-      return [...features];
+      // ICD is switched on by `ICD_API_URL`, not a `FEATURES` flag; listed so a
+      // client knows an icd-only request resolves.
+      return graph.config.ICD_API_URL ? [...features, "ICD"] : [...features];
     },
     allowedLlms() {
       return graph.config.allowedLlms ?? {};

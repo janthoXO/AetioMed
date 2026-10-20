@@ -1,6 +1,6 @@
 # Pre-mapped trace label translations. Labels not listed here are translated
 # on demand by the AI warm-up and cached in-memory only (not written back here).
-German:
+de:
   Resolving medical basis: Medizinische Grundlage wird ermittelt
   Generating case outline: Fallübersicht wird generiert
   Evaluating case outline: Fallübersicht wird geprüft
@@ -18,7 +18,6 @@ German:
   Translating procedure names and anamnesis categories: Untersuchungsnamen und Anamnesekategorien werden übersetzt
   Translating case text to target language: Falltext wird in die Zielsprache übersetzt
   Merging translated case: Übersetzter Fall wird zusammengeführt
-  Translating diagnosis to English: Diagnose wird ins Englische übersetzt
   Translating user instructions to English: Benutzeranweisungen werden ins Englische übersetzt
   Translating case outline: Fallskizze wird übersetzt
   Translating reviewed outline to English: Überarbeitete Fallskizze wird ins Englische übersetzt

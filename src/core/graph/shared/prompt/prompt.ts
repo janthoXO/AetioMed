@@ -2,7 +2,10 @@ import { stringify as stringifyYaml } from "yaml";
 import z from "zod";
 import { getRequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
-import type { Language } from "@/core/graph/shared/domain/Language.js";
+import {
+  promptLanguage,
+  type Language,
+} from "@/core/graph/shared/domain/Language.js";
 
 /** Joins sections with blank lines, dropping empty/undefined ones. */
 export function buildPrompt(...parts: (string | undefined)[]): string {
@@ -16,15 +19,16 @@ export function buildPrompt(...parts: (string | undefined)[]): string {
  * grammar rejects that but retry costs a call.
  */
 function languageDirective(language: string): string {
-  return `Output language: ${language}.
-Write all free-text field VALUES in ${language}.
+  const name = promptLanguage(language);
+  return `Output language: ${name}.
+Write all free-text field VALUES in ${name}.
 Field names, enum values and identifiers are fixed by the schema —
 reproduce them exactly, untranslated.`;
 }
 
 /**
  * `buildPrompt` for a system prompt that writes user-visible text: appends the language directive as
- * the final section when `language` is set and not English. Internal (English-only) prompts use
+ * the final section when `language` is set and not `"en"`. Internal (English-only) prompts use
  * `buildPrompt` directly.
  */
 export function buildSystemPrompt(
@@ -32,9 +36,7 @@ export function buildSystemPrompt(
   ...parts: (string | undefined)[]
 ): string {
   const directive =
-    language && language !== "English"
-      ? languageDirective(language)
-      : undefined;
+    language && language !== "en" ? languageDirective(language) : undefined;
   return buildPrompt(...parts, directive);
 }
 
@@ -44,7 +46,7 @@ export function requestLanguage(): Language | undefined {
 }
 
 /**
- * Language a user-facing prompt writes in: the runtime's override (sandwich on binds "English" for
+ * Language a user-facing prompt writes in: the runtime's override (sandwich on binds "en" for
  * planners), else the request language bound on ALS.
  */
 export function boundLanguage(runtime: GraphRuntime): Language | undefined {

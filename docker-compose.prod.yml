@@ -59,6 +59,10 @@ services:
       - NATS_USER=${NATS_USER}
       - NATS_PASSWORD=${NATS_PASSWORD}
 
+      # ─── ICD (on when ICD_API_URL is set) ───
+      - ICD_API_URL=${ICD_API_URL}
+      - ICD_RELEASE=${ICD_RELEASE}
+
       # ─── Concurrency ─────────────────────────────────────────────────
       - MAX_CONCURRENT_GENERATIONS=${MAX_CONCURRENT_GENERATIONS}
 

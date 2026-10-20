@@ -30,7 +30,6 @@ import {
   cancelSubject,
   progressSubject,
   planSubject,
-  CATALOG_DIAGNOSIS_SUBJECT,
   CATALOG_PROCEDURES_SUBJECT,
   META_FEATURES_SUBJECT,
   META_ALLOWED_LLMS_SUBJECT,
@@ -72,13 +71,13 @@ function fakeGraph(generateCase: GenerateCaseFn = vi.fn()): GraphAppContext {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { byIcd: () => undefined },
+        diagnosis: { toEnglish: (name: string) => name },
         anamnesis: { list: () => undefined },
       },
       llm: { structured: vi.fn(), text: vi.fn() },
@@ -356,16 +355,13 @@ function fakeGraphRunningOneNode(bus: EventBus): GraphAppContext {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: { ollama: ["llama3.1"] },
       MAX_CONTENT_PART_BYTES: 5_000_000,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: {
-          byIcd: () => undefined,
-          all: () => [{ icd: "1A00", name: "Cholera" }],
-        },
+        diagnosis: { toEnglish: (name: string) => name },
         procedures: {
           tree: () => ({
             categories: [],
@@ -605,7 +601,6 @@ describe.skipIf(!NATS_TEST_URL)("NATS parity", () => {
 
       try {
         const rows: [string, string][] = [
-          ["/api/diagnosis", CATALOG_DIAGNOSIS_SUBJECT],
           ["/api/procedures", CATALOG_PROCEDURES_SUBJECT],
           ["/api/features", META_FEATURES_SUBJECT],
           ["/api/allowedLlms", META_ALLOWED_LLMS_SUBJECT],
@@ -711,13 +706,13 @@ function fakeGraphRunningThreeTimes(bus: EventBus): GraphAppContext {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
       MAX_CONTENT_PART_BYTES: 5_000_000,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { byIcd: () => undefined },
+        diagnosis: { toEnglish: (name: string) => name },
       },
       llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
@@ -1182,7 +1177,7 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS", () => {
             jobId: "job-plan-1",
             diagnosis: "Influenza",
             mode: "plan",
-            language: "English",
+            language: "en",
           })
         );
 
@@ -1202,7 +1197,7 @@ describe.skipIf(!NATS_TEST_URL)("plan mode over NATS", () => {
             jobId: "job-plan-1",
             diagnosis: "Influenza",
             mode: "plan",
-            language: "English",
+            language: "en",
             plan: (plan as { plan: unknown }).plan,
           })
         );

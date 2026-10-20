@@ -1,7 +1,3 @@
-import type {
-  Diagnosis,
-  ICDCode,
-} from "@/core/graph/shared/domain/Diagnosis.js";
 import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import type { DiagnosisRepo } from "./repo.js";
 import type { DiagnosisCatalog } from "@/core/graph/catalog/ports.js";
@@ -9,14 +5,6 @@ import type { DiagnosisCatalog } from "@/core/graph/catalog/ports.js";
 /** Reads/writes through an injected `DiagnosisRepo`. */
 export class YamlDiagnosisCatalog implements DiagnosisCatalog {
   constructor(private readonly repo: DiagnosisRepo) {}
-
-  byIcd(icd: ICDCode): Diagnosis | undefined {
-    return this.repo.getDiagnosisByIcd(icd);
-  }
-
-  all(): Diagnosis[] {
-    return this.repo.getAllDiagnoses();
-  }
 
   toEnglish(diagnosis: string, lang: ForeignLanguage): string | undefined {
     return this.repo.getDiagnosisTranslationToEnglish(diagnosis, lang);
@@ -30,27 +18,12 @@ export class YamlDiagnosisCatalog implements DiagnosisCatalog {
   }
 }
 
-/** Test/injection adapter over a plain in-memory list, no persistence. */
+/** Test/injection adapter in memory, no persistence. */
 export class InMemoryDiagnosisCatalog implements DiagnosisCatalog {
-  private readonly byIcdMap = new Map<ICDCode, Diagnosis>();
   private readonly translations = new Map<
     ForeignLanguage,
     Map<string, string>
   >();
-
-  constructor(diagnoses: Diagnosis[] = []) {
-    for (const diagnosis of diagnoses) {
-      if (diagnosis.icd) this.byIcdMap.set(diagnosis.icd, diagnosis);
-    }
-  }
-
-  byIcd(icd: ICDCode): Diagnosis | undefined {
-    return this.byIcdMap.get(icd);
-  }
-
-  all(): Diagnosis[] {
-    return [...this.byIcdMap.values()];
-  }
 
   toEnglish(diagnosis: string, lang: ForeignLanguage): string | undefined {
     return this.translations.get(lang)?.get(diagnosis);

@@ -13,7 +13,6 @@ function fakeGraph(): GraphAppContext {
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { all: () => [{ icd: "1A00", name: "Cholera" }] },
         procedures: {
           tree: () => ({
             categories: [],
@@ -44,11 +43,6 @@ function fakeGraph(): GraphAppContext {
 }
 
 describe("createReadModel", () => {
-  it("diagnoses() delegates to the diagnosis catalog", () => {
-    const readModel = createReadModel(fakeGraph(), new Set());
-    expect(readModel.diagnoses()).toEqual([{ icd: "1A00", name: "Cholera" }]);
-  });
-
   it("procedures() delegates to the procedure catalog's tree", () => {
     const readModel = createReadModel(fakeGraph(), new Set());
     expect(readModel.procedures()).toEqual({
@@ -68,6 +62,13 @@ describe("createReadModel", () => {
   it("features() reflects the feature set passed in", () => {
     const readModel = createReadModel(fakeGraph(), new Set(["REST", "NATS"]));
     expect(readModel.features()).toEqual(["REST", "NATS"]);
+  });
+
+  it("features() lists ICD when ICD_API_URL is configured", () => {
+    const graph = fakeGraph();
+    (graph.config as { ICD_API_URL?: string }).ICD_API_URL = "http://icd:80";
+    const readModel = createReadModel(graph, new Set(["REST"]));
+    expect(readModel.features()).toEqual(["REST", "ICD"]);
   });
 
   it("allowedLlms() delegates to config.allowedLlms", () => {

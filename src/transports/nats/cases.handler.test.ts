@@ -46,7 +46,7 @@ function fakeGraph(): GraphAppContext {
         model: "test-model",
       },
       allowedLlms: undefined,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
@@ -133,7 +133,7 @@ describe("consumeCaseGenerateMessage", () => {
       opts!.onPlan!({
         jobId: "job-plan",
         mode: "normal",
-        language: "English",
+        language: "en",
         plan: [{ fixed: false, text: "Chest pain." }],
       });
       return { jobId: "job-plan", status: "done", case: {} };
@@ -152,7 +152,7 @@ describe("consumeCaseGenerateMessage", () => {
       async (): Promise<CaseGenerationResult> => ({
         jobId: "job-planned",
         status: "planned",
-        language: "English",
+        language: "en",
         plan: [{ fixed: false, text: "Chest pain." }],
       })
     );

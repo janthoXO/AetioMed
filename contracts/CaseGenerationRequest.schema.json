@@ -10,13 +10,13 @@
       "description": "Client-chosen job id (e.g. a UUID). Reusing the id of a running or recently finished job is rejected."
     },
     "icd": {
-      "description": "ICD-11 code of the diagnosis to generate a case for",
+      "description": "ICD-11 stem code. With ICD configured ('ICD' in /api/features) it alone identifies the diagnosis and wins over 'diagnosis'; without, it rides along unchecked.",
       "type": "string",
       "format": "icd",
-      "pattern": "([0-9A-Z]{1,4})(\\.[A-Z0-9]{1,2})?"
+      "pattern": "^[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?$"
     },
     "diagnosis": {
-      "description": "Name of the diagnosis diagnosis",
+      "description": "Diagnosis name, in the request language. Required without ICD; with ICD it must match an ICD-11 title or synonym exactly.",
       "type": "string"
     },
     "userInstructions": {
@@ -64,11 +64,11 @@
       }
     },
     "language": {
-      "description": "Language to generate the case in. One of: English, German.",
+      "description": "Language to generate the case in. One of: en, de.",
       "type": "string",
       "enum": [
-        "English",
-        "German"
+        "en",
+        "de"
       ]
     },
     "difficulty": {

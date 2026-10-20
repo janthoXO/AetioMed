@@ -19,7 +19,7 @@ import { buildCaseTranslationFromEnglishGraph } from "@/core/graph/05-translate-
 import type { Language } from "@/core/graph/shared/domain/Language.js";
 import type { Difficulty } from "@/core/graph/shared/domain/Difficulty.js";
 import { GenerationError } from "@/core/graph/errors/AppError.js";
-import { buildCaseTranslationToEnglishGraph } from "@/core/graph/01-translate-in/graph.js";
+import { makeTranslateUserInstructions } from "@/core/graph/01-translate-in/graph.js";
 import {
   buildOutlineTranslationGraph,
   translateOutlineValues,
@@ -53,8 +53,6 @@ const PlanStateSchema = CaseGenerationStateSchema.pick({
   generationFlags: true,
   difficulty: true,
 }).extend({
-  /** Per-request routing input, not ALS: caller supplied free text (diagnosis **name**, not only `icd`, or any `userInstructions`). Computed by `CaseGenerationService` before ICD→name resolution. `language` stays on ALS: property of bound ports. */
-  callerSuppliedFreeText: z.boolean(),
   mode: RunModeSchema.default("normal"),
   /** Plan handed in with request: plan graph only translates request in, skips planning; see {@link planOrSkip}. */
   outlineSegments: OutlineSegmentsSchema.default([]),
@@ -82,17 +80,20 @@ const CaseOutputSchema = CaseStateSchema.pick({ case: true });
  */
 function requestNeedsTranslationOut(): "translate" | "skip" {
   const language = getRequestContext()?.language;
-  return language && language !== "English" ? "translate" : "skip";
+  return language && language !== "en" ? "translate" : "skip";
 }
 
 /**
- * Translate-**in** edge (before generation): enter only when language differs **and** caller supplied free text (`state.callerSuppliedFreeText`). ICD-only names are already catalogue English; translating would pollute store with identity entries (`German: { "Diabetes": "Diabetes" }`).
+ * Translate-**in** edge (before generation): enter only when language differs **and** the request carries `userInstructions`, its only free text left. The diagnosis arrives English, resolved before the graph (#237).
  */
 function requestNeedsTranslationIn(state: {
-  callerSuppliedFreeText: boolean;
+  userInstructions?: UserInstructions | undefined;
 }): "translate" | "skip" {
   const language = getRequestContext()?.language;
-  return language && language !== "English" && state.callerSuppliedFreeText
+  const hasInstructions =
+    state.userInstructions !== undefined &&
+    Object.keys(state.userInstructions).length > 0;
+  return language && language !== "en" && hasInstructions
     ? "translate"
     : "skip";
 }
@@ -155,7 +156,7 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
   // Sandwich on: generation runs English (`languageOverride` binding, read by `boundLanguage`); real target
   // language reaches only translate-out, built from unmodified `runtime`.
   const generationRuntime: GraphRuntime = flags.translationSandwich
-    ? { ...runtime, languageOverride: "English" }
+    ? { ...runtime, languageOverride: "en" }
     : runtime;
 
   // Scoped to match mount names below; see `TraceNodeFn.scope` in `nodeWrapper.ts`.
@@ -203,10 +204,11 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
       output: PlanOutputSchema,
     })
       .addNode(
-        "translate_in_phase",
-        buildCaseTranslationToEnglishGraph(
-          runtime,
-          traceNode.scope("translate_in_phase")
+        "translate_user_instructions",
+        traceNode(
+          "translate_user_instructions",
+          makeTranslateUserInstructions(runtime),
+          "Translating user instructions to English"
         )
       )
       .addNode("plan_phase", planningPhase)
@@ -214,11 +216,11 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
         START,
         (state) =>
           requestNeedsTranslationIn(state) === "translate"
-            ? "translate_in_phase"
+            ? "translate_user_instructions"
             : planOrSkip(state),
-        ["translate_in_phase", "plan_phase", END]
+        ["translate_user_instructions", "plan_phase", END]
       )
-      .addConditionalEdges("translate_in_phase", planOrSkip, [
+      .addConditionalEdges("translate_user_instructions", planOrSkip, [
         "plan_phase",
         END,
       ])
@@ -312,7 +314,7 @@ export function buildCaseGraph(
   /**
    * Run plan graph: translate-in (sandwich on, when needed), medical basis, outline with judge loop. Returns outline and working-language inputs for case graph.
    *
-   * `language` not in graph state: `runWithContext` already bound it on ALS. `callerSuppliedFreeText` is graph state: routing input for translate-in edge.
+   * `language` not in graph state: `runWithContext` already bound it on ALS. `diagnosis` arrives English: `CaseGenerationService` resolved it (#237).
    */
   async function planCase(opts: PlanCaseInput): Promise<PlanResult> {
     const result = await graphs.plan.invoke(
@@ -321,7 +323,6 @@ export function buildCaseGraph(
         generationFlags: opts.generationFlags,
         userInstructions: opts.userInstructions,
         difficulty: opts.difficulty,
-        callerSuppliedFreeText: opts.callerSuppliedFreeText,
         mode: opts.mode ?? "normal",
         ...(opts.outline && { outlineSegments: opts.outline }),
       },
@@ -382,7 +383,6 @@ export type PlanCaseInput = {
   userInstructions?: UserInstructions | undefined;
   language?: Language | undefined;
   difficulty?: Difficulty | undefined;
-  callerSuppliedFreeText: boolean;
   mode?: RunMode | undefined;
   /** Plan handed in with request, in English: planning skipped, only translate-in runs; result's `outlineSegments` is this plan, `diagnosis` in working language. */
   outline?: OutlineSegments | undefined;

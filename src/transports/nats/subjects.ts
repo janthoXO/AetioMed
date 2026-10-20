@@ -40,7 +40,6 @@ export const planSubject = (jobId: string) => `cases.plan.${jobId}`;
 export const statusSubject = (jobId: string) => `cases.status.${jobId}`;
 
 /** Core NATS request/reply meta service; one subject per REST read-only route. See `metaService.ts`. */
-export const CATALOG_DIAGNOSIS_SUBJECT = "catalog.diagnosis";
 export const CATALOG_PROCEDURES_SUBJECT = "catalog.procedures";
 export const META_FEATURES_SUBJECT = "meta.features";
 export const META_ALLOWED_LLMS_SUBJECT = "meta.allowedLlms";

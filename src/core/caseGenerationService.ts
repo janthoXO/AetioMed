@@ -23,6 +23,8 @@ import {
 import { localizeHeadings } from "./graph/03-outline-translation/headings.js";
 import type { LanguageDetector } from "./languageDetection/port.js";
 import { resolveLanguage } from "./languageDetection/resolveLanguage.js";
+import type { IcdPort } from "./diagnosis/icd.js";
+import { resolveDiagnosis } from "./diagnosis/resolve.js";
 
 export type CaseGenerationResultError = {
   code: string;
@@ -79,7 +81,7 @@ export type StartOptions = {
 };
 
 /**
- * Single seam both transports call through. Owns ICD→name resolution, jobId
+ * Single seam both transports call through. Owns diagnosis resolution, jobId
  * minting, `runWithContext`, terminal event emission, error→status mapping,
  * and each job's open/close on the per-job event channel.
  *
@@ -164,6 +166,8 @@ export function createCaseGenerationService(
     maxConcurrent?: number;
     // Injectable; composition root passes tinyld. Absent = no opinion (step 2 skipped).
     detector?: LanguageDetector;
+    /** WHO ICD-11 API; absent = no ICD configured (`resolveDiagnosis`). */
+    icd?: IcdPort;
     now?: () => number;
   } = {}
 ): CaseGenerationService {
@@ -188,7 +192,7 @@ export function createCaseGenerationService(
 
   /** Whether a plan-mode plan is shown in a non-English language. */
   function localizesPlan(mode: RunMode, language: Language): boolean {
-    return mode === "plan" && language !== "English";
+    return mode === "plan" && language !== "en";
   }
 
   /** Whether a plan-mode plan's body crosses the sandwich for this request. */
@@ -322,29 +326,6 @@ export function createCaseGenerationService(
     startOpts: StartOptions,
     signal: AbortSignal
   ): Promise<CaseGenerationResult> {
-    // Translate-in trigger: caller supplied a diagnosis name or
-    // `userInstructions`. Compute BEFORE ICD→name resolution, which would
-    // make ICD-only look like free text.
-    // A plan already absorbed the instructions (#220): only its first call reads them.
-    const callerSuppliedFreeText =
-      Boolean(req.diagnosis) ||
-      (!req.plan &&
-        req.userInstructions !== undefined &&
-        Object.keys(req.userInstructions).length > 0);
-
-    let diagnosisName = req.diagnosis;
-    if (!diagnosisName) {
-      diagnosisName = graph.runtime.catalogs.diagnosis.byIcd(req.icd!)?.name;
-      if (!diagnosisName) {
-        return failure(
-          jobId,
-          "INVALID_REQUEST_BODY",
-          "No diagnosis found for icd",
-          400
-        );
-      }
-    }
-
     // Must run before `runWithContext` binds language: detection selects
     // the ports generation binds.
     const language = await resolveLanguage({
@@ -362,18 +343,23 @@ export function createCaseGenerationService(
 
     return runWithContext(
       async (): Promise<CaseGenerationResult> => {
+        // Before the graph: English name (+ code with ICD), or a 400/503 (#237).
+        const diagnosis = await resolveDiagnosis(
+          { icd: opts.icd, runtime: graph.runtime },
+          { icd: req.icd, name: req.diagnosis },
+          language
+        );
         const plan =
           req.plan && (await englishPlanOf(req.plan, mode, language));
 
-        // With a plan, plan graph only translates request in (if sandwich
-        // needs it); planning skipped.
+        // With a plan, planning skipped. A plan already absorbed the
+        // instructions (#220): only its first call reads them.
         const planned = await graph.planCase({
-          diagnosis: { name: diagnosisName, icd: req.icd },
+          diagnosis,
           generationFlags,
           userInstructions: req.plan ? undefined : req.userInstructions,
           language,
           difficulty: req.difficulty,
-          callerSuppliedFreeText,
           mode,
           outline: plan,
         });

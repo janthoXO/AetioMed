@@ -28,6 +28,7 @@ pnpm db:generate  # drizzle-kit generate — regenerate SQL migrations in drizzl
 ```bash
 docker compose up --build                    # server + ollama (NATS via profile)
 docker compose --profile NATS up -d          # infrastructure only, then run pnpm dev locally
+docker compose --profile ICD up -d icd       # WHO ICD-11 API container
 ```
 
 `nats`/`nats-box` are behind the `NATS` compose profile.
@@ -95,10 +96,25 @@ LangGraph's runtime context. Nothing under `src/core/graph/` imports a mutable m
 singleton.
 
 **`CaseGenerationService`** (`src/core/caseGenerationService.ts`) is what both transports
-call. It owns ICD→name resolution, jobId minting, `runWithContext`, terminal event emission
+call. It owns diagnosis resolution, jobId minting, `runWithContext`, terminal event emission
 (`Generation Completed` / `Failure` / `Cancelled`) and error→status mapping, and returns a
 job shape (`{ jobId, status, case?, error? }`) rather than a bare `Case`. Transports are
 protocol translation only.
+
+**Diagnosis resolution happens before the graph (#237).** `resolveDiagnosis`
+(`src/core/diagnosis/resolve.ts`) turns the request's `{ icd?, name? }` into the English
+`Diagnosis` the graph runs on, inside `runWithContext` and after language resolution. With
+ICD configured (`ICD_API_URL`; `IcdPort`, `core/diagnosis/icd.ts`, adapter
+`adapters/icd/port.ts` with the cache-aside `icd_entity` table) everything goes through ICD:
+`icd` wins over `name`; a name must hit an ICD title or `Synonym` **exactly** (case- and
+whitespace-insensitive) in the request language, else once more after one LLM translation to
+English — never a fuzzy best match, which would silently swap the teaching diagnosis; a miss or
+unknown code is a 400, an unreachable ICD `ICD_UNAVAILABLE` (503). Without ICD the name goes to
+English through the translation store (`diagnosisTranslations.yml` prefill, LLM on a miss) and
+`icd` passes through as an opaque tag. The graph never translates the diagnosis. The request
+schema applies the same rule up front (#238): without ICD a `diagnosis` name is required, and
+`GET /api/features` / `meta.features` list `ICD` (injected by the read model, not a `FEATURES`
+flag) so a client knows an icd-only request resolves.
 
 `start(req, opts?)` is the synchronous primitive: it reserves the jobId and opens its event
 channel **before returning**, handing back a `StartedJob` (`{ accepted: true, jobId, result:
@@ -307,7 +323,8 @@ Nothing in core reaches past a port (#188). The translation accessors translate-
 the ports themselves: `ProcedureCatalog.translation`/`saveTranslations` (keyed by
 `nodeKey(path)` — shared by categories and procedures since sibling uniqueness makes the key
 space unambiguous) and `AnamnesisCatalog.fromEnglish`/`saveTranslations`, next to
-`DiagnosisCatalog.toEnglish`/`saveTranslations`.
+`DiagnosisCatalog.toEnglish`/`saveTranslations` (which is only that: with ICD configured, names
+come from ICD and there is no diagnosis catalogue).
 
 `ProcedureCandidates` (`catalog/candidates.ts`, stays in core: it is domain logic) is where flat-vs-grouped
 presentation, category scoping, exclusion of already-ordered procedures, the literal-union
@@ -316,8 +333,9 @@ grammar and `"Category: Name"` reassembly live — the AI gateway only calls `re
 
 `adapters/catalog/startupValidation.ts` checks every translation file against its base catalogue at startup
 and exits non-zero naming every offending key, with a Levenshtein suggestion. **Diagnosis is
-exempt** — its store is also an input index for user-supplied diagnosis names, so keys
-outside the curated catalogue are legitimate. Validation runs after graph construction
+exempt** — it has no base catalogue (its base keys are the file's own English keys), and its
+store is an input index for user-supplied diagnosis names. With ICD configured,
+`diagnosisTranslations.yml` is skipped entirely and warned about if it has entries. Validation runs after graph construction
 because the labels catalogue's base key set is `getKnownLabels()`, populated by `traceNode`
 as the graph is built.
 
@@ -330,15 +348,14 @@ from one. The seam between them is where a plan-mode call stops and hands the ou
 `CaseGenerationService` never runs the case graph in that call; normal mode runs straight from
 one into the other in the same call. With `TRANSLATION_SANDWICH` on:
 
-- **plan graph**: `01-translate-in/` (mounted at `START`, conditional — see
-  below) → `plan_phase` (mounts `02-plan/02-outline/`'s outline ⇄ judge loop; see below)
+- **plan graph**: `translate_user_instructions` (`01-translate-in/`, at `START`, conditional —
+  see below) → `plan_phase` (mounts `02-plan/02-outline/`'s outline ⇄ judge loop; see below)
 - **case graph**: `case_phase` (mounts the field fan-out and procedures; see below) →
   `05-translate-out/` (conditional on the response actually needing translation)
 
-`01-translate-in/` translates `diagnosis.name` and, alongside it, every
-`userInstructions` value, to English — two disjoint-channel `Send` nodes
-(`translate_diagnosis`/`translate_user_instructions`) run in parallel from `START`, each writing
-only its own top-level field, no merge needed. User instructions are read only up to the
+`01-translate-in/` is one plain node, `translate_user_instructions`, translating every
+`userInstructions` value to English — the diagnosis arrives English already (#237), and a
+one-node phase subgraph would only collapse in `GET /api/graph`'s xray. User instructions are read only up to the
 outline (#220): the outline absorbs them, no case-graph node receives them, and a request
 carrying a `plan` has its `userInstructions` ignored (language detection may still read them).
 `05-translate-out/` is three
@@ -371,8 +388,7 @@ outlineSegments, outlineAccepted }` (all in the working language: English after 
 graph state or LangGraph's own runtime context — by the time either entry point runs,
 `runWithContext` (called by `CaseGenerationService`) has already bound it on
 `AsyncLocalStorage`, which is what the translation-routing edges and every generation gateway
-actually read. `callerSuppliedFreeText` **is** threaded into the plan graph's state — see the
-Language section below for why the two differ.
+actually read.
 
 **`plan_phase`** (`buildPlanningPhaseGraph`, `02-plan/graph.ts` / `04-case/graph.ts`) runs up to two
 steps — the first compiled in only when the medical-basis registry is non-empty:
@@ -385,7 +401,7 @@ outline as **input** (no outline generation happens here any more — that moved
 `plan_phase` above) and runs up to two phases:
 
 - **`presentation_phase`** — `04-case/01-presentation/` fans the outline straight out via `Send` to `patient_generate` / `chief_complaint_phase` / `anamnesis_phase` (gated per `generationFlags`), joining at `case_fan_in`. There is no post-fan-out consistency check — that judgment already happened on the outline, in `plan_phase`, before any field exists. `chief_complaint_phase` and `anamnesis_phase` are **compiled subgraphs** (`chiefComplaint/index.ts`, `anamnesis/index.ts`), not function nodes — see "Modality Planning and Rendering" below for their internal `plan_content → render_parts` shape. `patient_generate` stays a plain function node: `patient` is not a `ContentPart[]` field (it stayed a structured `Patient` object through issue 11), so there is nothing for a modality provider to render — the `Send` payload (`{ outlineSections }`) is identical across all three targets either way, whether the target is a function or a compiled subgraph. Each target reads only its own sections and never the diagnosis (#215).
-- **Subgraph output schemas (issue 17).** A compiled subgraph mounted with `addNode` writes back its **entire state schema** by default, not just the channels its nodes actually touched. `chief_complaint_phase` and `anamnesis_phase` are `Send`-fanned out in parallel above, so both writing back the whole state made their shared `outlineSections` `LastValue` channel receive two values in one superstep — `INVALID_CONCURRENT_GRAPH_UPDATE` on every default request. The rule: **a compiled subgraph's state schema is its input surface; its `output` schema is its write surface, and the write surface must be declared explicitly** — every `addNode`'d or `.invoke()`d subgraph in `02graphs/` gets an `output` built with `.pick()` off that graph's own state schema (never a hand-written duplicate, so the picked channel keeps the identical reducer registration). `chiefComplaintGraph`/`anamnesisGraph` output `{ case }`; `presentation_phase` (`buildFieldGenerationGraph`) outputs `{ case }` only now (#159 — it used to also output `outline`, when `04-case/02-procedures/`'s `result_step` still read it out of `case_phase`'s own state; the outline sections reach `renderCase` as input instead); `outline_phase` (`buildPlanGraph`) outputs `{ outlineSegments, outlineAccepted }`, and `plan_phase` around it outputs the same `{ outlineSegments, outlineAccepted }`; `procedures_phase`/`case_phase`/`translate_out_phase` output `{ case }`; `translate_in_phase` outputs `{ diagnosis, userInstructions }`, since translating those two is its entire job; the blinded solver's child graph (`.invoke()`d, not mounted) outputs `{ move }`. `case_fan_in` used to be `passthrough` (echoing the whole incoming state as its "update"); a join point produces no update, so it is now a node returning `{}`.
+- **Subgraph output schemas (issue 17).** A compiled subgraph mounted with `addNode` writes back its **entire state schema** by default, not just the channels its nodes actually touched. `chief_complaint_phase` and `anamnesis_phase` are `Send`-fanned out in parallel above, so both writing back the whole state made their shared `outlineSections` `LastValue` channel receive two values in one superstep — `INVALID_CONCURRENT_GRAPH_UPDATE` on every default request. The rule: **a compiled subgraph's state schema is its input surface; its `output` schema is its write surface, and the write surface must be declared explicitly** — every `addNode`'d or `.invoke()`d subgraph in `02graphs/` gets an `output` built with `.pick()` off that graph's own state schema (never a hand-written duplicate, so the picked channel keeps the identical reducer registration). `chiefComplaintGraph`/`anamnesisGraph` output `{ case }`; `presentation_phase` (`buildFieldGenerationGraph`) outputs `{ case }` only now (#159 — it used to also output `outline`, when `04-case/02-procedures/`'s `result_step` still read it out of `case_phase`'s own state; the outline sections reach `renderCase` as input instead); `outline_phase` (`buildPlanGraph`) outputs `{ outlineSegments, outlineAccepted }`, and `plan_phase` around it outputs the same `{ outlineSegments, outlineAccepted }`; `procedures_phase`/`case_phase`/`translate_out_phase` output `{ case }`; the blinded solver's child graph (`.invoke()`d, not mounted) outputs `{ move }`. `case_fan_in` used to be `passthrough` (echoing the whole incoming state as its "update"); a join point produces no update, so it is now a node returning `{}`.
 - **`04-case/02-procedures/`** — only when the `procedures` flag is set. A **blinded solver** loop (max 6 iterations) with 4 nodes: `blinded_step` orders procedures without knowing the true diagnosis, `result_step` _plans_ their results non-blinded (issue 21 — nothing renders inside the loop; see "Modality Planning and Rendering" below), and the terminal `render_results` renders every procedure's parts in one grouped pass and is the only node that writes `case.procedures`; when the solver commits to a diagnosis, an LLM judge checks the match (loop continues with `ruledOutDiagnoses` on mismatch). On exhaustion, a `bridge` node generates confirmatory procedures for the true diagnosis. The approved catalogue is presented (and picked) as its category tree: the pick grammar mirrors the tree (`{ procedures?: [...], categories?: { "<name>": <same shape> } }`), for both the blinded pick and the (non-blinded) bridge pick. Procedure selection is a `ProcedureStrategy` port (`04-case/02-procedures/solver/`: `ports.ts`, `drillDownPick.ts`) — `blinded_step` and `bridge` call `strategy.nextStep()` / `strategy.bridge()`; `DrillDownPick` (the only implementation; the port stays as the graph tests' seam for fake strategies) is constructed directly at graph-assembly time. It picks in one call when fewer than `MAX_PICK_CANDIDATES` (255) procedures are left; otherwise `drillDown` narrows first, one `selectProcedureLevel` call per level: the model keeps whole categories (shown with size and sample names) and single procedures, kept procedures stay, kept categories open one level deeper, until the pool is under the threshold or nothing is left to open — then the pick runs over that pool. Only the first call of a blinded step may diagnose (the level selection when there is one, else the pick), and never before the first batch has been ordered: a correct first-step guess would otherwise end the loop with `case.procedures` empty. The bridge narrows the same way with the diagnosis known. Known ceiling: a single category with ≥ 255 direct procedures still produces an oversized level. The blinded step's own compiled child graph (built once, invoked — not added as a node — from inside `blinded_step`) has a state schema that structurally omits `diagnosis`: the `BlindedView` type already makes passing it a compile error, and the child graph is a runtime backstop on top of that (LangGraph filters input against a graph's state schema before it reaches a channel). `matchDiagnosis` stays in the parent node, outside the blinded path, since it's an oracle call. Additional guard: already-ordered procedures are excluded from every candidate list/grammar (duplicate orders are impossible by construction).
 
 ### Outline segments
@@ -458,23 +474,16 @@ directly in the request language instead (see "Outline segments" above). `genera
 sandwich _on_, the two conditional edges remain (whether this deployment can translate is the
 deployer's choice; whether this request needs to is the caller's). Whether a _particular_
 plan-mode request enters the compiled-in middle layer is itself a runtime branch, made outside
-the graph: `CaseGenerationService.translatesOutline(data)` (`sandwich && language !==
-"English"`) decides per job, in the job's status machine, not as a conditional edge — there is
+the graph: `CaseGenerationService.translatesOutline(data)` (`sandwich && language !== "en"`) decides per job, in the job's status machine, not as a conditional edge — there is
 no seam inside either top-level graph where that decision belongs, since the middle layer is
 invoked between them, never mounted in either. They are two **different** predicates, not one
 reused twice (issue 12 §3):
 `requestNeedsTranslationOut()` (after generation) reads only `getRequestContext()?.language` off
 ALS — generation always runs in English under the sandwich, so the response is translated back
 regardless of how the request arrived. `requestNeedsTranslationIn(state)` (before generation)
-additionally requires `state.callerSuppliedFreeText`: an ICD-only request already resolves an
-English name from the catalogue, so translating it "to English" anyway used to pollute the
-translation store with identity entries (`German: { "Diabetes": "Diabetes" }`) — a real bug, not
-a hypothetical one. `callerSuppliedFreeText` is true when the request supplied a diagnosis
-**name** (rather than only an `icd`) or any `userInstructions`; only `CaseGenerationService`
-knows this; it computes the flag before ICD→name resolution and passes it into `planCase`'s
-options object. Unlike `language`, `callerSuppliedFreeText` **is** a `CaseStateSchema` field —
-it is per-request routing input the caller supplied, not a property of the bound ports (see the
-Language section below for that distinction). The conditional edge on the `procedures`
+additionally requires non-empty `state.userInstructions`, the only free text left once the
+diagnosis is resolved before the graph (#237) — routing input the caller supplied, read from
+state, not ALS. The conditional edge on the `procedures`
 generation flag stays a conditional edge in every variant, for the same "deployer compiles,
 caller branches" reason.
 
@@ -733,7 +742,7 @@ constructs them once, from `createApp()`.
 `src/adapters/persistence/`:
 
 - `db.ts` — `createDb(cacheDir)` opens the DB and runs migrations; `syncSource()` re-ingests a YAML file only when its sha256 changed (fingerprints in `_meta`, keyed on the domain name so moving `CATALOG_DIR` does not invalidate the cache)
-- `schema.ts` — tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`
+- `schema.ts` — tables: `_meta`, `translation`, `predefined_item`, `symptom_cache`
 - `translationStore.ts` — cache-aside translation store used by diagnosis, procedures, anamnesis categories and trace labels. In-flight work is deduped **per key**; retries live inside the shared promise; runtime fills insert-if-absent and read back (first-writer-wins), while a YAML sync overwrites. `source` marks a row `curated` or `generated`; generated values persist in the DB, never back into YAML
 - `paths.ts` — `resolveCatalogDir`/`resolveCacheDir` (`CATALOG_DIR`/`CACHE_DIR` resolution) and `catalogFile()`
 - `predefinedList.ts` — reads a translations YAML file directly (bypassing `syncSource`'s hash cache) for startup validation
@@ -757,7 +766,7 @@ file viewer shows the pipeline top to bottom; siblings that run in parallel
 because there is no order to encode.
 
 ```
-01-translate-in/          translate_in_phase
+01-translate-in/          translate_user_instructions (plain node)
 02-plan/                  plan_phase
   01-basis/               basis_resolve: medical-basis registry and its providers
   02-outline/             outline_phase
@@ -796,7 +805,6 @@ below), never by reaching into `GraphAppContext` directly:
   `readModel.features()`/`readModel.allowedLlms()`
 - `routes/cases.router.ts` — `POST /api/cases` (content negotiation — see below) and
   `DELETE /api/cases/:jobId` (cancel, through the `JobDirectory` — see below)
-- `routes/diagnosis.router.ts` — `GET /api/diagnosis`, calling `readModel.diagnoses()`
 - `routes/procedures.router.ts` — `GET /api/procedures`, calling `readModel.procedures()`
 - `routes/labels.router.ts` — `GET /api/cases/:jobId/labels` (SSE, `event: label`, through the
   `JobDirectory` — see below) and `routes/graph.router.ts` — `GET /api/graph`, calling
@@ -934,7 +942,6 @@ in delivery guarantees:
 | REST                               | NATS                                                 |
 | ---------------------------------- | ---------------------------------------------------- |
 | SSE `event: label` on a job        | `cases.progress.<jobId>.<accepted\|label\|complete>` |
-| `GET /api/diagnosis`               | `catalog.diagnosis`                                  |
 | `GET /api/procedures`              | `catalog.procedures`                                 |
 | `GET /api/features`                | `meta.features`                                      |
 | `GET /api/allowedLlms`             | `meta.allowedLlms`                                   |
@@ -952,7 +959,7 @@ in delivery guarantees:
   invalid jobId (fails `JobIdSchema`, same guard as `jobResponders.ts`) is skipped with a
   once-per-job warning; a publish failure (e.g. a closing connection) is caught and logged — a
   side channel must never break generation.
-- **Request/reply meta service** (`metaService.ts`'s `startMetaService`) answers the five
+- **Request/reply meta service** (`metaService.ts`'s `startMetaService`) answers the four
   catalogue/feature/graph reads above using **`@nats-io/services`**, the NATS "micro" framework
   (`Svcm`/`Service`/`ServiceMsg`). Chosen over five bare `nc.subscribe` request/reply handlers
   because it gives a NATS-only client discovery (`$SRV.PING|INFO|STATS.aetiomed`), per-endpoint
@@ -965,7 +972,7 @@ in delivery guarantees:
   if unreadable). Every endpoint replies `JSON.stringify(value ?? null)`
   on success; the framework's default queue group is used (every replica answers reads
   identically). Subject constants live in `subjects.ts` alongside the others
-  (`CATALOG_DIAGNOSIS_SUBJECT`, `CATALOG_PROCEDURES_SUBJECT`, `META_FEATURES_SUBJECT`,
+  (`CATALOG_PROCEDURES_SUBJECT`, `META_FEATURES_SUBJECT`,
   `META_ALLOWED_LLMS_SUBJECT`, `META_GRAPH_SUBJECT`).
 - **Job directory** (`jobDirectory.ts`'s `createNatsJobDirectory(nc)`, #145) is the NATS-side
   half of the `JobDirectory` port (see "Composition Root" above for the port itself):
@@ -977,10 +984,10 @@ in delivery guarantees:
   distinction REST's routers turn into 404 vs. 504.
 - **Shared read model** (`src/core/readModel.ts`'s `createReadModel(graph, features)`) is what
   makes "the NATS endpoint returns the same payload as its REST counterpart" true **by
-  construction**: one object with `diagnoses()`, `procedures()`, `features()`, `allowedLlms()`
+  construction**: one object with `procedures()`, `features()`, `allowedLlms()`
   and `graph()`, constructed once in `app.ts` and handed to both `startRestServer` (as
   `createRestApp`'s `readModel` option) and `startNatsTransport`. REST's routers and the meta
-  service both call the same five functions rather than each reimplementing the read against
+  service both call the same four functions rather than each reimplementing the read against
   `GraphAppContext`.
 
 ### Data Files
@@ -995,7 +1002,7 @@ LLM. Paths below are relative to it:
   categories (any depth) and procedures (when set, LLM must select from this tree only, placed
   under its exact category); translations mirror the same tree, each node keyed by its English
   `key` alongside its translated `name`
-- `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
+- `diagnosisTranslations.yml` — diagnosis name translations, used only without ICD (input index for user-supplied names)
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions (static config, no longer a request field)
 - `labelTranslations.yml` — trace-node label translations
 - `outlineHeadingsTranslations.yml` — plan-mode outline section-title translations (keys:
@@ -1004,8 +1011,6 @@ LLM. Paths below are relative to it:
   The embedded SQLite DB is generated under `CACHE_DIR` (default `data/cache/`), which is
   deliberately a separate directory so a deployer can mount their own catalogues over
   `CATALOG_DIR` without clobbering it.
-
-`scripts/extract-icd11*.ts` build the diagnosis YAML files from ICD-11 source data (run manually).
 
 ### Request Context
 
@@ -1059,7 +1064,7 @@ not, so a narrower context schema would not actually stop a leak — removing th
 Concretely:
 
 - **`LANGUAGES`** (env, `config.ts`) is the deployer-declared supported set — comma-separated,
-  trimmed, de-duplicated, order preserved, defaulting to `English,German`. `English` is
+  trimmed, de-duplicated, order preserved, defaulting to `en,de`, ISO 639-1 codes (validated: two letters, known to `Intl.DisplayNames`). `en` is
   mandatory (startup fails otherwise): it is the pivot language the translation sandwich turns
   on and the base catalogue's identity space. `shared/domain/Language.ts`'s `Language`/
   `ForeignLanguage` are plain `string` aliases (not a literal-union enum) precisely because the
@@ -1072,17 +1077,16 @@ Concretely:
   file declaring no language at all (missing or empty) passes, its keys LLM-translated at
   runtime or falling back to English — and warns (does not fail) for a
   translated language that is declared in a YAML file but not in `LANGUAGES`.
-- **ALS, not state — except `callerSuppliedFreeText`, which is state, not ALS (issue 12 §3).**
+- **ALS, not state — except `userInstructions`, which is state, not ALS (issue 12 §3).**
   `runWithContext` stores the request's `language` on the same `AsyncLocalStorage`-carried
   `RequestContext` that already carries `llmConfig` and the abort `signal`. `CaseStateSchema`
   (`assemble.ts`) has no `language` field; the translate-out conditional edge calls
   `requestNeedsTranslationOut()`, which reads `getRequestContext()?.language`. The translation
-  subgraphs (`01-translate-in/`, `05-translate-out/`) likewise have
+  nodes (`01-translate-in/`, `05-translate-out/`) likewise have
   no `language` state field and read it off ALS inside their node functions. `language` stays on
   ALS because it is a property of the _bound ports_ — the same value for every node in a request,
-  decided before the graph ever runs. `callerSuppliedFreeText` is different: it is per-request
-  **routing input the caller supplied** (did they send a diagnosis name or userInstructions, as
-  opposed to only an `icd`?), so it lives on `CaseStateSchema` and the translate-**in** edge
+  decided before the graph ever runs. Whether `userInstructions` were sent is different: it is
+  per-request **routing input the caller supplied**, so the translate-**in** edge
   (`requestNeedsTranslationIn(state)`) reads it from state, not ALS — "branch on what the caller
   asked for" (the assembly rule above) applies to routing inputs, not only to deployer flags.
   Known limitation, carried over from `llmConfig`: ALS-carried values are invisible to
@@ -1104,7 +1108,7 @@ language`), so the choice is visible at every call site instead of hidden in the
 - **Sandwich-on forces English at the port, not per call.** With `TRANSLATION_SANDWICH` on,
   generation must run entirely in English regardless of the request's real target language —
   `assembleCaseGraph` builds the generation phase from a runtime with
-  `languageOverride: "English"` (`GraphRuntime.languageOverride`, `runtime.ts`), which
+  `languageOverride: "en"` (`GraphRuntime.languageOverride`, `runtime.ts`), which
   `boundLanguage` prefers over the ambient ALS language. That is a compile-time binding (one per
   compiled variant), not a per-request branch. It binds the internal calls and the planners
   (so `alt` is English); renderers are exempt by design and always write the target language
@@ -1136,13 +1140,13 @@ language`), so the choice is visible at every call site instead of hidden in the
   This lives in the communication/service layer because its output _selects the ports_
   generation binds, and binding happens before invoke — a detection node inside the graph could
   not inform the thing its answer is for. It is also request normalisation, so it sits beside
-  the ICD→name resolution the service already does; it is **not** a graph flag and never adds a
+  the diagnosis resolution the service already does; it is **not** a graph flag and never adds a
   compiled variant. `LANGUAGE_AUTO_DETECT` gates steps 2–3 together; step 3 needs its own further
   opt-in, `LANGUAGE_DETECT_LLM_FALLBACK`, so a deployer never pays LLM calls unknowingly just for
   turning on auto-detect.
 
   Detection runs on `userInstructions` only, **never the diagnosis name** — two decisive
-  reasons: an ICD-only request's diagnosis name is resolved from our own English catalogue, so
+  reasons: an ICD-only request's diagnosis name is resolved to English by the service, so
   detecting on it would be circular; and diagnosis names are 2-3 words and frequently Latin
   (_"Diabetes mellitus"_ is byte-identical in English, German and Spanish). `UserInstructions` is
   a per-field record of strings, concatenated into one blob for detection; text under ~30
@@ -1152,12 +1156,10 @@ language`), so the choice is visible at every call site instead of hidden in the
   `LanguageDetector` port (`languageDetection/port.ts`) so it is fakeable in tests and swappable
   later — offline, TypeScript-native, and `detectAll()` returns an explicit
   `{ lang, accuracy }[]` distribution (`accuracy` reads directly as this port's confidence)
-  rather than `franc`'s relative distances. ISO 639-1 codes are mapped to this deployment's
-  configured language **names** in exactly one place, `languageDetection/mapping.ts`; a
-  configured language the table does not know simply never wins step 2 — it stays fully usable
-  passed explicitly at step 1 — and `validateCatalogsOrExit` (the same reporter as the
-  `LANGUAGES` validation above, not a second one) warns about it by name at startup without
-  failing. The resolved language is echoed back as `language` in
+  rather than `franc`'s relative distances. The detector's ISO 639-1 code is compared to the configured codes directly (a code outside
+  `LANGUAGES` never wins step 2). Language names exist only at the prompt seam: `promptLanguage`
+  (`shared/domain/Language.ts`, `Intl.DisplayNames`) writes `German (de)` wherever a language goes
+  into an LLM prompt. The resolved language is echoed back as `language` in
   `CaseGenerationResponseSchema`'s success branch and the NATS success payload (and on
   `CaseGenerationResult`), so a client can notice a wrong auto-detect guess and retry explicitly.
 
@@ -1176,7 +1178,7 @@ language`), so the choice is visible at every call site instead of hidden in the
 | `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`                 | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                                                                       |
 | `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`            | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                  |
 | `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                            |
-| `LANGUAGES`                                                           | `English,German`        | Comma-separated deployment language set, trimmed/de-duplicated/order-preserved; must include `English`. Validated at startup and against every request's `language` (see Language section below) |
+| `LANGUAGES`                                                           | `en,de`                 | Comma-separated ISO 639-1 codes, trimmed/de-duplicated/order-preserved; must include `en`. Validated at startup and against every request's `language` (see Language section below)              |
 | `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                 |
 | `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                            |
 | `ALLOWED_LLMS`                                                        | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                               |
@@ -1184,6 +1186,9 @@ language`), so the choice is visible at every call site instead of hidden in the
 | `CACHE_DIR`                                                           | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                    |
 | `NATS_URL`                                                            | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                             |
 | `NATS_USER` / `NATS_PASSWORD`                                         | `nats` / `nats`         |                                                                                                                                                                                                  |
+| `ICD_API_URL`                                                         | —                       | ICD container base URL; set = ICD on; probed at startup, fatal on failure                                                                                                                        |
+| `ICD_RELEASE`                                                         | —                       | Required with `ICD_API_URL`; must match the container's `include`                                                                                                                                |
+| `ICD_PORT`                                                            | `3001`                  | Compose host port only                                                                                                                                                                           |
 | `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS (`src/core/concurrency.ts`'s shared limiter). Excess requests queue; a queued job is still cancellable. See Request Context below    |
 | `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `adapters/symptoms/repo.ts`)                                                                                                                          |
 | `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |

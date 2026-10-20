@@ -38,14 +38,14 @@ function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
       MAX_CONTENT_PART_BYTES: 5_000_000,
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { byIcd: () => undefined },
+        diagnosis: { toEnglish: (name: string) => name },
         anamnesis: { list: () => undefined },
       },
       llm: { structured: vi.fn(), text: vi.fn() },
@@ -193,7 +193,7 @@ function requestBody(overrides: Record<string, unknown> = {}): string {
  * `planAndRenderFrom`'s: the five-section skeleton, `JSON.stringify(opts)` last.
  */
 function planRequestBody(overrides: Record<string, unknown> = {}): string {
-  return requestBody({ mode: "plan", language: "English", ...overrides });
+  return requestBody({ mode: "plan", language: "en", ...overrides });
 }
 
 /** Read from `reader` until `predicate(text)`; reject after `timeoutMs`. Copied from `labels.router.test.ts`. */

@@ -24,12 +24,16 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
   return z.object({
     jobId: JobIdSchema.optional(),
     icd: ICDCodeSchema.optional().describe(
-      "ICD-11 code of the diagnosis to generate a case for"
+      "ICD-11 stem code. With ICD configured ('ICD' in /api/features) it alone identifies the " +
+        "diagnosis and wins over 'diagnosis'; without, it rides along unchecked."
     ),
     diagnosis: z
       .string()
       .optional()
-      .describe("Name of the diagnosis diagnosis"),
+      .describe(
+        "Diagnosis name, in the request language. Required without ICD; with ICD it must match " +
+          "an ICD-11 title or synonym exactly."
+      ),
     userInstructions: UserInstructionsSchema.optional().describe(
       "Additional context for case generation. Absorbed into the plan: ignored when 'plan' is set."
     ),
@@ -74,24 +78,29 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
 }
 
 export function makeCaseGenerationRequestSchema(config: Config) {
-  return makeBaseCaseGenerationRequestSchema(config)
-    .refine((data) => data.icd || data.diagnosis, {
-      message: "Either 'icd' or 'diagnosis' must be provided",
-      path: ["icd"],
-    })
-    .refine((data) => !data.plan || isCanonicalShape(data.plan), {
-      message:
-        "A plan must alternate editable and fixed segments, starting and ending with an editable one",
-      path: ["plan"],
-    })
-    .refine((data) => !(data.llmConfig && config.llm), {
-      message: "LLM config is not allowed when a global LLM is configured",
-      path: ["llmConfig"],
-    })
-    .refine((data) => data.llmConfig || config.llm, {
-      message: "LLM config is required when no global LLM is configured",
-      path: ["llmConfig"],
-    });
+  return (
+    makeBaseCaseGenerationRequestSchema(config)
+      // ICD configured: a code alone resolves. Without ICD only a name does (#238).
+      .refine((data) => (config.ICD_API_URL && data.icd) || data.diagnosis, {
+        message: config.ICD_API_URL
+          ? "Either 'icd' or 'diagnosis' must be provided"
+          : "'diagnosis' is required: no ICD API is configured to resolve 'icd'",
+        path: config.ICD_API_URL ? ["icd"] : ["diagnosis"],
+      })
+      .refine((data) => !data.plan || isCanonicalShape(data.plan), {
+        message:
+          "A plan must alternate editable and fixed segments, starting and ending with an editable one",
+        path: ["plan"],
+      })
+      .refine((data) => !(data.llmConfig && config.llm), {
+        message: "LLM config is not allowed when a global LLM is configured",
+        path: ["llmConfig"],
+      })
+      .refine((data) => data.llmConfig || config.llm, {
+        message: "LLM config is required when no global LLM is configured",
+        path: ["llmConfig"],
+      })
+  );
 }
 
 export type CaseGenerationRequestSchema = ReturnType<

@@ -13,7 +13,7 @@ describe("findUnknownKeys", () => {
       catalogue: "procedures",
       file: "procedures.yml",
       baseKeys: ["Blood Test", "X-ray"],
-      translations: { German: { "Blood Test": "Bluttest" } },
+      translations: { de: { "Blood Test": "Bluttest" } },
     });
 
     expect(problems).toEqual([]);
@@ -24,14 +24,14 @@ describe("findUnknownKeys", () => {
       catalogue: "procedures",
       file: "procedures.yml",
       baseKeys: ["Blood Test", "X-ray"],
-      translations: { German: { "Blood Tset": "Bluttest" } },
+      translations: { de: { "Blood Tset": "Bluttest" } },
     });
 
     expect(problems).toEqual([
       {
         catalogue: "procedures",
         file: "procedures.yml",
-        language: "German",
+        language: "de",
         key: "Blood Tset",
         suggestion: "Blood Test",
       },
@@ -44,7 +44,7 @@ describe("findUnknownKeys", () => {
       file: "labelTranslations.yml",
       baseKeys: ["Generating patient"],
       translations: {
-        German: { "Generating pateint": "x", "Yet Another Bogus Key": "y" },
+        de: { "Generating pateint": "x", "Yet Another Bogus Key": "y" },
         French: { "Generating pateint": "z" },
       },
     });
@@ -53,8 +53,8 @@ describe("findUnknownKeys", () => {
     expect(problems.map((p) => `${p.language}:${p.key}`).sort()).toEqual(
       [
         "French:Generating pateint",
-        "German:Generating pateint",
-        "German:Yet Another Bogus Key",
+        "de:Generating pateint",
+        "de:Yet Another Bogus Key",
       ].sort()
     );
   });
@@ -64,7 +64,7 @@ describe("findUnknownKeys", () => {
       catalogue: "procedures",
       file: "procedures.yml",
       baseKeys: [],
-      translations: { German: { Anything: "Etwas" } },
+      translations: { de: { Anything: "Etwas" } },
     });
 
     expect(problems).toEqual([]);
@@ -91,7 +91,7 @@ describe("formatProblems", () => {
       {
         catalogue: "labels",
         file: "labelTranslations.yml",
-        language: "German",
+        language: "de",
         key: "Choosing next procedur",
         suggestion: "Choosing next procedure",
       },
@@ -105,7 +105,7 @@ describe("formatProblems", () => {
       {
         catalogue: "labels",
         file: "labelTranslations.yml",
-        language: "German",
+        language: "de",
         key: "Totally Unrelated",
       },
     ]);

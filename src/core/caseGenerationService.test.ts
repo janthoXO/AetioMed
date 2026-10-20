@@ -13,6 +13,7 @@ import {
 } from "@/core/graph/shared/domain/ContentPart.js";
 import type { LanguageDetector } from "@/core/languageDetection/port.js";
 import { planAndRenderFrom } from "@/testing/graphFakes.js";
+import { createInMemoryIcd } from "@/adapters/icd/inMemory.js";
 import type { GenerateCaseFn } from "@/core/graph/appContext.js";
 
 function fakeGraph(
@@ -23,14 +24,14 @@ function fakeGraph(
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
       ...configOverrides,
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { byIcd: () => undefined },
+        diagnosis: { toEnglish: (name: string) => name },
       },
       llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
@@ -157,62 +158,58 @@ describe("CaseGenerationService — generationFlags pass-through", () => {
   });
 });
 
-describe("CaseGenerationService — callerSuppliedFreeText provenance", () => {
+describe("CaseGenerationService — diagnosis resolution (#237)", () => {
   const fullCase: Case = { patient: { name: "Jane", age: 40, sex: "female" } };
+  const icd = createInMemoryIcd({
+    en: [{ code: "CA40", title: "Pneumonia", synonyms: [] }],
+  });
 
-  it("is true when the request supplies a diagnosis name", async () => {
+  it("hands planCase the ICD English title for an icd-only request", async () => {
     const generateCase = vi.fn(async () => fullCase);
     const service = createCaseGenerationService(
       fakeGraph(generateCase),
       new EventBus(),
-      createJobEventChannel()
+      createJobEventChannel(),
+      { icd }
     );
 
-    await service.generate({ diagnosis: "Influenza", generationFlags: [] });
+    const result = await service.generate({ icd: "CA40", generationFlags: [] });
 
-    expect(generateCase.mock.calls[0]?.[0]?.callerSuppliedFreeText).toBe(true);
-  });
-
-  it("is true when the request supplies userInstructions, even icd-only", async () => {
-    const generateCase = vi.fn(async () => fullCase);
-    const graph = fakeGraph(generateCase);
-    graph.runtime = {
-      catalogs: {
-        diagnosis: { byIcd: () => ({ name: "Influenza" }) },
-      },
-    } as unknown as GraphAppContext["runtime"];
-    const service = createCaseGenerationService(
-      graph,
-      new EventBus(),
-      createJobEventChannel()
-    );
-
-    await service.generate({
-      icd: "1A00",
-      generationFlags: [],
-      userInstructions: { general: "Mach es einfach." },
+    expect(result.status).toBe("done");
+    expect(generateCase.mock.calls[0]?.[0]?.diagnosis).toEqual({
+      name: "Pneumonia",
+      icd: "CA40",
     });
-
-    expect(generateCase.mock.calls[0]?.[0]?.callerSuppliedFreeText).toBe(true);
   });
 
-  it("is false for an icd-only request with no userInstructions", async () => {
+  it("fails 400 for a code ICD does not know, before any graph runs", async () => {
     const generateCase = vi.fn(async () => fullCase);
-    const graph = fakeGraph(generateCase);
-    graph.runtime = {
-      catalogs: {
-        diagnosis: { byIcd: () => ({ name: "Influenza" }) },
-      },
-    } as unknown as GraphAppContext["runtime"];
     const service = createCaseGenerationService(
-      graph,
+      fakeGraph(generateCase),
+      new EventBus(),
+      createJobEventChannel(),
+      { icd }
+    );
+
+    const result = await service.generate({ icd: "BA41", generationFlags: [] });
+
+    expect(result.error).toMatchObject({
+      code: "INVALID_REQUEST_BODY",
+      statusCode: 400,
+    });
+    expect(generateCase).not.toHaveBeenCalled();
+  });
+
+  it("fails 400 for an icd-only request without ICD configured", async () => {
+    const service = createCaseGenerationService(
+      fakeGraph(async () => fullCase),
       new EventBus(),
       createJobEventChannel()
     );
 
-    await service.generate({ icd: "1A00", generationFlags: [] });
+    const result = await service.generate({ icd: "CA40", generationFlags: [] });
 
-    expect(generateCase.mock.calls[0]?.[0]?.callerSuppliedFreeText).toBe(false);
+    expect(result.error?.statusCode).toBe(400);
   });
 });
 
@@ -239,12 +236,12 @@ describe("CaseGenerationService — language resolution", () => {
     const result = await service.generate({
       diagnosis: "Influenza",
       generationFlags: [],
-      language: "German",
+      language: "de",
     });
 
     expect(detector.detect).not.toHaveBeenCalled();
-    expect(generateCase.mock.calls[0]?.[0]?.language).toBe("German");
-    expect(result.language).toBe("German");
+    expect(generateCase.mock.calls[0]?.[0]?.language).toBe("de");
+    expect(result.language).toBe("de");
   });
 
   it("defaults to English and skips detection with LANGUAGE_AUTO_DETECT unset", async () => {
@@ -267,7 +264,7 @@ describe("CaseGenerationService — language resolution", () => {
     });
 
     expect(detector.detect).not.toHaveBeenCalled();
-    expect(result.language).toBe("English");
+    expect(result.language).toBe("en");
   });
 
   it("resolves German userInstructions to German via the detector", async () => {
@@ -289,8 +286,8 @@ describe("CaseGenerationService — language resolution", () => {
       },
     });
 
-    expect(result.language).toBe("German");
-    expect(generateCase.mock.calls[0]?.[0]?.language).toBe("German");
+    expect(result.language).toBe("de");
+    expect(generateCase.mock.calls[0]?.[0]?.language).toBe("de");
   });
 
   it("falls back to the default when detection confidence is below threshold", async () => {
@@ -312,7 +309,7 @@ describe("CaseGenerationService — language resolution", () => {
       },
     });
 
-    expect(result.language).toBe("English");
+    expect(result.language).toBe("en");
   });
 
   it("never passes the diagnosis name to the detector — only userInstructions", async () => {
@@ -382,11 +379,11 @@ describe("CaseGenerationService — language resolution", () => {
     const result = await service.generate({
       diagnosis: "Influenza",
       generationFlags: [],
-      language: "German",
+      language: "de",
     });
 
     expect(result.status).toBe("done");
-    expect(result.language).toBe("German");
+    expect(result.language).toBe("de");
   });
 });
 

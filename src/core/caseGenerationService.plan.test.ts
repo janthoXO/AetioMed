@@ -75,17 +75,17 @@ function fakeGraph(
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
       TRANSLATION_SANDWICH: sandwich,
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { byIcd: () => undefined },
+        diagnosis: { toEnglish: (name: string) => name },
         anamnesis: { list: () => undefined },
         outlineHeadings: new InMemoryOutlineHeadingCatalog({
-          German: {
+          de: {
             General: "Allgemein",
             Patient: "Patient",
             "Chief complaint": "Hauptbeschwerde",
@@ -134,7 +134,7 @@ function request(
     diagnosis: "Influenza",
     generationFlags: ["patient"],
     mode: "plan",
-    language: "German",
+    language: "de",
     ...overrides,
   } as CaseGenerationRequest;
 }
@@ -150,14 +150,14 @@ function build(fake: Fake) {
 }
 
 describe("plan mode — the stop at a plan", () => {
-  it("sandwich on, German: stops 'planned' with the plan translated out; renderCase is never called", async () => {
+  it("sandwich on, de: stops 'planned' with the plan translated out; renderCase is never called", async () => {
     const fake = fakeGraph();
     const { service } = build(fake);
 
     const result = await service.generate(request({ jobId: "j1" }));
 
     expect(result.status).toBe("planned");
-    expect(result.language).toBe("German");
+    expect(result.language).toBe("de");
     expect(result.plan![2]).toEqual({
       fixed: false,
       text: "DE:Chest pain for two hours.",
@@ -235,7 +235,7 @@ describe("normal mode", () => {
     expect(onPlan).toHaveBeenCalledWith({
       jobId: result.jobId,
       mode: "normal",
-      language: "German",
+      language: "de",
       plan: OUTLINE,
     } satisfies PlanPayload);
     expect(fake.renderCalls[0]!.outlineSections).toEqual(
@@ -355,7 +355,6 @@ describe("continuation, plan mode + sandwich on", () => {
     );
 
     expect(fake.planCalls[1]!.userInstructions).toBeUndefined();
-    expect(fake.planCalls[1]!.callerSuppliedFreeText).toBe(true); // diagnosis name, not the instructions
   });
 
   it("a broken skeleton fails with INVALID_PLAN, 400", async () => {

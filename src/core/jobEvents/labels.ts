@@ -28,7 +28,7 @@ export function localizeLabel(
   labelKey: string,
   language: Language | undefined
 ): string {
-  if (!language || language === "English") return labelKey;
+  if (!language || language === "en") return labelKey;
   return labels.translate(labelKey, language) ?? labelKey;
 }
 

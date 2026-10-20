@@ -27,6 +27,8 @@ import { createRepos } from "./adapters/repos.js";
 import { createYamlCatalogs } from "./adapters/catalog/index.js";
 import { validateCatalogsOrExit } from "./adapters/catalog/startupValidation.js";
 import { createLlmPort } from "./adapters/ai/llm.js";
+import { createIcdClient, probeIcd } from "./adapters/icd/client.js";
+import { createIcdPort } from "./adapters/icd/port.js";
 import { createTinyldDetector } from "./adapters/language/tinyldDetector.js";
 
 const AppEnvSchema = z
@@ -52,6 +54,8 @@ const AppEnvSchema = z
  * Composition root: constructs everything explicitly, in order. `FEATURES`
  * flags (`REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`) each gate one construction.
  *
+ * With `ICD_API_URL` set, probes the ICD container first (fatal on failure).
+ *
  * `shutdown()` closes everything started, in reverse construction order:
  * REST, NATS, DB last. Registers no signal handler; `src/index.ts` does via
  * `installSignalHandlers`. Unstarted feature contributes no closer.
@@ -68,6 +72,16 @@ export async function createApp(): Promise<{
   const features = new Set(featureList);
   console.log(`[app] Feature flags: ${[...features].join(", ") || "none"}`);
   const graphConfig = GraphConfigSchema.parse(process.env);
+  const icdClient =
+    graphConfig.ICD_API_URL && graphConfig.ICD_RELEASE
+      ? createIcdClient({
+          url: graphConfig.ICD_API_URL,
+          release: graphConfig.ICD_RELEASE,
+        })
+      : undefined;
+  if (icdClient) {
+    await probeIcd(icdClient, graphConfig.ICD_API_URL!, graphConfig.LANGUAGES);
+  }
   const bus = new EventBus();
   // Operator channel, gated by standard OTel env vars, not `FEATURES`.
   // `DEBUG` only picks the console exporter when no OTLP endpoint set.
@@ -89,7 +103,9 @@ export async function createApp(): Promise<{
   // Must run after graph construction: labels' base key set is
   // `getKnownLabels()`, populated by `traceNode` while graph builds. Earlier =
   // empty set, silent pass.
-  validateCatalogsOrExit(repos, graphConfig.LANGUAGES);
+  validateCatalogsOrExit(repos, graphConfig.LANGUAGES, {
+    icd: icdClient !== undefined,
+  });
 
   // Per-job event channel: service opens/closes jobs, transports subscribe.
   // Labels always on.
@@ -99,6 +115,7 @@ export async function createApp(): Promise<{
   const service = createCaseGenerationService(graph, bus, jobEvents, {
     maxConcurrent: maxConcurrentGenerations,
     detector: createTinyldDetector(),
+    ...(icdClient && { icd: createIcdPort(icdClient, repos.db) }),
   });
 
   // Shared read model: REST and NATS read-only endpoints answer via same functions.

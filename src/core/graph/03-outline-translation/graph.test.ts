@@ -60,7 +60,7 @@ describe("buildOutlineTranslationGraph — direction out", () => {
         }),
       undefined,
       undefined,
-      "German"
+      "de"
     );
 
     expect(result).toEqual({
@@ -84,7 +84,7 @@ describe("buildOutlineTranslationGraph — direction out", () => {
       () => translateOutlineValues(graph, { "0": "", "1": "   " }),
       undefined,
       undefined,
-      "German"
+      "de"
     );
 
     expect(result).toEqual({ "0": "", "1": "   " });
@@ -131,7 +131,7 @@ describe("buildOutlineTranslationGraph — direction in", () => {
       () => translateOutlineValues(graph, { "0": "Hauptbeschwerde" }),
       undefined,
       undefined,
-      "German"
+      "de"
     );
 
     expect(result).toEqual({ "0": "Chief complaint" });

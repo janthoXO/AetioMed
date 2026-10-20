@@ -1,7 +1,6 @@
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { UserInstructions } from "@/core/graph/shared/domain/UserInstructions.js";
 import type { LanguageDetector } from "./port.js";
-import { mapIsoToLanguage } from "./mapping.js";
 import { detectLanguageViaLlm } from "./llmFallback.js";
 
 /** Below this length n-gram detector is unreliable: skip to step 4. */
@@ -13,7 +12,7 @@ const MIN_DETECTION_TEXT_LENGTH = 30;
  */
 const MIN_DETECTION_CONFIDENCE = 0.5;
 
-export const DEFAULT_LANGUAGE = "English";
+export const DEFAULT_LANGUAGE = "en";
 
 export interface ResolveLanguageOptions {
   /** Step 1 — `req.language`, if the caller supplied one. */
@@ -47,7 +46,7 @@ function concatenateUserInstructions(
  * 1. language explicitly provided       -> use it                      (no cost)
  * 2. deterministic n-gram detector      -> use it if above threshold   (no cost, offline)
  * 3. LLM fallback, only if enabled      -> one cheap call              (rare, opt-in)
- * 4. otherwise                          -> configured default (English)
+ * 4. otherwise                          -> configured default (en)
  * ```
  *
  * Lives outside graph: result selects ports bound before invoke.
@@ -76,8 +75,8 @@ export async function resolveLanguage(
   // Step 2.
   const detected = detector.detect(text);
   if (detected && detected.confidence >= MIN_DETECTION_CONFIDENCE) {
-    const mapped = mapIsoToLanguage(detected.iso, languages);
-    if (mapped) return mapped;
+    const iso = detected.iso.toLowerCase();
+    if (languages.includes(iso)) return iso;
   }
 
   // Step 3.

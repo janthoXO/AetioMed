@@ -32,7 +32,7 @@ const outline = (anamnesisCategories?: string[]): OutlineSegments =>
   parseTaggedOutline(taggedOutlineFixture({ anamnesisCategories }));
 
 const CURATED = {
-  German: {
+  de: {
     General: "Allgemein",
     Patient: "Patient",
     "Chief complaint": "Hauptbeschwerde",
@@ -45,7 +45,7 @@ describe("localizeHeadings", () => {
   it("serves curated titles without an LLM call; editable segments are absent", async () => {
     const { runtime, structured } = runtimeWith({ seed: CURATED });
 
-    const headings = await localizeHeadings(runtime, outline(), "German");
+    const headings = await localizeHeadings(runtime, outline(), "de");
 
     expect([...headings.entries()]).toEqual([
       [1, "## Allgemein"],
@@ -58,17 +58,17 @@ describe("localizeHeadings", () => {
   });
 
   it("translates only the misses in one call, persists them to their own catalogue, and reuses them next time", async () => {
-    const withoutProcedures: Record<string, string> = { ...CURATED.German };
+    const withoutProcedures: Record<string, string> = { ...CURATED.de };
     delete withoutProcedures["Procedures"];
     const { runtime, structured } = runtimeWith({
       categories: ["Medications"],
-      seed: { German: withoutProcedures },
+      seed: { de: withoutProcedures },
       llm: { Procedures: "Diagnostik", Medications: "Medikamente" },
     });
     const segments = outline(["Medications"]);
 
-    const first = await localizeHeadings(runtime, segments, "German");
-    const second = await localizeHeadings(runtime, segments, "German");
+    const first = await localizeHeadings(runtime, segments, "de");
+    const second = await localizeHeadings(runtime, segments, "de");
 
     expect(structured).toHaveBeenCalledTimes(1);
     expect(structured.mock.calls[0]![1].user).toContain("Procedures");
@@ -77,18 +77,18 @@ describe("localizeHeadings", () => {
     expect(first.get(9)).toBe("### Medikamente");
     expect(first.get(11)).toBe("## Diagnostik");
     expect(
-      runtime.catalogs.outlineHeadings.fromEnglish("Medications", "German")
+      runtime.catalogs.outlineHeadings.fromEnglish("Medications", "de")
     ).toBeUndefined();
-    expect(
-      runtime.catalogs.anamnesis.fromEnglish("Medications", "German")
-    ).toBe("Medikamente");
+    expect(runtime.catalogs.anamnesis.fromEnglish("Medications", "de")).toBe(
+      "Medikamente"
+    );
   });
 
   it("leaves LLM-named (freeform) category headings to the caller", async () => {
     const { runtime } = runtimeWith({ seed: CURATED });
     const segments = outline(["Whatever the model chose"]);
 
-    const headings = await localizeHeadings(runtime, segments, "German");
+    const headings = await localizeHeadings(runtime, segments, "de");
 
     expect(headings.has(9)).toBe(false);
     expect(headings.size).toBe(5);

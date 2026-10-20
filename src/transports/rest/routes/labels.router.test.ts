@@ -29,13 +29,13 @@ function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
     config: {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
-      LANGUAGES: ["English", "German"],
+      LANGUAGES: ["en", "de"],
       LANGUAGE_AUTO_DETECT: false,
       LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
-        diagnosis: { byIcd: () => undefined },
+        diagnosis: { toEnglish: (name: string) => name },
       },
       llm: { structured: vi.fn(), text: vi.fn() },
     } as unknown as GraphAppContext["runtime"],
@@ -196,12 +196,12 @@ describe("labels.router — end-to-end over real HTTP", () => {
       config: {
         llm: { provider: "ollama", model: "test-model" },
         allowedLlms: undefined,
-        LANGUAGES: ["English", "German"],
+        LANGUAGES: ["en", "de"],
         LANGUAGE_AUTO_DETECT: false,
         LANGUAGE_DETECT_LLM_FALLBACK: false,
       } as GraphAppContext["config"],
       runtime: {
-        catalogs: { diagnosis: { byIcd: () => undefined } },
+        catalogs: { diagnosis: { toEnglish: (name: string) => name } },
         llm: { structured: vi.fn(), text: vi.fn() },
       } as unknown as GraphAppContext["runtime"],
       async planCase(opts: { diagnosis: unknown; userInstructions: unknown }) {
@@ -234,7 +234,7 @@ describe("labels.router — end-to-end over real HTTP", () => {
       generationFlags: ["patient"],
       jobId: "job-plan-labels",
       mode: "plan",
-      language: "English",
+      language: "en",
     });
 
     const res = await fetch(

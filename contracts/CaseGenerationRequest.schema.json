@@ -10,10 +10,10 @@
       "description": "Client-chosen job id (e.g. a UUID). Reusing the id of a running or recently finished job is rejected."
     },
     "icd": {
-      "description": "ICD-11 stem code. With ICD configured ('ICD' in /api/features) it alone identifies the diagnosis and wins over 'diagnosis'; without, it rides along unchecked.",
+      "description": "ICD-11 code: a stem code ('CA40.Z') or a post-coordinated cluster ('CA40.Z&XB22'). With ICD configured ('ICD' in /api/features) it alone identifies the diagnosis and wins over 'diagnosis', and a cluster ICD rejects is a 400; without, it rides along unchecked.",
       "type": "string",
       "format": "icd",
-      "pattern": "^[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?$"
+      "pattern": "^[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?(&X[0-9A-Z]{3,5}|\\/[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?)*$"
     },
     "diagnosis": {
       "description": "Diagnosis name, in the request language. Required without ICD; with ICD it must match an ICD-11 title or synonym exactly.",

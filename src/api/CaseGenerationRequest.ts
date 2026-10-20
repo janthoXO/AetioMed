@@ -24,8 +24,9 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
   return z.object({
     jobId: JobIdSchema.optional(),
     icd: ICDCodeSchema.optional().describe(
-      "ICD-11 stem code. With ICD configured ('ICD' in /api/features) it alone identifies the " +
-        "diagnosis and wins over 'diagnosis'; without, it rides along unchecked."
+      "ICD-11 code: a stem code ('CA40.Z') or a post-coordinated cluster ('CA40.Z&XB22'). With " +
+        "ICD configured ('ICD' in /api/features) it alone identifies the diagnosis and wins over " +
+        "'diagnosis', and a cluster ICD rejects is a 400; without, it rides along unchecked."
     ),
     diagnosis: z
       .string()

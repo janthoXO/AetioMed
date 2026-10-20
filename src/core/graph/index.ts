@@ -5,7 +5,10 @@ import { ConfigSchema, type Config } from "./config.js";
 import { buildCaseGraph } from "./assemble.js";
 import { createMedicalBasisRegistry } from "@/core/graph/02-plan/01-basis/registry.js";
 import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
-import { createChiefComplaintProviders } from "@/core/graph/04-case/01-presentation/chief-complaint/providers.js";
+import {
+  createChiefComplaintProviders,
+  type ReferralLetterRenderer,
+} from "@/core/graph/04-case/01-presentation/chief-complaint/providers.js";
 import { createAnamnesisProviders } from "@/core/graph/04-case/01-presentation/anamnesis/providers.js";
 import { createProcedureResultProviders } from "@/core/graph/04-case/02-procedures/providers.js";
 import { createLogger } from "./utils/logger.js";
@@ -79,6 +82,8 @@ export function initGraph(opts: {
   symptomCache: SymptomCache;
   /** OTel port from `observability/otel.ts`'s `createOtelNodeTracer()`. Pass `noopNodeTracer` for silence. */
   tracer: NodeTracer;
+  /** AetioReferral PDF letters (`adapters/referral/`); unset = no `referral_letter` provider. */
+  renderReferralLetter?: ReferralLetterRenderer;
 }): GraphAppContext {
   const { bus, config, llm, catalogs, umlsFloor, symptomCache, tracer } = opts;
 
@@ -100,7 +105,10 @@ export function initGraph(opts: {
   // Per-field modality registries; each field's providers come from its own
   // `providers.ts` slice.
   const modalityRegistries: ModalityRegistries = {
-    chiefComplaint: createChiefComplaintProviders(runtime),
+    chiefComplaint: createChiefComplaintProviders(
+      runtime,
+      opts.renderReferralLetter
+    ),
     anamnesis: createAnamnesisProviders(runtime),
     procedureResult: createProcedureResultProviders(runtime),
   };

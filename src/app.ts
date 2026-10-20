@@ -4,6 +4,7 @@ import {
   ConfigSchema as GraphConfigSchema,
   initGraph,
 } from "@/core/graph/index.js";
+import { createMcpReferralLetterRenderer } from "./adapters/referral/mcp.js";
 import {
   resolveCatalogDir,
   resolveCacheDir,
@@ -41,6 +42,8 @@ const AppEnvSchema = z
       .int()
       .min(1)
       .default(DEFAULT_MAX_CONCURRENT_GENERATIONS),
+    // AetioReferral's MCP endpoint, e.g. http://localhost:8000/mcp. Unset = no PDF referral letters.
+    REFERRAL_MCP_URL: z.url().optional(),
   })
   .transform((env) => ({
     features: env.FEATURES.split(",")
@@ -48,6 +51,7 @@ const AppEnvSchema = z
       .filter(Boolean),
     symptomCacheTtlDays: env.SYMPTOM_CACHE_TTL_DAYS,
     maxConcurrentGenerations: env.MAX_CONCURRENT_GENERATIONS,
+    referralMcpUrl: env.REFERRAL_MCP_URL,
   }));
 
 /**
@@ -68,6 +72,7 @@ export async function createApp(): Promise<{
     features: featureList,
     symptomCacheTtlDays,
     maxConcurrentGenerations,
+    referralMcpUrl,
   } = AppEnvSchema.parse(process.env);
   const features = new Set(featureList);
   console.log(`[app] Feature flags: ${[...features].join(", ") || "none"}`);
@@ -99,6 +104,9 @@ export async function createApp(): Promise<{
     umlsFloor: repos.umlsFloor,
     symptomCache: repos.symptomCache,
     tracer: otel.tracer,
+    ...(referralMcpUrl && {
+      renderReferralLetter: createMcpReferralLetterRenderer(referralMcpUrl),
+    }),
   });
   // Must run after graph construction: labels' base key set is
   // `getKnownLabels()`, populated by `traceNode` while graph builds. Earlier =

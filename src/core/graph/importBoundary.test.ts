@@ -142,6 +142,7 @@ describe("import boundary — src/core/ never imports adapters or I/O packages",
       "@langchain/ollama",
       "@langchain/openai",
       "@langchain/google",
+      "@modelcontextprotocol",
     ];
     const offenses: string[] = [];
     for (const file of files) {

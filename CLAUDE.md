@@ -652,8 +652,11 @@ signal-only shape (the issue 14 lesson: a provider may need `llmConfig` under `A
 Still **no LLM assumption in the port** — an image provider reaching a diffusion model over MCP
 satisfies the same interface as the text one.
 
-**Registries are per field** (`ModalityRegistries`, `shared/modality/registry.ts`): chief complaint may
-have a PDF transfer-slip provider anamnesis has no use for. Providers live next to the field
+**Registries are per field** (`ModalityRegistries`, `shared/modality/registry.ts`): chief complaint
+has `referral_letter`, an `application/pdf` referral letter anamnesis has no use for — drafted from
+`alt` by the slice's gateway (`draftReferralLetters`, request language), rendered by AetioReferral
+over MCP (`adapters/referral/mcp.ts`, behind the `ReferralLetterRenderer` port) and registered only
+when `REFERRAL_MCP_URL` is set. Providers live next to the field
 they serve — `04-case/01-presentation/{chief-complaint,anamnesis}/providers.ts` and
 `04-case/02-procedures/providers.ts` — mirroring the `catalog/<domain>/` vertical-slice convention, and
 each is a thin adapter: prompts and LLM calls stay in that slice's `gateway.ts`. They live in `AssemblyDeps`, not `GraphFlags`, for `medicalBasisRegistry`'s reason: fixed
@@ -1192,6 +1195,7 @@ language`), so the choice is visible at every call site instead of hidden in the
 | `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS (`src/core/concurrency.ts`'s shared limiter). Excess requests queue; a queued job is still cancellable. See Request Context below    |
 | `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `adapters/symptoms/repo.ts`)                                                                                                                          |
 | `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
+| `REFERRAL_MCP_URL`                                                    | —                       | AetioReferral MCP endpoint (e.g. `http://localhost:8000/mcp`); set = chief complaint gets the `referral_letter` PDF provider                                                                     |
 | `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var. `"true"` (that literal only) skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES` |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | —                       | Standard OTel vars, read by the OTLP trace/log exporters themselves — no plumbing in this repo; any one set selects the `"otlp"` exporter mode (`selectExporterMode`)                            |
 | `OTEL_SERVICE_NAME`                                                   | —                       | Standard OTel var, read via `envDetector` (`observability/otel.ts`)                                                                                                                              |

@@ -16,6 +16,8 @@ import { InMemoryLabelCatalog } from "@/adapters/catalog/labels/index.js";
 import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
+import type { ReferralLetterRenderer } from "./providers.js";
+import { runWithContext } from "@/core/graph/utils/context.js";
 
 // ─── Fakes ──────────────────────────────────────────────────────────────────
 
@@ -313,5 +315,57 @@ describe("createChiefComplaintProviders", () => {
 
     expect(systems[0]).toContain("referring physician");
     expect(systems[1]).toContain("clinical-chart voice");
+  });
+
+  it("registers referral_letter only with a renderer", () => {
+    const runtime = buildFakeRuntime(makeQueuedLlmPort({}));
+    const ids = (r?: ReferralLetterRenderer) =>
+      createChiefComplaintProviders(runtime, r).map((p) => p.id);
+
+    expect(ids()).not.toContain("referral_letter");
+    expect(ids(async () => new Uint8Array())).toContain("referral_letter");
+  });
+
+  it("drafts the letter from alt in the request language, then renders it as a PDF", async () => {
+    const letter = {
+      sender_name: "Anna Weber",
+      recipient_specialty: "Kardiologie",
+      reason: "Abklärung Thoraxschmerz",
+      urgent: true,
+      suspected_diagnosis: "V.a. ACS",
+      history: null,
+      findings: "EKG: ST-Hebung",
+    };
+    const systems: string[] = [];
+    const llm: LlmPort = {
+      async structured(_call, { system }) {
+        systems.push(system);
+        return { letters: [letter] } as never;
+      },
+      async text() {
+        throw new Error("unexpected text call");
+      },
+    };
+    const rendered: [unknown, string][] = [];
+    const providers = createChiefComplaintProviders(
+      buildFakeRuntime(llm),
+      async (l, language) => {
+        rendered.push([l, language]);
+        return new TextEncoder().encode("%PDF");
+      }
+    );
+    const provider = providers.find((p) => p.id === "referral_letter")!;
+
+    const out = await runWithContext(
+      () => provider.render([{ input: {}, alt: "GP refers, V.a. ACS" }], {}),
+      "job",
+      undefined,
+      "de"
+    );
+
+    expect(provider.mime).toBe("application/pdf");
+    expect(new TextDecoder().decode(out[0])).toBe("%PDF");
+    expect(rendered).toEqual([[letter, "de"]]);
+    expect(systems[0]).toContain("German");
   });
 });

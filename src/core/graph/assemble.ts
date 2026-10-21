@@ -14,7 +14,7 @@ import {
   CaseGenerationStateSchema,
   OutlineSectionsSchema,
 } from "@/core/graph/shared/caseGenerationState.js";
-import { DrillDownPick } from "@/core/graph/04-case/02-procedures/solver/drillDownPick.js";
+import { CatalogPick } from "@/core/graph/04-case/02-procedures/solver/catalogPick.js";
 import { buildCaseTranslationFromEnglishGraph } from "@/core/graph/05-translate-out/graph.js";
 import type { Language } from "@/core/graph/shared/domain/Language.js";
 import type { Difficulty } from "@/core/graph/shared/domain/Difficulty.js";
@@ -167,7 +167,7 @@ export function assembleCaseGraphs(deps: AssemblyDeps, flags: GraphFlags) {
   );
   const generationPhase = buildCaseGenerationGraph(
     generationRuntime,
-    new DrillDownPick(generationRuntime, modalityRegistries.procedureResult),
+    new CatalogPick(generationRuntime, modalityRegistries.procedureResult),
     modalityRegistries,
     traceNode.scope("case_phase")
   );

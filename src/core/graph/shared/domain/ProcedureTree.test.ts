@@ -1,4 +1,4 @@
-// Tree helpers and the tree-shaped pick grammar: the shapes every procedure consumer relies on.
+// Tree helpers and the flat label pick grammar: the shapes every procedure consumer relies on.
 import { describe, expect, it } from "vitest";
 import z from "zod";
 import {
@@ -101,46 +101,66 @@ describe("procedure tree helpers", () => {
 describe("ProcedureCandidatesImpl over a tree", () => {
   const candidates = new ProcedureCandidatesImpl(catalogue);
 
-  it("accepts a nested pick and assembles it to refs, dropping unknown names and repeats", () => {
-    const pick = {
-      procedures: ["Blood pressure"],
-      categories: {
-        Cardiology: {
-          categories: {
-            Echo: { procedures: ["Transthoracic", "Transthoracic"] },
-          },
-        },
-      },
-    };
+  it("picks by bare name while names are unique, assembling labels to refs and dropping unknown labels and repeats", () => {
+    const pick = ["Blood pressure", "Transthoracic", "Transthoracic"];
     expect(candidates.grammar().safeParse(pick).success).toBe(true);
     expect(candidates.assemble(pick)).toEqual([
       { path: [], name: "Blood pressure" },
       { path: ["Cardiology", "Echo"], name: "Transthoracic" },
     ]);
-    expect(
-      candidates.assemble({
-        categories: { Cardiology: { procedures: ["Invented"] } },
-      })
-    ).toEqual([]);
+    expect(candidates.assemble(["Invented"])).toEqual([]);
   });
 
-  it("rejects a name placed under the wrong category", () => {
-    expect(
-      candidates.grammar().safeParse({
-        categories: { Cardiology: { procedures: ["Blood pressure"] } },
-      }).success
-    ).toBe(false);
+  it("rejects an empty pick and an unknown label", () => {
+    expect(candidates.grammar().safeParse([]).success).toBe(false);
+    expect(candidates.grammar().safeParse(["Invented"]).success).toBe(false);
   });
 
-  it("excludes ordered refs and becomes empty once everything is ordered", () => {
+  it("prefixes a colliding name with parent categories until it is unique", () => {
+    const imaging = new ProcedureCandidatesImpl({
+      procedures: [{ name: "Thorax" }],
+      categories: [
+        {
+          name: "Adult",
+          procedures: [],
+          categories: [
+            { name: "X-ray", procedures: [{ name: "Thorax" }], categories: [] },
+          ],
+        },
+        {
+          name: "Child",
+          procedures: [],
+          categories: [
+            { name: "X-ray", procedures: [{ name: "Thorax" }], categories: [] },
+            { name: "CT", procedures: [{ name: "Thorax" }], categories: [] },
+          ],
+        },
+      ],
+    });
+    const labels = [
+      "Thorax",
+      "Adult > X-ray > Thorax",
+      "Child > X-ray > Thorax",
+      "CT > Thorax",
+    ];
+    expect(imaging.grammar().safeParse(labels).success).toBe(true);
+    expect(imaging.assemble(labels)).toEqual([
+      { path: [], name: "Thorax" },
+      { path: ["Adult", "X-ray"], name: "Thorax" },
+      { path: ["Child", "X-ray"], name: "Thorax" },
+      { path: ["Child", "CT"], name: "Thorax" },
+    ]);
+    expect(imaging.render()).toContain("  CT:\n    - CT > Thorax");
+  });
+
+  it("excludes ordered refs with stable labels, and becomes empty once everything is ordered", () => {
     const rest = candidates.exclude([
       { path: ["Cardiology"], name: "Resting ECG" },
     ]);
-    expect(
-      rest.assemble({
-        categories: { Cardiology: { procedures: ["Resting ECG"] } },
-      })
-    ).toEqual([]);
+    expect(rest.assemble(["Resting ECG"])).toEqual([]);
+    expect(rest.assemble(["Transesophageal"])).toEqual([
+      { path: ["Cardiology", "Echo"], name: "Transesophageal" },
+    ]);
     expect(
       candidates
         .exclude(
@@ -150,9 +170,10 @@ describe("ProcedureCandidatesImpl over a tree", () => {
     ).toBe(true);
   });
 
-  it("freeform: invented names come back at the root", () => {
+  it("freeform: invented names come back at the root, at least one", () => {
     const freeform = new ProcedureCandidatesImpl(undefined);
     expect(freeform.render()).toBeUndefined();
+    expect(freeform.grammar().safeParse([]).success).toBe(false);
     expect(freeform.assemble([{ name: "Anything" }])).toEqual([
       { path: [], name: "Anything" },
     ]);

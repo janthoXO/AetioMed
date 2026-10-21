@@ -30,7 +30,7 @@ import { buildFieldGenerationGraph } from "@/core/graph/04-case/01-presentation/
 import { buildCaseGenerationGraph } from "@/core/graph/04-case/graph.js";
 import { buildPlanningPhaseGraph } from "@/core/graph/02-plan/graph.js";
 import { buildPlanGraph } from "@/core/graph/02-plan/02-outline/graph.js";
-import { DrillDownPick } from "@/core/graph/04-case/02-procedures/solver/drillDownPick.js";
+import { CatalogPick } from "@/core/graph/04-case/02-procedures/solver/catalogPick.js";
 import { taggedOutlineFixture } from "@/core/graph/shared/outline/fixtures.js";
 
 const TRANSLATION_NODES = [
@@ -125,7 +125,7 @@ describe("phase-level graphs — output surface", () => {
 
   it("case_phase (buildCaseGenerationGraph) writes back only `case`", async () => {
     const deps = buildDeps();
-    const strategy = new DrillDownPick(deps.runtime, []);
+    const strategy = new CatalogPick(deps.runtime, []);
     const graph = buildCaseGenerationGraph(
       deps.runtime,
       strategy,

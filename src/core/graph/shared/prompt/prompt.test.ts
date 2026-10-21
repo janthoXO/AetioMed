@@ -7,6 +7,7 @@ import {
   boundLanguage,
   renderUserInstructions,
   section,
+  summarizeValidationError,
 } from "./prompt.js";
 import { requestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
@@ -109,6 +110,20 @@ describe("boundLanguage", () => {
 
     expect(withLanguage("de", () => boundLanguage(englishOnlyRuntime))).toBe(
       "en"
+    );
+  });
+});
+
+describe("summarizeValidationError", () => {
+  it("reads the issues after a quoted reply that has its own brackets", () => {
+    const issues = [
+      { code: "invalid_value", path: ["procedures", 0], message: "bad label" },
+    ];
+    const error = new Error(
+      `Failed to parse. Text: "{ "procedures": ["Vitals"] }". Error: ${JSON.stringify(issues)}`
+    );
+    expect(summarizeValidationError(error)).toBe(
+      "field `procedures[0]`: bad label"
     );
   });
 });

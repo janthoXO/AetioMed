@@ -216,7 +216,11 @@ function extractZodIssues(error: Error): ZodIssueLike[] | undefined {
   if (isIssueArray(direct)) return direct;
 
   // Message may embed JSON-stringified issues (e.g. OutputParserException).
-  const start = error.message.indexOf("[");
+  // That one quotes the model's reply first (`Text: "…". Error: [issues]`),
+  // whose own `[` must not start the slice.
+  const marker = error.message.lastIndexOf("Error: [");
+  const start =
+    marker === -1 ? error.message.indexOf("[") : marker + "Error: ".length;
   const end = error.message.lastIndexOf("]");
   if (start === -1 || end <= start) return undefined;
   try {

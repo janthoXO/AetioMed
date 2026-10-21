@@ -11,20 +11,55 @@ import {
   refKey,
   type ProcedureRef,
 } from "@/core/graph/shared/domain/ProcedureTree.js";
-import type {
-  LevelItem,
-  ProcedureCandidates,
-  ProcedureCatalogTree,
-} from "./ports.js";
+import type { ProcedureCandidates, ProcedureCatalogTree } from "./ports.js";
 
-const LEVEL_SAMPLE_SIZE = 3;
+const LABEL_SEPARATOR = " > ";
+
+/**
+ * Shortest unique label per leaf, keyed by `refKey`: the bare name, prefixed
+ * by parent categories (`X-ray > Thorax`) only while it collides. Built, never
+ * parsed: a pick maps back through this table. Terminates: each round prefixes
+ * at least one label or stops. Full paths are unique (sibling names are), so
+ * only a name containing the separator could still collide.
+ */
+function shortestUniqueLabels(tree: ProcedureCatalogTree): Map<string, string> {
+  const refs = leaves(tree).map(({ path, leaf }) => ({
+    path,
+    name: leaf.name,
+  }));
+  const depth = refs.map(() => 0);
+  for (;;) {
+    const labels = refs.map(({ path, name }, i) =>
+      [...path.slice(path.length - depth[i]!), name].join(LABEL_SEPARATOR)
+    );
+    const count = new Map<string, number>();
+    for (const label of labels) count.set(label, (count.get(label) ?? 0) + 1);
+    let grew = false;
+    refs.forEach((ref, i) => {
+      if (count.get(labels[i]!)! > 1 && depth[i]! < ref.path.length) {
+        depth[i]!++;
+        grew = true;
+      }
+    });
+    if (!grew) return new Map(refs.map((ref, i) => [refKey(ref), labels[i]!]));
+  }
+}
 
 /**
  * Candidate procedures for one pick: a catalogue tree, or `undefined` for
  * freeform (no catalogue; the model invents names, refs come back at the root).
+ * A pick is a flat, non-empty list of labels.
  */
 export class ProcedureCandidatesImpl implements ProcedureCandidates {
-  constructor(private readonly tree: ProcedureCatalogTree | undefined) {}
+  /** From the full catalogue, so labels stay stable across `exclude`. */
+  private readonly labels: Map<string, string>;
+
+  constructor(
+    private readonly tree: ProcedureCatalogTree | undefined,
+    labels?: Map<string, string>
+  ) {
+    this.labels = labels ?? (tree ? shortestUniqueLabels(tree) : new Map());
+  }
 
   /**
    * Already-ordered procedures leave the set, so a duplicate order is
@@ -38,56 +73,8 @@ export class ProcedureCandidatesImpl implements ProcedureCandidates {
       filterTree(
         this.tree,
         (path, leaf) => !orderedKeys.has(refKey({ path, name: leaf.name }))
-      )
-    );
-  }
-
-  size(): number | undefined {
-    return this.tree && leafCount(this.tree);
-  }
-
-  levelItems(open: string[][]): LevelItem[] {
-    if (!this.tree) return [];
-    const tree = this.tree;
-    return open.flatMap((path) => {
-      const node = subtreeAt(tree, path);
-      if (!node) return [];
-      return [
-        ...node.categories.map(
-          (c): LevelItem => ({
-            kind: "category",
-            path: [...path, c.name],
-            size: leafCount(c),
-            sample: leaves(c)
-              .slice(0, LEVEL_SAMPLE_SIZE)
-              .map((l) => l.leaf.name),
-          })
-        ),
-        ...node.procedures.map(
-          (p): LevelItem => ({ kind: "procedure", ref: { path, name: p.name } })
-        ),
-      ];
-    });
-  }
-
-  narrow(
-    procedures: ProcedureRef[],
-    categories: string[][]
-  ): ProcedureCandidates {
-    if (!this.tree) return this;
-    const keys = new Set(procedures.map(refKey));
-    const under = (path: string[]) =>
-      categories.some(
-        (category) =>
-          path.length >= category.length &&
-          category.every((name, i) => path[i] === name)
-      );
-    return new ProcedureCandidatesImpl(
-      filterTree(
-        this.tree,
-        (path, leaf) =>
-          under(path) || keys.has(refKey({ path, name: leaf.name }))
-      )
+      ),
+      this.labels
     );
   }
 
@@ -95,48 +82,59 @@ export class ProcedureCandidatesImpl implements ProcedureCandidates {
     return this.tree !== undefined && leafCount(this.tree) === 0;
   }
 
-  /** Pick grammar, passed to `withStructuredOutput`. Mirrors the tree: categories keyed by exact name. */
+  /** Remaining leaves by label. */
+  private byLabel(): Map<string, ProcedureRef> {
+    return new Map(
+      leaves(this.tree ?? { categories: [], procedures: [] }).map(
+        ({ path, leaf }) => {
+          const ref = { path, name: leaf.name };
+          return [this.labels.get(refKey(ref))!, ref];
+        }
+      )
+    );
+  }
+
+  /**
+   * Pick grammar, passed to `withStructuredOutput`: at least one label.
+   *
+   * ponytail: one enum over every remaining label; providers that enforce
+   * schemas cap enum size (OpenAI strict ~1000 values), so a far larger
+   * catalogue needs narrowing before the pick.
+   */
   grammar(): z.ZodTypeAny {
     if (!this.tree) {
       return z
         .array(ProcedureSchema)
+        .min(1)
         .describe("one or more mutually independent procedures to order now");
     }
-    return treePickGrammar(this.tree).describe(
-      "procedures to order now, placed under their exact categories"
-    );
+    // Names the bad value: the default lists every label and gets truncated
+    // in the retry feedback, so the model never learns what it got wrong.
+    const label = z.literal([...this.byLabel().keys()], {
+      error: (issue) =>
+        `${JSON.stringify(issue.input)} is not a procedure label; category headings cannot be ordered, use the exact labels listed after "- "`,
+    });
+    return z
+      .array(label)
+      .min(1)
+      .describe("one or more exact procedure labels from the catalogue");
   }
 
-  /** Name-agnostic counterpart of {@link grammar} for the prompt's "Output format"; keeps the prompt short and stable. */
+  /** Label-agnostic counterpart of {@link grammar} for the prompt's "Output format"; keeps the prompt short and stable. */
   promptSchema(): z.ZodTypeAny {
-    if (!this.tree) {
-      return z
-        .array(ProcedureSchema)
-        .describe("one or more mutually independent procedures to order now");
-    }
+    if (!this.tree) return this.grammar();
     return z
-      .object({
-        procedures: z
-          .array(z.string())
-          .optional()
-          .describe("exact names of procedures at this level"),
-        categories: z
-          .record(
-            z.string(),
-            z.object({}).describe("same shape as this object, one level down")
-          )
-          .optional()
-          .describe("sub-selections keyed by exact category name"),
-      })
-      .describe("procedures to order now, placed under their exact categories");
+      .array(z.string())
+      .min(1)
+      .describe("one or more exact procedure labels from the catalogue");
   }
 
   render(): string | undefined {
     if (!this.tree) return undefined;
     return section(
       "Approved procedure catalogue (RESTRICTED WORKUP)",
-      `You MUST ONLY select procedures from this catalogue, using their exact names, placed under their exact category names (nest sub-categories the same way). Do not invent or recommend any procedures not listed:
-${renderTree(this.tree)}`
+      `You MUST ONLY select procedures from this catalogue, by their exact label as listed after "- ". Category headings give context and cannot be ordered. Do not invent or recommend any procedures not listed:
+${renderTree(this.tree, this.labels)}`
     );
   }
 
@@ -147,85 +145,30 @@ ${renderTree(this.tree)}`
         name: p.name,
       }));
     }
-    const refs: ProcedureRef[] = [];
-    assembleTree(this.tree, pick, [], refs);
-    // A repeated name in the model's array is one order.
-    const seen = new Set<string>();
-    return refs.filter((ref) => {
-      const key = refKey(ref);
-      if (seen.has(key)) return false;
-      seen.add(key);
-      return true;
-    });
-  }
-}
-
-function treePickGrammar(tree: ProcedureCatalogTree): z.ZodObject {
-  const shape: Record<string, z.ZodTypeAny> = {};
-  if (tree.procedures.length > 0) {
-    shape.procedures = z
-      .array(z.literal(tree.procedures.map((p) => p.name)))
-      .optional()
-      .describe("exact names of procedures at this level");
-  }
-  if (tree.categories.length > 0) {
-    shape.categories = z
-      .object(
-        Object.fromEntries(
-          tree.categories.map((c) => [c.name, treePickGrammar(c).optional()])
-        )
-      )
-      .optional()
-      .describe("sub-selections keyed by exact category name");
-  }
-  return z.object(shape);
-}
-
-function subtreeAt(
-  tree: ProcedureCatalogTree,
-  path: string[]
-): ProcedureCatalogTree | undefined {
-  let node: ProcedureCatalogTree | undefined = tree;
-  for (const name of path) {
-    node = node?.categories.find((c) => c.name === name);
-  }
-  return node;
-}
-
-/** Indented outline: procedures as `- name`, categories as `name:` with their contents below. */
-function renderTree(tree: ProcedureCatalogTree, indent = ""): string {
-  return [
-    ...tree.procedures.map((p) => `${indent}- ${p.name}`),
-    ...tree.categories.map(
-      (c) => `${indent}${c.name}:\n${renderTree(c, `${indent}  `)}`
-    ),
-  ].join("\n");
-}
-
-type TreePick = {
-  procedures?: string[];
-  categories?: Record<string, TreePick | undefined>;
-};
-
-/** Walks the pick alongside the tree; names not in the tree are dropped. */
-function assembleTree(
-  tree: ProcedureCatalogTree,
-  pick: unknown,
-  path: string[],
-  out: ProcedureRef[]
-) {
-  if (!pick || typeof pick !== "object") return;
-  const { procedures, categories } = pick as TreePick;
-  const names = new Set(tree.procedures.map((p) => p.name));
-  for (const name of procedures ?? []) {
-    if (names.has(name)) out.push({ path, name });
-  }
-  for (const category of tree.categories) {
-    assembleTree(
-      category,
-      categories?.[category.name],
-      [...path, category.name],
-      out
+    const byLabel = this.byLabel();
+    // A repeated label is one order; an unknown one is dropped.
+    return [...new Set((pick as string[] | undefined) ?? [])].flatMap(
+      (label) => {
+        const ref = byLabel.get(label);
+        return ref ? [ref] : [];
+      }
     );
   }
+}
+
+/** Indented outline: categories as `name:`, their procedures as `- label` below. */
+function renderTree(
+  tree: ProcedureCatalogTree,
+  labels: Map<string, string>,
+  path: string[] = []
+): string {
+  const indent = "  ".repeat(path.length);
+  return [
+    ...tree.procedures.map(
+      (p) => `${indent}- ${labels.get(refKey({ path, name: p.name }))}`
+    ),
+    ...tree.categories.map(
+      (c) => `${indent}${c.name}:\n${renderTree(c, labels, [...path, c.name])}`
+    ),
+  ].join("\n");
 }

@@ -8,7 +8,7 @@ import z from "zod";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { buildProcedureGraph } from "./graph.js";
 import { buildBlindedSolverGraph } from "./solver/graph.js";
-import { DrillDownPick } from "@/core/graph/04-case/02-procedures/solver/drillDownPick.js";
+import { CatalogPick } from "@/core/graph/04-case/02-procedures/solver/catalogPick.js";
 import type {
   BlindedView,
   OracleView,
@@ -482,8 +482,8 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
     const traceNode = createTraceNode(new EventBus());
     const { provider } = makeRecordingTextProvider();
 
-    const strategy = new DrillDownPick(runtime, [provider]);
-    expect(strategy.id).toBe("drill-down-pick");
+    const strategy = new CatalogPick(runtime, [provider]);
+    expect(strategy.id).toBe("catalog-pick");
 
     const graph = buildProcedureGraph(runtime, strategy, [provider], traceNode);
 

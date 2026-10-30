@@ -41,7 +41,8 @@ export type ReferenceBand = z.infer<typeof ReferenceBandSchema>;
 /**
  * The band for this patient, first tier that has one: own gender with a
  * fitting age range, own gender without age, no gender with a fitting age
- * range, no gender without age. Overlapping age ranges: the lower band wins.
+ * range, no gender without age. Overlapping age ranges (a shared bound): the
+ * band starting there wins, as lab ranges read `40–<50`.
  * A patient that is only outline text (or absent) cannot be matched in code,
  * so every band goes to the planner with its context.
  */
@@ -63,7 +64,7 @@ export function bandsFor(
   for (const tier of tiers) {
     const match = bands
       .filter(tier)
-      .sort((a, b) => (a.age?.low ?? 0) - (b.age?.low ?? 0))[0];
+      .sort((a, b) => (b.age?.low ?? 0) - (a.age?.low ?? 0))[0];
     if (match) return [match];
   }
   return [];

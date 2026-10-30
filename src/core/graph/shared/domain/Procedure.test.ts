@@ -27,12 +27,13 @@ describe("bandsFor", () => {
     expect(bandsFor([bands[0]!], { ...male, age: 40 })).toEqual([]);
   });
 
-  it("closed age ranges: an age on a shared bound gets the lower band", () => {
+  it("closed age ranges: an age on a shared bound gets the band starting there", () => {
     const ages: ReferenceBand[] = [
-      { low: 2, age: { low: 2, high: 5 } },
       { low: 1, age: { high: 2 } },
+      { low: 2, age: { low: 2, high: 5 } },
     ];
-    expect(bandsFor(ages, { ...male, age: 2 })[0]?.low).toBe(1);
+    expect(bandsFor(ages, { ...male, age: 1 })[0]?.low).toBe(1);
+    expect(bandsFor(ages, { ...male, age: 2 })[0]?.low).toBe(2);
     expect(bandsFor(ages, { ...male, age: 5 })[0]?.low).toBe(2);
   });
 

@@ -25,7 +25,7 @@ export type Procedure = z.infer<typeof ProcedureSchema>;
 
 /**
  * One catalogue reference range (FHIR `ObservationDefinition.qualifiedInterval`):
- * `low`/`high` inclusive, `age` in years and half-open (`low <= age < high`).
+ * `low`/`high` and `age` (in years) inclusive, as FHIR ranges are.
  */
 export const ReferenceBandSchema = z.object({
   low: z.number().optional(),
@@ -39,22 +39,34 @@ export const ReferenceBandSchema = z.object({
 export type ReferenceBand = z.infer<typeof ReferenceBandSchema>;
 
 /**
- * The band for this patient: first one matching gender and age. A patient
- * that is only outline text (or absent) cannot be matched in code, so every
- * band goes to the planner with its context.
+ * The band for this patient, first tier that has one: own gender with a
+ * fitting age range, own gender without age, no gender with a fitting age
+ * range, no gender without age. Overlapping age ranges: the lower band wins.
+ * A patient that is only outline text (or absent) cannot be matched in code,
+ * so every band goes to the planner with its context.
  */
 export function bandsFor(
   bands: ReferenceBand[],
   patient: Patient | string | undefined
 ): ReferenceBand[] {
   if (typeof patient !== "object") return bands;
-  const match = bands.find(
-    (b) =>
-      (b.gender === undefined || b.gender === patient.gender) &&
-      (b.age?.low ?? 0) <= patient.age &&
-      patient.age < (b.age?.high ?? Infinity)
-  );
-  return match ? [match] : [];
+  const fits = (b: ReferenceBand) =>
+    b.age !== undefined &&
+    (b.age.low ?? 0) <= patient.age &&
+    patient.age <= (b.age.high ?? Infinity);
+  const tiers = [
+    (b: ReferenceBand) => b.gender === patient.gender && fits(b),
+    (b: ReferenceBand) => b.gender === patient.gender && !b.age,
+    (b: ReferenceBand) => b.gender === undefined && fits(b),
+    (b: ReferenceBand) => b.gender === undefined && !b.age,
+  ];
+  for (const tier of tiers) {
+    const match = bands
+      .filter(tier)
+      .sort((a, b) => (a.age?.low ?? 0) - (b.age?.low ?? 0))[0];
+    if (match) return [match];
+  }
+  return [];
 }
 
 const years = (n: number) => +n.toFixed(2);

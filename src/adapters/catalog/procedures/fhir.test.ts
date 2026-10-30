@@ -40,6 +40,11 @@ const bundle = {
           },
           { code: "ecg", display: "Resting ECG" },
           {
+            code: "old",
+            display: "Retired",
+            property: [{ code: "status", valueCode: "retired" }],
+          },
+          {
             code: "heading",
             display: "Empty heading",
             property: [{ code: "notSelectable", valueBoolean: true }],

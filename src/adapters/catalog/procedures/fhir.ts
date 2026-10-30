@@ -15,7 +15,13 @@ type Concept = {
   code: string;
   display?: string | undefined;
   designation?: { language?: string | undefined; value: string }[] | undefined;
-  property?: { code: string; valueBoolean?: boolean | undefined }[] | undefined;
+  property?:
+    | {
+        code: string;
+        valueBoolean?: boolean | undefined;
+        valueCode?: string | undefined;
+      }[]
+    | undefined;
   concept?: Concept[] | undefined;
 };
 
@@ -28,7 +34,13 @@ const ConceptSchema: z.ZodType<Concept> = z.object({
     )
     .optional(),
   property: z
-    .array(z.object({ code: z.string(), valueBoolean: z.boolean().optional() }))
+    .array(
+      z.object({
+        code: z.string(),
+        valueBoolean: z.boolean().optional(),
+        valueCode: z.string().optional(),
+      })
+    )
     .optional(),
   get concept() {
     return z.array(ConceptSchema).optional();
@@ -203,6 +215,11 @@ function toTree(
 ): ProcedureTree<CatalogProcedure> {
   const tree = emptyTree<CatalogProcedure>();
   for (const c of concepts) {
+    // A retired concept is kept in the file for history, never offered.
+    if (
+      c.property?.some((p) => p.code === "status" && p.valueCode === "retired")
+    )
+      continue;
     const names = namesOf(c, cs.language);
     const name = names["en"] ?? c.display ?? c.code;
     const nodePath = [...path, name];

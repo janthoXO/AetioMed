@@ -12,6 +12,14 @@ const bundle = {
     {
       resource: {
         resourceType: "CodeSystem",
+        content: "supplement",
+        supplements: "http://unitsofmeasure.org",
+        concept: [{ code: "mg/dL", display: "mg/dl" }],
+      },
+    },
+    {
+      resource: {
+        resourceType: "CodeSystem",
         url: SYSTEM,
         status: "active",
         content: "complete",

@@ -146,7 +146,11 @@ export function parseFhirCatalogue(parsed: unknown): FhirCatalogue {
   const ofType = (type: string) =>
     resources.filter((r) => r.resourceType === type);
   const result = ResourcesSchema.safeParse({
-    codeSystems: ofType("CodeSystem"),
+    // A supplement (e.g. unit translations for UCUM) adds designations to
+    // another code system; its concepts are no procedures.
+    codeSystems: ofType("CodeSystem").filter(
+      (r) => r["content"] !== "supplement"
+    ),
     observationDefinitions: ofType("ObservationDefinition"),
   });
   if (!result.success) throw new Error(z.prettifyError(result.error));

@@ -99,6 +99,7 @@ export const CaseWireSchema = z.object({
   procedures: procedureTreeSchema(
     z.object({
       name: z.string(),
+      code: z.string().optional(),
       order: z.number().int().min(0),
       relevance: ProcedureRelevanceSchema,
       result: ContentPartsWireSchema,
@@ -129,6 +130,7 @@ export function encodeCase(c: Case, maxBytes: number): CaseWire {
       procedures: mapTree(c.procedures, {
         leaf: (path, leaf) => ({
           name: leaf.name,
+          ...(leaf.code !== undefined && { code: leaf.code }),
           order: leaf.order,
           relevance: leaf.relevance,
           result: leaf.result.map((part) =>
@@ -161,6 +163,7 @@ export function decodeCase(wire: CaseWire): Case {
       procedures: mapTree(wire.procedures, {
         leaf: (_path, leaf) => ({
           name: leaf.name,
+          ...(leaf.code !== undefined && { code: leaf.code }),
           order: leaf.order,
           relevance: leaf.relevance,
           result: leaf.result.map(decodeContentPart),

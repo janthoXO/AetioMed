@@ -2,6 +2,7 @@ import z from "zod";
 import { ContentPartsSchema } from "./ContentPart.js";
 import { PlannedPartSchema } from "@/core/graph/shared/modality/ports.js";
 import { ProcedureRefSchema } from "./ProcedureTree.js";
+import type { Patient } from "./Patient.js";
 
 export const ProcedureNameSchema = z
   .string()
@@ -23,6 +24,59 @@ export const ProcedureSchema = z.object({
 export type Procedure = z.infer<typeof ProcedureSchema>;
 
 /**
+ * One catalogue reference range (FHIR `ObservationDefinition.qualifiedInterval`):
+ * `low`/`high` inclusive, `age` in years and half-open (`low <= age < high`).
+ */
+export const ReferenceBandSchema = z.object({
+  low: z.number().optional(),
+  high: z.number().optional(),
+  unit: z.string().optional(),
+  gender: z.enum(["male", "female", "other", "unknown"]).optional(),
+  age: z
+    .object({ low: z.number().optional(), high: z.number().optional() })
+    .optional(),
+});
+export type ReferenceBand = z.infer<typeof ReferenceBandSchema>;
+
+/**
+ * The band for this patient: first one matching gender and age. A patient
+ * that is only outline text (or absent) cannot be matched in code, so every
+ * band goes to the planner with its context.
+ */
+export function bandsFor(
+  bands: ReferenceBand[],
+  patient: Patient | string | undefined
+): ReferenceBand[] {
+  if (typeof patient !== "object") return bands;
+  const match = bands.find(
+    (b) =>
+      (b.gender === undefined || b.gender === patient.gender) &&
+      (b.age?.low ?? 0) <= patient.age &&
+      patient.age < (b.age?.high ?? Infinity)
+  );
+  return match ? [match] : [];
+}
+
+const years = (n: number) => +n.toFixed(2);
+
+/** `3.5–5.1 mmol/L (female, age 18–65 y)` for a prompt. */
+export function formatBand(band: ReferenceBand): string {
+  const { low, high, unit, gender, age } = band;
+  const range =
+    low !== undefined && high !== undefined
+      ? `${low}–${high}`
+      : low !== undefined
+        ? `≥ ${low}`
+        : `≤ ${high}`;
+  const context = [
+    gender,
+    age &&
+      `age ${years(age.low ?? 0)}–${age.high === undefined ? "∞" : years(age.high)} y`,
+  ].filter(Boolean);
+  return `${range}${unit ? ` ${unit}` : ""}${context.length ? ` (${context.join(", ")})` : ""}`;
+}
+
+/**
  * `Case.procedures` leaf: relevance and result, both decided non-blinded.
  * `relevance` is judged against the TRUE diagnosis, so the blinded step
  * cannot produce it (see `procedures.aigateway.ts`). `result` is content
@@ -30,6 +84,7 @@ export type Procedure = z.infer<typeof ProcedureSchema>;
  * ordered: the tree groups by category, `order` keeps the workup sequence.
  */
 export const ProcedureResultSchema = ProcedureSchema.extend({
+  code: z.string().optional().describe("Catalogue code; absent in freeform"),
   order: z.number().int().min(0).describe("0-based position in the workup"),
   relevance: ProcedureRelevanceSchema.describe(
     "Relevance of the procedure to the diagnosis"

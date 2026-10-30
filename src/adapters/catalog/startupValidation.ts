@@ -7,7 +7,7 @@ import {
   nodeKey,
   nodePaths,
 } from "@/core/graph/shared/domain/ProcedureTree.js";
-import { flattenProcedureTranslations } from "./procedures/translations.js";
+import { fhirTranslations } from "./procedures/repo.js";
 import {
   findUnknownKeys,
   formatProblems,
@@ -44,7 +44,7 @@ function loadCatalogueSpecs(repos: Repos, icd: boolean): CatalogueSpec[] {
       ).map(nodeKey),
       translations: readDeclaredTranslations(
         repos.procedures.translationsFile,
-        flattenProcedureTranslations
+        fhirTranslations
       ),
       enforceUnknownKeys: true,
     },

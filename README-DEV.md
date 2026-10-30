@@ -254,7 +254,7 @@ Tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`.
 
 `CATALOG_DIR` (default `data/`) holds the sources synced into SQLite at startup:
 
-- `procedures.yml` / `proceduresTranslations.yml` — approved procedure catalogue: a tree of `categories` (name + nested `categories`/`procedures`, any depth) and root-level `procedures`. Translations mirror the same tree, each node keyed by its own English `key` alongside its translated `name`.
+- `procedures.fhir.json` — approved procedure catalogue, one FHIR R4 `Bundle` (a subset read with zod, no FHIR library; other resources and fields are ignored). `CodeSystem` concepts form the tree: a concept with child concepts is a category, a leaf is a procedure unless it carries the `notSelectable` property; `display` is the English name (or an `en` designation when the CodeSystem's `language` is not English) and each `designation` is a curated translation per language (this replaces `proceduresTranslations.yml`). An optional `ObservationDefinition` coded with the CodeSystem `url` + concept code gives that procedure reference bands (`qualifiedInterval` with category `reference` or none: range low/high + UCUM unit, optional `gender`, optional `age` in UCUM time units, matched half-open `low <= age < high`). Several CodeSystems merge at the root. A leftover `procedures.yml` is ignored with a startup warning. **Breaking for deployers who mount their own catalogue:** convert it to this Bundle.
 - `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions
 - `labelTranslations.yml` — progress label translations

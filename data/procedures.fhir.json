@@ -1,0 +1,2107 @@
+{
+  "resourceType": "Bundle",
+  "type": "collection",
+  "entry": [
+    {
+      "fullUrl": "urn:uuid:b18c71f3-55cc-45de-8cb6-1bdbb3e33d49",
+      "resource": {
+        "resourceType": "CodeSystem",
+        "id": "aetiomed-procedures",
+        "url": "https://github.com/janthoXO/AetioMed/fhir/CodeSystem/procedures",
+        "name": "AetioMedProcedures",
+        "title": "AetioMed procedure catalogue",
+        "status": "active",
+        "content": "complete",
+        "language": "en",
+        "hierarchyMeaning": "grouped-by",
+        "property": [
+          {
+            "code": "notSelectable",
+            "uri": "http://hl7.org/fhir/concept-properties#notSelectable",
+            "type": "boolean"
+          }
+        ],
+        "concept": [
+          {
+            "code": "cardiology_without_radiology",
+            "display": "Cardiology (without Radiology)",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Kardiologie (ohne Radiologie)"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "cardiology_without_radiology.resting_ecg",
+                "display": "Resting ECG",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Ruhe-EKG"
+                  }
+                ]
+              },
+              {
+                "code": "cardiology_without_radiology.stress_ecg",
+                "display": "Stress ECG",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Belastungs-EKG"
+                  }
+                ]
+              },
+              {
+                "code": "cardiology_without_radiology.holter_ecg",
+                "display": "Holter ECG",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Langzeit-EKG"
+                  }
+                ]
+              },
+              {
+                "code": "cardiology_without_radiology.ambulatory_blood_pressure_monitoring",
+                "display": "Ambulatory Blood Pressure Monitoring",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Langzeit-Blutdruck"
+                  }
+                ]
+              },
+              {
+                "code": "cardiology_without_radiology.transthoracic_echocardiography",
+                "display": "Transthoracic Echocardiography",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Transthorakale Echokardiografie"
+                  }
+                ]
+              },
+              {
+                "code": "cardiology_without_radiology.transesophageal_echocardiography",
+                "display": "Transesophageal Echocardiography",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Transösophageale Echokardiografie"
+                  }
+                ]
+              },
+              {
+                "code": "cardiology_without_radiology.coronary_ct",
+                "display": "Coronary CT",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Koronar CT"
+                  }
+                ]
+              },
+              {
+                "code": "cardiology_without_radiology.left_heart_catheterization",
+                "display": "Left Heart Catheterization",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Linksherzkatheter"
+                  }
+                ]
+              },
+              {
+                "code": "cardiology_without_radiology.right_heart_catheterization",
+                "display": "Right Heart Catheterization",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Rechtsherzkatheter"
+                  }
+                ]
+              },
+              {
+                "code": "cardiology_without_radiology.myocardial_biopsy",
+                "display": "Myocardial Biopsy",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Myokardbiopsie"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "pulmonology_without_radiology",
+            "display": "Pulmonology (without Radiology)",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Pulmologie (ohne Radiologie)"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "pulmonology_without_radiology.pleural_puncture",
+                "display": "Pleural Puncture",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Pleurapunktion"
+                  }
+                ]
+              },
+              {
+                "code": "pulmonology_without_radiology.spirometry",
+                "display": "Spirometry",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Spirometrie"
+                  }
+                ]
+              },
+              {
+                "code": "pulmonology_without_radiology.body_plethysmography",
+                "display": "Body Plethysmography",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Bodyplethysmografie"
+                  }
+                ]
+              },
+              {
+                "code": "pulmonology_without_radiology.methacholine_challenge_test",
+                "display": "Methacholine Challenge Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Metacholin-Provokationstest"
+                  }
+                ]
+              },
+              {
+                "code": "pulmonology_without_radiology.apnea_hypopnea_index",
+                "display": "Apnea-Hypopnea Index",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Apnoe-Hypopnoe-Index"
+                  }
+                ]
+              },
+              {
+                "code": "pulmonology_without_radiology.polygraphy",
+                "display": "Polygraphy",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Polygraphie"
+                  }
+                ]
+              },
+              {
+                "code": "pulmonology_without_radiology.polysomnography",
+                "display": "Polysomnography",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Polysomnographie"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "bronchoscopy_possibly_incl_biopsy",
+            "display": "Bronchoscopy (possibly incl. Biopsy)",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Bronchoskopie (ggf. inkl. Biopsie)"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "bronchoscopy_possibly_incl_biopsy.bronchoscopy_possibly_with_puncture",
+                "display": "Bronchoscopy possibly with Puncture",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Bronchoskopie mit ggf. Punktion"
+                  }
+                ]
+              },
+              {
+                "code": "bronchoscopy_possibly_incl_biopsy.with_bronchoalveolar_lavage",
+                "display": "with Bronchoalveolar Lavage",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "mit Bronchoalveoläre Lavage"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "bronchial_challenge_test",
+            "display": "Bronchial Challenge Test",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Bronchialer Provokationstest"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "bronchial_challenge_test.specific",
+                "display": "specific",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "spezifisch"
+                  }
+                ]
+              },
+              {
+                "code": "bronchial_challenge_test.nonspecific_methacholine_challenge_test",
+                "display": "nonspecific/Methacholine Challenge Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "unspezifisch/Metacholin Provokationstest"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "gastroenterology_without_radiology",
+            "display": "Gastroenterology (without Radiology)",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Gastroenterologie (ohne Radiologie)"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "gastroenterology_without_radiology.colonoscopy_possibly_incl_biopsy",
+                "display": "Colonoscopy, possibly incl. Biopsy",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Koloskopie, ggf. inkl. Biopsie"
+                  }
+                ]
+              },
+              {
+                "code": "gastroenterology_without_radiology.ercp",
+                "display": "ERCP",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "ERCP"
+                  }
+                ]
+              },
+              {
+                "code": "gastroenterology_without_radiology.manometry",
+                "display": "Manometry",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Manometrie"
+                  }
+                ]
+              },
+              {
+                "code": "gastroenterology_without_radiology.long_term_ph_metry",
+                "display": "Long-term pH-Metry",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Langzeit-PH-Metrie"
+                  }
+                ]
+              },
+              {
+                "code": "gastroenterology_without_radiology.h2_breath_test",
+                "display": "H2 Breath Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "H2-Atemtest"
+                  }
+                ]
+              },
+              {
+                "code": "gastroenterology_without_radiology.c13_breath_test",
+                "display": "C13 Breath Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "C13-Atemtest"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "gastroscopy",
+            "display": "Gastroscopy",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Gastroskopie"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "gastroscopy.inspection_biopsies_for_histology_and_urease_rapid_test",
+                "display": "Inspection, Biopsies for Histology and Urease Rapid Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Inspektion, Biopsien für Histologie und Urease Schnelltest"
+                  }
+                ]
+              },
+              {
+                "code": "gastroscopy.endoscopic_ultrasound",
+                "display": "Endoscopic Ultrasound",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Endoskopische Sonografie"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "neurology",
+            "display": "Neurology",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Neurologie"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "neurology.eeg",
+                "display": "EEG",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "EEG"
+                  }
+                ]
+              },
+              {
+                "code": "neurology.emg",
+                "display": "EMG",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "EMG"
+                  }
+                ]
+              },
+              {
+                "code": "neurology.eng",
+                "display": "ENG",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "ENG"
+                  }
+                ]
+              },
+              {
+                "code": "neurology.tensilon_test",
+                "display": "Tensilon Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Tensilon-Test"
+                  }
+                ]
+              },
+              {
+                "code": "neurology.lumbar_puncture_incl_laboratory",
+                "display": "Lumbar Puncture incl. Laboratory",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Lumbalpunktion inkl. Labor"
+                  }
+                ]
+              },
+              {
+                "code": "neurology.dsa_cranial",
+                "display": "DSA cranial",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "DSA kranial"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "psychometric_tests",
+            "display": "Psychometric Tests",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Psychometrische Tests"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "psychometric_tests.mini_mental_status_examination",
+                "display": "Mini Mental Status Examination",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Mini Mental Status Test"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "dermatology",
+            "display": "Dermatology",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Dermatologie"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "dermatology.prick_test",
+                "display": "Prick Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Prick-Test"
+                  }
+                ]
+              },
+              {
+                "code": "dermatology.intracutaneous_test",
+                "display": "Intracutaneous Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Intrakutan-Test"
+                  }
+                ]
+              },
+              {
+                "code": "dermatology.epicutaneous_test",
+                "display": "Epicutaneous Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Epikutan-Test"
+                  }
+                ]
+              },
+              {
+                "code": "dermatology.tuberculin_skin_test",
+                "display": "Tuberculin Skin Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Tuberkulin-Hauttest"
+                  }
+                ]
+              },
+              {
+                "code": "dermatology.dermatoscopy",
+                "display": "Dermatoscopy",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Dermatoskopie"
+                  }
+                ]
+              },
+              {
+                "code": "dermatology.skin_cancer_screening",
+                "display": "Skin Cancer Screening",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Hautkrebsscreening"
+                  }
+                ]
+              },
+              {
+                "code": "dermatology.diascopy_glass_spatula_examination",
+                "display": "Diascopy (Glass Spatula Examination)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Diaskopie (Glasspateluntersuchung)"
+                  }
+                ]
+              },
+              {
+                "code": "dermatology.dermographism",
+                "display": "Dermographism",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Dermographismus"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "biopsy",
+            "display": "Biopsy",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Biopsie"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "biopsy.routine_staining",
+                "display": "Routine Staining",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Routinefärbung"
+                  }
+                ]
+              },
+              {
+                "code": "biopsy.routine_staining_and_direct_immunofluorescence",
+                "display": "Routine Staining and Direct Immunofluorescence",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Routinefärbung und direkte Immunfluoreszenzuntersuchung"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "ophthalmology",
+            "display": "Ophthalmology",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Augenheilkunde"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "ophthalmology.slit_lamp_examination",
+                "display": "Slit Lamp Examination",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Spaltlampenuntersuchung"
+                  }
+                ]
+              },
+              {
+                "code": "ophthalmology.ophthalmoscopy_fundoscopy",
+                "display": "Ophthalmoscopy/Fundoscopy",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Ophthalmoskopie/Funduskopie"
+                  }
+                ]
+              },
+              {
+                "code": "ophthalmology.perimetry",
+                "display": "Perimetry",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Perimetrie"
+                  }
+                ]
+              },
+              {
+                "code": "ophthalmology.visual_acuity_test",
+                "display": "Visual Acuity Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Visusprüfung"
+                  }
+                ]
+              },
+              {
+                "code": "ophthalmology.oct_optical_coherence_tomography",
+                "display": "OCT (Optical Coherence Tomography)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "OCT (Optische Kohärenztomographie)"
+                  }
+                ]
+              },
+              {
+                "code": "ophthalmology.fluorescein_angiography",
+                "display": "Fluorescein Angiography",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Fluoreszenzangiographie"
+                  }
+                ]
+              },
+              {
+                "code": "ophthalmology.strabismus_test",
+                "display": "Strabismus Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Strabismusprüfung"
+                  }
+                ]
+              },
+              {
+                "code": "ophthalmology.applanation_tonometry",
+                "display": "Applanation Tonometry",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Applanationstonometrie"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "bacteriology_and_mycology",
+            "display": "Bacteriology and Mycology",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Bakteriologie und Mykologie"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "bacteriology_and_mycology.microscopic_examination_native_preparation_or_simple_staining_e_g_methylene_blue",
+                "display": "Microscopic Examination (Native Preparation or Simple Staining, e.g. Methylene Blue)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Mikroskopische Untersuchung (Nativpräparat oder einfache Färbung, z.B. Methylenblau)"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "cultural_examinations",
+            "display": "Cultural Examinations",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Kulturelle Untersuchungen"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "cultural_examinations.blood_culture",
+                "display": "Blood Culture",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Blutkultur"
+                  }
+                ]
+              },
+              {
+                "code": "cultural_examinations.wound_swab_cultural_detection_fungi_bacteria",
+                "display": "(Wound) Swab (Cultural Detection Fungi/Bacteria)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "(Wund)Abstrich (kultureller Nachweis Pilze/Bakterien)"
+                  }
+                ]
+              },
+              {
+                "code": "cultural_examinations.urine_culture",
+                "display": "Urine Culture",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Urinkultur"
+                  }
+                ]
+              },
+              {
+                "code": "cultural_examinations.stool_culture",
+                "display": "Stool Culture",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Stuhl-Kultur"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "antigen_antibody_based_examinations",
+            "display": "Antigen & Antibody-based Examinations",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Antigen- & Antikörperbasierte Untersuchungen"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "antigen_antibody_based_examinations.borrelia_ab",
+                "display": "Borrelia (Ab)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Borrelien (AK)"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.campylobacter_jejuni_ab",
+                "display": "Campylobacter jejuni (Ab)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Campylobacter jejuni (AK)"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.helicobacter_pylori_ab",
+                "display": "Helicobacter pylori (Ab)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Helicobacter pylori (AK)"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.tpha_treponema_pallidum_hemagglutination_test",
+                "display": "TPHA (Treponema Pallidum Hemagglutination Test)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "TPHA (Treponema Pallidum Hämagglutinationstest)"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.fta_abs_fluorescent_treponemal_antibody_absorption_test",
+                "display": "FTA-ABS (Fluorescent Treponemal Antibody Absorption Test)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "FTA-ABS (Fluoreszenz-Treponemen-Antikörper-Absorptionstest)"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.venereal_disease_research_laboratory_test",
+                "display": "Venereal Disease Research Laboratory Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Venereal Disease Research Laboratory Test"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.legionella_antigen_urine",
+                "display": "Legionella Antigen (Urine)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Legionellen Antigen (Urin)"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.pneumococcal_antigen",
+                "display": "Pneumococcal Antigen",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Pneumokokken Antigen"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.galactomannan",
+                "display": "Galactomannan",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Galaktomannan"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.beta_d_glucan_detection",
+                "display": "Beta-D-Glucan Detection",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Beta-D-Glucan Nachweis"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.aspergillus_antibodies",
+                "display": "Aspergillus Antibodies",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Aspergillus-Antikörper"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.helicobacter_pylori_antibodies_serum",
+                "display": "Helicobacter Pylori Antibodies (Serum)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Helicobacter Pylori Antikörper (Serum)"
+                  }
+                ]
+              },
+              {
+                "code": "antigen_antibody_based_examinations.hp_antigen_in_stool",
+                "display": "HP Antigen in Stool",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "HP-Antigen im Stuhl"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "pcr",
+            "display": "PCR",
+            "designation": [
+              {
+                "language": "de",
+                "value": "PCR"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "pcr.gi_infection_pathogens",
+                "display": "GI Infection Pathogens",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "GI-Infektionen Erreger"
+                  }
+                ]
+              },
+              {
+                "code": "pcr.pneumococci",
+                "display": "Pneumococci",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Pneumokokken"
+                  }
+                ]
+              },
+              {
+                "code": "pcr.std_pathogens_chlamydia_tr_neisseria_g_mycoplasma_genitalium_trichomonas_hsv_1_2",
+                "display": "STD Pathogens (Chlamydia tr., Neisseria g., Mycoplasma genitalium, Trichomonas, HSV 1 & 2)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "STD Erreger (Chlamydia tr., Neisseria g., Mycoplasma genitalium, Trichomonas, HSV 1 & 2)"
+                  }
+                ]
+              },
+              {
+                "code": "pcr.mycology_pcr",
+                "display": "Mycology PCR",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Mykologie PCR"
+                  }
+                ]
+              },
+              {
+                "code": "pcr.mycobacterium_tuberculosis",
+                "display": "Mycobacterium tuberculosis",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Mykobakterium tuberkulosis"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "toxin_and_enzyme_detection",
+            "display": "Toxin and Enzyme Detection",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Toxin- und Enzym-Nachweise"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "toxin_and_enzyme_detection.clostridium_difficile_toxin_a_b_clostridia_gldh",
+                "display": "Clostridium Difficile Toxin A/B, Clostridia GLDH",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Clostridium Difficile Toxin A/B, Clostridien GLDH"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "coagulation",
+            "display": "Coagulation",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Gerinnung"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "coagulation.inr_quick",
+                "display": "INR/Quick",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "INR/Quick"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "current_vital_signs",
+            "display": "Current Vital Signs",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Aktuelle Vitalparameter"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "current_vital_signs.pulse",
+                "display": "Pulse",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Puls"
+                  }
+                ]
+              },
+              {
+                "code": "current_vital_signs.blood_pressure",
+                "display": "Blood Pressure",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Blutdruck"
+                  }
+                ]
+              },
+              {
+                "code": "current_vital_signs.temperature",
+                "display": "Temperature",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Temperatur"
+                  }
+                ]
+              },
+              {
+                "code": "current_vital_signs.general_condition",
+                "display": "General Condition",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Allgemeinzustand"
+                  }
+                ]
+              },
+              {
+                "code": "current_vital_signs.o2_saturation",
+                "display": "O2 Saturation",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "O2-Sättigung"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "organ_system_specific_examinations",
+            "display": "Organ & System Specific Examinations",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Organ- & Systemspezifische Untersuchungen"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "organ_system_specific_examinations.general_nutritional_status",
+                "display": "General/Nutritional Status",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Allgemein-/Ernährungszustand"
+                  }
+                ]
+              },
+              {
+                "code": "organ_system_specific_examinations.heart_vessels",
+                "display": "Heart, Vessels",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Cor, Gefäße"
+                  }
+                ]
+              },
+              {
+                "code": "organ_system_specific_examinations.lungs_thorax",
+                "display": "Lungs/Thorax",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Pulmo/Thorax"
+                  }
+                ]
+              },
+              {
+                "code": "organ_system_specific_examinations.abdomen",
+                "display": "Abdomen",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Abdomen"
+                  }
+                ]
+              },
+              {
+                "code": "organ_system_specific_examinations.skin_integument",
+                "display": "Skin/Integument",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Haut/Integument"
+                  }
+                ]
+              },
+              {
+                "code": "organ_system_specific_examinations.lymph_nodes",
+                "display": "Lymph Nodes",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Lymphknoten"
+                  }
+                ]
+              },
+              {
+                "code": "organ_system_specific_examinations.mouth_throat",
+                "display": "Mouth/Throat",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Mund/Rachen"
+                  }
+                ]
+              },
+              {
+                "code": "organ_system_specific_examinations.spine",
+                "display": "Spine",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Wirbelsäule"
+                  }
+                ]
+              },
+              {
+                "code": "organ_system_specific_examinations.digital_rectal_examination",
+                "display": "Digital Rectal Examination",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Digital rektale Untersuchung"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "upper_extremity",
+            "display": "Upper Extremity",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Obere Extremität"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "upper_extremity.shoulder",
+                "display": "Shoulder",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Schulter"
+                  }
+                ]
+              },
+              {
+                "code": "upper_extremity.elbow",
+                "display": "Elbow",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Ellenbogen"
+                  }
+                ]
+              },
+              {
+                "code": "upper_extremity.wrist",
+                "display": "Wrist",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Handgelenk"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "lower_extremity",
+            "display": "Lower Extremity",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Untere Extremität"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "lower_extremity.hip",
+                "display": "Hip",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Hüfte"
+                  }
+                ]
+              },
+              {
+                "code": "lower_extremity.knee",
+                "display": "Knee",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Knie"
+                  }
+                ]
+              },
+              {
+                "code": "lower_extremity.ankle",
+                "display": "Ankle",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Sprunggelenk"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "neurological_examination",
+            "display": "Neurological Examination",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Neurologische Untersuchung"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "neurological_examination.oriented",
+                "display": "Oriented",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Orientierend"
+                  }
+                ]
+              },
+              {
+                "code": "neurological_examination.cognition",
+                "display": "Cognition",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Kognition"
+                  }
+                ]
+              },
+              {
+                "code": "neurological_examination.meningism",
+                "display": "Meningism",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Meningismus"
+                  }
+                ]
+              },
+              {
+                "code": "neurological_examination.stance_and_gait_tests",
+                "display": "Stance and Gait Tests",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Stand- und Gangprüfungen"
+                  }
+                ]
+              },
+              {
+                "code": "neurological_examination.cranial_nerves",
+                "display": "Cranial Nerves",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Hirnnerven"
+                  }
+                ]
+              },
+              {
+                "code": "neurological_examination.motor_function",
+                "display": "Motor Function",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Motorik"
+                  }
+                ]
+              },
+              {
+                "code": "neurological_examination.muscle_stretch_reflexes",
+                "display": "Muscle Stretch Reflexes",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Muskeleigenreflexe"
+                  }
+                ]
+              },
+              {
+                "code": "neurological_examination.sensitivity",
+                "display": "Sensitivity",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Sensibilität"
+                  }
+                ]
+              },
+              {
+                "code": "neurological_examination.coordination",
+                "display": "Coordination",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Koordination"
+                  }
+                ]
+              },
+              {
+                "code": "neurological_examination.simpson_test",
+                "display": "Simpson Test",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Simpson-Test"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "sonography",
+            "display": "Sonography",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Sonographie"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "sonography.abdomen",
+                "display": "Abdomen",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Abdomen"
+                  }
+                ]
+              },
+              {
+                "code": "sonography.abdomen_ultrasound_incl_liver_elastography",
+                "display": "Abdomen Ultrasound incl. Liver Elastography",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Abdomen Ultraschall inkl. Elastographie Leber"
+                  }
+                ]
+              },
+              {
+                "code": "sonography.neck",
+                "display": "Neck",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Hals"
+                  }
+                ]
+              },
+              {
+                "code": "sonography.neck_biopsy",
+                "display": "Neck + Biopsy",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Hals + Biopsie"
+                  }
+                ]
+              },
+              {
+                "code": "sonography.vessels_abi",
+                "display": "Vessels - ABI",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Gefäße - ABI"
+                  }
+                ]
+              },
+              {
+                "code": "sonography.vessels_neck",
+                "display": "Vessels - Neck",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Gefäße - Hals"
+                  }
+                ]
+              },
+              {
+                "code": "sonography.joints",
+                "display": "Joints",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Gelenke"
+                  }
+                ]
+              },
+              {
+                "code": "sonography.transthoracic_echocardiography",
+                "display": "Transthoracic Echocardiography",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Transthorakale Echokardiografie"
+                  }
+                ]
+              },
+              {
+                "code": "sonography.transesophageal_echocardiography",
+                "display": "Transesophageal Echocardiography",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Transösophageale Echokardiografie"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "x_ray",
+            "display": "X-ray",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Röntgen"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "x_ray.thorax",
+                "display": "Thorax",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Thorax"
+                  }
+                ]
+              },
+              {
+                "code": "x_ray.abdomen",
+                "display": "Abdomen",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Abdomen"
+                  }
+                ]
+              },
+              {
+                "code": "x_ray.gastrografin_swallow",
+                "display": "Gastrografin Swallow",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Gastrografinschluck"
+                  }
+                ]
+              },
+              {
+                "code": "x_ray.skeletal",
+                "display": "Skeletal",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Skelettal"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "ct",
+            "display": "CT",
+            "designation": [
+              {
+                "language": "de",
+                "value": "CT"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "ct.skull",
+                "display": "Skull",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Schädel"
+                  }
+                ]
+              },
+              {
+                "code": "ct.thorax",
+                "display": "Thorax",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Thorax"
+                  }
+                ]
+              },
+              {
+                "code": "ct.abdomen",
+                "display": "Abdomen",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Abdomen"
+                  }
+                ]
+              },
+              {
+                "code": "ct.musculoskeletal_of_affected_body_region",
+                "display": "Musculoskeletal of Affected Body Region",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Muskoloskelettal der betroffenen Körperregion"
+                  }
+                ]
+              },
+              {
+                "code": "ct.coronary_ct",
+                "display": "Coronary CT",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Koronar CT"
+                  }
+                ]
+              },
+              {
+                "code": "ct.biopsy",
+                "display": "Biopsy",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Biopsie"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "mri",
+            "display": "MRI",
+            "designation": [
+              {
+                "language": "de",
+                "value": "MRT"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "mri.skull",
+                "display": "Skull",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Schädel"
+                  }
+                ]
+              },
+              {
+                "code": "mri.abdomen",
+                "display": "Abdomen",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Abdomen"
+                  }
+                ]
+              },
+              {
+                "code": "mri.thorax",
+                "display": "Thorax",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Thorax"
+                  }
+                ]
+              },
+              {
+                "code": "mri.musculoskeletal_of_affected_body_region",
+                "display": "Musculoskeletal of Affected Body Region",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Muskuloskelettal der betroffenen Körperregion"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "special_examinations",
+            "display": "Special Examinations",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Spezialuntersuchungen"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "special_examinations.bone_density_osteodensitometry_dxa",
+                "display": "Bone Density/Osteodensitometry (DXA)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Knochendichte/Osteodensitometrie (DXA)"
+                  }
+                ]
+              },
+              {
+                "code": "special_examinations.scintigraphic_examination_trunk",
+                "display": "Scintigraphic Examination (Trunk)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Szintigrafische Untersuchung (Rumpf)"
+                  }
+                ]
+              },
+              {
+                "code": "special_examinations.pet_scan",
+                "display": "PET-SCAN",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "PET-SCAN"
+                  }
+                ]
+              },
+              {
+                "code": "special_examinations.thyroid_scintigraphy",
+                "display": "Thyroid Scintigraphy",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Schilddrüsen-Szintigraphie"
+                  }
+                ]
+              },
+              {
+                "code": "special_examinations.myocardial_scintigraphy",
+                "display": "Myocardial Scintigraphy",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Myokardszintigraphie"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "respiratory_infections",
+            "display": "Respiratory Infections",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Resp. Infektionen"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "respiratory_infections.influenza_rapid_test_swab",
+                "display": "Influenza Rapid Test (Swab)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Influenza-Schnelltest (Abstrich)"
+                  }
+                ]
+              },
+              {
+                "code": "respiratory_infections.coronaviruses_antigen_detection",
+                "display": "Coronaviruses (Antigen Detection)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Coronaviren (Antigen-Nachweis)"
+                  }
+                ]
+              },
+              {
+                "code": "respiratory_infections.coronaviren_pcr",
+                "display": "Coronaviren (PCR)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Coronaviren (PCR)"
+                  }
+                ]
+              },
+              {
+                "code": "respiratory_infections.rsv_antigen_detection",
+                "display": "RSV (Antigen Detection)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "RSV (Antigen-Nachweis)"
+                  }
+                ]
+              },
+              {
+                "code": "respiratory_infections.nucleic_acid_detection_of_pathogens_of_resp_infections",
+                "display": "Nucleic Acid Detection of Pathogens of Resp. Infections",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Nukleinsäurenachweis von Erregern resp. Infektionen"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "hiv",
+            "display": "HIV",
+            "designation": [
+              {
+                "language": "de",
+                "value": "HIV"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "hiv.hiv_ab_and_p24_ag_screening_test_edta_blood",
+                "display": "HIV-Ab and p24-Ag Screening Test (EDTA Blood)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "HIV-Ak und p24-Ag Suchtest (EDTA Blut)"
+                  }
+                ]
+              },
+              {
+                "code": "hiv.hiv_ab_in_western_blot_serum",
+                "display": "HIV-Ab in Western Blot (Serum)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "HIV-Ak im Westernblot (Serum)"
+                  }
+                ]
+              },
+              {
+                "code": "hiv.hiv_rna_detection",
+                "display": "HIV-RNA Detection",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "HIV-RNA Nachweis"
+                  }
+                ]
+              },
+              {
+                "code": "hiv.hiv_rna_quantitative",
+                "display": "HIV-RNA Quantitative",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "HIV-RNA quantitativ"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "hepatitis_viruses",
+            "display": "Hepatitis Viruses",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Hepatitisviren"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "hepatitis_viruses.hepatitis_viruses_serum",
+                "display": "Hepatitis Viruses (Serum)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Hepatitisviren (Serum)"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "code": "other_viruses",
+            "display": "Other Viruses",
+            "designation": [
+              {
+                "language": "de",
+                "value": "Weitere Viren"
+              }
+            ],
+            "property": [
+              {
+                "code": "notSelectable",
+                "valueBoolean": true
+              }
+            ],
+            "concept": [
+              {
+                "code": "other_viruses.vzv_ab",
+                "display": "VZV-Ab",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "VZV-Ak"
+                  }
+                ]
+              },
+              {
+                "code": "other_viruses.hsv",
+                "display": "HSV",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "HSV"
+                  }
+                ]
+              },
+              {
+                "code": "other_viruses.ebv_anti_vca_igg_anti_ea_igg_anti_ebna_1_igg",
+                "display": "EBV (Anti-VCA-IgG, Anti-EA-IgG, Anti-EBNA-1-IgG)",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "EBV (Anti-VCA-IgG, Anti-EA-IgG, Anti-EBNA-1-IgG)"
+                  }
+                ]
+              },
+              {
+                "code": "other_viruses.adenoviruses",
+                "display": "Adenoviruses",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "Adenoviren"
+                  }
+                ]
+              },
+              {
+                "code": "other_viruses.other",
+                "display": "other",
+                "designation": [
+                  {
+                    "language": "de",
+                    "value": "andere"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

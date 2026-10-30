@@ -18,5 +18,5 @@ in `.gitignore`. Put your own copies here; never commit them.
 `procedures.fhir.json` is a FHIR R4 `Bundle` and the only procedure file: CodeSystem concepts form the
 category/procedure tree (`display` = English name, `designation` = translations), and an optional
 `ObservationDefinition` coded with the CodeSystem `url` + concept code adds reference bands. Without it
-procedures are freeform. A leftover `procedures.yml` is ignored with a startup warning. See
+procedures are freeform. See
 [README-DEV.md](../README-DEV.md#data-files).

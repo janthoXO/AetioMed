@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import z from "zod";
 import { eq } from "drizzle-orm";
 import type { DbHandle } from "../../persistence/db.js";
@@ -65,10 +64,6 @@ export function createProceduresRepo(
 ): ProceduresRepo {
   const catalogueFile = catalogFile(catalogDir, PROCEDURES_FILE);
   const translationsFile = catalogueFile;
-  if (fs.existsSync(catalogFile(catalogDir, "procedures.yml")))
-    console.warn(
-      `[Procedure] procedures.yml is no longer read; the catalogue is ${PROCEDURES_FILE} (FHIR R4 Bundle).`
-    );
 
   /**
    * Node (category/procedure) translations from English to other languages,

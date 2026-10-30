@@ -47,27 +47,14 @@ const QuantitySchema = z.object({
   code: z.string().optional(),
 });
 
-/**
- * Every UCUM time unit, in years; patient age is whole years. FHIR's `Age`
- * value set is `min h d wk mo a`, but `qualifiedInterval.age` is a plain Range,
- * so the rest are legal too.
- */
-const DAY = 1 / 365.25;
+/** FHIR `Age` units (UCUM, value set `age-units`) in years; patient age is whole years. */
 const YEARS_PER_UNIT: Record<string, number> = {
   a: 1,
-  a_j: 1,
-  a_t: 365.24219 * DAY,
-  a_g: 365.2425 * DAY,
   mo: 1 / 12,
-  mo_j: 1 / 12,
-  mo_g: (365.2425 / 12) * DAY,
-  mo_s: 29.53059 * DAY,
-  wk: 7 * DAY,
-  d: DAY,
-  h: DAY / 24,
-  min: DAY / 1440,
-  s: DAY / 86400,
-  ms: DAY / 86400000,
+  wk: 7 / 365.25,
+  d: 1 / 365.25,
+  h: 1 / 8766,
+  min: 1 / 525960,
 };
 
 const AgeSchema = QuantitySchema.transform((q, ctx) => {
@@ -76,7 +63,7 @@ const AgeSchema = QuantitySchema.transform((q, ctx) => {
   if (perYear === undefined) {
     ctx.addIssue({
       code: "custom",
-      message: `age unit "${unit}" is not a UCUM time unit (${Object.keys(YEARS_PER_UNIT).join(", ")})`,
+      message: `age unit "${unit}" is not a FHIR age unit (${Object.keys(YEARS_PER_UNIT).join(", ")})`,
     });
     return z.NEVER;
   }

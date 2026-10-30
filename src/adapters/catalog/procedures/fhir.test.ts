@@ -100,7 +100,7 @@ describe("parseFhirCatalogue", () => {
                 {
                   low: 10,
                   unit: "g/dL",
-                  age: { low: 26 * 7 * (1 / 365.25), high: 1 },
+                  age: { low: 26 * (7 / 365.25), high: 1 },
                 },
               ],
             },
@@ -168,6 +168,6 @@ describe("parseFhirCatalogue", () => {
           },
         ],
       })
-    ).toThrow(/UCUM time unit/);
+    ).toThrow(/FHIR age unit/);
   });
 });

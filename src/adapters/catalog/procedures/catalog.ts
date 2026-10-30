@@ -1,7 +1,14 @@
 import type { ProceduresRepo } from "./repo.js";
 import { ProcedureCandidatesImpl } from "@/core/graph/catalog/candidates.js";
 import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
+import {
+  emptyTree,
+  leaves,
+  refKey,
+  type ProcedureRef,
+} from "@/core/graph/shared/domain/ProcedureTree.js";
 import type {
+  CatalogProcedure,
   ProcedureCandidates,
   ProcedureCatalog,
   ProcedureCatalogTree,
@@ -13,9 +20,17 @@ import type {
  * the tree comes from.
  */
 abstract class StaticProcedureCatalog implements ProcedureCatalog {
+  private readonly byRef: Map<string, CatalogProcedure>;
+
   constructor(
     private readonly catalogueTree: ProcedureCatalogTree | undefined
-  ) {}
+  ) {
+    this.byRef = new Map(
+      leaves(catalogueTree ?? emptyTree<CatalogProcedure>()).map(
+        ({ path, leaf }) => [refKey({ path, name: leaf.name }), leaf]
+      )
+    );
+  }
 
   tree(): ProcedureCatalogTree | undefined {
     return this.catalogueTree;
@@ -23,6 +38,10 @@ abstract class StaticProcedureCatalog implements ProcedureCatalog {
 
   candidates(): ProcedureCandidates {
     return new ProcedureCandidatesImpl(this.catalogueTree);
+  }
+
+  procedure(ref: ProcedureRef): CatalogProcedure | undefined {
+    return this.byRef.get(refKey(ref));
   }
 
   abstract translation(

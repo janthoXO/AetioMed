@@ -373,15 +373,19 @@ function makeRenderResults(
     );
 
     const procedures = buildTree(
-      state.plannedProcedures.map((p, i) => ({
-        path: p.path,
-        leaf: {
-          name: p.name,
-          order: i,
-          relevance: p.relevance,
-          result: rendered[String(i)]!,
-        },
-      }))
+      state.plannedProcedures.map((p, i) => {
+        const code = runtime.catalogs.procedures.procedure(p)?.code;
+        return {
+          path: p.path,
+          leaf: {
+            name: p.name,
+            ...(code !== undefined && { code }),
+            order: i,
+            relevance: p.relevance,
+            result: rendered[String(i)]!,
+          },
+        };
+      })
     );
 
     runtime.log.info(

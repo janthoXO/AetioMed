@@ -9,6 +9,8 @@ import {
 } from "@/core/graph/shared/prompt/prompt.js";
 import type { Diagnosis } from "@/core/graph/shared/domain/Diagnosis.js";
 import {
+  bandsFor,
+  formatBand,
   ProcedureRelevanceSchema,
   type PlannedProcedure,
   type ProcedureRelevance,
@@ -105,7 +107,7 @@ These procedures were chosen by a separate, BLINDED solver who does not know the
   - "optional": clinically reasonable and supportive, but not required for this diagnosis.
   - "contraindicated": not indicated, or potentially harmful/misleading, given this diagnosis — even if the blinded solver had a reasonable reason to order it without knowing the diagnosis.
 - Results are reports to the physician who ordered them: no advice such as "discuss with your doctor".
-- Laboratory results: value, unit, reference range and a high/low flag; no interpretation.
+- Laboratory results: value, unit, reference range and a high/low flag; no interpretation. Where a procedure lists a reference range, report it in that unit and flag against that range.
 - Imaging and other reports: findings, then an impression. Name the true diagnosis only in the impression of a procedure that is diagnostic for it, hedged as the results strategy specifies (e.g. "consistent with ...", "most likely ..., differential ...", or non-committal). Never name it in passing in any other procedure, and never negate it ("no evidence of <true diagnosis>").
 - A report may state its clinical question only by echoing a diagnosis already named in the patient presentation verbatim, or at symptom level. Never state a suspicion of your own.
 - "No evidence of <X>" is fine for a diagnosis named in the presentation or for any alternative, never for the true diagnosis.
@@ -135,7 +137,18 @@ ${proceduresStrategy}`
 
     section(
       "Procedures ordered together in this batch",
-      procedureLabels.map((label, i) => `${i + 1}. ${label}`).join("\n")
+      procedureSteps
+        .map((step, i) => {
+          const bands = bandsFor(
+            runtime.catalogs.procedures.procedure(step)?.bands ?? [],
+            presentation.patient
+          );
+          const range = bands.length
+            ? ` — reference range: ${bands.map(formatBand).join("; ")}`
+            : "";
+          return `${i + 1}. ${procedureLabels[i]}${range}`;
+        })
+        .join("\n")
     ),
 
     `Plan clinically realistic results for these procedures.`

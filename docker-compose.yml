@@ -99,7 +99,7 @@ services:
       - saveAnalytics=false
       - include=${ICD_RELEASE:-2026-01}_de-en # release_languages; must cover LANGUAGES
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null --header 'API-Version: v2' --header 'Accept: application/json' http://localhost/icd/release/11/${ICD_RELEASE:-2026-01}/mms || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null --header 'API-Version: v2' --header 'Accept: application/json' --header 'Accept-Language: en' http://127.0.0.1/icd/release/11/${ICD_RELEASE:-2026-01}/mms || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 30

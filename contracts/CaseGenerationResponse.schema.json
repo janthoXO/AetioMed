@@ -125,6 +125,9 @@
                   "name": {
                     "type": "string"
                   },
+                  "code": {
+                    "type": "string"
+                  },
                   "order": {
                     "type": "integer",
                     "minimum": 0,
@@ -245,6 +248,9 @@
             "type": "object",
             "properties": {
               "name": {
+                "type": "string"
+              },
+              "code": {
                 "type": "string"
               },
               "order": {

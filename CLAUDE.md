@@ -294,8 +294,9 @@ two OTel spans for one logical step.
 
 ### Catalog Layer
 
-**The procedure catalogue is a tree, not a flat list.** `procedures.yml` parses into a
-`ProcedureTree<{ name }>` (`shared/domain/ProcedureTree.ts`) — a uniform recursive shape,
+**The procedure catalogue is a tree, not a flat list.** `procedures.fhir.json` (a FHIR R4 Bundle, see "Data Files") parses
+(`adapters/catalog/procedures/fhir.ts`'s `parseFhirCatalogue`) into a
+`ProcedureTree<CatalogProcedure>` (`shared/domain/ProcedureTree.ts`) — a uniform recursive shape,
 `{ categories: ({ name } & ProcedureTree)[], procedures: Leaf[] }`, categories nested to any
 depth, root and every category sharing the same shape. A procedure's identity is a `ProcedureRef`
 (`{ path, name }` — category names from the root, then its own name), compared/deduped/excluded
@@ -315,6 +316,11 @@ grammar (`{ procedures?, categories?: { <name>: … } }`) used to be the pick: e
 optional, so `{}` was valid, and a model that skipped the `categories` level had its whole pick
 silently stripped by zod into an empty workup. Freeform (no catalogue) is unchanged apart from
 `.min(1)`: the model invents names, refs come back with `path: []`.
+
+Each case procedure leaf carries `code` (the FHIR concept code; absent in freeform). The result
+planner gets the reference band matching the generated patient (gender + age), resolved in code;
+when the patient is only outline text it gets every band with its context. The blinded step still
+sees names/labels only, never codes.
 
 `src/core/graph/catalog/` owns the catalogue concept behind ports (`ProcedureCatalog`,
 `AnamnesisCatalog`, `LabelCatalog`, `DiagnosisCatalog`, `OutlineHeadingCatalog` in `ports.ts`). The adapters live in
@@ -1007,10 +1013,7 @@ like an empty one (`syncSource`, `adapters/persistence/db.ts`), so the server bo
 empty `CATALOG_DIR` — catalogues go freeform, ICD-only requests 400, symptoms come from the
 LLM. Paths below are relative to it:
 
-- `procedures.yml` / `proceduresTranslations.yml` — approved procedure catalogue, a tree of
-  categories (any depth) and procedures (when set, LLM must select from this tree only, by each
-  procedure's shortest unique label); translations mirror the same tree, each node keyed by its English
-  `key` alongside its translated `name`
+- `procedures.fhir.json` — approved procedure catalogue, one FHIR R4 `Bundle`; AetioMed reads a subset with zod, no FHIR library, other resources and fields are ignored. `CodeSystem` concepts form the tree (when set, LLM must select from it only, by each procedure's shortest unique label): a concept with child concepts is a category, a leaf is a procedure unless it carries the `notSelectable` property; a concept with `status` `retired` is skipped with everything under it; `display` is the English name (or an `en` designation when the CodeSystem's `language` is not English) and each `designation` is a curated translation per language. An optional `ObservationDefinition` coded with the CodeSystem `url` + concept code gives that procedure reference bands (`qualifiedInterval` with category `reference` or none: range low/high + UCUM unit, optional `gender`, optional `age` in FHIR age units (`a mo wk d h min`), ranges inclusive; resolution tiers: own gender with fitting age, own gender without age, no gender with fitting age, no gender without age; on a shared age bound the band starting there wins, as lab ranges read `40–<50`). Several CodeSystems merge at the root; a `supplement` CodeSystem (e.g. unit translations for UCUM) is skipped. Each case procedure leaf carries the concept `code`.
 - `diagnosisTranslations.yml` — diagnosis name translations, used only without ICD (input index for user-supplied names)
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions (static config, no longer a request field)
 - `labelTranslations.yml` — trace-node label translations

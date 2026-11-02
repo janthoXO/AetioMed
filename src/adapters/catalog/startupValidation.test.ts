@@ -88,7 +88,7 @@ describe("findMissingLanguages", () => {
     const specs: CatalogueSpec[] = [
       {
         catalogue: "diagnosis",
-        file: "diagnosisTranslations.yml",
+        file: "diagnoses.fhir.json",
         baseKeys: ["Influenza"],
         translations: { French: { Influenza: "Grippe" } },
         enforceUnknownKeys: false,
@@ -98,7 +98,7 @@ describe("findMissingLanguages", () => {
     expect(findMissingLanguages(specs, ["en", "de"])).toEqual([
       {
         catalogue: "diagnosis",
-        file: "diagnosisTranslations.yml",
+        file: "diagnoses.fhir.json",
         language: "de",
       },
     ]);
@@ -193,7 +193,7 @@ function fakeRepos(
       getEffectiveCategoryList: () => ["Symptoms"],
     } as unknown as Repos["anamnesis"],
     diagnosis: {
-      translationsFile: "diagnosisTranslations.yml",
+      translationsFile: "diagnoses.fhir.json",
     } as unknown as Repos["diagnosis"],
     labels: {
       translationsFile: "labelTranslations.yml",
@@ -224,7 +224,7 @@ describe("validateCatalogsOrExit — end to end", () => {
     declared.set("anamnesisCategoriesTranslations.yml", {
       de: { Symptoms: "Symptome" },
     });
-    declared.set("diagnosisTranslations.yml", {
+    declared.set("diagnoses.fhir.json", {
       de: { Influenza: "Grippe" },
     });
     declared.set("labelTranslations.yml", { de: {} }); // also missing
@@ -260,7 +260,7 @@ describe("validateCatalogsOrExit — end to end", () => {
     for (const file of [
       "procedures.yml",
       "anamnesisCategoriesTranslations.yml",
-      "diagnosisTranslations.yml",
+      "diagnoses.fhir.json",
       "labelTranslations.yml",
     ]) {
       declared.set(file, { de: { x: "y" } });
@@ -273,7 +273,7 @@ describe("validateCatalogsOrExit — end to end", () => {
     declared.set("anamnesisCategoriesTranslations.yml", {
       de: { Symptoms: "Symptome" },
     });
-    declared.set("diagnosisTranslations.yml", {
+    declared.set("diagnoses.fhir.json", {
       de: { Influenza: "Grippe" },
     });
     declared.set("labelTranslations.yml", { de: {} });
@@ -293,7 +293,7 @@ describe("validateCatalogsOrExit — end to end", () => {
   });
 
   it("without ICD, diagnosis base keys are the translations file's own English keys", () => {
-    declared.set("diagnosisTranslations.yml", {
+    declared.set("diagnoses.fhir.json", {
       de: { Influenza: "Grippe" },
       fr: { Influenza: "Grippe", Cholera: "Choléra" },
     });
@@ -304,7 +304,7 @@ describe("validateCatalogsOrExit — end to end", () => {
   });
 
   it("with ICD, skips the diagnosis catalogue and warns when the file has entries", () => {
-    declared.set("diagnosisTranslations.yml", { de: { Influenza: "Grippe" } });
+    declared.set("diagnoses.fhir.json", { de: { Influenza: "Grippe" } });
     const log = vi.spyOn(console, "log").mockClear();
     const warn = vi.spyOn(console, "warn").mockClear();
     const exitSpy = vi
@@ -315,7 +315,7 @@ describe("validateCatalogsOrExit — end to end", () => {
     const out = log.mock.calls.map((c) => String(c[0])).join("\n");
     expect(out).not.toContain("diagnosis ");
     expect(warn).toHaveBeenCalledWith(
-      "[catalog] diagnosisTranslations.yml is ignored: ICD is configured, diagnosis names come from ICD."
+      "[catalog] diagnoses.fhir.json is ignored: ICD is configured, diagnosis names come from ICD."
     );
     exitSpy.mockRestore();
   });
@@ -338,7 +338,7 @@ describe("validateCatalogsOrExit — end to end", () => {
     declared.set("anamnesisCategoriesTranslations.yml", {
       de: { Symptoms: "Symptome" },
     });
-    declared.set("diagnosisTranslations.yml", {
+    declared.set("diagnoses.fhir.json", {
       de: { Influenza: "Grippe" },
     });
     declared.set("labelTranslations.yml", { de: { unused: "unused" } });
@@ -368,7 +368,7 @@ describe("validateCatalogsOrExit — end to end", () => {
     declared.set("anamnesisCategoriesTranslations.yml", {
       de: { Symptoms: "Symptome" },
     });
-    declared.set("diagnosisTranslations.yml", {
+    declared.set("diagnoses.fhir.json", {
       de: { Influenza: "Grippe" },
     });
     declared.set("labelTranslations.yml", { de: { unused: "unused" } });
@@ -394,7 +394,7 @@ describe("validateCatalogsOrExit — end to end", () => {
     declared.set("anamnesisCategoriesTranslations.yml", {
       de: { Symptoms: "Symptome" },
     });
-    declared.set("diagnosisTranslations.yml", {
+    declared.set("diagnoses.fhir.json", {
       de: { Influenza: "Grippe" },
     });
     declared.set("labelTranslations.yml", { de: { unused: "unused" } });

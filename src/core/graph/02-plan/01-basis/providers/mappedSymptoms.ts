@@ -1,16 +1,18 @@
-import type { UmlsSymptomFloor } from "@/core/graph/02-plan/01-basis/ports.js";
+import type { SymptomMapping } from "@/core/graph/02-plan/01-basis/ports.js";
 import type { MedicalBasisProvider } from "@/core/graph/02-plan/01-basis/ports.js";
 
-/** UMLS symptoms for the diagnosis's ICD code. Nothing without an ICD code or UMLS data; never generated content. */
-export function createUmlsSymptomProvider(
-  umlsFloor: UmlsSymptomFloor
+/** Mapped symptoms for the diagnosis's ICD code. Nothing without an ICD code or mapping data; never generated content. */
+export function createMappedSymptomProvider(
+  symptomMapping: SymptomMapping
 ): MedicalBasisProvider {
   return {
-    id: "umls-symptoms",
-    description: "Typical symptoms (UMLS database)",
+    id: "mapped-symptoms",
+    description: "Typical symptoms (curated ICD → symptom mapping)",
     async fetch(query) {
       const icd = query.diagnosis.icd;
-      const symptoms = icd ? umlsFloor.SymptomsRelatedToDiagnosisIcd(icd) : [];
+      const symptoms = icd
+        ? symptomMapping.SymptomsRelatedToDiagnosisIcd(icd)
+        : [];
       return symptoms.map((s) => s.name).join(", ") || undefined;
     },
   };

@@ -1,11 +1,11 @@
-// LLM fallback for `umls-symptoms`: only runs when UMLS has nothing for the ICD code; cache-aside.
+// LLM fallback for `mapped-symptoms`: only runs when the mapping has nothing for the ICD code; cache-aside.
 import { chatModelLlmPort } from "@/adapters/ai/llm.js";
 import { describe, expect, it, vi } from "vitest";
 import { FakeListChatModel } from "@langchain/core/utils/testing";
 import { createLlmSymptomProvider } from "./llmSymptoms.js";
 import type {
   SymptomCache,
-  UmlsSymptomFloor,
+  SymptomMapping,
 } from "@/core/graph/02-plan/01-basis/ports.js";
 import type { Symptom } from "@/core/graph/02-plan/01-basis/symptom.js";
 import type { GraphRuntime, LlmPort } from "@/core/graph/runtime.js";
@@ -17,12 +17,12 @@ import { InMemoryDiagnosisCatalog } from "@/adapters/catalog/diagnosis/index.js"
 import type { BasisQuery } from "@/core/graph/02-plan/01-basis/ports.js";
 
 function makeFakeSymptomsRepo(opts: {
-  umlsByIcd?: Record<string, Symptom[]>;
+  mappedByIcd?: Record<string, Symptom[]>;
   cachedByIcd?: Record<string, Symptom[]>;
 }) {
   const saved: { icd: string; symptoms: Symptom[] }[] = [];
-  const floor: UmlsSymptomFloor = {
-    SymptomsRelatedToDiagnosisIcd: (icd) => opts.umlsByIcd?.[icd] ?? [],
+  const floor: SymptomMapping = {
+    SymptomsRelatedToDiagnosisIcd: (icd) => opts.mappedByIcd?.[icd] ?? [],
   };
   const cache: SymptomCache = {
     getCachedSymptoms: (icd) => opts.cachedByIcd?.[icd],
@@ -90,9 +90,9 @@ describe("createLlmSymptomProvider", () => {
     expect(provider.id).toBe("llm-symptoms");
   });
 
-  it("UMLS has data for the ICD code: undefined, zero LLM calls, no cache write", async () => {
+  it("mapping has data for the ICD code: undefined, zero LLM calls, no cache write", async () => {
     const { floor, cache, saved } = makeFakeSymptomsRepo({
-      umlsByIcd: { "1E32": [{ name: "Fever" }] },
+      mappedByIcd: { "1E32": [{ name: "Fever" }] },
     });
     const { llm, callCount } = makeQueuedLlmPort([]);
     const provider = createLlmSymptomProvider(buildRuntime(llm), floor, cache);
@@ -106,7 +106,7 @@ describe("createLlmSymptomProvider", () => {
 
   it("a fresh cache hit returns the cached names with zero LLM calls", async () => {
     const { floor, cache, saved } = makeFakeSymptomsRepo({
-      umlsByIcd: {},
+      mappedByIcd: {},
       cachedByIcd: { "1E32": [{ name: "Chills" }, { name: "Myalgia" }] },
     });
     const provider = createLlmSymptomProvider(
@@ -123,7 +123,7 @@ describe("createLlmSymptomProvider", () => {
 
   it("a cache miss calls the LLM exactly once and saves the result to the cache", async () => {
     const { floor, cache, saved } = makeFakeSymptomsRepo({
-      umlsByIcd: {},
+      mappedByIcd: {},
       cachedByIcd: {},
     });
     const { llm, callCount } = makeQueuedLlmPort([
@@ -157,7 +157,7 @@ describe("createLlmSymptomProvider", () => {
 
   it("an empty LLM result is undefined and not cached", async () => {
     const { floor, cache, saved } = makeFakeSymptomsRepo({
-      umlsByIcd: {},
+      mappedByIcd: {},
       cachedByIcd: {},
     });
     const { llm } = makeQueuedLlmPort([JSON.stringify({ symptoms: [] })]);

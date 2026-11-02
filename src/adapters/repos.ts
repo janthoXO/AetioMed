@@ -19,10 +19,10 @@ import {
   createDiagnosisRepo,
   type DiagnosisRepo,
 } from "./catalog/diagnosis/index.js";
-import { createSymptomCache, createUmlsSymptomFloor } from "./symptoms/repo.js";
+import { createSymptomCache, createSymptomMapping } from "./symptoms/repo.js";
 import type {
   SymptomCache,
-  UmlsSymptomFloor,
+  SymptomMapping,
 } from "@/core/graph/02-plan/01-basis/ports.js";
 
 export interface Repos {
@@ -32,7 +32,7 @@ export interface Repos {
   labels: LabelsRepo;
   outlineHeadings: OutlineHeadingsRepo;
   diagnosis: DiagnosisRepo;
-  umlsFloor: UmlsSymptomFloor;
+  symptomMapping: SymptomMapping;
   symptomCache: SymptomCache;
 }
 
@@ -52,7 +52,7 @@ export function createRepos(opts: {
     labels: createLabelsRepo(db, opts.catalogDir),
     outlineHeadings: createOutlineHeadingsRepo(db, opts.catalogDir),
     diagnosis: createDiagnosisRepo(db, opts.catalogDir),
-    umlsFloor: createUmlsSymptomFloor(opts.catalogDir),
+    symptomMapping: createSymptomMapping(opts.catalogDir),
     symptomCache: createSymptomCache(db, opts.symptomCacheTtlDays),
   };
 }
@@ -64,6 +64,6 @@ export type {
   LabelsRepo,
   OutlineHeadingsRepo,
   DiagnosisRepo,
-  UmlsSymptomFloor,
+  SymptomMapping,
   SymptomCache,
 };

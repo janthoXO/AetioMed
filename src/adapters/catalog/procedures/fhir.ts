@@ -243,7 +243,10 @@ function toTree(
 }
 
 /** Concept name per ISO 639-1 language: designations, then `display` in the CodeSystem's language. */
-function namesOf(c: Concept, codeSystemLanguage: string | undefined) {
+export function namesOf(
+  c: { display?: string | undefined; designation?: Concept["designation"] },
+  codeSystemLanguage: string | undefined
+) {
   const names: Record<string, string> = {};
   for (const d of c.designation ?? []) {
     const language = d.language?.split("-")[0];

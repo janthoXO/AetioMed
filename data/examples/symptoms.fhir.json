@@ -1,0 +1,19 @@
+{
+  "resourceType": "ConceptMap",
+  "status": "draft",
+  "group": [
+    {
+      "source": "http://id.who.int/icd/release/11/mms",
+      "target": "http://purl.obolibrary.org/obo/hp.owl",
+      "element": [
+        {
+          "code": "5A10",
+          "display": "Type 1 diabetes mellitus",
+          "target": [
+            { "code": "HP:0000103", "display": "Polyuria", "equivalence": "relatedto" }
+          ]
+        }
+      ]
+    }
+  ]
+}

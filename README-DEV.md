@@ -255,11 +255,11 @@ Tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`.
 `CATALOG_DIR` (default `data/`) holds the sources synced into SQLite at startup:
 
 - `procedures.fhir.json` — approved procedure catalogue, one FHIR R4 `Bundle` (a subset read with zod, no FHIR library; other resources and fields are ignored). `CodeSystem` concepts form the tree: a concept with child concepts is a category, a leaf is a procedure unless it carries the `notSelectable` property; a concept with `status` `retired` is skipped with everything under it; `display` is the English name (or an `en` designation when the CodeSystem's `language` is not English) and each `designation` is a curated translation per language. An optional `ObservationDefinition` coded with the CodeSystem `url` + concept code gives that procedure reference bands (`qualifiedInterval` with category `reference` or none: range low/high + UCUM unit, optional `gender`, optional `age` in FHIR age units (`a mo wk d h min`), ranges inclusive; resolution tiers: own gender with fitting age, own gender without age, no gender with fitting age, no gender without age; on a shared age bound the band starting there wins, as lab ranges read `40–<50`). Several CodeSystems merge at the root; a `supplement` CodeSystem (e.g. unit translations for UCUM) is skipped.
-- `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
+- `diagnoses.fhir.json` — diagnosis names and translations, one FHIR `CodeSystem` (used only without ICD)
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions
 - `labelTranslations.yml` — progress label translations
 - `outlineHeadingsTranslations.yml` — plan-mode outline section-title translations (missing titles are LLM-translated once and cached)
-- `diagnosis_symptoms.json` — UMLS symptoms per ICD code (loaded directly, not via the DB sync)
+- `symptoms.fhir.json` — ICD → symptom mapping, one FHIR `ConceptMap` (loaded directly, not via the DB sync)
 
 The generated database lives under `CACHE_DIR` (default `data/cache/`), deliberately a separate directory so a deployer can mount their own catalogues without clobbering it. `scripts/extract-icd11*.ts` build the diagnosis YAML from ICD-11 source data and are run manually.
 

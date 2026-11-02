@@ -5,7 +5,7 @@ import type { RequestContext } from "@/core/graph/utils/context.js";
 import { createMedicalBasisRegistry, resolveAllFragments } from "./registry.js";
 import { renderMedicalBasisSection } from "./render.js";
 import type { BasisQuery, MedicalBasisProvider } from "./ports.js";
-import type { SymptomCache, UmlsSymptomFloor } from "./ports.js";
+import type { SymptomCache, SymptomMapping } from "./ports.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import { InMemoryProcedureCatalog } from "@/adapters/catalog/procedures/index.js";
 import { InMemoryAnamnesisCatalog } from "@/adapters/catalog/anamnesis/index.js";
@@ -174,8 +174,8 @@ describe("resolveAllFragments", () => {
 });
 
 describe("createMedicalBasisRegistry", () => {
-  it("returns UMLS symptoms then LLM symptoms, in that order", () => {
-    const umlsFloor: UmlsSymptomFloor = {
+  it("returns mapped symptoms then LLM symptoms, in that order", () => {
+    const symptomMapping: SymptomMapping = {
       SymptomsRelatedToDiagnosisIcd: () => [],
     };
     const symptomCache: SymptomCache = {
@@ -199,12 +199,12 @@ describe("createMedicalBasisRegistry", () => {
 
     const registry = createMedicalBasisRegistry({
       runtime,
-      umlsFloor,
+      symptomMapping,
       symptomCache,
     });
 
     expect(registry.map((p) => p.id)).toEqual([
-      "umls-symptoms",
+      "mapped-symptoms",
       "llm-symptoms",
     ]);
   });

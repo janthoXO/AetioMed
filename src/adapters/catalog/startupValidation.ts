@@ -1,3 +1,4 @@
+import { parseDiagnosisCodeSystem } from "./diagnosis/fhir.js";
 import { readDeclaredTranslations } from "../persistence/predefinedList.js";
 import { OUTLINE_SECTIONS } from "@/core/graph/shared/outline/segments.js";
 import type { Repos } from "../repos.js";
@@ -30,7 +31,8 @@ export interface CatalogueSpec {
 
 function loadCatalogueSpecs(repos: Repos, icd: boolean): CatalogueSpec[] {
   const diagnosisTranslations = readDeclaredTranslations(
-    repos.diagnosis.translationsFile
+    repos.diagnosis.translationsFile,
+    parseDiagnosisCodeSystem
   );
   return [
     {
@@ -269,12 +271,15 @@ export function validateCatalogsOrExit(
 ): void {
   const specs = loadCatalogueSpecs(repos, opts.icd);
   if (opts.icd) {
-    const declared = readDeclaredTranslations(repos.diagnosis.translationsFile);
+    const declared = readDeclaredTranslations(
+      repos.diagnosis.translationsFile,
+      parseDiagnosisCodeSystem
+    );
     if (
       Object.values(declared).some((byKey) => Object.keys(byKey ?? {}).length)
     )
       console.warn(
-        "[catalog] diagnosisTranslations.yml is ignored: ICD is configured, diagnosis names come from ICD."
+        "[catalog] diagnoses.fhir.json is ignored: ICD is configured, diagnosis names come from ICD."
       );
   }
 

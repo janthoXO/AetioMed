@@ -94,7 +94,7 @@ export async function createApp(): Promise<{
     icd: icdClient !== undefined,
     llm: createLlmPort(graphConfig),
     catalogs: createYamlCatalogs(repos),
-    umlsFloor: repos.umlsFloor,
+    symptomMapping: repos.symptomMapping,
     symptomCache: repos.symptomCache,
     tracer: otel.tracer,
     renderReferralLetter: referralLetterRendererFromEnv(process.env),

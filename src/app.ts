@@ -4,7 +4,7 @@ import {
   ConfigSchema as GraphConfigSchema,
   initGraph,
 } from "@/core/graph/index.js";
-import { referralLetterRendererFromEnv } from "./adapters/referral/mcp.js";
+import { modalityProvidersFromEnv } from "./adapters/modality/index.js";
 import {
   resolveCatalogDir,
   resolveCacheDir,
@@ -54,9 +54,10 @@ const AppEnvSchema = z
  * Composition root: constructs everything explicitly, in order. `FEATURES`
  * flags (`REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`) each gate one construction.
  *
- * Adapters with their own env group (ICD, referral letters) parse it
- * themselves: unset = off, half set = startup error. With ICD configured,
- * probes the ICD container first (fatal on failure).
+ * Adapters with their own env group (ICD) parse it themselves: unset = off,
+ * half set = startup error. With ICD configured, probes the ICD container
+ * first (fatal on failure). Modality providers enabled by
+ * `MODALITY_PROVIDERS` are probed next (fatal on failure).
  *
  * `shutdown()` closes everything started, in reverse construction order:
  * REST, NATS, DB last. Registers no signal handler; `src/index.ts` does via
@@ -78,6 +79,8 @@ export async function createApp(): Promise<{
   if (icdClient) {
     await probeIcd(icdClient, icdClient.url, graphConfig.LANGUAGES);
   }
+  // Pluggable modality providers: env parsed and probed only when enabled.
+  const modalityProviders = await modalityProvidersFromEnv(process.env);
   const bus = new EventBus();
   // Operator channel, gated by standard OTel env vars, not `FEATURES`.
   // `DEBUG` only picks the console exporter when no OTLP endpoint set.
@@ -96,7 +99,7 @@ export async function createApp(): Promise<{
     symptomMapping: repos.symptomMapping,
     symptomCache: repos.symptomCache,
     tracer: otel.tracer,
-    renderReferralLetter: referralLetterRendererFromEnv(process.env),
+    modalityProviders,
   });
   // Must run after graph construction: labels' base key set is
   // `getKnownLabels()`, populated by `traceNode` while graph builds. Earlier =

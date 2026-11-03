@@ -116,7 +116,7 @@ describe("import boundary — src/core/graph/ never imports tracing/transports/o
 });
 
 // Hexagon (#188): core is I/O-free. Every adapter (SQLite, filesystem, LLM
-// providers, tinyld) lives under `src/adapters/`, wired only by `src/app.ts`.
+// providers) lives under `src/adapters/`, wired only by `src/app.ts`.
 // `@langchain/core` is adapter-only too (the `LlmPort` hides it); `@langchain/langgraph` stays allowed: engine.
 describe("import boundary — src/core/ never imports adapters or I/O packages", () => {
   it("has no offending specifiers in production modules", () => {
@@ -132,7 +132,6 @@ describe("import boundary — src/core/ never imports adapters or I/O packages",
       "path",
       "node:path",
       "node:sqlite",
-      "tinyld",
     ]);
     const PREFIXES = [
       "@/adapters",

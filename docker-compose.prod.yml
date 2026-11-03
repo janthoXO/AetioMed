@@ -45,8 +45,6 @@ services:
 
       # ─── Language ────────────────────────────────────────────────────
       - LANGUAGES=${LANGUAGES}
-      - LANGUAGE_AUTO_DETECT=${LANGUAGE_AUTO_DETECT}
-      - LANGUAGE_DETECT_LLM_FALLBACK=${LANGUAGE_DETECT_LLM_FALLBACK}
 
       # ─── Data ────────────────────────────────────────────────────────
       - CATALOG_DIR=${CATALOG_DIR}

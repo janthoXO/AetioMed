@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { makeCaseGenerationRequestSchema } from "./CaseGenerationRequest.js";
+import { z } from "zod/v4";
+import {
+  makeCaseGenerationRequestSchema,
+  makeCaseGenerationRequestContract,
+} from "./CaseGenerationRequest.js";
 import { ConfigSchema } from "@/core/graph/config.js";
 
 const schema = makeCaseGenerationRequestSchema(
@@ -7,26 +11,66 @@ const schema = makeCaseGenerationRequestSchema(
   { icd: false }
 );
 
-describe("CaseGenerationRequestSchema — mode with plan", () => {
+describe("CaseGenerationRequestSchema — first call vs continuation", () => {
   const plan = [
     { fixed: false, text: "" },
     { fixed: true, text: "## General" },
     { fixed: false, text: "" },
   ];
 
-  it("requires an explicit mode when a plan is sent", () => {
-    const result = schema.safeParse({ diagnosis: "Influenza", plan });
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.path).toEqual(["mode"]);
+  it("first call defaults language to en and mode to normal", () => {
+    const r = schema.parse({ diagnosis: "Influenza" });
+    expect(r.language).toBe("en");
+    expect(r.mode).toBe("normal");
   });
 
-  it("accepts a plan with either explicit mode, and no mode without a plan", () => {
+  it("a plan without mode fails on mode", () => {
+    const r = schema.safeParse({ diagnosis: "Influenza", plan });
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.some((i) => i.path[0] === "mode")).toBe(true);
+  });
+
+  it("a plan with userInstructions is rejected as an unrecognized key", () => {
+    const r = schema.safeParse({
+      diagnosis: "Influenza",
+      mode: "plan",
+      plan,
+      userInstructions: { general: "x" },
+    });
+    expect(r.success).toBe(false);
+    const issue = r.error?.issues.find((i) => i.code === "unrecognized_keys");
+    expect(issue).toMatchObject({ keys: ["userInstructions"] });
+  });
+
+  it("a plan with either explicit mode succeeds", () => {
     for (const mode of ["plan", "normal"]) {
       expect(
         schema.safeParse({ diagnosis: "Influenza", mode, plan }).success
       ).toBe(true);
     }
-    expect(schema.safeParse({ diagnosis: "Influenza" }).success).toBe(true);
+  });
+
+  it("a non-canonical plan fails on plan", () => {
+    const r = schema.safeParse({
+      diagnosis: "Influenza",
+      mode: "plan",
+      plan: [{ fixed: true, text: "## General" }],
+    });
+    expect(r.success).toBe(false);
+    expect(r.error?.issues.some((i) => i.path[0] === "plan")).toBe(true);
+  });
+
+  it("contract is a union of two shapes; the continuation has no userInstructions", () => {
+    const json = z.toJSONSchema(
+      makeCaseGenerationRequestContract(
+        ConfigSchema.parse({ LLM_PROVIDER: "ollama", LLM_MODEL: "llama3.1" }),
+        { icd: false }
+      ),
+      { io: "input" }
+    ) as { anyOf: { properties: object; required?: string[] }[] };
+    expect(json.anyOf).toHaveLength(2);
+    const cont = json.anyOf.find((m) => !("userInstructions" in m.properties));
+    expect(cont?.required).toEqual(expect.arrayContaining(["mode", "plan"]));
   });
 });
 

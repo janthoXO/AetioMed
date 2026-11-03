@@ -2,29 +2,36 @@
   "title": "CaseGenerationRequest",
   "description": "Body of POST /api/cases; NATS cases.request.generate (jobId required there).",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "jobId": {
-      "type": "string",
-      "pattern": "^[A-Za-z0-9_-]{1,128}$",
-      "description": "Client-chosen job id (e.g. a UUID). Reusing the id of a running or recently finished job is rejected."
-    },
-    "icd": {
-      "description": "ICD-11 code: a stem code ('CA40.Z') or a post-coordinated cluster ('CA40.Z&XB22'). With ICD configured ('ICD' in /api/features) it alone identifies the diagnosis and wins over 'diagnosis', and a cluster ICD rejects is a 400; without, it rides along unchecked.",
-      "type": "string",
-      "format": "icd",
-      "pattern": "^[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?(&X[0-9A-Z]{3,5}|\\/[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?)*$"
-    },
-    "diagnosis": {
-      "description": "Diagnosis name, in the request language. Required without ICD; with ICD it must match an ICD-11 title or synonym exactly.",
-      "type": "string"
-    },
-    "userInstructions": {
-      "description": "Additional context for case generation. Absorbed into the plan: ignored when 'plan' is set.",
+  "anyOf": [
+    {
       "type": "object",
-      "propertyNames": {
-        "anyOf": [
-          {
+      "properties": {
+        "jobId": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{1,128}$",
+          "description": "Client-chosen job id (e.g. a UUID). Reusing the id of a running or recently finished job is rejected."
+        },
+        "icd": {
+          "description": "ICD-11 code: a stem code ('CA40.Z') or a post-coordinated cluster ('CA40.Z&XB22'). With ICD configured ('ICD' in /api/features) it alone identifies the diagnosis and wins over 'diagnosis', and a cluster ICD rejects is a 400; without, it rides along unchecked.",
+          "type": "string",
+          "format": "icd",
+          "pattern": "^[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?(&X[0-9A-Z]{3,5}|\\/[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?)*$"
+        },
+        "diagnosis": {
+          "description": "Diagnosis name, in the request language. Required without ICD; with ICD it must match an ICD-11 title or synonym exactly.",
+          "type": "string"
+        },
+        "generationFlags": {
+          "default": [
+            "patient",
+            "chiefComplaint",
+            "anamnesis",
+            "procedures"
+          ],
+          "description": "Generation flags to specify case fields to generate",
+          "minItems": 1,
+          "type": "array",
+          "items": {
             "type": "string",
             "enum": [
               "patient",
@@ -32,121 +39,230 @@
               "anamnesis",
               "procedures"
             ]
-          },
-          {
-            "type": "string",
-            "const": "general"
-          }
-        ]
-      },
-      "additionalProperties": {
-        "type": "string"
-      }
-    },
-    "generationFlags": {
-      "default": [
-        "patient",
-        "chiefComplaint",
-        "anamnesis",
-        "procedures"
-      ],
-      "description": "Generation flags to specify case fields to generate",
-      "minItems": 1,
-      "type": "array",
-      "items": {
-        "type": "string",
-        "enum": [
-          "patient",
-          "chiefComplaint",
-          "anamnesis",
-          "procedures"
-        ]
-      }
-    },
-    "language": {
-      "description": "Language to generate the case in. One of: en, de.",
-      "type": "string",
-      "enum": [
-        "en",
-        "de"
-      ]
-    },
-    "difficulty": {
-      "description": "How unclear the diagnosis should be to a student working through the case. 'easy' features a clean, classic subset of symptoms with definitive procedure results; 'medium' adds distractor symptoms from other diseases and minor/borderline changes in procedure results; 'hard' presents an atypical case with omitted hallmark symptoms and ambiguous procedure results. Defaults to 'medium'.",
-      "type": "string",
-      "enum": [
-        "easy",
-        "medium",
-        "hard"
-      ]
-    },
-    "mode": {
-      "description": "'normal' generates the case end to end and hands over its (English) plan on the way. 'plan' stops once the plan exists and returns it in the request language; send the same request back with `plan` to generate the case from it. Defaults to 'normal'; required with `plan`.",
-      "type": "string",
-      "enum": [
-        "normal",
-        "plan"
-      ]
-    },
-    "plan": {
-      "description": "A plan from an earlier call with this request, possibly edited: planning is skipped and the case is generated from it. Requires `mode`, the mode of the call that handed the plan out: in plan mode it is in the request language, in normal mode English — exactly as it was handed out. Fixed segments must be unchanged.",
-      "maxItems": 200,
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "fixed": {
-            "type": "boolean"
-          },
-          "text": {
-            "type": "string",
-            "maxLength": 20000
           }
         },
-        "required": [
-          "fixed",
-          "text"
-        ]
+        "language": {
+          "default": "en",
+          "description": "Language to generate the case in. One of: en, de. Defaults to 'en'.",
+          "type": "string",
+          "enum": [
+            "en",
+            "de"
+          ]
+        },
+        "difficulty": {
+          "description": "How unclear the diagnosis should be to a student working through the case. 'easy' features a clean, classic subset of symptoms with definitive procedure results; 'medium' adds distractor symptoms from other diseases and minor/borderline changes in procedure results; 'hard' presents an atypical case with omitted hallmark symptoms and ambiguous procedure results. Defaults to 'medium'.",
+          "type": "string",
+          "enum": [
+            "easy",
+            "medium",
+            "hard"
+          ]
+        },
+        "llmConfig": {
+          "description": "Optional per-request model selection for the LLM used in case generation. Applies to all internal roles (generator/judge/translator) uniformly — per-role overrides are not supported in the request body.",
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "ollama",
+                "google",
+                "openai"
+              ]
+            },
+            "model": {
+              "type": "string"
+            },
+            "apiKey": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string",
+              "format": "uri"
+            },
+            "outputFormat": {
+              "default": "json",
+              "type": "string",
+              "enum": [
+                "json",
+                "text"
+              ]
+            },
+            "enableThinking": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "provider",
+            "model"
+          ]
+        },
+        "userInstructions": {
+          "description": "Additional context for case generation. Absorbed into the plan.",
+          "type": "object",
+          "propertyNames": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "patient",
+                  "chiefComplaint",
+                  "anamnesis",
+                  "procedures"
+                ]
+              },
+              {
+                "type": "string",
+                "const": "general"
+              }
+            ]
+          },
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "mode": {
+          "default": "normal",
+          "description": "'normal' generates the case end to end and hands over its (English) plan on the way. 'plan' stops once the plan exists and returns it in the request language; send the same request back with `plan` to generate the case from it. Defaults to 'normal'.",
+          "type": "string",
+          "enum": [
+            "normal",
+            "plan"
+          ]
+        }
       }
     },
-    "llmConfig": {
-      "description": "Optional per-request model selection for the LLM used in case generation. Applies to all internal roles (generator/judge/translator) uniformly — per-role overrides are not supported in the request body.",
+    {
       "type": "object",
       "properties": {
-        "provider": {
+        "jobId": {
           "type": "string",
-          "enum": [
-            "ollama",
-            "google",
-            "openai"
-          ]
+          "pattern": "^[A-Za-z0-9_-]{1,128}$",
+          "description": "Client-chosen job id (e.g. a UUID). Reusing the id of a running or recently finished job is rejected."
         },
-        "model": {
+        "icd": {
+          "description": "ICD-11 code: a stem code ('CA40.Z') or a post-coordinated cluster ('CA40.Z&XB22'). With ICD configured ('ICD' in /api/features) it alone identifies the diagnosis and wins over 'diagnosis', and a cluster ICD rejects is a 400; without, it rides along unchecked.",
+          "type": "string",
+          "format": "icd",
+          "pattern": "^[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?(&X[0-9A-Z]{3,5}|\\/[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?)*$"
+        },
+        "diagnosis": {
+          "description": "Diagnosis name, in the request language. Required without ICD; with ICD it must match an ICD-11 title or synonym exactly.",
           "type": "string"
         },
-        "apiKey": {
-          "type": "string"
+        "generationFlags": {
+          "default": [
+            "patient",
+            "chiefComplaint",
+            "anamnesis",
+            "procedures"
+          ],
+          "description": "Generation flags to specify case fields to generate",
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "patient",
+              "chiefComplaint",
+              "anamnesis",
+              "procedures"
+            ]
+          }
         },
-        "url": {
-          "type": "string",
-          "format": "uri"
-        },
-        "outputFormat": {
-          "default": "json",
+        "language": {
+          "default": "en",
+          "description": "Language to generate the case in. One of: en, de. Defaults to 'en'.",
           "type": "string",
           "enum": [
-            "json",
-            "text"
+            "en",
+            "de"
           ]
         },
-        "enableThinking": {
-          "type": "boolean"
+        "difficulty": {
+          "description": "How unclear the diagnosis should be to a student working through the case. 'easy' features a clean, classic subset of symptoms with definitive procedure results; 'medium' adds distractor symptoms from other diseases and minor/borderline changes in procedure results; 'hard' presents an atypical case with omitted hallmark symptoms and ambiguous procedure results. Defaults to 'medium'.",
+          "type": "string",
+          "enum": [
+            "easy",
+            "medium",
+            "hard"
+          ]
+        },
+        "llmConfig": {
+          "description": "Optional per-request model selection for the LLM used in case generation. Applies to all internal roles (generator/judge/translator) uniformly — per-role overrides are not supported in the request body.",
+          "type": "object",
+          "properties": {
+            "provider": {
+              "type": "string",
+              "enum": [
+                "ollama",
+                "google",
+                "openai"
+              ]
+            },
+            "model": {
+              "type": "string"
+            },
+            "apiKey": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string",
+              "format": "uri"
+            },
+            "outputFormat": {
+              "default": "json",
+              "type": "string",
+              "enum": [
+                "json",
+                "text"
+              ]
+            },
+            "enableThinking": {
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "provider",
+            "model"
+          ]
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "plan"
+          ],
+          "description": "Mode of the call that handed the plan out: 'plan' = plan is in the request language, 'normal' = English."
+        },
+        "plan": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fixed": {
+                "type": "boolean"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 20000
+              }
+            },
+            "required": [
+              "fixed",
+              "text"
+            ]
+          },
+          "description": "A plan from an earlier call with this request, possibly edited: planning is skipped and the case is generated from it, exactly as it was handed out. Fixed segments must be unchanged. `userInstructions` are not allowed: the plan already absorbed them."
         }
       },
       "required": [
-        "provider",
-        "model"
-      ]
+        "mode",
+        "plan"
+      ],
+      "additionalProperties": false
     }
-  }
+  ]
 }

@@ -30,8 +30,6 @@ function fakeGraph(generateCase: GenerateCaseFn): GraphAppContext {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
       LANGUAGES: ["en", "de"],
-      LANGUAGE_AUTO_DETECT: false,
-      LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {
@@ -197,8 +195,6 @@ describe("labels.router — end-to-end over real HTTP", () => {
         llm: { provider: "ollama", model: "test-model" },
         allowedLlms: undefined,
         LANGUAGES: ["en", "de"],
-        LANGUAGE_AUTO_DETECT: false,
-        LANGUAGE_DETECT_LLM_FALLBACK: false,
       } as GraphAppContext["config"],
       runtime: {
         catalogs: { diagnosis: { toEnglish: (name: string) => name } },

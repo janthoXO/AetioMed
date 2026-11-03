@@ -29,9 +29,14 @@ export function buildUnitPlanSchema(providers: ModalityProvider<unknown>[]) {
     })
   );
 
+  // One provider: its object directly. Same parse, but no one-branch union in
+  // the grammar (Anthropic caps unions per request, every grammar pays for one).
   // Runtime-sized array, never a compile-time tuple; cast needed.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const requestSchema = z.discriminatedUnion("provider", requestOptions as any);
+  const requestSchema =
+    requestOptions.length === 1
+      ? requestOptions[0]!
+      : // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        z.discriminatedUnion("provider", requestOptions as any);
 
   return z.object({
     requests: z

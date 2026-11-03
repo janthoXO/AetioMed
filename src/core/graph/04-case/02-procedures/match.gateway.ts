@@ -18,7 +18,7 @@ const MatchSchema = z.object({
     .describe(
       "true only if the proposed name is the true diagnosis, an equivalent name for it, or a more specific form of it; false if it is broader, related, or different"
     ),
-  reasoning: z.string().optional().describe("brief explanation"),
+  reasoning: z.string().nullable().describe("brief explanation"),
 });
 
 /**

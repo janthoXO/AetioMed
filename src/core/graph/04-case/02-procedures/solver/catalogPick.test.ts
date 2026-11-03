@@ -54,6 +54,7 @@ describe("CatalogPick.nextStep", () => {
         JSON.stringify({
           action: "procedure",
           procedures: ["HbA1c"],
+          reasoning: null,
         }),
       ],
     });
@@ -72,7 +73,7 @@ describe("CatalogPick.nextStep", () => {
 
   it("retries an empty pick instead of returning nothing", async () => {
     const order = (procedures: string[]) =>
-      JSON.stringify({ action: "procedure", procedures });
+      JSON.stringify({ action: "procedure", procedures, reasoning: null });
     const model = new CapturingChatModel({
       responses: [order([]), order(["Vitals"])],
     });
@@ -91,9 +92,12 @@ describe("CatalogPick.nextStep", () => {
     const model = new CapturingChatModel({
       responses: [
         JSON.stringify({
-          action: "diagnose",
-          diagnosisName: "Diabetes",
-          supportingResult: "HbA1c",
+          value: {
+            action: "diagnose",
+            diagnosisName: "Diabetes",
+            supportingResult: "HbA1c",
+            reasoning: null,
+          },
         }),
       ],
     });
@@ -118,9 +122,12 @@ describe("CatalogPick.nextStep", () => {
   it("rejects a commit whose supporting result was never ordered", async () => {
     const commit = (supportingResult: string) =>
       JSON.stringify({
-        action: "diagnose",
-        diagnosisName: "Diabetes",
-        supportingResult,
+        value: {
+          action: "diagnose",
+          diagnosisName: "Diabetes",
+          supportingResult,
+          reasoning: null,
+        },
       });
     const model = new CapturingChatModel({
       responses: [commit("Fasting glucose"), commit("HbA1c")],

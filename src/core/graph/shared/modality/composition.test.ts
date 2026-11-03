@@ -36,6 +36,25 @@ describe("describeProviders", () => {
 });
 
 describe("buildCompositionSchema", () => {
+  it("emits a union only with two or more providers, same parse either way", () => {
+    const one = z.toJSONSchema(buildUnitPlanSchema([textProvider()]));
+    const two = z.toJSONSchema(
+      buildUnitPlanSchema([textProvider(), textProvider("referral")])
+    );
+    expect(JSON.stringify(one)).not.toMatch(/"(oneOf|anyOf)"/);
+    expect(JSON.stringify(two)).toMatch(/"oneOf"/);
+
+    const request = { provider: "text", input: { instruction: "x" }, alt: "y" };
+    expect(
+      buildUnitPlanSchema([textProvider()]).parse({ requests: [request] })
+    ).toEqual({ requests: [request] });
+    expect(() =>
+      buildUnitPlanSchema([textProvider()]).parse({
+        requests: [{ ...request, provider: "referral" }],
+      })
+    ).toThrow();
+  });
+
   it("rejects an empty unitKeys array with a real error, not a bad cast", () => {
     expect(() => buildCompositionSchema([textProvider()], [])).toThrow();
   });

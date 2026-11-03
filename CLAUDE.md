@@ -82,9 +82,9 @@ a process signal handler any more; each returns a closer instead.
 **Core is a clean hexagon (#188).** `src/core/` holds domain logic and ports only; every I/O
 adapter lives under `src/adapters/` — `ai/` (LangChain chat-model factory), `catalog/<domain>/`
 (repos plus `Yaml*`/`InMemory*` port adapters, startup validation), `persistence/` (SQLite,
-Drizzle, translation store), `symptoms/`, `language/` (tinyld), `repos.ts` — and only
+Drizzle, translation store), `symptoms/`, `repos.ts` — and only
 `src/app.ts` wires them in. `importBoundary.test.ts` fails on any core production module that
-imports `@/adapters`, `@/app`, `fs`/`path`, `node:sqlite`, `drizzle-orm`, `tinyld` or a LangChain
+imports `@/adapters`, `@/app`, `fs`/`path`, `node:sqlite`, `drizzle-orm` or a LangChain
 provider package or `@langchain/core` (the LLM port speaks only core types since #190);
 `@langchain/langgraph` stays for good — it is the engine graphs are written in, not an
 I/O adapter.
@@ -363,7 +363,7 @@ one into the other in the same call. With `TRANSLATION_SANDWICH` on:
 `userInstructions` value to English — the diagnosis arrives English already (#237), and a
 one-node phase subgraph would only collapse in `GET /api/graph`'s xray. User instructions are read only up to the
 outline (#220): the outline absorbs them, no case-graph node receives them, and a request
-carrying a `plan` has its `userInstructions` ignored (language detection may still read them).
+carrying a `plan` has its `userInstructions` dropped by the request schema.
 `05-translate-out/` is three
 nodes, not a chain (issue 12): `translate_defined` and `translate_rest` run in parallel from
 `START`, each writing only its own state channel (`definedTranslations`/`restTranslations`,
@@ -853,8 +853,9 @@ stay silent for minutes, long enough for a proxy to treat the connection as idle
 telemetry are two concerns that happen to coincide, not one mechanism. `jobId` is a **body
 field**, validated against `src/api/JobId.ts`'s `JobIdSchema` since it is also a NATS subject
 token (`cases.result.<jobId>`) even when the request arrives over REST — the `?jobId=` query
-param is gone. **A body with a `plan` generates the case from it**, skipping planning entirely;
-the same jobId as the plan's own call is fine (#159) — the per-job channel allows exactly this
+param is gone. **A body with a `plan` generates the case from it**, skipping planning entirely; such a
+body must carry `mode` (a 400 otherwise) and has any `userInstructions` dropped; the request
+schema is one `z.union`, made exclusive by `plan` being `never` on the first call; the same jobId as the plan's own call is fine (#159) — the per-job channel allows exactly this
 one reuse after a `planned` outcome (see `core/jobEvents/channel.ts`'s `open()` above). A
 duplicate jobId otherwise (still running, or finished within the channel's tombstone window) is
 a 409 `JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED` on either Accept path, answered before any
@@ -1135,42 +1136,12 @@ language`), so the choice is visible at every call site instead of hidden in the
   (picking directly from a target-language catalogue) are tracked separately —
   #123 — because they reverse issue 01's Rule 4
   deletion and deserve their own decision.
-- **Auto-detection is a laddered resolver in `CaseGenerationService`, not the graph**
-  (`src/core/languageDetection/`, issue 10). A caller may omit `language`; the service resolves
-  it once, before `runWithContext` binds anything, via:
-
-  ```
-  1. language explicitly provided       → use it                      (no cost)
-  2. deterministic n-gram detector      → use it if above threshold   (no cost, offline)
-  3. LLM fallback, only if enabled      → one cheap call              (rare, opt-in)
-  4. otherwise                          → configured default (English)
-  ```
-
-  This lives in the communication/service layer because its output _selects the ports_
-  generation binds, and binding happens before invoke — a detection node inside the graph could
-  not inform the thing its answer is for. It is also request normalisation, so it sits beside
-  the diagnosis resolution the service already does; it is **not** a graph flag and never adds a
-  compiled variant. `LANGUAGE_AUTO_DETECT` gates steps 2–3 together; step 3 needs its own further
-  opt-in, `LANGUAGE_DETECT_LLM_FALLBACK`, so a deployer never pays LLM calls unknowingly just for
-  turning on auto-detect.
-
-  Detection runs on `userInstructions` only, **never the diagnosis name** — two decisive
-  reasons: an ICD-only request's diagnosis name is resolved to English by the service, so
-  detecting on it would be circular; and diagnosis names are 2-3 words and frequently Latin
-  (_"Diabetes mellitus"_ is byte-identical in English, German and Spanish). `UserInstructions` is
-  a per-field record of strings, concatenated into one blob for detection; text under ~30
-  characters is too short for n-gram detection and skips straight to step 4.
-
-  The detector is `tinyld` (`src/adapters/language/tinyldDetector.ts`, passed in by `createApp()`), wrapped behind a
-  `LanguageDetector` port (`languageDetection/port.ts`) so it is fakeable in tests and swappable
-  later — offline, TypeScript-native, and `detectAll()` returns an explicit
-  `{ lang, accuracy }[]` distribution (`accuracy` reads directly as this port's confidence)
-  rather than `franc`'s relative distances. The detector's ISO 639-1 code is compared to the configured codes directly (a code outside
-  `LANGUAGES` never wins step 2). Language names exist only at the prompt seam: `promptLanguage`
+- **No language detection.** An omitted `language` is `en` (the request schema's default);
+  the service never guesses. Language names exist only at the prompt seam: `promptLanguage`
   (`shared/domain/Language.ts`, `Intl.DisplayNames`) writes `German (de)` wherever a language goes
-  into an LLM prompt. The resolved language is echoed back as `language` in
+  into an LLM prompt. The language is echoed back as `language` in
   `CaseGenerationResponseSchema`'s success branch and the NATS success payload (and on
-  `CaseGenerationResult`), so a client can notice a wrong auto-detect guess and retry explicitly.
+  `CaseGenerationResult`).
 
 ## Environment Variables
 
@@ -1188,8 +1159,6 @@ language`), so the choice is visible at every call site instead of hidden in the
 | `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`            | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                  |
 | `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                            |
 | `LANGUAGES`                                                           | `en,de`                 | Comma-separated ISO 639-1 codes, trimmed/de-duplicated/order-preserved; must include `en`. Validated at startup and against every request's `language` (see Language section below)              |
-| `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                 |
-| `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                            |
 | `ALLOWED_LLMS`                                                        | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                               |
 | `CATALOG_DIR`                                                         | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                     |
 | `CACHE_DIR`                                                           | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                    |

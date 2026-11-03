@@ -21,8 +21,6 @@ import {
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
 import { localizeHeadings } from "./graph/03-outline-translation/headings.js";
-import type { LanguageDetector } from "./languageDetection/port.js";
-import { resolveLanguage } from "./languageDetection/resolveLanguage.js";
 import type { IcdPort } from "./diagnosis/icd.js";
 import { resolveDiagnosis } from "./diagnosis/resolve.js";
 
@@ -54,9 +52,8 @@ export type CaseGenerationResult = {
   case?: Case;
   plan?: OutlineSegments;
   /**
-   * Language generation ran in (resolved; `req.language` may be omitted).
-   * Set on success and plan stop; absent if failed before resolution. Lets
-   * client spot wrong auto-detect and retry explicitly.
+   * Language generation ran in (echoes `req.language`, default `en`).
+   * Set on success and plan stop.
    */
   language?: Language;
   error?: CaseGenerationResultError;
@@ -155,8 +152,6 @@ class InvalidPlanError extends AppError {
   }
 }
 
-const NO_DETECTOR: LanguageDetector = { detect: () => undefined };
-
 export function createCaseGenerationService(
   graph: GraphAppContext,
   bus: EventBus,
@@ -164,14 +159,11 @@ export function createCaseGenerationService(
   opts: {
     /** Bounds generations across every transport. */
     maxConcurrent?: number;
-    // Injectable; composition root passes tinyld. Absent = no opinion (step 2 skipped).
-    detector?: LanguageDetector;
     /** WHO ICD-11 API; absent = no ICD configured (`resolveDiagnosis`). */
     icd?: IcdPort;
     now?: () => number;
   } = {}
 ): CaseGenerationService {
-  const detector = opts.detector ?? NO_DETECTOR;
   const limiter = createLimiter(
     opts.maxConcurrent ?? DEFAULT_MAX_CONCURRENT_GENERATIONS
   );
@@ -326,20 +318,9 @@ export function createCaseGenerationService(
     startOpts: StartOptions,
     signal: AbortSignal
   ): Promise<CaseGenerationResult> {
-    // Must run before `runWithContext` binds language: detection selects
-    // the ports generation binds.
-    const language = await resolveLanguage({
-      explicitLanguage: req.language,
-      userInstructions: req.userInstructions,
-      languages: graph.config.LANGUAGES,
-      autoDetect: graph.config.LANGUAGE_AUTO_DETECT,
-      llmFallbackEnabled: graph.config.LANGUAGE_DETECT_LLM_FALLBACK,
-      detector,
-      runtime: graph.runtime,
-    });
-
+    const language = req.language;
     const { generationFlags } = req;
-    const mode = req.mode ?? "normal";
+    const mode = req.mode;
 
     return runWithContext(
       async (): Promise<CaseGenerationResult> => {
@@ -349,15 +330,19 @@ export function createCaseGenerationService(
           { icd: req.icd, name: req.diagnosis },
           language
         );
+        const handedPlan = "plan" in req ? req.plan : undefined;
         const plan =
-          req.plan && (await englishPlanOf(req.plan, mode, language));
+          handedPlan && (await englishPlanOf(handedPlan, mode, language));
 
         // With a plan, planning skipped. A plan already absorbed the
         // instructions (#220): only its first call reads them.
         const planned = await graph.planCase({
           diagnosis,
           generationFlags,
-          userInstructions: req.plan ? undefined : req.userInstructions,
+          userInstructions:
+            !handedPlan && "userInstructions" in req
+              ? req.userInstructions
+              : undefined,
           language,
           difficulty: req.difficulty,
           mode,

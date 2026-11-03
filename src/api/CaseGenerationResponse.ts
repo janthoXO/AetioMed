@@ -7,7 +7,7 @@ import { ErrorResponseSchema } from "./ErrorResponse.js";
 export const CaseGenerationResponseSchema = z.union([
   CaseWireSchema.extend({
     jobId: z.string().optional(),
-    // Language generation resolved to; may differ from requested (auto-detect).
+    // Language generation ran in (echoes the request, default en).
     // Echoed so client can retry with explicit `language`.
     language: z.string(),
   }),

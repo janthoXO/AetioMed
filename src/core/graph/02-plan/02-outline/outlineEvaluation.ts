@@ -15,9 +15,9 @@ export const OutlineEvaluationSchema = z.object({
     ),
   suggestion: z
     .string()
-    .optional()
+    .nullable()
     .describe(
-      "a single actionable directive for how to revise the blueprint (omit if accepted)"
+      "a single actionable directive for how to revise the blueprint (null if accepted)"
     ),
 });
 

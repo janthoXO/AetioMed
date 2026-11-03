@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import z from "zod";
+import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import {
   buildCompositionSchema,
   buildUnitPlanSchema,
@@ -36,6 +37,45 @@ describe("describeProviders", () => {
 });
 
 describe("buildCompositionSchema", () => {
+  it("leaves an empty input out of the grammar, with one or two providers", () => {
+    const empty = (id: string): ModalityProvider<unknown> => ({
+      ...textProvider(id),
+      inputSchema: z.object({}),
+    });
+    for (const providers of [
+      [empty("text")],
+      [empty("text"), textProvider("referral")],
+    ]) {
+      const unit = buildUnitPlanSchema(providers);
+      // What the LLM port sends (LangChain's converter): no `input` key.
+      expect(JSON.stringify(toJsonSchema(unit))).not.toMatch(
+        /"input":\{"type":"object","properties":\{\}/
+      );
+      expect(
+        unit.parse({ requests: [{ provider: "text", alt: "a" }] })
+      ).toEqual({ requests: [{ provider: "text", alt: "a" }] });
+    }
+  });
+
+  it("emits a union only with two or more providers, same parse either way", () => {
+    const one = z.toJSONSchema(buildUnitPlanSchema([textProvider()]));
+    const two = z.toJSONSchema(
+      buildUnitPlanSchema([textProvider(), textProvider("referral")])
+    );
+    expect(JSON.stringify(one)).not.toMatch(/"(oneOf|anyOf)"/);
+    expect(JSON.stringify(two)).toMatch(/"oneOf"/);
+
+    const request = { provider: "text", input: { instruction: "x" }, alt: "y" };
+    expect(
+      buildUnitPlanSchema([textProvider()]).parse({ requests: [request] })
+    ).toEqual({ requests: [request] });
+    expect(() =>
+      buildUnitPlanSchema([textProvider()]).parse({
+        requests: [{ ...request, provider: "referral" }],
+      })
+    ).toThrow();
+  });
+
   it("rejects an empty unitKeys array with a real error, not a bad cast", () => {
     expect(() => buildCompositionSchema([textProvider()], [])).toThrow();
   });

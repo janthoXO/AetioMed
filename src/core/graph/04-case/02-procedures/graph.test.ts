@@ -198,7 +198,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
         planResponse("CBC", "obligatory", "WBC 11k"),
         planResponse("CT chest", "obligatory", "Infiltrate"),
       ],
-      judge: [JSON.stringify({ matches: true })],
+      judge: [JSON.stringify({ matches: true, reasoning: null })],
     });
     const runtime = buildFakeRuntime(llm);
     const { provider, calls } = makeRecordingTextProvider();
@@ -246,7 +246,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
           "No ischemic changes"
         ),
       ],
-      judge: [JSON.stringify({ matches: true })],
+      judge: [JSON.stringify({ matches: true, reasoning: null })],
     });
     const runtime = buildFakeRuntime(llm);
     const { provider } = makeRecordingTextProvider();
@@ -287,7 +287,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
         planResponse("CBC", "obligatory", "WBC 11k"),
         planResponse("CT chest", "obligatory", "Infiltrate"),
       ],
-      judge: [JSON.stringify({ matches: true })],
+      judge: [JSON.stringify({ matches: true, reasoning: null })],
     });
     const runtime = buildFakeRuntime(llm);
     const { provider } = makeRecordingTextProvider();
@@ -387,8 +387,8 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
   it("a wrong diagnosis is appended to ruledOutDiagnoses and is visible on the next nextStep call", async () => {
     const llm = makeQueuedLlmPort({
       judge: [
-        JSON.stringify({ matches: false }),
-        JSON.stringify({ matches: true }),
+        JSON.stringify({ matches: false, reasoning: null }),
+        JSON.stringify({ matches: true, reasoning: null }),
       ],
     });
     const runtime = buildFakeRuntime(llm);
@@ -524,7 +524,7 @@ describe("procedure graph — driven by a fake ProcedureStrategy", () => {
   it("both the match path and the bridge path reach render_results, with `case.procedures` empty at every point before it and populated after", async () => {
     const llm = makeQueuedLlmPort({
       generator: [planResponse("CBC", "obligatory", "WBC 11k")],
-      judge: [JSON.stringify({ matches: true })],
+      judge: [JSON.stringify({ matches: true, reasoning: null })],
     });
     const runtime = buildFakeRuntime(llm);
     const { provider } = makeRecordingTextProvider();

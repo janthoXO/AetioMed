@@ -35,13 +35,37 @@ describe("chatModelLlmPort", () => {
 
     expect(result).toEqual({ ok: true });
     expect(modelFor).toHaveBeenCalledWith(call, llmConfig);
-    expect(withStructuredOutput).toHaveBeenCalledWith(schema);
+    expect(withStructuredOutput).toHaveBeenCalledWith({
+      type: "object",
+      properties: { ok: { type: "boolean" } },
+      required: ["ok"],
+      additionalProperties: false,
+    });
     const [messages, options] = invoke.mock.calls[0]!;
     expect(messages[0]).toBeInstanceOf(SystemMessage);
     expect(messages[0].content).toBe("sys");
     expect(messages[1]).toBeInstanceOf(HumanMessage);
     expect(messages[1].content).toBe("usr");
     expect(options).toEqual({ signal });
+  });
+
+  it("structured: wraps a non-object root as { value } and unwraps the answer", async () => {
+    const invoke = vi.fn().mockResolvedValue({ value: { kind: "b" } });
+    const { port, withStructuredOutput } = fakePort(invoke);
+    const schema = z.discriminatedUnion("kind", [
+      z.object({ kind: z.literal("a") }),
+      z.object({ kind: z.literal("b") }),
+    ]);
+
+    await expect(port.structured(call, prompt, schema)).resolves.toEqual({
+      kind: "b",
+    });
+    const sent = withStructuredOutput.mock.calls[0]![0];
+    expect(sent.required).toEqual(["value"]);
+    expect(sent.properties.value.anyOf[1].properties.kind).toEqual({
+      type: "string",
+      enum: ["b"],
+    });
   });
 
   it("structured: maps a fetch failure to ModelUnreachableError", async () => {
@@ -89,5 +113,78 @@ describe("createLlmPort", () => {
     expect(debug).toHaveBeenCalled();
     expect(JSON.stringify(debug.mock.calls)).not.toContain("sk-secret");
     debug.mockRestore();
+  });
+
+  it.each([
+    {
+      provider: "openai" as const,
+      sent: (body: Record<string, unknown>) => body.response_format,
+      expected: { type: "json_schema", json_schema: { strict: true } },
+    },
+    {
+      provider: "google" as const,
+      sent: (body: Record<string, unknown>) => body.generationConfig,
+      expected: { responseJsonSchema: { required: ["ok"] } },
+    },
+  ])(
+    "$provider: asks for native strict structured output with the portable schema",
+    async ({ provider, sent, expected }) => {
+      vi.spyOn(console, "debug").mockImplementation(() => {});
+      const bodies: Record<string, unknown>[] = [];
+      const fetch = vi
+        .spyOn(globalThis, "fetch")
+        .mockImplementation(async (input, init) => {
+          // OpenAI passes (url, init); @langchain/google a Request.
+          const body = init?.body ?? (await (input as Request).clone().text());
+          bodies.push(JSON.parse(String(body)));
+          return new Response('{"error":{"message":"stub"}}', { status: 400 });
+        });
+
+      await createLlmPort({} as Config)
+        .structured(call, prompt, z.object({ ok: z.boolean() }), {
+          llmConfig: { provider, model: "m", apiKey: "k" },
+        })
+        .catch(() => {});
+
+      expect(sent(bodies[0]!)).toMatchObject(expected);
+      fetch.mockRestore();
+      vi.mocked(console.debug).mockRestore();
+    }
+  );
+
+  it("ollama: the structured call's schema overrides the constructor's format json", async () => {
+    vi.spyOn(console, "debug").mockImplementation(() => {});
+    const formats: unknown[] = [];
+    const fetch = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (_url, init) => {
+        formats.push(JSON.parse(String(init?.body)).format);
+        return new Response(
+          JSON.stringify({
+            model: "m",
+            created_at: new Date().toISOString(),
+            message: { role: "assistant", content: '{"ok":true}' },
+            done: true,
+          }) + "\n"
+        );
+      });
+    const port = createLlmPort({} as Config);
+    const llmConfig = {
+      provider: "ollama",
+      model: "m",
+      url: "http://ollama.test",
+    } as const;
+
+    await port.structured(call, prompt, z.object({ ok: z.boolean() }), {
+      llmConfig,
+    });
+    await port.text(call, prompt, { llmConfig });
+
+    expect(formats[0]).toMatchObject({
+      properties: { ok: { type: "boolean" } },
+    });
+    expect(formats[1]).toBeUndefined();
+    fetch.mockRestore();
+    vi.mocked(console.debug).mockRestore();
   });
 });

@@ -13,8 +13,18 @@ const KEYED_FORMAT_INSTRUCTION = `Return ONLY a JSON object mapping each provide
 Include every provided term as a key. Do not add, remove, merge, rename, or reorder the keys. Return ONLY the JSON object, no additional text.`;
 
 /**
+ * One required string per key. Not `z.record`: its JSON Schema carries
+ * `propertyNames`, which vLLM/xgrammar endpoints reject outright ("Grammar
+ * error: Unimplemented keys"). Keys are always known at call time, so a fixed
+ * object also makes every key required by construction; extras are stripped.
+ */
+export function keyedTranslationSchema(keys: string[]) {
+  return z.object(Object.fromEntries(keys.map((k) => [k, z.string()])));
+}
+
+/**
  * Translates terms via LLM into `{ inputTerm: translation }`. Keyed, not
- * positional: missing term detected, retried with missing terms fed back.
+ * positional: a missing term fails validation and is retried with it named.
  */
 export async function translateTermsKeyed(
   runtime: GraphRuntime,
@@ -59,7 +69,7 @@ export async function translateTermsKeyed(
               ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
               : ""),
         },
-        z.record(z.string(), z.string()),
+        keyedTranslationSchema(terms),
         context
       );
 
@@ -68,17 +78,7 @@ export async function translateTermsKeyed(
         response
       );
 
-      const missing = terms.filter((t) => response[t] === undefined);
-      if (missing.length > 0) {
-        throw new Error(
-          `Translation is missing keys for: ${missing.join(", ")}. Every provided term must appear as a key, spelled exactly as given.`
-        );
-      }
-
-      // Keep only the requested keys, in case the model added extras.
-      const result: Record<string, string> = {};
-      for (const term of terms) result[term] = response[term]!;
-      return result;
+      return response;
     },
     2,
     0,
@@ -141,7 +141,7 @@ export async function translateRecordKeyed(
               ? `\n\nPrevious generation error: ${summarizeValidationError(previousError)}`
               : ""),
         },
-        z.record(z.string(), z.string()),
+        keyedTranslationSchema(keys),
         context
       );
 
@@ -150,16 +150,7 @@ export async function translateRecordKeyed(
         response
       );
 
-      const missing = keys.filter((k) => response[k] === undefined);
-      if (missing.length > 0) {
-        throw new Error(
-          `Translation is missing keys for: ${missing.join(", ")}. Every provided key must appear in the response, spelled exactly as given.`
-        );
-      }
-
-      const result: Record<string, string> = {};
-      for (const key of keys) result[key] = response[key]!;
-      return result;
+      return response;
     },
     2,
     0,

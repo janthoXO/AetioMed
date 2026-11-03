@@ -82,9 +82,9 @@ a process signal handler any more; each returns a closer instead.
 **Core is a clean hexagon (#188).** `src/core/` holds domain logic and ports only; every I/O
 adapter lives under `src/adapters/` — `ai/` (LangChain chat-model factory), `modality/` (pluggable modality-provider modules), `catalog/<domain>/`
 (repos plus `Yaml*`/`InMemory*` port adapters, startup validation), `persistence/` (SQLite,
-Drizzle, translation store), `symptoms/`, `language/` (tinyld), `repos.ts` — and only
+Drizzle, translation store), `symptoms/`, `repos.ts` — and only
 `src/app.ts` wires them in. `importBoundary.test.ts` fails on any core production module that
-imports `@/adapters`, `@/app`, `fs`/`path`, `node:sqlite`, `drizzle-orm`, `tinyld` or a LangChain
+imports `@/adapters`, `@/app`, `fs`/`path`, `node:sqlite`, `drizzle-orm` or a LangChain
 provider package or `@langchain/core` (the LLM port speaks only core types since #190);
 `@langchain/langgraph` stays for good — it is the engine graphs are written in, not an
 I/O adapter.
@@ -110,7 +110,7 @@ ICD configured (`ICD_API_URL`; `IcdPort`, `core/diagnosis/icd.ts`, adapter
 whitespace-insensitive) in the request language, else once more after one LLM translation to
 English — never a fuzzy best match, which would silently swap the teaching diagnosis; a miss or
 unknown code is a 400, an unreachable ICD `ICD_UNAVAILABLE` (503). Without ICD the name goes to
-English through the translation store (`diagnosisTranslations.yml` prefill, LLM on a miss) and
+English through the translation store (`diagnoses.fhir.json` prefill, LLM on a miss) and
 `icd` passes through as an opaque tag. The graph never translates the diagnosis. The request
 schema applies the same rule up front (#238): without ICD a `diagnosis` name is required, and
 `GET /api/features` / `meta.features` list `ICD` (injected by the read model, not a `FEATURES`
@@ -294,8 +294,9 @@ two OTel spans for one logical step.
 
 ### Catalog Layer
 
-**The procedure catalogue is a tree, not a flat list.** `procedures.yml` parses into a
-`ProcedureTree<{ name }>` (`shared/domain/ProcedureTree.ts`) — a uniform recursive shape,
+**The procedure catalogue is a tree, not a flat list.** `procedures.fhir.json` (a FHIR R4 Bundle, see "Data Files") parses
+(`adapters/catalog/procedures/fhir.ts`'s `parseFhirCatalogue`) into a
+`ProcedureTree<CatalogProcedure>` (`shared/domain/ProcedureTree.ts`) — a uniform recursive shape,
 `{ categories: ({ name } & ProcedureTree)[], procedures: Leaf[] }`, categories nested to any
 depth, root and every category sharing the same shape. A procedure's identity is a `ProcedureRef`
 (`{ path, name }` — category names from the root, then its own name), compared/deduped/excluded
@@ -315,6 +316,11 @@ grammar (`{ procedures?, categories?: { <name>: … } }`) used to be the pick: e
 optional, so `{}` was valid, and a model that skipped the `categories` level had its whole pick
 silently stripped by zod into an empty workup. Freeform (no catalogue) is unchanged apart from
 `.min(1)`: the model invents names, refs come back with `path: []`.
+
+Each case procedure leaf carries `code` (the FHIR concept code; absent in freeform). The result
+planner gets the reference band matching the generated patient (gender + age), resolved in code;
+when the patient is only outline text it gets every band with its context. The blinded step still
+sees names/labels only, never codes.
 
 `src/core/graph/catalog/` owns the catalogue concept behind ports (`ProcedureCatalog`,
 `AnamnesisCatalog`, `LabelCatalog`, `DiagnosisCatalog`, `OutlineHeadingCatalog` in `ports.ts`). The adapters live in
@@ -341,7 +347,7 @@ and `assemble()`.
 and exits non-zero naming every offending key, with a Levenshtein suggestion. **Diagnosis is
 exempt** — it has no base catalogue (its base keys are the file's own English keys), and its
 store is an input index for user-supplied diagnosis names. With ICD configured,
-`diagnosisTranslations.yml` is skipped entirely and warned about if it has entries. Validation runs after graph construction
+`diagnoses.fhir.json` is skipped entirely and warned about if it has entries. Validation runs after graph construction
 because the labels catalogue's base key set is `getKnownLabels()`, populated by `traceNode`
 as the graph is built.
 
@@ -363,7 +369,7 @@ one into the other in the same call. With `TRANSLATION_SANDWICH` on:
 `userInstructions` value to English — the diagnosis arrives English already (#237), and a
 one-node phase subgraph would only collapse in `GET /api/graph`'s xray. User instructions are read only up to the
 outline (#220): the outline absorbs them, no case-graph node receives them, and a request
-carrying a `plan` has its `userInstructions` ignored (language detection may still read them).
+carrying a `plan` has its `userInstructions` dropped by the request schema.
 `05-translate-out/` is three
 nodes, not a chain (issue 12): `translate_defined` and `translate_rest` run in parallel from
 `START`, each writing only its own state channel (`definedTranslations`/`restTranslations`,
@@ -399,7 +405,7 @@ actually read.
 **`plan_phase`** (`buildPlanningPhaseGraph`, `02-plan/graph.ts` / `04-case/graph.ts`) runs up to two
 steps — the first compiled in only when the medical-basis registry is non-empty:
 
-- **`basis_resolve`** — runs first, and only when the medical-basis registry (`src/core/graph/02-plan/01-basis/`) is non-empty: an absent registry means an absent node, not a node that runs and does nothing. The registry is a plain list built once in the composition root (`graph/index.ts`'s `createMedicalBasisRegistry`), **not** a second compile-time flag — its _size_ decides whether `basis_resolve` is compiled in, the same rule `assemble.ts` applies to `TRANSLATION_SANDWICH`. Every registered `MedicalBasisProvider` (`02-plan/01-basis/ports.ts`) returns plain text, or nothing when it has none for this query (not rendered), and is run concurrently; their fragments are concatenated in **registry order** (not completion order) — there is no LLM call spent deciding which source to use; a throwing provider is logged and skipped, a hanging one is bounded by the request's abort signal. `02-plan/01-basis/render.ts` renders the concatenated fragments into one "Medical basis" section of the plan's **user** message only (never the system message), each fragment fenced and headed by the provider's `description` alone — the fence delimiters are escaped if they appear inside a fragment's own content, so a fragment can never close its own fence early. The registry is `umlsSymptoms.ts` then `llmSymptoms.ts`: `umlsSymptoms.ts` is UMLS-only — a static symptom floor per ICD code, nothing else — and `llmSymptoms.ts` is its fallback, running only when UMLS has nothing for the ICD code, cache-aside (skips the LLM on a fresh cache hit).
+- **`basis_resolve`** — runs first, and only when the medical-basis registry (`src/core/graph/02-plan/01-basis/`) is non-empty: an absent registry means an absent node, not a node that runs and does nothing. The registry is a plain list built once in the composition root (`graph/index.ts`'s `createMedicalBasisRegistry`), **not** a second compile-time flag — its _size_ decides whether `basis_resolve` is compiled in, the same rule `assemble.ts` applies to `TRANSLATION_SANDWICH`. Every registered `MedicalBasisProvider` (`02-plan/01-basis/ports.ts`) returns plain text, or nothing when it has none for this query (not rendered), and is run concurrently; their fragments are concatenated in **registry order** (not completion order) — there is no LLM call spent deciding which source to use; a throwing provider is logged and skipped, a hanging one is bounded by the request's abort signal. `02-plan/01-basis/render.ts` renders the concatenated fragments into one "Medical basis" section of the plan's **user** message only (never the system message), each fragment fenced and headed by the provider's `description` alone — the fence delimiters are escaped if they appear inside a fragment's own content, so a fragment can never close its own fence early. The registry is `mappedSymptoms.ts` then `llmSymptoms.ts`: `mappedSymptoms.ts` reads the deployer's ICD→symptom ConceptMap (`symptoms.fhir.json`) and nothing else, and `llmSymptoms.ts` is its fallback, running only when the mapping has nothing for the ICD code, cache-aside (skips the LLM on a fresh cache hit).
 - **`outline_phase`** (mounts `02-plan/02-outline/`'s `buildPlanGraph`) — generates the tag-delimited outline (see "Outline segments" below), then a combined evaluate ⇄ revise `Command` loop (max 2 iterations, `outline_evaluate`/`outline_regenerate`) judging obviousness AND clinical consistency in one LLM call. Before the first generation the node rolls a **case recipe** (`02-outline/recipe.ts`, #216) in code with `runtime.random` (seedable; `Math.random` when unset): whether the presentation carries a diagnostic label — a referral suspicion in Chief complaint or the patient's own belief in Anamnesis — and whether it is correct, partially right or wrong, at the #212 rates. The generator gets its `instruction`, the judge its `rubric`; revisions and judge read the same rolled value from plan state. The recipe is logged, never returned to the client: later nodes see only the outline text. On the iteration cap, the loop ends with `outlineAccepted: false` rather than looping forever — what that means is the caller's call: normal mode throws `OutlineNotAcceptedError` (a behaviour change, #159 — it used to render anyway), plan mode shows the outline to the reviewer regardless, with no marker, and lets them judge consistency themselves. `languageOf(state, runtime)` binds the outline and its judge prompts to the request language (`boundLanguage(runtime)`) only in plan mode; normal mode passes no language (English) — independent of the sandwich, which controls the case-generation runtime's `languageOverride`, not this phase's audience.
 
 **`case_phase`** (`buildCaseGenerationGraph`, `02-plan/graph.ts` / `04-case/graph.ts`) takes an
@@ -773,7 +779,7 @@ constructs them once, from `createApp()`.
 `labels/`) — each syncs its YAML source(s) and exposes lookups. **Catalogue lists are
 language-independent**; only the translation accessors take a language.
 
-`src/adapters/symptoms/repo.ts` — static UMLS floor (behind `SymptomsRepo`, `02-plan/01-basis/ports.ts`) from `diagnosis_symptoms.json` + LLM-symptom cache with TTL (`SYMPTOM_CACHE_TTL_DAYS`)
+`src/adapters/symptoms/repo.ts` — curated ICD→symptom mapping (behind `SymptomMapping`, `02-plan/01-basis/ports.ts`) from `symptoms.fhir.json` (FHIR ConceptMap) + LLM-symptom cache with TTL (`SYMPTOM_CACHE_TTL_DAYS`)
 
 There is no job repo (#159): the generator is stateless between calls, so nothing about a job
 is ever written to the embedded database — see "Composition Root" above.
@@ -866,8 +872,9 @@ stay silent for minutes, long enough for a proxy to treat the connection as idle
 telemetry are two concerns that happen to coincide, not one mechanism. `jobId` is a **body
 field**, validated against `src/api/JobId.ts`'s `JobIdSchema` since it is also a NATS subject
 token (`cases.result.<jobId>`) even when the request arrives over REST — the `?jobId=` query
-param is gone. **A body with a `plan` generates the case from it**, skipping planning entirely;
-the same jobId as the plan's own call is fine (#159) — the per-job channel allows exactly this
+param is gone. **A body with a `plan` generates the case from it**, skipping planning entirely; such a
+body must carry `mode` (a 400 otherwise) and has any `userInstructions` dropped; the request
+schema is one `z.union`, made exclusive by `plan` being `never` on the first call; the same jobId as the plan's own call is fine (#159) — the per-job channel allows exactly this
 one reuse after a `planned` outcome (see `core/jobEvents/channel.ts`'s `open()` above). A
 duplicate jobId otherwise (still running, or finished within the channel's tombstone window) is
 a 409 `JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED` on either Accept path, answered before any
@@ -1020,16 +1027,13 @@ like an empty one (`syncSource`, `adapters/persistence/db.ts`), so the server bo
 empty `CATALOG_DIR` — catalogues go freeform, ICD-only requests 400, symptoms come from the
 LLM. Paths below are relative to it:
 
-- `procedures.yml` / `proceduresTranslations.yml` — approved procedure catalogue, a tree of
-  categories (any depth) and procedures (when set, LLM must select from this tree only, by each
-  procedure's shortest unique label); translations mirror the same tree, each node keyed by its English
-  `key` alongside its translated `name`
-- `diagnosisTranslations.yml` — diagnosis name translations, used only without ICD (input index for user-supplied names)
+- `procedures.fhir.json` — approved procedure catalogue, one FHIR R4 `Bundle`; AetioMed reads a subset with zod, no FHIR library, other resources and fields are ignored. `CodeSystem` concepts form the tree (when set, LLM must select from it only, by each procedure's shortest unique label): a concept with child concepts is a category, a leaf is a procedure unless it carries the `notSelectable` property; a concept with `status` `retired` is skipped with everything under it; `display` is the English name (or an `en` designation when the CodeSystem's `language` is not English) and each `designation` is a curated translation per language. An optional `ObservationDefinition` coded with the CodeSystem `url` + concept code gives that procedure reference bands (`qualifiedInterval` with category `reference` or none: range low/high + UCUM unit, optional `gender`, optional `age` in FHIR age units (`a mo wk d h min`), ranges inclusive; resolution tiers: own gender with fitting age, own gender without age, no gender with fitting age, no gender without age; on a shared age bound the band starting there wins, as lab ranges read `40–<50`). Several CodeSystems merge at the root; a `supplement` CodeSystem (e.g. unit translations for UCUM) is skipped. Each case procedure leaf carries the concept `code`.
+- `diagnoses.fhir.json` — diagnosis names, one FHIR `CodeSystem` (`display` English, `designation` translations), used only without ICD (input index for user-supplied names)
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions (static config, no longer a request field)
 - `labelTranslations.yml` — trace-node label translations
 - `outlineHeadingsTranslations.yml` — plan-mode outline section-title translations (keys:
   `OUTLINE_SECTIONS`); missing titles are LLM-translated once and cached in the DB
-- `diagnosis_symptoms.json` — UMLS-derived symptom floor per ICD code (loaded directly, not via the DB sync)
+- `symptoms.fhir.json` — curated ICD→symptom mapping, one FHIR `ConceptMap` (loaded directly, not via the DB sync)
   The embedded SQLite DB is generated under `CACHE_DIR` (default `data/cache/`), which is
   deliberately a separate directory so a deployer can mount their own catalogues over
   `CATALOG_DIR` without clobbering it.
@@ -1148,42 +1152,12 @@ language`), so the choice is visible at every call site instead of hidden in the
   (picking directly from a target-language catalogue) are tracked separately —
   #123 — because they reverse issue 01's Rule 4
   deletion and deserve their own decision.
-- **Auto-detection is a laddered resolver in `CaseGenerationService`, not the graph**
-  (`src/core/languageDetection/`, issue 10). A caller may omit `language`; the service resolves
-  it once, before `runWithContext` binds anything, via:
-
-  ```
-  1. language explicitly provided       → use it                      (no cost)
-  2. deterministic n-gram detector      → use it if above threshold   (no cost, offline)
-  3. LLM fallback, only if enabled      → one cheap call              (rare, opt-in)
-  4. otherwise                          → configured default (English)
-  ```
-
-  This lives in the communication/service layer because its output _selects the ports_
-  generation binds, and binding happens before invoke — a detection node inside the graph could
-  not inform the thing its answer is for. It is also request normalisation, so it sits beside
-  the diagnosis resolution the service already does; it is **not** a graph flag and never adds a
-  compiled variant. `LANGUAGE_AUTO_DETECT` gates steps 2–3 together; step 3 needs its own further
-  opt-in, `LANGUAGE_DETECT_LLM_FALLBACK`, so a deployer never pays LLM calls unknowingly just for
-  turning on auto-detect.
-
-  Detection runs on `userInstructions` only, **never the diagnosis name** — two decisive
-  reasons: an ICD-only request's diagnosis name is resolved to English by the service, so
-  detecting on it would be circular; and diagnosis names are 2-3 words and frequently Latin
-  (_"Diabetes mellitus"_ is byte-identical in English, German and Spanish). `UserInstructions` is
-  a per-field record of strings, concatenated into one blob for detection; text under ~30
-  characters is too short for n-gram detection and skips straight to step 4.
-
-  The detector is `tinyld` (`src/adapters/language/tinyldDetector.ts`, passed in by `createApp()`), wrapped behind a
-  `LanguageDetector` port (`languageDetection/port.ts`) so it is fakeable in tests and swappable
-  later — offline, TypeScript-native, and `detectAll()` returns an explicit
-  `{ lang, accuracy }[]` distribution (`accuracy` reads directly as this port's confidence)
-  rather than `franc`'s relative distances. The detector's ISO 639-1 code is compared to the configured codes directly (a code outside
-  `LANGUAGES` never wins step 2). Language names exist only at the prompt seam: `promptLanguage`
+- **No language detection.** An omitted `language` is `en` (the request schema's default);
+  the service never guesses. Language names exist only at the prompt seam: `promptLanguage`
   (`shared/domain/Language.ts`, `Intl.DisplayNames`) writes `German (de)` wherever a language goes
-  into an LLM prompt. The resolved language is echoed back as `language` in
+  into an LLM prompt. The language is echoed back as `language` in
   `CaseGenerationResponseSchema`'s success branch and the NATS success payload (and on
-  `CaseGenerationResult`), so a client can notice a wrong auto-detect guess and retry explicitly.
+  `CaseGenerationResult`).
 
 ## Environment Variables
 
@@ -1201,8 +1175,6 @@ language`), so the choice is visible at every call site instead of hidden in the
 | `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`            | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                                         |
 | `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                                                   |
 | `LANGUAGES`                                                           | `en,de`                 | Comma-separated ISO 639-1 codes, trimmed/de-duplicated/order-preserved; must include `en`. Validated at startup and against every request's `language` (see Language section below)                                     |
-| `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                                        |
-| `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                                                   |
 | `ALLOWED_LLMS`                                                        | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                                                      |
 | `CATALOG_DIR`                                                         | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                                            |
 | `CACHE_DIR`                                                           | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                                           |

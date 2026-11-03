@@ -66,8 +66,8 @@ export const predefinedItem = sqliteTable(
 
 /**
  * Cache-aside store for LLM-generated symptom additions, keyed by ICD-11
- * code. Holds only the LLM-generated symptoms (not the static UMLS floor
- * from `data/diagnosis_symptoms.json`), so a hit here skips the LLM call
+ * code. Holds only the LLM-generated symptoms (not the static symptom mapping
+ * from `data/symptoms.fhir.json`), so a hit here skips the LLM call
  * entirely. `updatedAt` (epoch ms) backs a TTL freshness check in
  * `symptoms.repo.ts` — stale rows are treated as a miss and regenerated.
  */

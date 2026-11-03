@@ -47,8 +47,6 @@ function fakeGraph(): GraphAppContext {
       },
       allowedLlms: undefined,
       LANGUAGES: ["en", "de"],
-      LANGUAGE_AUTO_DETECT: false,
-      LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
     runtime: {} as GraphAppContext["runtime"],
     ...planAndRenderFrom(vi.fn()),

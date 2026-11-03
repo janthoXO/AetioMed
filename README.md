@@ -184,7 +184,7 @@ Generation runs up to three stages: **medical basis → presentation → procedu
 Before any graph runs, the request's diagnosis is resolved to the English name generation works with.
 
 - **With ICD** (`ICD_API_URL` pointing at a [WHO ICD-11 API container](https://icd.who.int/docs/icd-api/ICDAPI-DockerContainer/)): everything goes through ICD. An `icd` code is looked up and wins over a sent name. A name must match an ICD-11 title or synonym **exactly** (ignoring case and extra whitespace) in the request language; if it does not, it is translated to English once and must then match exactly. Otherwise the request fails with 400. There is deliberately no fuzzy "best match": it would silently swap the diagnosis a teacher asked for, so `"Diabetes"` is rejected instead of becoming `"Diabetes mellitus, type unspecified"`. Send the ICD title or code instead.
-- **Without ICD**: the name is translated to English through `data/diagnosisTranslations.yml` (deterministic), or once by the LLM and cached; an `icd` is carried along unchecked.
+- **Without ICD**: the name is translated to English through `data/diagnoses.fhir.json` (deterministic), or once by the LLM and cached; an `icd` is carried along unchecked.
 
 The full compiled pipeline, end to end, is in `docs/graphs/`, one diagram per run mode: [plan mode](docs/graphs/plan-mode.translation-sandwich.svg) and [normal mode](docs/graphs/normal-mode.translation-sandwich.svg) with the sandwich on, and [plan mode](docs/graphs/plan-mode.none.svg) and [normal mode](docs/graphs/normal-mode.none.svg) with it off.
 
@@ -194,8 +194,8 @@ Establishes the disease knowledge the outline may draw from. This is a registry 
 
 Two providers are registered today:
 
-1. **UMLS symptoms** — a curated, non-AI symptom list looked up for the diagnosis's ICD code. Returns nothing when there is no data for the code.
-2. **LLM symptoms** — the fallback, run only when UMLS has nothing for the code. Generated symptoms are cached per ICD code with a TTL; a fresh cache hit skips the LLM call, so repeated generations for the same diagnosis start faster and stay consistent.
+1. **Mapped symptoms** — a curated, non-AI symptom list (`data/symptoms.fhir.json`, e.g. UMLS-, SNOMED- or HPO-derived) looked up for the diagnosis's ICD code. Returns nothing when there is no data for the code.
+2. **LLM symptoms** — the fallback, run only when the mapping has nothing for the code. Generated symptoms are cached per ICD code with a TTL; a fresh cache hit skips the LLM call, so repeated generations for the same diagnosis start faster and stay consistent.
 
 ### Presentation
 
@@ -312,7 +312,7 @@ AetioMed is a self-hostable, LLM-based generator of synthetic medical cases for 
 
 ### Does AetioMed use real patient data?
 
-No. Cases are fictional. The inputs are a diagnosis plus curated catalogues shipped in `data/` — a UMLS-derived symptom list, and approved procedure and anamnesis-category lists. No patient records are needed or stored.
+No. Cases are fictional. The inputs are a diagnosis plus curated catalogues shipped in `data/` — a curated ICD-to-symptom mapping, and approved procedure and anamnesis-category lists. No patient records are needed or stored.
 
 ### Which LLMs does AetioMed support?
 

@@ -11,7 +11,6 @@ import {
   encodeText,
   type ContentPart,
 } from "@/core/graph/shared/domain/ContentPart.js";
-import type { LanguageDetector } from "@/core/languageDetection/port.js";
 import { planAndRenderFrom } from "@/testing/graphFakes.js";
 import { createInMemoryIcd } from "@/adapters/icd/inMemory.js";
 import type { GenerateCaseFn } from "@/core/graph/appContext.js";
@@ -25,8 +24,6 @@ function fakeGraph(
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
       LANGUAGES: ["en", "de"],
-      LANGUAGE_AUTO_DETECT: false,
-      LANGUAGE_DETECT_LLM_FALLBACK: false,
       ...configOverrides,
     } as GraphAppContext["config"],
     runtime: {
@@ -213,165 +210,16 @@ describe("CaseGenerationService — diagnosis resolution (#237)", () => {
   });
 });
 
-describe("CaseGenerationService — language resolution", () => {
-  const fullCase: Case = { patient: { name: "Jane", age: 40, sex: "female" } };
-
-  function fakeDetector(
-    result: { iso: string; confidence: number } | undefined
-  ): LanguageDetector {
-    return { detect: vi.fn().mockReturnValue(result) };
-  }
-
-  it("uses the explicit language and never invokes the detector", async () => {
-    const generateCase = vi.fn(async () => fullCase);
-    const detector = fakeDetector({ iso: "de", confidence: 1 });
-    const graph = fakeGraph(generateCase, { LANGUAGE_AUTO_DETECT: true });
+describe("CaseGenerationService — language", () => {
+  it("echoes the request language on a successful result", async () => {
+    const generateCase = vi.fn(
+      async () =>
+        ({
+          patient: { name: "Jane", age: 40, sex: "female" },
+        }) as Case
+    );
     const service = createCaseGenerationService(
-      graph,
-      new EventBus(),
-      createJobEventChannel(),
-      { detector }
-    );
-
-    const result = await service.generate({
-      diagnosis: "Influenza",
-      generationFlags: [],
-      language: "de",
-    });
-
-    expect(detector.detect).not.toHaveBeenCalled();
-    expect(generateCase.mock.calls[0]?.[0]?.language).toBe("de");
-    expect(result.language).toBe("de");
-  });
-
-  it("defaults to English and skips detection with LANGUAGE_AUTO_DETECT unset", async () => {
-    const generateCase = vi.fn(async () => fullCase);
-    const detector = fakeDetector({ iso: "de", confidence: 1 });
-    const graph = fakeGraph(generateCase); // LANGUAGE_AUTO_DETECT: false
-    const service = createCaseGenerationService(
-      graph,
-      new EventBus(),
-      createJobEventChannel(),
-      { detector }
-    );
-
-    const result = await service.generate({
-      diagnosis: "Influenza",
-      generationFlags: [],
-      userInstructions: {
-        general: "Bitte einen einfachen Fall mit klassischen Symptomen.",
-      },
-    });
-
-    expect(detector.detect).not.toHaveBeenCalled();
-    expect(result.language).toBe("en");
-  });
-
-  it("resolves German userInstructions to German via the detector", async () => {
-    const generateCase = vi.fn(async () => fullCase);
-    const detector = fakeDetector({ iso: "de", confidence: 1 });
-    const graph = fakeGraph(generateCase, { LANGUAGE_AUTO_DETECT: true });
-    const service = createCaseGenerationService(
-      graph,
-      new EventBus(),
-      createJobEventChannel(),
-      { detector }
-    );
-
-    const result = await service.generate({
-      diagnosis: "Influenza",
-      generationFlags: [],
-      userInstructions: {
-        general: "Bitte einen einfachen Fall mit klassischen Symptomen.",
-      },
-    });
-
-    expect(result.language).toBe("de");
-    expect(generateCase.mock.calls[0]?.[0]?.language).toBe("de");
-  });
-
-  it("falls back to the default when detection confidence is below threshold", async () => {
-    const generateCase = vi.fn(async () => fullCase);
-    const detector = fakeDetector({ iso: "de", confidence: 0.1 });
-    const graph = fakeGraph(generateCase, { LANGUAGE_AUTO_DETECT: true });
-    const service = createCaseGenerationService(
-      graph,
-      new EventBus(),
-      createJobEventChannel(),
-      { detector }
-    );
-
-    const result = await service.generate({
-      diagnosis: "Influenza",
-      generationFlags: [],
-      userInstructions: {
-        general: "Bitte einen einfachen Fall mit klassischen Symptomen.",
-      },
-    });
-
-    expect(result.language).toBe("en");
-  });
-
-  it("never passes the diagnosis name to the detector — only userInstructions", async () => {
-    const generateCase = vi.fn(async () => fullCase);
-    const detector = fakeDetector({ iso: "de", confidence: 1 });
-    const graph = fakeGraph(generateCase, { LANGUAGE_AUTO_DETECT: true });
-    const service = createCaseGenerationService(
-      graph,
-      new EventBus(),
-      createJobEventChannel(),
-      { detector }
-    );
-
-    await service.generate({
-      diagnosis: "Diabetes mellitus",
-      generationFlags: [],
-      userInstructions: {
-        general: "Bitte einen einfachen Fall mit klassischen Symptomen.",
-      },
-    });
-
-    expect(detector.detect).toHaveBeenCalledTimes(1);
-    expect(detector.detect).toHaveBeenCalledWith(
-      "Bitte einen einfachen Fall mit klassischen Symptomen."
-    );
-    expect(detector.detect).not.toHaveBeenCalledWith(
-      expect.stringContaining("Diabetes")
-    );
-  });
-
-  it("does not make an LLM call when auto-detect is on but the LLM fallback is off", async () => {
-    const generateCase = vi.fn(async () => fullCase);
-    const detector = fakeDetector({ iso: "de", confidence: 0.1 });
-    const structuredSpy = vi.fn();
-    const graph = fakeGraph(generateCase, { LANGUAGE_AUTO_DETECT: true });
-    graph.runtime = {
-      ...graph.runtime,
-      llm: { structured: structuredSpy },
-    } as GraphAppContext["runtime"];
-    const service = createCaseGenerationService(
-      graph,
-      new EventBus(),
-      createJobEventChannel(),
-      { detector }
-    );
-
-    await service.generate({
-      diagnosis: "Influenza",
-      generationFlags: [],
-      userInstructions: {
-        general: "Bitte einen einfachen Fall mit klassischen Symptomen.",
-      },
-    });
-
-    expect(structuredSpy).not.toHaveBeenCalled();
-  });
-
-  it("echoes the resolved language on a successful result", async () => {
-    const generateCase = vi.fn(async () => fullCase);
-    const graph = fakeGraph(generateCase);
-    const service = createCaseGenerationService(
-      graph,
+      fakeGraph(generateCase),
       new EventBus(),
       createJobEventChannel()
     );
@@ -384,6 +232,7 @@ describe("CaseGenerationService — language resolution", () => {
 
     expect(result.status).toBe("done");
     expect(result.language).toBe("de");
+    expect(generateCase.mock.calls[0]?.[0]?.language).toBe("de");
   });
 });
 

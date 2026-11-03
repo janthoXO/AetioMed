@@ -38,7 +38,7 @@ export class UnknownDiagnosisError extends AppError {
  * mellitus").
  *
  * No ICD: the name goes to English through the translation store
- * (`diagnosisTranslations.yml` prefill), LLM on a miss; `icd` passes through
+ * (`diagnoses.fhir.json` prefill), LLM on a miss; `icd` passes through
  * as an opaque tag (it still keys the symptom basis).
  */
 export async function resolveDiagnosis(

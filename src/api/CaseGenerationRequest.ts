@@ -17,11 +17,11 @@ import {
 } from "@/core/graph/shared/outline/segments.js";
 
 /**
- * Request schema depends on configured `LANGUAGES` and global LLM (`config.llm`),
+ * Request schemas depend on configured `LANGUAGES` and global LLM (`config.llm`),
  * so built from resolved graph config (`GraphAppContext.config`), not module scope.
  */
-function makeBaseCaseGenerationRequestSchema(config: Config) {
-  return z.object({
+function sharedFields(config: Config) {
+  return {
     jobId: JobIdSchema.optional(),
     icd: ICDCodeSchema.optional().describe(
       "ICD-11 code: a stem code ('CA40.Z') or a post-coordinated cluster ('CA40.Z&XB22'). With " +
@@ -35,9 +35,6 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
         "Diagnosis name, in the request language. Required without ICD; with ICD it must match " +
           "an ICD-11 title or synonym exactly."
       ),
-    userInstructions: UserInstructionsSchema.optional().describe(
-      "Additional context for case generation. Absorbed into the plan: ignored when 'plan' is set."
-    ),
     generationFlags: z
       .array(GenerationFlagSchema)
       // `.min(1)` mirrors `CaseGenerationStateSchema`: `[]` is 400, not 500 from graph.
@@ -46,9 +43,9 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
       .describe("Generation flags to specify case fields to generate"),
     // Checked against configured `LANGUAGES` here: unsupported language is 400, not 500.
     language: makeLanguageSchema(config.LANGUAGES)
-      .optional()
+      .default("en")
       .describe(
-        `Language to generate the case in. One of: ${config.LANGUAGES.join(", ")}.`
+        `Language to generate the case in. One of: ${config.LANGUAGES.join(", ")}. Defaults to 'en'.`
       ),
     difficulty: DifficultySchema.optional().describe(
       "How unclear the diagnosis should be to a student working through the case. " +
@@ -57,44 +54,31 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
         "changes in procedure results; 'hard' presents an atypical case with omitted " +
         "hallmark symptoms and ambiguous procedure results. Defaults to 'medium'."
     ),
-    mode: RunModeSchema.default("normal").describe(
-      "'normal' generates the case end to end and hands over its (English) " +
-        "plan on the way. 'plan' stops once the plan exists and returns it " +
-        "in the request language; send the same request back with `plan` " +
-        "to generate the case from it."
-    ),
-    plan: OutlineSegmentsSchema.optional().describe(
-      "A plan from an earlier call with this request, possibly " +
-        "edited: planning is skipped and the case is generated from it. In " +
-        "plan mode it is in the request language, in normal mode English — " +
-        "exactly as it was handed out. Fixed segments must be unchanged."
-    ),
     llmConfig: LLMConfigSchema.optional().describe(
       "Optional per-request model selection for the LLM used in case " +
         "generation. Applies to all internal roles (generator/judge/" +
         "translator) uniformly — per-role overrides are not supported in " +
         "the request body."
     ),
-  });
+  };
 }
 
-export function makeCaseGenerationRequestSchema(
-  config: Config,
-  { icd }: { icd: boolean }
-) {
+/** Cross-field rules shared by both shapes. */
+function withRules<
+  T extends z.ZodType<{
+    icd?: unknown;
+    diagnosis?: unknown;
+    llmConfig?: unknown;
+  }>,
+>(schema: T, config: Config, icd: boolean) {
   return (
-    makeBaseCaseGenerationRequestSchema(config)
+    schema
       // ICD configured: a code alone resolves. Without ICD only a name does (#238).
       .refine((data) => (icd && data.icd) || data.diagnosis, {
         message: icd
           ? "Either 'icd' or 'diagnosis' must be provided"
           : "'diagnosis' is required: no ICD API is configured to resolve 'icd'",
         path: icd ? ["icd"] : ["diagnosis"],
-      })
-      .refine((data) => !data.plan || isCanonicalShape(data.plan), {
-        message:
-          "A plan must alternate editable and fixed segments, starting and ending with an editable one",
-        path: ["plan"],
       })
       .refine((data) => !(data.llmConfig && config.llm), {
         message: "LLM config is not allowed when a global LLM is configured",
@@ -107,9 +91,73 @@ export function makeCaseGenerationRequestSchema(
   );
 }
 
+function makeShapes(config: Config, icd: boolean) {
+  const fields = sharedFields(config);
+  const firstCall = withRules(
+    z.object({
+      ...fields,
+      userInstructions: UserInstructionsSchema.optional().describe(
+        "Additional context for case generation. Absorbed into the plan."
+      ),
+      mode: RunModeSchema.default("normal").describe(
+        "'normal' generates the case end to end and hands over its (English) " +
+          "plan on the way. 'plan' stops once the plan exists and returns it " +
+          "in the request language; send the same request back with `plan` " +
+          "to generate the case from it. Defaults to 'normal'."
+      ),
+      // `never`, not absent: lenient objects drop unknown keys, so without it
+      // a plan missing `mode` would parse here, lose its plan and re-plan.
+      plan: z
+        .never()
+        .optional()
+        .describe(
+          "Not allowed on a first call: a body with `plan` is a continuation."
+        ),
+    }),
+    config,
+    icd
+  );
+  // Lenient: `userInstructions` sent with a plan are dropped, never read (#220).
+  const continuation = withRules(
+    z.object({
+      ...fields,
+      mode: RunModeSchema.describe(
+        "Mode of the call that handed the plan out: 'plan' = plan is in the request language, 'normal' = English."
+      ),
+      plan: OutlineSegmentsSchema.refine(isCanonicalShape, {
+        message:
+          "A plan must alternate editable and fixed segments, starting and ending with an editable one",
+      }).describe(
+        "A plan from an earlier call with this request, possibly " +
+          "edited: planning is skipped and the case is generated from it, " +
+          "exactly as it was handed out. Fixed segments must be unchanged. " +
+          "`userInstructions` are ignored: the plan already absorbed them."
+      ),
+    }),
+    config,
+    icd
+  );
+  return { firstCall, continuation };
+}
+
+/**
+ * First call or continuation. Exclusive by `plan` (`never` on the first call,
+ * required on the continuation), so a plain union picks the right one. A body
+ * matching neither fails with one `invalid_union` issue, both branches' reasons
+ * nested in it. Parser for both transports and the exported contract.
+ */
+export function makeCaseGenerationRequestSchema(
+  config: Config,
+  { icd }: { icd: boolean }
+) {
+  const { firstCall, continuation } = makeShapes(config, icd);
+  return z.union([firstCall, continuation]);
+}
+
 export type CaseGenerationRequestSchema = ReturnType<
   typeof makeCaseGenerationRequestSchema
 >;
-export type CaseGenerationRequest = z.infer<
-  ReturnType<typeof makeBaseCaseGenerationRequestSchema>
->;
+type Shapes = ReturnType<typeof makeShapes>;
+export type FirstCallRequest = z.output<Shapes["firstCall"]>;
+export type ContinuationRequest = z.output<Shapes["continuation"]>;
+export type CaseGenerationRequest = FirstCallRequest | ContinuationRequest;

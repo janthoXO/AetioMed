@@ -56,8 +56,8 @@ export interface MedicalBasisProvider {
   ): Promise<string | undefined>;
 }
 
-/** Static UMLS symptom floor per ICD code. */
-export interface UmlsSymptomFloor {
+/** Curated ICD code → symptom mapping (e.g. UMLS-, SNOMED- or HPO-derived). */
+export interface SymptomMapping {
   SymptomsRelatedToDiagnosisIcd(icdCode: ICDCode): Symptom[];
 }
 

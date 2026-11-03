@@ -140,20 +140,6 @@ export const ConfigSchema = z
         return languages;
       }),
     /**
-     * Enables language-detection steps 2-3: offline n-gram detector, plus LLM
-     * fallback if `LANGUAGE_DETECT_LLM_FALLBACK`. Unset: omitted `language`
-     * resolves to default. Service-layer normalisation, not a graph flag.
-     */
-    LANGUAGE_AUTO_DETECT: z
-      .string()
-      .optional()
-      .transform((v) => v === "true" || v === "1"),
-    /** Step 3 (LLM) opt-in. Ignored unless `LANGUAGE_AUTO_DETECT`. */
-    LANGUAGE_DETECT_LLM_FALLBACK: z
-      .string()
-      .optional()
-      .transform((v) => v === "true" || v === "1"),
-    /**
      * Ceiling on one content part's decoded bytes. Base64 inflates ~33% and
      * whole case sits in memory; oversize fails loudly.
      */

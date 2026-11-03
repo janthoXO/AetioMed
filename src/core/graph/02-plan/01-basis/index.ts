@@ -11,5 +11,5 @@ export {
   BASIS_FRAGMENT_CLOSE,
 } from "./render.js";
 export { createMedicalBasisRegistry, resolveAllFragments } from "./registry.js";
-export { createUmlsSymptomProvider } from "@/core/graph/02-plan/01-basis/providers/umlsSymptoms.js";
+export { createMappedSymptomProvider } from "@/core/graph/02-plan/01-basis/providers/mappedSymptoms.js";
 export { createLlmSymptomProvider } from "@/core/graph/02-plan/01-basis/providers/llmSymptoms.js";

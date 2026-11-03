@@ -12,7 +12,7 @@ import { createLogger } from "./utils/logger.js";
 import { LLM_ROLES, type GraphRuntime, type LlmPort } from "./runtime.js";
 import type {
   SymptomCache,
-  UmlsSymptomFloor,
+  SymptomMapping,
 } from "@/core/graph/02-plan/01-basis/ports.js";
 import type { GraphAppContext } from "./appContext.js";
 import type { NodeTracer } from "./utils/nodeWrapper.js";
@@ -77,14 +77,15 @@ export function initGraph(opts: {
   icd: boolean;
   llm: LlmPort;
   catalogs: GraphRuntime["catalogs"];
-  umlsFloor: UmlsSymptomFloor;
+  symptomMapping: SymptomMapping;
   symptomCache: SymptomCache;
   /** OTel port from `observability/otel.ts`'s `createOtelNodeTracer()`. Pass `noopNodeTracer` for silence. */
   tracer: NodeTracer;
   /** Pluggable providers per field (`adapters/modality/`, resolved from `MODALITY_PROVIDERS`), added after each field's own. */
   modalityProviders?: (runtime: GraphRuntime) => Partial<ModalityRegistries>;
 }): GraphAppContext {
-  const { bus, config, llm, catalogs, umlsFloor, symptomCache, tracer } = opts;
+  const { bus, config, llm, catalogs, symptomMapping, symptomCache, tracer } =
+    opts;
 
   const runtime: GraphRuntime = {
     llm,
@@ -94,10 +95,10 @@ export function initGraph(opts: {
   };
 
   // Plain list, not a config flag (see `createMedicalBasisRegistry`). Always
-  // `[umlsSymptomProvider]`.
+  // `[mappedSymptomProvider]`.
   const medicalBasisRegistry = createMedicalBasisRegistry({
     runtime,
-    umlsFloor,
+    symptomMapping,
     symptomCache,
   });
 

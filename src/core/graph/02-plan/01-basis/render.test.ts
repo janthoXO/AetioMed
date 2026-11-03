@@ -8,7 +8,7 @@ import type { BasisFragment } from "./ports.js";
 
 function fragment(overrides: Partial<BasisFragment> = {}): BasisFragment {
   return {
-    source: "Typical symptoms (UMLS database)",
+    source: "Typical symptoms (curated ICD → symptom mapping)",
     content: "Fever, cough, fatigue",
     ...overrides,
   };

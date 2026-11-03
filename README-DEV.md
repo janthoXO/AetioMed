@@ -13,7 +13,6 @@ This is a **backend-only** repository — no frontend lives here.
 - **Database**: Embedded SQLite via Drizzle ORM (default `data/cache/aetiomed.db`, see `CACHE_DIR`)
 - **Message Broker**: NATS — JetStream for requests and results, core NATS for progress, `@nats-io/services` for reads — optional
 - **Observability**: OpenTelemetry — spans plus correlated log records, over OTLP or to the console — optional
-- **Language detection**: `tinyld` (offline n-gram)
 - **Testing**: Vitest
 - **Package Manager**: pnpm
 
@@ -53,8 +52,6 @@ Copy `.env.example` to `.env` and adjust. The most important variable is `FEATUR
 | `ALLOWED_LLMS`                                                        | —                       | `ollama:model1,google:model2` — requires the `ALLOW_LLMS` flag                                                                                                              |
 | `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                       |
 | `LANGUAGES`                                                           | `en,de`                 | Comma-separated ISO 639-1 codes; must include `en`. A request's `language` is validated against it (400 if outside)                                                         |
-| `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables offline n-gram detection for a request that omits `language`; not a graph flag                                                                           |
-| `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally allows one LLM call when the detector is below threshold; requires `LANGUAGE_AUTO_DETECT`                                                           |
 | `CATALOG_DIR`                                                         | `data`                  | Deployer-owned, read-only catalogue inputs; resolved against `process.cwd()` when relative                                                                                  |
 | `CACHE_DIR`                                                           | `data/cache`            | Generated, writable output — the SQLite database lives here                                                                                                                 |
 | `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms                                                                                                                                       |
@@ -261,12 +258,12 @@ Tables: `_meta`, `translation`, `diagnosis`, `predefined_item`, `symptom_cache`.
 
 `CATALOG_DIR` (default `data/`) holds the sources synced into SQLite at startup:
 
-- `procedures.yml` / `proceduresTranslations.yml` — approved procedure catalogue: a tree of `categories` (name + nested `categories`/`procedures`, any depth) and root-level `procedures`. Translations mirror the same tree, each node keyed by its own English `key` alongside its translated `name`.
-- `diagnosis.yml` / `diagnosisTranslations.yml` — ICD-11 diagnosis lookup
+- `procedures.fhir.json` — approved procedure catalogue, one FHIR R4 `Bundle` (a subset read with zod, no FHIR library; other resources and fields are ignored). `CodeSystem` concepts form the tree: a concept with child concepts is a category, a leaf is a procedure unless it carries the `notSelectable` property; a concept with `status` `retired` is skipped with everything under it; `display` is the English name (or an `en` designation when the CodeSystem's `language` is not English) and each `designation` is a curated translation per language. An optional `ObservationDefinition` coded with the CodeSystem `url` + concept code gives that procedure reference bands (`qualifiedInterval` with category `reference` or none: range low/high + UCUM unit, optional `gender`, optional `age` in FHIR age units (`a mo wk d h min`), ranges inclusive; resolution tiers: own gender with fitting age, own gender without age, no gender with fitting age, no gender without age; on a shared age bound the band starting there wins, as lab ranges read `40–<50`). Several CodeSystems merge at the root; a `supplement` CodeSystem (e.g. unit translations for UCUM) is skipped.
+- `diagnoses.fhir.json` — diagnosis names and translations, one FHIR `CodeSystem` (used only without ICD)
 - `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` — anamnesis section definitions
 - `labelTranslations.yml` — progress label translations
 - `outlineHeadingsTranslations.yml` — plan-mode outline section-title translations (missing titles are LLM-translated once and cached)
-- `diagnosis_symptoms.json` — UMLS symptoms per ICD code (loaded directly, not via the DB sync)
+- `symptoms.fhir.json` — ICD → symptom mapping, one FHIR `ConceptMap` (loaded directly, not via the DB sync)
 
 The generated database lives under `CACHE_DIR` (default `data/cache/`), deliberately a separate directory so a deployer can mount their own catalogues without clobbering it. `scripts/extract-icd11*.ts` build the diagnosis YAML from ICD-11 source data and are run manually.
 

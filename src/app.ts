@@ -30,7 +30,6 @@ import { validateCatalogsOrExit } from "./adapters/catalog/startupValidation.js"
 import { createLlmPort } from "./adapters/ai/llm.js";
 import { icdClientFromEnv, probeIcd } from "./adapters/icd/client.js";
 import { createIcdPort } from "./adapters/icd/port.js";
-import { createTinyldDetector } from "./adapters/language/tinyldDetector.js";
 
 const AppEnvSchema = z
   .object({
@@ -97,7 +96,7 @@ export async function createApp(): Promise<{
     icd: icdClient !== undefined,
     llm: createLlmPort(graphConfig),
     catalogs: createYamlCatalogs(repos),
-    umlsFloor: repos.umlsFloor,
+    symptomMapping: repos.symptomMapping,
     symptomCache: repos.symptomCache,
     tracer: otel.tracer,
     modalityProviders,
@@ -116,7 +115,6 @@ export async function createApp(): Promise<{
 
   const service = createCaseGenerationService(graph, bus, jobEvents, {
     maxConcurrent: maxConcurrentGenerations,
-    detector: createTinyldDetector(),
     ...(icdClient && { icd: createIcdPort(icdClient, repos.db) }),
   });
 

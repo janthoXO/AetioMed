@@ -21,8 +21,6 @@ function fakeGraph(): GraphAppContext {
       llm: { provider: "ollama", model: "test-model" },
       allowedLlms: undefined,
       LANGUAGES: ["en", "de"],
-      LANGUAGE_AUTO_DETECT: false,
-      LANGUAGE_DETECT_LLM_FALLBACK: false,
     } as GraphAppContext["config"],
     runtime: {
       catalogs: {

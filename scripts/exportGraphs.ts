@@ -24,7 +24,7 @@ import { createLogger } from "@/core/graph/utils/logger.js";
 import type { Config } from "@/core/graph/config.js";
 import type {
   SymptomCache,
-  UmlsSymptomFloor,
+  SymptomMapping,
 } from "@/core/graph/02-plan/01-basis/ports.js";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -106,7 +106,7 @@ const minimalRuntime: GraphRuntime = {
 
 // No-op stand-in: never called while exporting topology, so it does not
 // touch the filesystem or the embedded database.
-const minimalUmlsFloor: UmlsSymptomFloor = {
+const minimalSymptomMapping: SymptomMapping = {
   SymptomsRelatedToDiagnosisIcd: () => [],
 };
 const minimalSymptomCache: SymptomCache = {
@@ -115,11 +115,11 @@ const minimalSymptomCache: SymptomCache = {
 };
 
 // Mirrors the composition root (`graph/index.ts`): the registry always has
-// the one UMLS-symptom provider today, so the exported topology shows
+// the one mapped-symptom provider today, so the exported topology shows
 // `basis_resolve` exactly as a real deployment's graph would.
 const medicalBasisRegistry = createMedicalBasisRegistry({
   runtime: minimalRuntime,
-  umlsFloor: minimalUmlsFloor,
+  symptomMapping: minimalSymptomMapping,
   symptomCache: minimalSymptomCache,
 });
 

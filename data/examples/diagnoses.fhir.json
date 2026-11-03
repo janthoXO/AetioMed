@@ -1,0 +1,13 @@
+{
+  "resourceType": "CodeSystem",
+  "status": "draft",
+  "content": "fragment",
+  "language": "en",
+  "concept": [
+    {
+      "code": "5A10",
+      "display": "Type 1 diabetes mellitus",
+      "designation": [{ "language": "de", "value": "Diabetes mellitus Typ 1" }]
+    }
+  ]
+}

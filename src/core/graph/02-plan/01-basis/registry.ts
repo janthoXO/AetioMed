@@ -1,7 +1,7 @@
 import type { GraphRuntime, Logger } from "@/core/graph/runtime.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
-import type { SymptomCache, UmlsSymptomFloor } from "./ports.js";
-import { createUmlsSymptomProvider } from "@/core/graph/02-plan/01-basis/providers/umlsSymptoms.js";
+import type { SymptomCache, SymptomMapping } from "./ports.js";
+import { createMappedSymptomProvider } from "@/core/graph/02-plan/01-basis/providers/mappedSymptoms.js";
 import { createLlmSymptomProvider } from "@/core/graph/02-plan/01-basis/providers/llmSymptoms.js";
 import type {
   BasisFragment,
@@ -13,18 +13,22 @@ import type {
  * Deployment's medical-basis registry: plain list built in composition root,
  * not an env flag. Its size decides whether `basis_resolve` is compiled in
  * (`02-plan/graph.ts`): absent capability = absent node.
- * No deployer switch; always UMLS symptoms, then LLM symptoms (fallback when
- * UMLS has none). Empty registry only
+ * No deployer switch; always mapped symptoms, then LLM symptoms (fallback when
+ * the mapping has none). Empty registry only
  * reachable by tests or forks.
  */
 export function createMedicalBasisRegistry(deps: {
   runtime: GraphRuntime;
-  umlsFloor: UmlsSymptomFloor;
+  symptomMapping: SymptomMapping;
   symptomCache: SymptomCache;
 }): MedicalBasisProvider[] {
   return [
-    createUmlsSymptomProvider(deps.umlsFloor),
-    createLlmSymptomProvider(deps.runtime, deps.umlsFloor, deps.symptomCache),
+    createMappedSymptomProvider(deps.symptomMapping),
+    createLlmSymptomProvider(
+      deps.runtime,
+      deps.symptomMapping,
+      deps.symptomCache
+    ),
   ];
 }
 

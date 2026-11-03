@@ -60,7 +60,7 @@ const MARKER = "TOTALLY-UNIQUE-FRAGMENT-CONTENT-MARKER";
 
 const fragments: BasisFragment[] = [
   {
-    source: "Typical symptoms (UMLS database)",
+    source: "Typical symptoms (curated ICD → symptom mapping)",
     content: MARKER,
   },
 ];

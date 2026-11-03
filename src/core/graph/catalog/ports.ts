@@ -4,17 +4,27 @@ import type {
   ProcedureRef,
   ProcedureTree,
 } from "@/core/graph/shared/domain/ProcedureTree.js";
+import type { ReferenceBand } from "@/core/graph/shared/domain/Procedure.js";
 import type { ForeignLanguage } from "@/core/graph/shared/domain/Language.js";
 import type { RequestContext } from "../utils/context.js";
 
+/** A catalogue procedure: its code and optional reference bands. */
+export type CatalogProcedure = {
+  name: string;
+  code?: string | undefined;
+  bands?: ReferenceBand[] | undefined;
+};
+
 /** Catalogue shape: procedures under categories of any depth. */
-export type ProcedureCatalogTree = ProcedureTree<{ name: string }>;
+export type ProcedureCatalogTree = ProcedureTree<CatalogProcedure>;
 
 /** `undefined` tree ⇒ freeform: no catalogue configured, names may be invented. */
 export interface ProcedureCatalog {
   tree(): ProcedureCatalogTree | undefined;
   /** The full candidate set. */
   candidates(): ProcedureCandidates;
+  /** The catalogue procedure at `ref`; `undefined` in freeform. */
+  procedure(ref: ProcedureRef): CatalogProcedure | undefined;
   /** Cached translation of one catalogue node (category or procedure), keyed by `nodeKey(path)`. */
   translation(nodeKey: string, lang: ForeignLanguage): string | undefined;
   /** Persist `nodeKey -> translated name` for `lang`. */

@@ -16,18 +16,24 @@ export function describeProviders(
  * `.extend()` it (procedures add `relevance`) and pass it back as `unitSchema`.
  */
 export function buildUnitPlanSchema(providers: ModalityProvider<unknown>[]) {
-  const requestOptions = providers.map((p) =>
-    z.object({
+  const requestOptions = providers.map((p) => {
+    const request = z.object({
       provider: z.literal(p.id),
-      input: p.inputSchema,
       alt: z
         .string()
         .min(1)
         .describe(
           "The complete content of this part, every fact it states — later steps read only this, never the rendered part"
         ),
-    })
-  );
+    });
+    // Empty input (text providers) left out of the grammar; `renderPlan`
+    // passes `{}`. An `{}` the model must emit lets it pad whitespace inside
+    // the braces forever (Gemma on vLLM/xgrammar never closed it). Not a zod
+    // transform: LangChain cannot convert one inside a union.
+    return isEmptyObject(p.inputSchema)
+      ? request
+      : request.extend({ input: p.inputSchema });
+  });
 
   // One provider: its object directly. Same parse, but no one-branch union in
   // the grammar (Anthropic caps unions per request, every grammar pays for one).
@@ -44,6 +50,12 @@ export function buildUnitPlanSchema(providers: ModalityProvider<unknown>[]) {
       .min(1)
       .describe("Ordered render requests composing this unit's final value"),
   });
+}
+
+function isEmptyObject(schema: z.ZodType): boolean {
+  return (
+    schema instanceof z.ZodObject && Object.keys(schema.shape).length === 0
+  );
 }
 
 /**

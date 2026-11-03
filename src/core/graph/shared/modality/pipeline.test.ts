@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { renderPlan } from "./pipeline.js";
-import type { ModalityPlan, ModalityProvider } from "./ports.js";
+import {
+  defineModalityProvider,
+  type ModalityPlan,
+  type ModalityProvider,
+} from "./ports.js";
 import z from "zod";
 import { createLogger } from "@/core/graph/utils/logger.js";
 import { EventBus } from "@/core/event-bus.js";
@@ -55,6 +59,24 @@ describe("renderPlan — batching", () => {
       "None."
     );
     expect(result["Current Symptoms"]![0]!.alt).toBe("Fever.");
+  });
+});
+
+describe("renderPlan — empty input", () => {
+  it("passes {} to a provider whose input the planner grammar left out", async () => {
+    const provider = defineModalityProvider({
+      id: "text",
+      mime: "text/plain",
+      description: "empty-input text provider",
+      inputSchema: z.object({}),
+      render: async (batch) =>
+        batch.map((b) => new TextEncoder().encode(b.alt)),
+    });
+    const plan: ModalityPlan = { cc: [{ provider: "text", alt: "Fever." }] };
+
+    const parts = await renderPlan([provider], plan, undefined, noopLogger());
+
+    expect(parts.cc![0]!.alt).toBe("Fever.");
   });
 });
 

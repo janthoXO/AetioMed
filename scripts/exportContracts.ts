@@ -9,7 +9,7 @@ import {
   ErrorResponseSchema,
   HealthSchema,
   JobStatusReplySchema,
-  makeCaseGenerationRequestContract,
+  makeCaseGenerationRequestSchema,
 } from "@/api/index.js";
 import { PlanPayloadSchema } from "@/core/caseGenerationService.js";
 import {
@@ -35,7 +35,7 @@ const config = ConfigSchema.parse({
 const contracts: Record<string, [z.ZodType, string]> = {
   CaseGenerationRequest: [
     // `icd` only picks a refine's message/path, which JSON Schema does not carry.
-    makeCaseGenerationRequestContract(config, { icd: false }),
+    makeCaseGenerationRequestSchema(config, { icd: false }),
     "Body of POST /api/cases; NATS cases.request.generate (jobId required there).",
   ],
   CaseGenerationResponse: [

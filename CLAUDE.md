@@ -363,7 +363,7 @@ one into the other in the same call. With `TRANSLATION_SANDWICH` on:
 `userInstructions` value to English — the diagnosis arrives English already (#237), and a
 one-node phase subgraph would only collapse in `GET /api/graph`'s xray. User instructions are read only up to the
 outline (#220): the outline absorbs them, no case-graph node receives them, and a request
-carrying a `plan` must not carry `userInstructions` (400).
+carrying a `plan` has its `userInstructions` dropped by the request schema.
 `05-translate-out/` is three
 nodes, not a chain (issue 12): `translate_defined` and `translate_rest` run in parallel from
 `START`, each writing only its own state channel (`definedTranslations`/`restTranslations`,
@@ -854,8 +854,8 @@ telemetry are two concerns that happen to coincide, not one mechanism. `jobId` i
 field**, validated against `src/api/JobId.ts`'s `JobIdSchema` since it is also a NATS subject
 token (`cases.result.<jobId>`) even when the request arrives over REST — the `?jobId=` query
 param is gone. **A body with a `plan` generates the case from it**, skipping planning entirely; such a
-body must carry `mode` and must not carry `userInstructions` (strict continuation schema, a
-400 otherwise); the same jobId as the plan's own call is fine (#159) — the per-job channel allows exactly this
+body must carry `mode` (a 400 otherwise) and has any `userInstructions` dropped; the request
+schema is one `z.union`, made exclusive by `plan` being `never` on the first call; the same jobId as the plan's own call is fine (#159) — the per-job channel allows exactly this
 one reuse after a `planned` outcome (see `core/jobEvents/channel.ts`'s `open()` above). A
 duplicate jobId otherwise (still running, or finished within the channel's tombstone window) is
 a 409 `JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED` on either Accept path, answered before any

@@ -18,7 +18,7 @@ body:json {
   // stay untouched). This skips planning and generates the case from it.
   // `mode` is required with `plan`: the mode of the call that handed the
   // plan out, so the server knows which language the plan is in.
-  // `userInstructions` is not allowed here (400): the plan absorbed them.
+  // `userInstructions` are dropped here: the plan absorbed them.
   {
     "jobId": "{{jobId}}",
     "diagnosis": "diabetes",

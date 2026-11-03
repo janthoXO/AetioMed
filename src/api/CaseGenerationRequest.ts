@@ -105,13 +105,21 @@ function makeShapes(config: Config, icd: boolean) {
           "in the request language; send the same request back with `plan` " +
           "to generate the case from it. Defaults to 'normal'."
       ),
+      // `never`, not absent: lenient objects drop unknown keys, so without it
+      // a plan missing `mode` would parse here, lose its plan and re-plan.
+      plan: z
+        .never()
+        .optional()
+        .describe(
+          "Not allowed on a first call: a body with `plan` is a continuation."
+        ),
     }),
     config,
     icd
   );
-  // Strict: `userInstructions` (or any unknown key) is a 400, not silently dropped.
+  // Lenient: `userInstructions` sent with a plan are dropped, never read (#220).
   const continuation = withRules(
-    z.strictObject({
+    z.object({
       ...fields,
       mode: RunModeSchema.describe(
         "Mode of the call that handed the plan out: 'plan' = plan is in the request language, 'normal' = English."
@@ -123,7 +131,7 @@ function makeShapes(config: Config, icd: boolean) {
         "A plan from an earlier call with this request, possibly " +
           "edited: planning is skipped and the case is generated from it, " +
           "exactly as it was handed out. Fixed segments must be unchanged. " +
-          "`userInstructions` are not allowed: the plan already absorbed them."
+          "`userInstructions` are ignored: the plan already absorbed them."
       ),
     }),
     config,
@@ -133,32 +141,12 @@ function makeShapes(config: Config, icd: boolean) {
 }
 
 /**
- * Runtime parser both transports call. Dispatches on the raw body, not a
- * union: a non-strict first-call branch would silently strip `plan` and re-plan.
+ * First call or continuation. Exclusive by `plan` (`never` on the first call,
+ * required on the continuation), so a plain union picks the right one. A body
+ * matching neither fails with one `invalid_union` issue, both branches' reasons
+ * nested in it. Parser for both transports and the exported contract.
  */
 export function makeCaseGenerationRequestSchema(
-  config: Config,
-  { icd }: { icd: boolean }
-) {
-  const { firstCall, continuation } = makeShapes(config, icd);
-  return z.unknown().transform((body, ctx) => {
-    const branch =
-      typeof body === "object" &&
-      body !== null &&
-      (body as { plan?: unknown }).plan !== undefined
-        ? continuation
-        : firstCall;
-    const r = branch.safeParse(body);
-    if (!r.success) {
-      for (const issue of r.error.issues) ctx.addIssue(issue as never);
-      return z.NEVER;
-    }
-    return r.data;
-  });
-}
-
-/** Contract-export only: the two shapes as a union. */
-export function makeCaseGenerationRequestContract(
   config: Config,
   { icd }: { icd: boolean }
 ) {

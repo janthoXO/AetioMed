@@ -2,7 +2,6 @@
 
 export {
   makeCaseGenerationRequestSchema,
-  makeCaseGenerationRequestContract,
   type CaseGenerationRequest,
 } from "./CaseGenerationRequest.js";
 

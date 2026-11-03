@@ -130,6 +130,10 @@
             "normal",
             "plan"
           ]
+        },
+        "plan": {
+          "description": "Not allowed on a first call: a body with `plan` is a continuation.",
+          "not": {}
         }
       }
     },
@@ -255,14 +259,13 @@
               "text"
             ]
           },
-          "description": "A plan from an earlier call with this request, possibly edited: planning is skipped and the case is generated from it, exactly as it was handed out. Fixed segments must be unchanged. `userInstructions` are not allowed: the plan already absorbed them."
+          "description": "A plan from an earlier call with this request, possibly edited: planning is skipped and the case is generated from it, exactly as it was handed out. Fixed segments must be unchanged. `userInstructions` are ignored: the plan already absorbed them."
         }
       },
       "required": [
         "mode",
         "plan"
-      ],
-      "additionalProperties": false
+      ]
     }
   ]
 }

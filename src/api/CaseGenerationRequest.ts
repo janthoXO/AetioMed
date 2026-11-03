@@ -57,15 +57,18 @@ function makeBaseCaseGenerationRequestSchema(config: Config) {
         "changes in procedure results; 'hard' presents an atypical case with omitted " +
         "hallmark symptoms and ambiguous procedure results. Defaults to 'medium'."
     ),
-    mode: RunModeSchema.default("normal").describe(
+    // No schema default: with `plan`, mode says which language the plan is in
+    // and must be explicit. Without, the service defaults it to 'normal'.
+    mode: RunModeSchema.optional().describe(
       "'normal' generates the case end to end and hands over its (English) " +
         "plan on the way. 'plan' stops once the plan exists and returns it " +
         "in the request language; send the same request back with `plan` " +
-        "to generate the case from it."
+        "to generate the case from it. Defaults to 'normal'; required with `plan`."
     ),
     plan: OutlineSegmentsSchema.optional().describe(
       "A plan from an earlier call with this request, possibly " +
-        "edited: planning is skipped and the case is generated from it. In " +
+        "edited: planning is skipped and the case is generated from it. " +
+        "Requires `mode`, the mode of the call that handed the plan out: in " +
         "plan mode it is in the request language, in normal mode English — " +
         "exactly as it was handed out. Fixed segments must be unchanged."
     ),
@@ -90,6 +93,11 @@ export function makeCaseGenerationRequestSchema(
           ? "Either 'icd' or 'diagnosis' must be provided"
           : "'diagnosis' is required: no ICD API is configured to resolve 'icd'",
         path: icd ? ["icd"] : ["diagnosis"],
+      })
+      .refine((data) => !data.plan || data.mode, {
+        message:
+          "'mode' is required with 'plan': 'plan' for a plan from a plan-mode call (request language), 'normal' for one handed over by a normal-mode call (English)",
+        path: ["mode"],
       })
       .refine((data) => !data.plan || isCanonicalShape(data.plan), {
         message:

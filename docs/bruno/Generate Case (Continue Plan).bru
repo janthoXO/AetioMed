@@ -16,10 +16,13 @@ body:json {
   // the outline that call returned, pasted back verbatim or with only its
   // editable segments changed (fixed segments and the segment count must
   // stay untouched). This skips planning and generates the case from it.
+  // `mode` must be sent with `plan`: the mode of the call that handed the
+  // plan out, so the server knows which language the plan is in.
   {
     "jobId": "{{jobId}}",
     "diagnosis": "diabetes",
     "language": "de",
+    "mode": "plan",
     "generationFlags": [
       "patient",
       "chiefComplaint",

@@ -7,6 +7,29 @@ const schema = makeCaseGenerationRequestSchema(
   { icd: false }
 );
 
+describe("CaseGenerationRequestSchema — mode with plan", () => {
+  const plan = [
+    { fixed: false, text: "" },
+    { fixed: true, text: "## General" },
+    { fixed: false, text: "" },
+  ];
+
+  it("requires an explicit mode when a plan is sent", () => {
+    const result = schema.safeParse({ diagnosis: "Influenza", plan });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.path).toEqual(["mode"]);
+  });
+
+  it("accepts a plan with either explicit mode, and no mode without a plan", () => {
+    for (const mode of ["plan", "normal"]) {
+      expect(
+        schema.safeParse({ diagnosis: "Influenza", mode, plan }).success
+      ).toBe(true);
+    }
+    expect(schema.safeParse({ diagnosis: "Influenza" }).success).toBe(true);
+  });
+});
+
 describe("CaseGenerationRequestSchema — generationFlags", () => {
   it("rejects an explicit empty array", () => {
     // `.min(1)` must reject `[]` at API boundary: 400, not 500 from graph.

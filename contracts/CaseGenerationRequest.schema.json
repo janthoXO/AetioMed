@@ -81,8 +81,7 @@
       ]
     },
     "mode": {
-      "default": "normal",
-      "description": "'normal' generates the case end to end and hands over its (English) plan on the way. 'plan' stops once the plan exists and returns it in the request language; send the same request back with `plan` to generate the case from it.",
+      "description": "'normal' generates the case end to end and hands over its (English) plan on the way. 'plan' stops once the plan exists and returns it in the request language; send the same request back with `plan` to generate the case from it. Defaults to 'normal'; required with `plan`.",
       "type": "string",
       "enum": [
         "normal",
@@ -90,7 +89,7 @@
       ]
     },
     "plan": {
-      "description": "A plan from an earlier call with this request, possibly edited: planning is skipped and the case is generated from it. In plan mode it is in the request language, in normal mode English — exactly as it was handed out. Fixed segments must be unchanged.",
+      "description": "A plan from an earlier call with this request, possibly edited: planning is skipped and the case is generated from it. Requires `mode`, the mode of the call that handed the plan out: in plan mode it is in the request language, in normal mode English — exactly as it was handed out. Fixed segments must be unchanged.",
       "maxItems": 200,
       "type": "array",
       "items": {

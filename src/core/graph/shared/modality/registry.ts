@@ -20,9 +20,10 @@ export class EmptyModalityRegistryError extends AppError {
 export type ModalityField = "chiefComplaint" | "anamnesis" | "procedureResult";
 
 /**
- * Per-field registries, composed in `graph/index.ts` from each field's
- * `create*Providers(runtime)`. Lives in `AssemblyDeps`, not `GraphFlags`:
- * fixed per deployment, shared by all flag variants.
+ * Per-field registries, composed in `graph/index.ts`: each field's own
+ * `create*Providers(runtime)`, then the pluggable providers enabled for it
+ * (`adapters/modality/`, `MODALITY_PROVIDERS`). Lives in `AssemblyDeps`, not
+ * `GraphFlags`: fixed per deployment, shared by all flag variants.
  */
 export type ModalityRegistries = Record<
   ModalityField,

@@ -48,6 +48,7 @@ services:
       - MAX_CONTENT_PART_BYTES=${MAX_CONTENT_PART_BYTES:-5000000}
 
       # ─── Referral letters (e.g. http://aetioreferral:8000/mcp with --profile REFERRAL) ─
+      - MODALITY_PROVIDERS # e.g. CHIEF_COMPLAINT_REFERRAL_LETTER; REFERRAL_MCP_URL is read only when enabled
       - REFERRAL_MCP_URL
 
       # ─── NATS (only read when NATS is in FEATURES) ──────────────────
@@ -121,7 +122,7 @@ services:
       - nats_data:/data
     restart: unless-stopped
 
-  # PDF referral letters for the chief complaint (REFERRAL_MCP_URL=http://aetioreferral:8000/mcp)
+  # PDF referral letters for the chief complaint (MODALITY_PROVIDERS=CHIEF_COMPLAINT_REFERRAL_LETTER, REFERRAL_MCP_URL=http://aetioreferral:8000/mcp)
   aetioreferral:
     profiles: [REFERRAL]
     image: ghcr.io/janthoxo/aetioreferral/server:0.0.1

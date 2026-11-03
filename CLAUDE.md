@@ -61,7 +61,7 @@ everything explicitly, in order:
 2. resolves `CATALOG_DIR` / `CACHE_DIR` (`adapters/persistence/paths.ts` — pure functions taking
    the environment as an argument; nothing under `src/core/` reads `process.env`) and builds the
    adapters: repos (`adapters/repos.ts`'s `createRepos`), the LLM port (`adapters/ai/llm.ts`),
-   the `Yaml*` catalogs (`adapters/catalog/index.ts`)
+   the `Yaml*` catalogs (`adapters/catalog/index.ts`), and the pluggable modality providers (`modalityProvidersFromEnv`, `adapters/modality/`)
 3. `initGraph()` (`src/core/graph/index.ts`) takes those ports, builds the `GraphRuntime` and the
    compiled graph; `createApp()` then validates the catalogues (`validateCatalogsOrExit`)
 4. `createCaseGenerationService(graph, bus, jobEvents, opts)` — `opts` is just the shared
@@ -80,7 +80,7 @@ wired up by `src/index.ts`). No module under `src/core/graph/` or `src/transport
 a process signal handler any more; each returns a closer instead.
 
 **Core is a clean hexagon (#188).** `src/core/` holds domain logic and ports only; every I/O
-adapter lives under `src/adapters/` — `ai/` (LangChain chat-model factory), `catalog/<domain>/`
+adapter lives under `src/adapters/` — `ai/` (LangChain chat-model factory), `modality/` (pluggable modality-provider modules), `catalog/<domain>/`
 (repos plus `Yaml*`/`InMemory*` port adapters, startup validation), `persistence/` (SQLite,
 Drizzle, translation store), `symptoms/`, `language/` (tinyld), `repos.ts` — and only
 `src/app.ts` wires them in. `importBoundary.test.ts` fails on any core production module that
@@ -466,7 +466,7 @@ the headings are swapped. Either way a handed-back plan's headings go back to En
 (`restoreSkeletonHeadings`). LLM-named (freeform) category headings are case content: translated
 with the body under the sandwich, written in the request language without it.
 
-**Gateways:** each slice keeps its prompt building, LLM calls, retries and structured-output parsing in a `gateway.ts` (or `<concern>.gateway.ts` when a slice has several concerns, e.g. `04-case/02-procedures/{results,match}.gateway.ts`, `01-presentation/patient.gateway.ts`). Graph nodes are thin and call the gateway functions directly — the old `Tool<TInput, TOutput>` wrapper is gone (#189): its `inputSchema` was never enforced. Nodes are wrapped with `traceNode()` (`utils/nodeWrapper.ts`) to emit "Node Started/Completed" bus events with translated labels.
+**Gateways:** each slice keeps its prompt building, LLM calls, retries and structured-output parsing in a `gateway.ts` (or `<concern>.gateway.ts` when a slice has several concerns, e.g. `04-case/02-procedures/{results,match}.gateway.ts`, `01-presentation/patient.gateway.ts`). Graph nodes are thin and call the gateway functions directly — the old `Tool<TInput, TOutput>` wrapper is gone (#189): its `inputSchema` was never enforced. A pluggable modality provider is the exception: it owns its prompts inside its module under `adapters/modality/<id>/` (e.g. `referralLetter/draft.ts`), not in a slice gateway. Nodes are wrapped with `traceNode()` (`utils/nodeWrapper.ts`) to emit "Node Started/Completed" bus events with translated labels.
 
 **Assembly** (`assemble.ts`'s `assembleCaseGraphs`) follows one rule, and the next person to
 touch it will get it backwards: **compile on what the deployer chose; branch on what the caller
@@ -658,15 +658,28 @@ signal-only shape (the issue 14 lesson: a provider may need `llmConfig` under `A
 Still **no LLM assumption in the port** — an image provider reaching a diffusion model over MCP
 satisfies the same interface as the text one.
 
-**Registries are per field** (`ModalityRegistries`, `shared/modality/registry.ts`): chief complaint
-has `referral_letter`, an `application/pdf` referral letter anamnesis has no use for — drafted from
-`alt` by the slice's gateway (`draftReferralLetters`, request language), rendered by AetioReferral
-over MCP (`adapters/referral/mcp.ts`, behind the `ReferralLetterRenderer` port) and registered only
-when `REFERRAL_MCP_URL` is set. Providers live next to the field
+**Registries are per field** (`ModalityRegistries`, `shared/modality/registry.ts`). A field's own
+always-on providers (`text`, plus chief complaint's `referral` text voice) live next to the field
 they serve — `04-case/01-presentation/{chief-complaint,anamnesis}/providers.ts` and
-`04-case/02-procedures/providers.ts` — mirroring the `catalog/<domain>/` vertical-slice convention, and
-each is a thin adapter: prompts and LLM calls stay in that slice's `gateway.ts`. They live in `AssemblyDeps`, not `GraphFlags`, for `medicalBasisRegistry`'s reason: fixed
-per deployment, shared by both flag variants.
+`04-case/02-procedures/providers.ts` — and are thin adapters: prompts and LLM calls stay in that
+slice's `gateway.ts`. They live in `AssemblyDeps`, not `GraphFlags`, for `medicalBasisRegistry`'s
+reason: fixed per deployment, shared by both flag variants.
+
+**Pluggable providers are self-contained modules** under `src/adapters/modality/<id>/` (env
+schema, optional startup `probe`, prompts, I/O), listed in `adapters/modality/index.ts`
+(`MODALITY_PROVIDER_MODULES`). Each declares per field a `mode` (`always` | `optional`) and a
+`description` shown to the planner. `app.ts` calls `modalityProvidersFromEnv`
+(`adapters/modality/resolve.ts`) and hands the result to `initGraph` as `modalityProviders`, which
+appends them after each field's own providers (a duplicate id in a field throws). `always` fields
+need no token; an `optional` one is enabled by a `<FIELD>_<PROVIDER_ID>` token in
+`MODALITY_PROVIDERS` (`modalityToken`, e.g. `CHIEF_COMPLAINT_REFERRAL_LETTER`). An unknown token, or
+an active provider with missing/invalid env, is a startup error; its probe runs at startup and a
+failure is fatal; an inactive provider with any of its env vars set logs a warning and is ignored.
+The one module today is `referralLetter/`: an `application/pdf` letter for chief complaint, drafted
+from `alt` by `draft.ts` (request language) and rendered by AetioReferral over MCP (`mcp.ts`),
+enabled by `CHIEF_COMPLAINT_REFERRAL_LETTER` and requiring `REFERRAL_MCP_URL`. Runtime failures are
+still logged-and-dropped by `renderPlan`; a timeout/circuit breaker is #260 and per-field input
+schemas are #261.
 
 **The planner always runs**, so unlike the medical-basis registry there is no
 absent-capability-⇒-absent-node rule here and **no registry-size topology variance at all**: a
@@ -1174,37 +1187,38 @@ language`), so the choice is visible at every call site instead of hidden in the
 
 ## Environment Variables
 
-| Variable                                                              | Default                 | Notes                                                                                                                                                                                            |
-| --------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PORT`                                                                | `3030`                  | Server port                                                                                                                                                                                      |
-| `FEATURES`                                                            | `""`                    | Comma-separated flags: `REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`                                                                                                                                     |
-| `LLM_PROVIDER`                                                        | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                                                  |
-| `LLM_MODEL`                                                           | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                                        |
-| `LLM_API_KEY`                                                         | —                       | API key for Google/OpenAI                                                                                                                                                                        |
-| `LLM_URL`                                                             | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                                                                             |
-| `LLM_ENABLE_THINKING`                                                 | server default          | `true`/`false`: hidden reasoning for every role (`enableThinking`); `false` cuts latency several-fold on thinking models                                                                         |
-| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`             | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                                                                        |
-| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`                 | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                                                                       |
-| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`            | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                  |
-| `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                            |
-| `LANGUAGES`                                                           | `en,de`                 | Comma-separated ISO 639-1 codes, trimmed/de-duplicated/order-preserved; must include `en`. Validated at startup and against every request's `language` (see Language section below)              |
-| `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                 |
-| `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                            |
-| `ALLOWED_LLMS`                                                        | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                               |
-| `CATALOG_DIR`                                                         | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                     |
-| `CACHE_DIR`                                                           | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                    |
-| `NATS_URL`                                                            | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                             |
-| `NATS_USER` / `NATS_PASSWORD`                                         | `nats` / `nats`         |                                                                                                                                                                                                  |
-| `ICD_API_URL`                                                         | —                       | ICD container base URL; set = ICD on; probed at startup, fatal on failure                                                                                                                        |
-| `ICD_RELEASE`                                                         | —                       | Required with `ICD_API_URL`; must match the container's `include`                                                                                                                                |
-| `ICD_PORT`                                                            | `3001`                  | Compose host port only                                                                                                                                                                           |
-| `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS (`src/core/concurrency.ts`'s shared limiter). Excess requests queue; a queued job is still cancellable. See Request Context below    |
-| `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `adapters/symptoms/repo.ts`)                                                                                                                          |
-| `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                           |
-| `REFERRAL_MCP_URL`                                                    | —                       | AetioReferral MCP endpoint (e.g. `http://localhost:8000/mcp`); set = chief complaint gets the `referral_letter` PDF provider                                                                     |
-| `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var. `"true"` (that literal only) skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES` |
-| `OTEL_EXPORTER_OTLP_ENDPOINT` / `_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | —                       | Standard OTel vars, read by the OTLP trace/log exporters themselves — no plumbing in this repo; any one set selects the `"otlp"` exporter mode (`selectExporterMode`)                            |
-| `OTEL_SERVICE_NAME`                                                   | —                       | Standard OTel var, read via `envDetector` (`observability/otel.ts`)                                                                                                                              |
+| Variable                                                              | Default                 | Notes                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------- | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PORT`                                                                | `3030`                  | Server port                                                                                                                                                                                                             |
+| `FEATURES`                                                            | `""`                    | Comma-separated flags: `REST`, `NATS`, `DEBUG`, `ALLOW_LLMS`                                                                                                                                                            |
+| `LLM_PROVIDER`                                                        | —                       | `ollama` \| `google` \| `openai` (required unless `ALLOW_LLMS`)                                                                                                                                                         |
+| `LLM_MODEL`                                                           | —                       | Model name (required unless `ALLOW_LLMS`)                                                                                                                                                                               |
+| `LLM_API_KEY`                                                         | —                       | API key for Google/OpenAI                                                                                                                                                                                               |
+| `LLM_URL`                                                             | —                       | Override base URL (e.g. local Ollama or OpenAI-compatible endpoints)                                                                                                                                                    |
+| `LLM_ENABLE_THINKING`                                                 | server default          | `true`/`false`: hidden reasoning for every role (`enableThinking`); `false` cuts latency several-fold on thinking models                                                                                                |
+| `LLM_GENERATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`             | —                       | Optional per-field override for the `generator` role; unset fields fall back to the general `LLM_*` value                                                                                                               |
+| `LLM_JUDGE_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`                 | —                       | Optional per-field override for the `judge` role (same per-field fallback)                                                                                                                                              |
+| `LLM_TRANSLATOR_PROVIDER` / `_MODEL` / `_API_KEY` / `_URL`            | —                       | Optional per-field override for the `translator` role (same per-field fallback)                                                                                                                                         |
+| `TRANSLATION_SANDWICH`                                                | `true`                  | `false`/`0` compiles the translation phases out of the graph entirely                                                                                                                                                   |
+| `LANGUAGES`                                                           | `en,de`                 | Comma-separated ISO 639-1 codes, trimmed/de-duplicated/order-preserved; must include `en`. Validated at startup and against every request's `language` (see Language section below)                                     |
+| `LANGUAGE_AUTO_DETECT`                                                | `false`                 | `true`/`1` enables steps 2–3 of the language-detection ladder for a request that omits `language` (see Language section below); not a graph flag                                                                        |
+| `LANGUAGE_DETECT_LLM_FALLBACK`                                        | `false`                 | `true`/`1` additionally enables step 3 (one LLM call) when the offline detector is below threshold; ignored unless `LANGUAGE_AUTO_DETECT` is also set                                                                   |
+| `ALLOWED_LLMS`                                                        | —                       | Format: `ollama:model1,google:model2` (requires `ALLOW_LLMS` flag)                                                                                                                                                      |
+| `CATALOG_DIR`                                                         | `data`                  | Deployer-owned, read-only catalogue inputs (YAML/JSON config files); resolved absolute against `process.cwd()` when relative                                                                                            |
+| `CACHE_DIR`                                                           | `data/cache`            | Generated, writable output — the embedded SQLite database (`aetiomed.db`) lives here; resolved absolute against `process.cwd()` when relative                                                                           |
+| `NATS_URL`                                                            | `nats://localhost:4222` | `nats://nats:4222` in docker compose                                                                                                                                                                                    |
+| `NATS_USER` / `NATS_PASSWORD`                                         | `nats` / `nats`         |                                                                                                                                                                                                                         |
+| `ICD_API_URL`                                                         | —                       | ICD container base URL; set = ICD on; probed at startup, fatal on failure                                                                                                                                               |
+| `ICD_RELEASE`                                                         | —                       | Required with `ICD_API_URL`; must match the container's `include`                                                                                                                                                       |
+| `ICD_PORT`                                                            | `3001`                  | Compose host port only                                                                                                                                                                                                  |
+| `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS (`src/core/concurrency.ts`'s shared limiter). Excess requests queue; a queued job is still cancellable. See Request Context below                           |
+| `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `adapters/symptoms/repo.ts`)                                                                                                                                                 |
+| `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                                                  |
+| `MODALITY_PROVIDERS`                                                  | —                       | Comma-separated `<FIELD>_<PROVIDER_ID>` tokens enabling optional modality providers (`CHIEF_COMPLAINT_REFERRAL_LETTER`); unknown token = startup error; see Modality Planning and Rendering                             |
+| `REFERRAL_MCP_URL`                                                    | —                       | AetioReferral MCP endpoint (e.g. `http://localhost:8000/mcp`); required when `CHIEF_COMPLAINT_REFERRAL_LETTER` is in `MODALITY_PROVIDERS`, ignored (with a warning) otherwise; no longer enables the provider by itself |
+| `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var. `"true"` (that literal only) skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES`                        |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` / `_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | —                       | Standard OTel vars, read by the OTLP trace/log exporters themselves — no plumbing in this repo; any one set selects the `"otlp"` exporter mode (`selectExporterMode`)                                                   |
+| `OTEL_SERVICE_NAME`                                                   | —                       | Standard OTel var, read via `envDetector` (`observability/otel.ts`)                                                                                                                                                     |
 
 Note: the `REST` flag is required for the HTTP API to load — include it in `FEATURES` when running the server.
 

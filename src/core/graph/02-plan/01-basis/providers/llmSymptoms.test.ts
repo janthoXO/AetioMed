@@ -127,7 +127,7 @@ describe("createLlmSymptomProvider", () => {
       cachedByIcd: {},
     });
     const { llm, callCount } = makeQueuedLlmPort([
-      JSON.stringify({ symptoms: [{ name: "Myalgia" }] }),
+      JSON.stringify({ symptoms: [{ name: "Myalgia", description: null }] }),
     ]);
     const provider = createLlmSymptomProvider(buildRuntime(llm), floor, cache);
 
@@ -141,7 +141,7 @@ describe("createLlmSymptomProvider", () => {
   it("no ICD code: LLM is called, nothing is cached", async () => {
     const { floor, cache, saved } = makeFakeSymptomsRepo({});
     const { llm, callCount } = makeQueuedLlmPort([
-      JSON.stringify({ symptoms: [{ name: "Malaise" }] }),
+      JSON.stringify({ symptoms: [{ name: "Malaise", description: null }] }),
     ]);
     const provider = createLlmSymptomProvider(buildRuntime(llm), floor, cache);
 

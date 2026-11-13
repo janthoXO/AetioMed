@@ -3,6 +3,7 @@ import { ChatGoogle, type ChatGoogleParams } from "@langchain/google";
 import { ChatOpenAI, type ChatOpenAIFields } from "@langchain/openai";
 import { SystemMessage, HumanMessage } from "@langchain/core/messages";
 import type { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import { ModelUnreachableError } from "@/core/graph/errors/AppError.js";
 import {
   LLMConfigSchema,
@@ -12,6 +13,7 @@ import type { z } from "zod";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { Config } from "@/core/graph/config.js";
 import type { LlmPort, LlmRole, LlmTemperature } from "@/core/graph/runtime.js";
+import { portableSchema } from "./portableSchema.js";
 
 /** Fixed policy classes, not configuration. */
 const TEMPERATURE_BY_CLASS: Record<LlmTemperature, number> = {
@@ -50,8 +52,13 @@ export function chatModelLlmPort(
       schema: z.ZodType<T>,
       context?: RequestContext
     ): Promise<T> {
+      // Lossless, provider-independent grammar; per-provider native mode is
+      // `getLLM`'s `structuredVia`.
+      const portable = portableSchema(
+        toJsonSchema(schema) as Record<string, unknown>
+      );
       const result = await modelFor(call, context?.llmConfig)
-        .withStructuredOutput(schema)
+        .withStructuredOutput(portable.schema)
         .invoke(
           [new SystemMessage(prompt.system), new HumanMessage(prompt.user)],
           context?.signal !== undefined ? { signal: context.signal } : undefined
@@ -59,7 +66,7 @@ export function chatModelLlmPort(
         .catch((error: Error) => handleLangchainError(error));
       // Not every provider's parser validates against the schema; gateways'
       // retries rely on a validation error here.
-      return schema.parse(result);
+      return schema.parse(portable.unwrap(result));
     },
     async text(call, prompt, context) {
       const result = await modelFor(call, {
@@ -143,7 +150,10 @@ function getLLM(
         ollamaConfig.think = fullConfig.enableThinking;
       }
 
-      chat = new ChatOllama(ollamaConfig);
+      // Per-call `format: <schema>` overrides `format: "json"` (llm.test.ts).
+      chat = structuredVia(new ChatOllama(ollamaConfig), {
+        method: "jsonSchema",
+      });
       break;
     }
     case "google": {
@@ -156,7 +166,10 @@ function getLLM(
         model: fullConfig.model,
         temperature,
       };
-      chat = new ChatGoogle(googleConfig);
+      // Native `responseJsonSchema`; LangChain's default is tool calling.
+      chat = structuredVia(new ChatGoogle(googleConfig), {
+        method: "jsonSchema",
+      });
       break;
     }
     case "openai": {
@@ -189,7 +202,10 @@ function getLLM(
         };
       }
 
-      chat = new ChatOpenAI(openAIConfig);
+      chat = structuredVia(new ChatOpenAI(openAIConfig), {
+        method: "jsonSchema",
+        strict: true,
+      });
       break;
     }
     default:
@@ -197,4 +213,24 @@ function getLLM(
   }
 
   return chat;
+}
+
+/**
+ * Pins how `model.withStructuredOutput` asks this provider for structured
+ * output (`config`: native mode, strict where it exists) — overridden on the
+ * instance so `getLLM` still returns a plain `BaseChatModel`. The schema it
+ * receives is already {@link portableSchema}'s lossless rewrite (the port does
+ * that); a provider that rejects some keyword (Anthropic: bounds) adds its
+ * lossy rewrite here.
+ */
+function structuredVia(
+  model: BaseChatModel,
+  config: { method: "jsonSchema"; strict?: boolean }
+): BaseChatModel {
+  const native = model.withStructuredOutput.bind(model);
+  model.withStructuredOutput = ((
+    schema: Parameters<typeof native>[0],
+    callConfig?: Parameters<typeof native>[1]
+  ) => native(schema, { ...callConfig, ...config })) as typeof native;
+  return model;
 }

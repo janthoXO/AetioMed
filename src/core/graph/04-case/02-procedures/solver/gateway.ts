@@ -72,10 +72,10 @@ function diagnoseActionSchema(previousProcedures: PreviousProcedureFinding[]) {
     action: z.literal("diagnose"),
     diagnosisName: z.string().describe("the diagnosis you commit to"),
     supportingResult: (labels.length > 0
-      ? z.literal(labels)
+      ? z.enum(labels as [string, ...string[]])
       : z.string()
     ).describe("exact name of the ordered procedure whose result supports it"),
-    reasoning: z.string().optional().describe("brief clinical reasoning"),
+    reasoning: z.string().nullable().describe("brief clinical reasoning"),
   });
 }
 
@@ -101,14 +101,14 @@ function buildStepSchema(
   const order = z.object({
     action: z.literal("procedure"),
     procedures: procedureFieldSchema,
-    reasoning: z.string().optional().describe("brief clinical reasoning"),
+    reasoning: z.string().nullable().describe("brief clinical reasoning"),
   });
   return allowDiagnose
     ? z.discriminatedUnion("action", [
         order,
         diagnoseActionSchema(previousProcedures),
       ])
-    : z.discriminatedUnion("action", [order]);
+    : order;
 }
 
 /**
@@ -217,14 +217,14 @@ ${renderSchemaForPrompt(
     );
 
     if (rawResult.action === "diagnose") {
-      return rawResult;
+      return { ...rawResult, reasoning: rawResult.reasoning ?? undefined };
     }
 
     // Labels back to refs; public shape is plain `ProcedureRef[]`.
     return {
       action: "procedure",
       procedures: candidates.assemble(rawResult.procedures),
-      reasoning: rawResult.reasoning,
+      reasoning: rawResult.reasoning ?? undefined,
     };
   } catch (error) {
     console.error("[GenerateBlindedProcedureStep] Error:", error);
@@ -243,7 +243,7 @@ ${renderSchemaForPrompt(
 function buildBridgePickSchema(procedureFieldSchema: z.ZodTypeAny) {
   return z.object({
     procedures: procedureFieldSchema,
-    reasoning: z.string().optional().describe("brief clinical reasoning"),
+    reasoning: z.string().nullable().describe("brief clinical reasoning"),
   });
 }
 

@@ -62,7 +62,8 @@ export async function renderPlan(
       try {
         const buffers = await provider.render(
           providerSlots.map((slot) => ({
-            input: slot.request.input,
+            // Absent only for an empty-input provider (composition.ts).
+            input: slot.request.input ?? {},
             alt: slot.request.alt,
           })),
           ctx ?? {}

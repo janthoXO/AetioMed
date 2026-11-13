@@ -184,7 +184,7 @@ describe("plan graph — outline and judge loop", () => {
   it("ends with the accepted outline as segments", async () => {
     const runtime = scriptedRuntime(
       [taggedOutlineFixture()],
-      [JSON.stringify({ accepted: true, reasons: [] })]
+      [JSON.stringify({ accepted: true, reasons: [], suggestion: null })]
     );
     const result = await buildPlanGraph(
       runtime,
@@ -222,14 +222,22 @@ describe("plan graph — outline and judge loop", () => {
   });
 
   it("judges the last revision too: accepted on the final try", async () => {
-    const rejected = JSON.stringify({ accepted: false, reasons: ["x"] });
+    const rejected = JSON.stringify({
+      accepted: false,
+      reasons: ["x"],
+      suggestion: null,
+    });
     const runtime = scriptedRuntime(
       [
         taggedOutlineFixture({ body: "first" }),
         taggedOutlineFixture({ body: "second" }),
         taggedOutlineFixture({ body: "third" }),
       ],
-      [rejected, rejected, JSON.stringify({ accepted: true, reasons: [] })]
+      [
+        rejected,
+        rejected,
+        JSON.stringify({ accepted: true, reasons: [], suggestion: null }),
+      ]
     );
     const result = await buildPlanGraph(
       runtime,
@@ -242,10 +250,17 @@ describe("plan graph — outline and judge loop", () => {
   });
 
   it("rolls the case recipe once: judge and revision read the same label (#216)", async () => {
-    const rejected = JSON.stringify({ accepted: false, reasons: ["x"] });
+    const rejected = JSON.stringify({
+      accepted: false,
+      reasons: ["x"],
+      suggestion: null,
+    });
     const runtime = scriptedRuntime(
       [taggedOutlineFixture(), taggedOutlineFixture()],
-      [rejected, JSON.stringify({ accepted: true, reasons: [] })]
+      [
+        rejected,
+        JSON.stringify({ accepted: true, reasons: [], suggestion: null }),
+      ]
     );
     // medium, r = 0.99: patient source, wrong class.
     const random = vi.fn(() => 0.99);

@@ -92,8 +92,10 @@ describe("GraphRuntime with a fake LlmPort", () => {
     });
 
     const { llm, calls } = makeRoleAwareFakeLlmPort(config, {
-      judge: JSON.stringify({ accepted: true, reasons: [] }),
-      generator: JSON.stringify({ symptoms: [{ name: "fever" }] }),
+      judge: JSON.stringify({ accepted: true, reasons: [], suggestion: null }),
+      generator: JSON.stringify({
+        symptoms: [{ name: "fever", description: null }],
+      }),
     });
     const runtime = buildFakeRuntime(llm);
 

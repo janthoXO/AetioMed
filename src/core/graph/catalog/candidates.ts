@@ -110,7 +110,7 @@ export class ProcedureCandidatesImpl implements ProcedureCandidates {
     }
     // Names the bad value: the default lists every label and gets truncated
     // in the retry feedback, so the model never learns what it got wrong.
-    const label = z.literal([...this.byLabel().keys()], {
+    const label = z.enum([...this.byLabel().keys()] as [string, ...string[]], {
       error: (issue) =>
         `${JSON.stringify(issue.input)} is not a procedure label; category headings cannot be ordered, use the exact labels listed after "- "`,
     });

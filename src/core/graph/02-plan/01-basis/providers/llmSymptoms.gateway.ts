@@ -21,7 +21,9 @@ export async function generateSymptomsOneShot(
   context?: RequestContext
 ): Promise<Symptom[]> {
   const SymptomArrayWrapperSchema = z.object({
-    symptoms: SymptomSchema.array(),
+    symptoms: SymptomSchema.extend({
+      description: z.string().nullable().describe("Description of the symptom"),
+    }).array(),
   });
 
   // Internal: feeds the plan, not the student; English always.
@@ -78,7 +80,9 @@ ${renderSchemaForPrompt(SymptomArrayWrapperSchema)}`
           JSON.stringify(result, null, 2)
         );
 
-        return result.symptoms;
+        return result.symptoms.map(({ name, description }) =>
+          description == null ? { name } : { name, description }
+        );
       },
       2,
       0,

@@ -1,0 +1,52 @@
+# Keeps proto/ in step with the provider repos that own the contracts.
+# Daily: fetch each contract from its repo's main branch; any difference
+# becomes (or updates) one PR on branch chore/sync-contracts.
+# Needs "Allow GitHub Actions to create and approve pull requests" in the
+# repo's Actions settings. A PR opened with GITHUB_TOKEN does not trigger
+# build.yml; close and reopen it (or push to it) to run CI.
+name: Sync provider contracts
+
+on:
+  schedule:
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Fetch contracts
+        # <local path under proto/> <source repo>, one per line.
+        run: |
+          while read -r path repo; do
+            curl -fsSL "https://raw.githubusercontent.com/$repo/main/proto/$path" -o "proto/$path"
+          done <<'EOF'
+          aetioecg/v1/ecg.proto janthoXO/AetioECG
+          aetioreferral/v1/referral.proto janthoXO/AetioReferral
+          EOF
+
+      - name: Open or update PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: chore/sync-contracts
+        run: |
+          if git diff --quiet -- proto; then
+            echo "Contracts up to date."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -C "$BRANCH"
+          git commit -qam "chore(contracts): sync provider protos"
+          git push -f origin "$BRANCH"
+          if [ "$(gh pr view "$BRANCH" --json state -q .state 2>/dev/null)" != "OPEN" ]; then
+            gh pr create --head "$BRANCH" --base main \
+              --title "chore(contracts): sync provider protos" \
+              --body "A provider repo changed its gRPC contract. Check the diff against the adapters under \`src/adapters/modality/\` (zod schemas, request mapping) before merging."
+          fi

@@ -34,6 +34,8 @@ ENV NODE_ENV=production
 COPY --from=prod-deps /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
 COPY drizzle ./drizzle
+# gRPC contract for the ECG modality provider, loaded at runtime from dist/adapters/modality/ecg/.
+COPY proto ./proto
 # Read at runtime for the NATS service's version (`transports/nats/metaService.ts`).
 COPY package.json ./
 

@@ -11,7 +11,9 @@ import { retry } from "@/core/graph/shared/prompt/retry.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import {
+  allowedProviders,
   buildCompositionSchema,
+  buildUnitPlanSchema,
   plansByKey,
   describeProviders,
 } from "@/core/graph/shared/modality/composition.js";
@@ -34,8 +36,16 @@ export async function planAnamnesis(
 ): Promise<ModalityPlan> {
   // `undefined` = freeform (no category catalogue): planner names unit keys.
   // Do not substitute a default list; clinical content belongs in catalogue.
-  const categories = runtime.catalogs.anamnesis.list();
-  const schema = buildCompositionSchema(providers, categories);
+  const anamnesis = runtime.catalogs.anamnesis;
+  const categories = anamnesis.list();
+  const named = new Set(
+    categories?.flatMap((c) => anamnesis.providers(c) ?? [])
+  );
+  const schema = buildCompositionSchema(providers, categories, (key) =>
+    buildUnitPlanSchema(
+      allowedProviders(providers, named, key ? anamnesis.providers(key) : [])
+    )
+  );
 
   // User-facing: planned `alt` becomes user-visible content via the renderer.
   const systemPrompt = buildSystemPrompt(

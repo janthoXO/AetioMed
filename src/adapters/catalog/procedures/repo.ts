@@ -42,6 +42,7 @@ const TreeSchema = procedureTreeSchema(
     name: z.string().min(1),
     code: z.string().optional(),
     bands: z.array(ReferenceBandSchema).optional(),
+    providers: z.array(z.string()).optional(),
   })
 );
 

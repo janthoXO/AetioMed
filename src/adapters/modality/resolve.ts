@@ -15,7 +15,10 @@ import type {
  * lists `<FIELD>_<ID>` (e.g. `CHIEF_COMPLAINT_REFERRAL_LETTER`). A field it
  * does not list can never use it.
  */
-export interface ModalityProviderModule<E extends z.ZodObject = z.ZodObject> {
+export interface ModalityProviderModule<
+  E extends z.ZodObject = z.ZodObject,
+  P = unknown,
+> {
   readonly id: string;
   readonly fields: Partial<
     Record<
@@ -28,13 +31,14 @@ export interface ModalityProviderModule<E extends z.ZodObject = z.ZodObject> {
   >;
   /** Its own env vars. Parsed (so required) only when the provider is active in some field. */
   readonly env: E;
-  /** Startup check, run only when active. Throwing fails startup. */
-  probe?(env: z.infer<E>): Promise<void>;
-  /** Called once per active field, with that field's description. */
+  /** Startup check, run only when active. Throwing fails startup. Its result goes to `create` (e.g. the options a provider offers). */
+  probe?(env: z.infer<E>): Promise<P>;
+  /** Called once per active field, with that field's description and the probe's result. */
   create(
     env: z.infer<E>,
     runtime: GraphRuntime,
-    description: string
+    description: string,
+    probed: P
   ): ModalityProvider<unknown>;
 }
 
@@ -111,10 +115,10 @@ export async function resolveModalityProviders(
     return [{ module, fields, config: parsed.data }];
   });
 
-  await Promise.all(
+  const probed = await Promise.all(
     active.map(async ({ module, config }) => {
       try {
-        await module.probe?.(config);
+        return await module.probe?.(config);
       } catch (error) {
         throw new Error(
           `[modality] startup probe of "${module.id}" failed: ${(error as Error).message}`,
@@ -131,13 +135,13 @@ export async function resolveModalityProviders(
 
   return (runtime) => {
     const registries: Partial<ModalityRegistries> = {};
-    for (const { module, fields, config } of active) {
+    active.forEach(({ module, fields, config }, i) => {
       for (const [field, { description }] of fields) {
         (registries[field] ??= []).push(
-          module.create(config, runtime, description)
+          module.create(config, runtime, description, probed[i])
         );
       }
-    }
+    });
     return registries;
   };
 }

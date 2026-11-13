@@ -12,6 +12,8 @@ abstract class StaticAnamnesisCatalog implements AnamnesisCatalog {
     return this.effectiveList;
   }
 
+  abstract providers(category: AnamnesisCategory): string[] | undefined;
+
   abstract fromEnglish(
     category: AnamnesisCategory,
     lang: ForeignLanguage
@@ -27,6 +29,10 @@ abstract class StaticAnamnesisCatalog implements AnamnesisCatalog {
 export class YamlAnamnesisCatalog extends StaticAnamnesisCatalog {
   constructor(private readonly repo: AnamnesisRepo) {
     super(repo.getEffectiveCategoryList());
+  }
+
+  providers(category: AnamnesisCategory): string[] | undefined {
+    return this.repo.getCategoryProviders(category);
   }
 
   fromEnglish(
@@ -51,8 +57,15 @@ export class InMemoryAnamnesisCatalog extends StaticAnamnesisCatalog {
     Map<AnamnesisCategory, AnamnesisCategory>
   >();
 
-  constructor(categories?: AnamnesisCategory[]) {
+  constructor(
+    categories?: AnamnesisCategory[],
+    private readonly providerMap: Record<string, string[]> = {}
+  ) {
     super(categories);
+  }
+
+  providers(category: AnamnesisCategory): string[] | undefined {
+    return this.providerMap[category];
   }
 
   fromEnglish(

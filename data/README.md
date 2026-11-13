@@ -51,3 +51,7 @@ category/procedure tree (`display` = English name, `designation` = translations)
 `ObservationDefinition` coded with the CodeSystem `url` + concept code adds reference bands. Without it
 procedures are freeform. See
 [README-DEV.md](../README-DEV.md#data-files).
+
+**Provider allow-list.** A CSV of `code,provider` lines (one per pair, `#` comments, optional header) is merged
+into the exported catalogue as `modalityProvider` concept properties:
+`pnpm catalog:providers data/procedures.fhir.json allowlist.csv [out.json]` (overwrites the input without `out.json`; idempotent).

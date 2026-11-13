@@ -1,4 +1,5 @@
 allowBuilds:
   '@scarf/scarf': false
   esbuild: true
+  protobufjs: false
   puppeteer: true

@@ -11,7 +11,7 @@ import { retry } from "@/core/graph/shared/prompt/retry.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 
-/** Letter fields drafted for AetioReferral's `render_referral_letter` (its `LetterSpec` names). The rest stays empty on purpose: the chief complaint cannot see the anamnesis, so diagnoses, medication or a patient block could contradict it. */
+/** Letter fields drafted for AetioReferral's gRPC `RenderLetter` (its `Letter` fields). The rest stays empty on purpose: the chief complaint cannot see the anamnesis, so diagnoses, medication or a patient block could contradict it. */
 export const ReferralLetterSchema = z.object({
   sender_name: z
     .string()

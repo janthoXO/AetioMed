@@ -1,0 +1,80 @@
+// AetioECG contract: what a client may ask for and what it gets back.
+// The gRPC server speaks them in binary; the CLI and the MCP server in their proto3 JSON form.
+// Regenerate the Python code after any change (see README-DEV.md):
+//   uv run python -m grpc_tools.protoc -Iproto --python_out=src --pyi_out=src --grpc_python_out=src proto/aetioecg/v1/ecg.proto
+syntax = "proto3";
+
+package aetioecg.v1;
+
+// Served as-is by `aetioecg grpc`; the CLI and the MCP server expose the same two endpoints.
+service EcgService {
+  // Every statement code the active ECG source can produce. Ask this first.
+  rpc ListOptions(ListOptionsRequest) returns (EcgOptions);
+  // One 12-lead ECG showing the requested statements.
+  rpc GetEcg(EcgRequest) returns (Ecg);
+}
+
+message ListOptionsRequest {}
+
+enum Sex {
+  SEX_UNSPECIFIED = 0;
+  SEX_MALE = 1;
+  SEX_FEMALE = 2;
+}
+
+// SCP-ECG statement kinds, as classified by PTB-XL. A statement can have several.
+enum StatementKind {
+  STATEMENT_KIND_UNSPECIFIED = 0;
+  STATEMENT_KIND_DIAGNOSTIC = 1;
+  STATEMENT_KIND_FORM = 2;
+  STATEMENT_KIND_RHYTHM = 3;
+}
+
+// One SCP-ECG statement, e.g. code "AFIB", description "atrial fibrillation".
+message Statement {
+  string code = 1;
+  string description = 2;
+  repeated StatementKind kinds = 3;
+}
+
+// The input possibilities of the active ECG source.
+message EcgOptions {
+  // Name of the source, e.g. "ptb-xl".
+  string source = 1;
+  // Every code GetEcg accepts in EcgRequest.statements.
+  repeated Statement statements = 2;
+}
+
+message EcgRequest {
+  // SCP-ECG codes from EcgOptions, all of which the ECG must show, e.g. ["AFIB"] or ["IMI", "SR"].
+  // At least one; ["NORM"] asks for a normal ECG.
+  repeated string statements = 1;
+  // Preferred patient sex; unspecified means any.
+  Sex sex = 2;
+  // Preferred patient age in years.
+  optional uint32 age = 3;
+  // Same request and seed give the same ECG. Unset: a random seed, returned in Ecg.seed.
+  optional uint32 seed = 4;
+}
+
+// Where the ECG comes from, for attribution (PTB-XL is CC BY 4.0).
+message Attribution {
+  // e.g. "ptb-xl/21837"
+  string record = 1;
+  string citation = 2;
+  string license = 3;
+}
+
+message Ecg {
+  // MIME type of image, "image/svg+xml".
+  string mime_type = 1;
+  // 12-lead ECG on grid paper: leads in a 3x4 layout plus a lead II rhythm strip, 25 mm/s, 10 mm/mV.
+  bytes image = 2;
+  // Everything the ECG shows: the requested statements and any others the record carries.
+  repeated Statement statements = 3;
+  Sex sex = 4;
+  // Unset when the source does not know the age.
+  optional uint32 age = 5;
+  uint32 seed = 6;
+  Attribution attribution = 7;
+}

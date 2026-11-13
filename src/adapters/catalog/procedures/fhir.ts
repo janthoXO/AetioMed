@@ -140,7 +140,8 @@ export type FhirCatalogue = {
  * form the tree (a concept with child concepts is a category, a leaf is a
  * procedure unless `notSelectable`), designations its translations, and an
  * `ObservationDefinition` coded `system|code` gives that procedure its
- * reference bands. Empty input (missing file) is an empty catalogue. Throws
+ * reference bands. A leaf's repeatable `modalityProvider` property (valueCode)
+ * is its provider allow-list. Empty input (missing file) is an empty catalogue. Throws
  * with the validation issues on anything else malformed.
  */
 export function parseFhirCatalogue(parsed: unknown): FhirCatalogue {
@@ -232,10 +233,18 @@ function toTree(
       !c.property?.some((p) => p.code === "notSelectable" && p.valueBoolean)
     ) {
       const bands = cs.bandsOf(c.code);
+      const providers = [
+        ...new Set(
+          c.property
+            ?.filter((p) => p.code === "modalityProvider" && p.valueCode)
+            .map((p) => p.valueCode!)
+        ),
+      ];
       tree.procedures.push({
         name,
         code: c.code,
         ...(bands?.length && { bands }),
+        ...(providers.length && { providers }),
       });
     }
   }

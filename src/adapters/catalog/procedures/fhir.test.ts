@@ -129,6 +129,46 @@ describe("parseFhirCatalogue", () => {
     });
   });
 
+  it("reads modalityProvider properties on leaves only", () => {
+    const { tree } = parseFhirCatalogue({
+      resourceType: "Bundle",
+      entry: [
+        {
+          resource: {
+            resourceType: "CodeSystem",
+            concept: [
+              {
+                code: "cat",
+                display: "Cat",
+                property: [{ code: "modalityProvider", valueCode: "x" }],
+                concept: [
+                  {
+                    code: "a",
+                    display: "A",
+                    property: [
+                      { code: "modalityProvider", valueCode: "ecg" },
+                      { code: "modalityProvider", valueCode: "image" },
+                      { code: "modalityProvider", valueCode: "ecg" },
+                    ],
+                  },
+                  { code: "b", display: "B" },
+                ],
+              },
+            ],
+          },
+        },
+      ],
+    });
+    expect(tree.categories[0]).toEqual({
+      name: "Cat",
+      categories: [],
+      procedures: [
+        { name: "A", code: "a", providers: ["ecg", "image"] },
+        { name: "B", code: "b" },
+      ],
+    });
+  });
+
   it("takes the English name from a designation when the CodeSystem is not English", () => {
     const { tree, translations } = parseFhirCatalogue({
       resourceType: "Bundle",

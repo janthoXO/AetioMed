@@ -100,7 +100,8 @@ describe("resolveModalityProviders", () => {
     expect(create).toHaveBeenCalledWith(
       { FAKE_URL: "http://x" },
       runtime,
-      "field desc"
+      "field desc",
+      undefined // the fake probe returns nothing
     );
   });
 

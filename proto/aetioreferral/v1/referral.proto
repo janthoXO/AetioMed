@@ -1,0 +1,127 @@
+// AetioReferral contract: what a client may ask for and what it gets back.
+// The gRPC server speaks it in binary. The MCP tools and the CLI take the same letter as JSON
+// (LetterSpec in letter.py, whose field names match Letter here; a test keeps the two in step).
+// Regenerate the Python code after any change (see README-DEV.md):
+//   uv run python -m grpc_tools.protoc -Iproto --python_out=src --pyi_out=src --grpc_python_out=src proto/aetioreferral/v1/referral.proto
+syntax = "proto3";
+
+package aetioreferral.v1;
+
+// Served as-is by `aetioreferral grpc`.
+service ReferralService {
+  // Render a referral letter as PDF. Missing patient, sender and recipient fields are generated.
+  rpc RenderLetter(RenderLetterRequest) returns (RenderedLetter);
+  // Draft the letter content from free text with the server's LLM, then render it.
+  // UNIMPLEMENTED when the server has no LLM configured.
+  rpc GenerateLetter(GenerateLetterRequest) returns (RenderedLetter);
+}
+
+message RenderLetterRequest {
+  Letter letter = 1;
+  // Same letter and seed give the same PDF. Unset: a random seed, returned in RenderedLetter.seed.
+  optional uint32 seed = 2;
+}
+
+message GenerateLetterRequest {
+  // Free text, e.g. who refers whom with which complaints.
+  string description = 1;
+  // BCP 47 tag of the letter. Unset: the description's language.
+  optional string language = 2;
+  optional uint32 seed = 3;
+}
+
+message RenderedLetter {
+  // application/pdf
+  bytes pdf = 1;
+  // The input with every generated field filled in.
+  Letter letter = 2;
+  // Pass back with the same letter to reproduce the PDF.
+  uint32 seed = 3;
+}
+
+enum Sex {
+  // Generated.
+  SEX_UNSPECIFIED = 0;
+  SEX_FEMALE = 1;
+  SEX_MALE = 2;
+  SEX_DIVERSE = 3;
+}
+
+// One referral letter. Every section is plain text in the letter language (a blank line starts a
+// paragraph); unset or empty sections are left out. Caller content is never translated.
+message Letter {
+  // BCP 47 tag of the letter's labels and phrases. Unset: "de".
+  optional string language = 1;
+  // Specialty the patient is referred to, e.g. "Gastroenterologie".
+  string recipient_specialty = 2;
+  // Fragestellung: what the referring doctor asks the specialist.
+  string reason = 3;
+  // Kind of referral, completing the intro sentence, e.g. "zur Mitbehandlung". Unset: from the locale.
+  optional string request = 4;
+  bool urgent = 5;
+  // Verdachtsdiagnose.
+  optional string suspected_diagnosis = 6;
+  // Known diagnoses and pre-existing conditions.
+  optional string diagnoses = 7;
+  // Anamnese.
+  optional string history = 8;
+  // Befunde: examination and test results so far.
+  optional string findings = 9;
+  optional string prior_treatment = 10;
+  // Current medication, one per line.
+  optional string medication = 11;
+  optional string allergies = 12;
+  // Further sections, printed after allergies.
+  repeated Section extra_sections = 13;
+  // Anlagen, e.g. "Laborbefund vom 14.10.2026".
+  repeated string attachments = 14;
+  // Unset: generate the whole patient. Partly filled: keep given fields, generate the rest.
+  Patient patient = 15;
+  // True: the letter has no patient block (patient is then ignored).
+  bool no_patient = 16;
+  // Referring doctor. Missing fields are generated.
+  Doctor sender = 17;
+  // Receiving doctor or practice. Missing fields are generated.
+  Doctor recipient = 18;
+  // Letter date, ISO 8601 (YYYY-MM-DD). Unset: today.
+  optional string date = 19;
+}
+
+message Section {
+  // e.g. "Sozialanamnese" or "Procedere".
+  string heading = 1;
+  string text = 2;
+}
+
+// Every field optional: given fields are kept, missing ones are generated.
+message Patient {
+  Sex sex = 1;
+  // Full name.
+  optional string name = 2;
+  // ISO 8601 (YYYY-MM-DD). Unset: generated, from age when given.
+  optional string birth_date = 3;
+  // Age in years at the letter date (0-120). Used only when birth_date is unset.
+  optional uint32 age = 4;
+  // Postal address, lines separated by newlines.
+  optional string address = 5;
+  optional string insurer = 6;
+  optional string insurance_number = 7;
+}
+
+// Sender or recipient. Every field optional: given fields are kept, missing ones are generated.
+message Doctor {
+  // Full name without title.
+  optional string name = 1;
+  // Academic title, e.g. "Dr. med."; "" for none.
+  optional string title = 2;
+  // Unset: general practice (sender) or recipient_specialty (recipient).
+  optional string specialty = 3;
+  optional string practice = 4;
+  // Postal address, lines separated by newlines.
+  optional string address = 5;
+  optional string phone = 6;
+  optional string fax = 7;
+  // Doctor and practice identifiers keyed by the locale's scheme, e.g. LANR and BSNR for German.
+  // Missing keys are generated.
+  map<string, string> identifiers = 8;
+}

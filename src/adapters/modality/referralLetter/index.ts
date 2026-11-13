@@ -8,14 +8,14 @@ import type { GraphRuntime } from "@/core/graph/runtime.js";
 import type { ModalityProviderModule } from "../resolve.js";
 import { draftReferralLetters } from "./draft.js";
 import {
-  createMcpReferralLetterRenderer,
-  probeReferralMcp,
+  createGrpcReferralLetterRenderer,
+  probeReferralGrpc,
   type ReferralLetterRenderer,
-} from "./mcp.js";
+} from "./grpc.js";
 
 const EnvSchema = z.object({
-  /** AetioReferral's MCP endpoint, e.g. http://localhost:8000/mcp. */
-  REFERRAL_MCP_URL: z.url(),
+  /** AetioReferral's gRPC server, `host:port`, e.g. localhost:50052. */
+  REFERRAL_GRPC_ADDRESS: z.string().min(1),
 });
 
 /** Drafts each planned `alt` into letter fields (LLM), then renders each as a PDF. */
@@ -45,7 +45,7 @@ export function referralLetterProvider(
   });
 }
 
-/** PDF referral letters, rendered by AetioReferral over MCP. */
+/** PDF referral letters, rendered by AetioReferral over gRPC. */
 export const referralLetterModule: ModalityProviderModule<typeof EnvSchema> = {
   id: "referral_letter",
   fields: {
@@ -56,11 +56,11 @@ export const referralLetterModule: ModalityProviderModule<typeof EnvSchema> = {
     },
   },
   env: EnvSchema,
-  probe: (env) => probeReferralMcp(env.REFERRAL_MCP_URL),
+  probe: (env) => probeReferralGrpc(env.REFERRAL_GRPC_ADDRESS),
   create: (env, runtime, description) =>
     referralLetterProvider(
       runtime,
-      createMcpReferralLetterRenderer(env.REFERRAL_MCP_URL),
+      createGrpcReferralLetterRenderer(env.REFERRAL_GRPC_ADDRESS),
       description
     ),
 };

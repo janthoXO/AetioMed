@@ -45,9 +45,9 @@ services:
       - SYMPTOM_CACHE_TTL_DAYS=${SYMPTOM_CACHE_TTL_DAYS:-30}
       - MAX_CONTENT_PART_BYTES=${MAX_CONTENT_PART_BYTES:-5000000}
 
-      # ─── Referral letters (e.g. http://aetioreferral:8000/mcp with --profile REFERRAL) ─
-      - MODALITY_PROVIDERS # e.g. CHIEF_COMPLAINT_REFERRAL_LETTER; REFERRAL_MCP_URL is read only when enabled
-      - REFERRAL_MCP_URL
+      # ─── Referral letters (e.g. aetioreferral:50051 with --profile REFERRAL) ─
+      - MODALITY_PROVIDERS # e.g. CHIEF_COMPLAINT_REFERRAL_LETTER; REFERRAL_GRPC_ADDRESS is read only when enabled
+      - REFERRAL_GRPC_ADDRESS
 
       # ─── ECG (e.g. aetioecg:50051 with --profile ECG; token PROCEDURE_RESULT_ECG) ─
       - ECG_GRPC_ADDRESS
@@ -123,12 +123,14 @@ services:
       - nats_data:/data
     restart: unless-stopped
 
-  # PDF referral letters for the chief complaint (MODALITY_PROVIDERS=CHIEF_COMPLAINT_REFERRAL_LETTER, REFERRAL_MCP_URL=http://aetioreferral:8000/mcp)
+  # PDF referral letters for the chief complaint (MODALITY_PROVIDERS=CHIEF_COMPLAINT_REFERRAL_LETTER, REFERRAL_GRPC_ADDRESS=aetioreferral:50051)
+  # Needs AetioReferral >= 0.0.2, the first release with the gRPC server.
   aetioreferral:
     profiles: [REFERRAL]
-    image: ghcr.io/janthoxo/aetioreferral/server:0.0.1
+    image: ghcr.io/janthoxo/aetioreferral/server:0.0.2
+    command: ["grpc", "--host", "0.0.0.0", "--port", "50051"]
     ports:
-      - "8000:8000"
+      - "50052:50051" # host 50052: aetioecg has 50051
     restart: unless-stopped
 
   # Real 12-lead ECG SVGs for procedure results (MODALITY_PROVIDERS=PROCEDURE_RESULT_ECG, ECG_GRPC_ADDRESS=aetioecg:50051)

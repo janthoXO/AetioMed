@@ -1,15 +1,8 @@
-import { fileURLToPath } from "node:url";
-import * as grpc from "@grpc/grpc-js";
-import * as protoLoader from "@grpc/proto-loader";
 import z from "zod";
+import { contractPath, createGrpcService } from "../grpc.js";
 
-/**
- * Copy of AetioECG's contract (its `proto/aetioecg/v1/ecg.proto` is the source
- * of truth). Repo-root `proto/`, four directories up in both `src/` and `dist/`.
- */
-export const ECG_PROTO = fileURLToPath(
-  new URL("../../../../proto/aetioecg/v1/ecg.proto", import.meta.url)
-);
+/** Copy of AetioECG's contract (its `proto/aetioecg/v1/ecg.proto` is the source of truth). */
+export const ECG_PROTO = contractPath("aetioecg/v1/ecg.proto");
 
 /** `GetEcg` reads the record from PTB-XL, possibly from PhysioNet on demand. */
 const DEADLINE_MS = 60_000;
@@ -43,38 +36,14 @@ export interface EcgClient {
   close(): void;
 }
 
-type UnaryMethod = (
-  request: object,
-  options: grpc.CallOptions,
-  callback: (error: grpc.ServiceError | null, response: unknown) => void
-) => grpc.ClientUnaryCall;
-
-/** `aetioecg.v1.EcgService` over plaintext gRPC (AetioECG has no TLS: private network only). Responses parsed, never cast. */
+/** `aetioecg.v1.EcgService` over plaintext gRPC. Responses parsed, never cast. */
 export function createGrpcEcgClient(address: string): EcgClient {
-  const definition = protoLoader.loadSync(ECG_PROTO, {
-    enums: String,
-    longs: Number,
-    defaults: true,
-  });
-  const { EcgService } = (
-    grpc.loadPackageDefinition(definition) as unknown as {
-      aetioecg: { v1: { EcgService: grpc.ServiceClientConstructor } };
-    }
-  ).aetioecg.v1;
-  const client = new EcgService(address, grpc.credentials.createInsecure());
-
-  const call = (method: string, request: object, signal?: AbortSignal) =>
-    new Promise<unknown>((resolve, reject) => {
-      const pending = (client[method] as UnaryMethod).call(
-        client,
-        request,
-        { deadline: Date.now() + DEADLINE_MS },
-        (error, response) => (error ? reject(error) : resolve(response))
-      );
-      signal?.addEventListener("abort", () => pending.cancel(), {
-        once: true,
-      });
-    });
+  const { call, close } = createGrpcService(
+    ECG_PROTO,
+    "aetioecg.v1.EcgService",
+    address,
+    DEADLINE_MS
+  );
 
   return {
     listOptions: async () =>
@@ -93,6 +62,6 @@ export function createGrpcEcgClient(address: string): EcgClient {
       );
       return new Uint8Array(ecg.image); // copy: a Buffer may share a pooled ArrayBuffer
     },
-    close: () => client.close(),
+    close,
   };
 }

@@ -25,9 +25,21 @@ export interface AnamnesisRepo {
   ): void;
   /** Effective category list; `undefined` = freeform, LLM invents categories. */
   getEffectiveCategoryList(): AnamnesisCategory[] | undefined;
+  /** Provider allow-list of a category (`{ name, providers }` entry); `undefined` = none named. */
+  getCategoryProviders(category: AnamnesisCategory): string[] | undefined;
 }
 
 const SOURCE = "anamnesisCategories";
+const PROVIDERS_SOURCE = "anamnesisCategoryProviders";
+
+/** A YAML entry: a plain name, or a name with its provider allow-list. */
+const EntrySchema = z.union([
+  AnamnesisCategorySchema,
+  z.object({
+    name: AnamnesisCategorySchema,
+    providers: z.array(z.string()),
+  }),
+]);
 
 /**
  * Syncs `anamnesisCategories.yml` / `anamnesisCategoriesTranslations.yml` into
@@ -58,7 +70,7 @@ export function createAnamnesisRepo(
       (parsed) => {
         const categoryObject = z
           .object({
-            categories: z.array(AnamnesisCategorySchema).default([]),
+            categories: z.array(EntrySchema).default([]),
           })
           .safeParse(parsed);
 
@@ -75,12 +87,33 @@ export function createAnamnesisRepo(
           .where(eq(predefinedItem.source, SOURCE))
           .run();
 
-        const rows = categoryObject.data.categories.map((value, position) => ({
+        const entries = categoryObject.data.categories.map((e) =>
+          typeof e === "string" ? { name: e, providers: [] } : e
+        );
+        const rows = entries.map(({ name }, position) => ({
           source: SOURCE,
           position,
-          value,
+          value: name,
         }));
         for (const batch of dbHandle.chunk(rows)) {
+          dbHandle.db.insert(predefinedItem).values(batch).run();
+        }
+
+        dbHandle.db
+          .delete(predefinedItem)
+          .where(eq(predefinedItem.source, PROVIDERS_SOURCE))
+          .run();
+        const providerRows = entries
+          .filter((e) => e.providers.length)
+          .map((e, position) => ({
+            source: PROVIDERS_SOURCE,
+            position,
+            value: JSON.stringify({
+              category: e.name,
+              providers: e.providers,
+            }),
+          }));
+        for (const batch of dbHandle.chunk(providerRows)) {
           dbHandle.db.insert(predefinedItem).values(batch).run();
         }
 
@@ -109,6 +142,19 @@ export function createAnamnesisRepo(
 
   syncAnamnesisCategoryDefaults();
 
+  const providersByCategory = new Map<string, string[]>();
+  for (const row of dbHandle.db
+    .select({ value: predefinedItem.value })
+    .from(predefinedItem)
+    .where(eq(predefinedItem.source, PROVIDERS_SOURCE))
+    .all()) {
+    const { category, providers } = JSON.parse(row.value) as {
+      category: string;
+      providers: string[];
+    };
+    providersByCategory.set(category, providers);
+  }
+
   const anamnesisCategoryDefaults: AnamnesisCategory[] | undefined =
     resolvePredefinedList({
       defaults: loadAnamnesisCategoryDefaults(),
@@ -124,6 +170,9 @@ export function createAnamnesisRepo(
     },
     getEffectiveCategoryList() {
       return anamnesisCategoryDefaults;
+    },
+    getCategoryProviders(category) {
+      return providersByCategory.get(category);
     },
   };
 }

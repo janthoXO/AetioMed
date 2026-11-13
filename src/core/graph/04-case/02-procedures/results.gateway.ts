@@ -16,12 +16,14 @@ import {
   type ProcedureRelevance,
 } from "@/core/graph/shared/domain/Procedure.js";
 import {
+  leaves,
   refLabel,
   type ProcedureRef,
 } from "@/core/graph/shared/domain/ProcedureTree.js";
 import type { RequestContext } from "@/core/graph/utils/context.js";
 import type { GraphRuntime } from "@/core/graph/runtime.js";
 import {
+  allowedProviders,
   buildCompositionSchema,
   buildUnitPlanSchema,
   describeProviders,
@@ -41,21 +43,35 @@ import {
 
 /**
  * Per-procedure plan schema: a composition unit (`{ requests }`) plus
- * `relevance`, both from one non-blinded call, keyed by procedure name.
+ * `relevance`, both from one non-blinded call, keyed by procedure label.
  * `unitKeys` always passed: procedure names known beforehand, never freeform.
+ * Each unit offers only its allowed providers (`allowedProviders`, from the
+ * catalogue's `modalityProvider` allow-lists; none in freeform).
  */
 function buildProcedureResultPlanSchema(
+  runtime: GraphRuntime,
   providers: ModalityProvider<unknown>[],
-  procedureNames: string[]
+  procedureSteps: ProcedureRef[]
 ) {
+  const catalog = runtime.catalogs.procedures;
+  const tree = catalog.tree();
+  const named = new Set(
+    tree ? leaves(tree).flatMap(({ leaf }) => leaf.providers ?? []) : []
+  );
+  const own = new Map(
+    procedureSteps.map((s) => [refLabel(s), catalog.procedure(s)?.providers])
+  );
   return buildCompositionSchema(
     providers,
-    procedureNames,
-    buildUnitPlanSchema(providers).extend({
-      relevance: ProcedureRelevanceSchema.describe(
-        "Relevance of the procedure to the TRUE diagnosis"
-      ),
-    })
+    procedureSteps.map(refLabel),
+    (label) =>
+      buildUnitPlanSchema(
+        allowedProviders(providers, named, label ? own.get(label) : [])
+      ).extend({
+        relevance: ProcedureRelevanceSchema.describe(
+          "Relevance of the procedure to the TRUE diagnosis"
+        ),
+      })
   );
 }
 
@@ -84,7 +100,11 @@ export async function planProcedureResults(
   context?: RequestContext
 ): Promise<PlannedProcedure[]> {
   const procedureLabels = procedureSteps.map(refLabel);
-  const schema = buildProcedureResultPlanSchema(providers, procedureLabels);
+  const schema = buildProcedureResultPlanSchema(
+    runtime,
+    providers,
+    procedureSteps
+  );
 
   // User-facing: planned `alt` becomes user-visible content via the renderer.
   const systemPrompt = buildSystemPrompt(

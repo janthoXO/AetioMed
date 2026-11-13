@@ -16,6 +16,7 @@ export {
   describeProviders,
   buildCompositionSchema,
   buildUnitPlanSchema,
+  allowedProviders,
   plansByKey,
 } from "./composition.js";
 export { renderPlan } from "./pipeline.js";

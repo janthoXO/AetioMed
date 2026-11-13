@@ -4,7 +4,13 @@ import type { Language } from "@/core/graph/shared/domain/Language.js";
 import { ConfigSchema, type Config } from "./config.js";
 import { buildCaseGraph } from "./assemble.js";
 import { createMedicalBasisRegistry } from "@/core/graph/02-plan/01-basis/registry.js";
-import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
+import type {
+  ModalityField,
+  ModalityRegistries,
+} from "@/core/graph/shared/modality/registry.js";
+import type { ModalityProvider } from "@/core/graph/shared/modality/ports.js";
+import { allowedProviders } from "@/core/graph/shared/modality/composition.js";
+import { leaves, refLabel } from "@/core/graph/shared/domain/ProcedureTree.js";
 import { createChiefComplaintProviders } from "@/core/graph/04-case/01-presentation/chief-complaint/providers.js";
 import { createAnamnesisProviders } from "@/core/graph/04-case/01-presentation/anamnesis/providers.js";
 import { createProcedureResultProviders } from "@/core/graph/04-case/02-procedures/providers.js";
@@ -125,6 +131,25 @@ export function initGraph(opts: {
     if (dup)
       throw new Error(`[modality] ${field}: duplicate provider id "${dup}"`);
   }
+  const procedureTree = catalogs.procedures.tree();
+  checkProviderAllowlists(
+    "procedureResult",
+    modalityRegistries.procedureResult,
+    procedureTree
+      ? leaves(procedureTree).map(({ path, leaf }) => ({
+          name: refLabel({ path, name: leaf.name }),
+          providers: leaf.providers,
+        }))
+      : undefined
+  );
+  checkProviderAllowlists(
+    "anamnesis",
+    modalityRegistries.anamnesis,
+    catalogs.anamnesis.list()?.map((name) => ({
+      name,
+      providers: catalogs.anamnesis.providers(name),
+    }))
+  );
 
   const { graphs, planCase, renderCase, translateOutline } = buildCaseGraph(
     runtime,
@@ -161,3 +186,40 @@ export function initGraph(opts: {
 }
 
 export { runWithContext } from "./utils/context.js";
+
+/**
+ * Startup view of a field's provider allow-lists (`allowedProviders`): logs
+ * how many catalogue units each provider serves, warns about a named id not
+ * registered in the field, throws when a unit is left with no provider.
+ * `units` undefined = freeform, nothing to check.
+ */
+export function checkProviderAllowlists(
+  field: ModalityField,
+  providers: ModalityProvider<unknown>[],
+  units: { name: string; providers?: string[] | undefined }[] | undefined
+): void {
+  if (!units?.length) return;
+  const named = new Set(units.flatMap((u) => u.providers ?? []));
+  const ids = new Set(providers.map((p) => p.id));
+  const unknown = [...named].filter((id) => !ids.has(id));
+  if (unknown.length > 0)
+    console.warn(
+      `[modality] ${field}: catalogue names provider(s) ${unknown.join(", ")} not enabled for this field — ignored`
+    );
+  const allowed = units.map((u) =>
+    allowedProviders(providers, named, u.providers).map((p) => p.id)
+  );
+  const empty = units.filter((_, i) => allowed[i]!.length === 0);
+  if (empty.length > 0)
+    throw new Error(
+      `[modality] ${field}: no enabled provider allowed for ${empty.map((u) => `"${u.name}"`).join(", ")}`
+    );
+  console.log(
+    `[modality] ${field}: ${providers
+      .map(
+        (p) =>
+          `${p.id} ${allowed.filter((a) => a.includes(p.id)).length}/${units.length}`
+      )
+      .join(", ")}`
+  );
+}

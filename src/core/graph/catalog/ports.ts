@@ -13,6 +13,8 @@ export type CatalogProcedure = {
   name: string;
   code?: string | undefined;
   bands?: ReferenceBand[] | undefined;
+  /** Provider allow-list (FHIR `modalityProvider`); see `allowedProviders`. */
+  providers?: string[] | undefined;
 };
 
 /** Catalogue shape: procedures under categories of any depth. */
@@ -50,6 +52,8 @@ export interface ProcedureCandidates {
 
 export interface AnamnesisCatalog {
   list(): AnamnesisCategory[] | undefined;
+  /** Provider allow-list of `category` (YAML `providers`); see `allowedProviders`. */
+  providers(category: AnamnesisCategory): string[] | undefined;
   /** Cached translation of an English category name into `lang`. */
   fromEnglish(
     category: AnamnesisCategory,

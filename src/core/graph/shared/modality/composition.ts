@@ -52,12 +52,14 @@ export function buildUnitPlanSchema(providers: ModalityProvider<unknown>[]) {
  * names units, so `plans` is an array of `{ key, ...unit }`, `.min(1)`. Not a
  * record: OpenAI strict mode rejects open-keyed objects. No default category
  * list; clinical content stays out of code. Empty `unitKeys` is a caller bug
- * and throws.
+ * and throws. `unitSchema(key)` lets each known unit get its own providers
+ * ({@link allowedProviders}); freeform units share `unitSchema()`.
  */
 export function buildCompositionSchema(
   providers: ModalityProvider<unknown>[],
   unitKeys?: string[],
-  unitSchema: z.ZodObject = buildUnitPlanSchema(providers)
+  unitSchema: (key?: string) => z.ZodObject = () =>
+    buildUnitPlanSchema(providers)
 ): z.ZodTypeAny {
   if (unitKeys && unitKeys.length === 0) {
     throw new Error(
@@ -68,7 +70,7 @@ export function buildCompositionSchema(
   return z.object({
     plans: unitKeys
       ? z.strictObject(
-          Object.fromEntries(unitKeys.map((key) => [key, unitSchema]))
+          Object.fromEntries(unitKeys.map((key) => [key, unitSchema(key)]))
         )
       : z
           .array(
@@ -77,11 +79,25 @@ export function buildCompositionSchema(
                 .string()
                 .min(1)
                 .describe("Name this content unit yourself"),
-              ...unitSchema.shape,
+              ...unitSchema().shape,
             })
           )
           .min(1),
   });
+}
+
+/**
+ * Provider allow-list of one unit (procedure, anamnesis category). A provider
+ * named by ANY unit of the field (`named`) is offered only to the units naming
+ * it; an unnamed provider to every unit. Fields are independent: `named` comes
+ * from that field's own catalogue. No catalogue (freeform) names nothing.
+ */
+export function allowedProviders(
+  providers: ModalityProvider<unknown>[],
+  named: ReadonlySet<string>,
+  own: readonly string[] = []
+): ModalityProvider<unknown>[] {
+  return providers.filter((p) => !named.has(p.id) || own.includes(p.id));
 }
 
 /** `plans` from {@link buildCompositionSchema}, either shape, keyed by unit. */

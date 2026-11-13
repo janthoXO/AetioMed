@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import z from "zod";
 import {
+  allowedProviders,
   buildCompositionSchema,
   buildUnitPlanSchema,
   describeProviders,
@@ -172,7 +173,11 @@ describe("buildCompositionSchema", () => {
     const unitSchema = buildUnitPlanSchema(providers).extend({
       relevance: z.string(),
     });
-    const schema = buildCompositionSchema(providers, ["unit-a"], unitSchema);
+    const schema = buildCompositionSchema(
+      providers,
+      ["unit-a"],
+      () => unitSchema
+    );
 
     const missingRelevance = schema.safeParse({
       plans: {
@@ -196,6 +201,39 @@ describe("buildCompositionSchema", () => {
       },
     });
     expect(withRelevance.success).toBe(true);
+  });
+});
+
+describe("allowedProviders", () => {
+  const providers = [textProvider(), textProvider("ecg"), textProvider("img")];
+  const ids = (own?: string[]) =>
+    allowedProviders(providers, new Set(["ecg", "text"]), own).map((p) => p.id);
+
+  it("offers a named provider only to units naming it, unnamed ones to all", () => {
+    expect(ids(["ecg"])).toEqual(["ecg", "img"]);
+    expect(ids(undefined)).toEqual(["img"]);
+    expect(ids(["text", "ecg"])).toEqual(["text", "ecg", "img"]);
+  });
+
+  it("gives each known unit its own providers in the grammar", () => {
+    const schema = buildCompositionSchema(providers, ["a", "b"], (key) =>
+      buildUnitPlanSchema(
+        allowedProviders(
+          providers,
+          new Set(["ecg"]),
+          key === "a" ? ["ecg"] : []
+        )
+      )
+    );
+    const plan = (provider: string) => ({
+      requests: [{ provider, input: { instruction: "x" }, alt: "y" }],
+    });
+    expect(
+      schema.safeParse({ plans: { a: plan("ecg"), b: plan("text") } }).success
+    ).toBe(true);
+    expect(
+      schema.safeParse({ plans: { a: plan("ecg"), b: plan("ecg") } }).success
+    ).toBe(false);
   });
 });
 

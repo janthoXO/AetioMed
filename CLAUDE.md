@@ -680,10 +680,15 @@ appends them after each field's own providers (a duplicate id in a field throws)
 need no token; an `optional` one is enabled by a `<FIELD>_<PROVIDER_ID>` token in
 `MODALITY_PROVIDERS` (`modalityToken`, e.g. `CHIEF_COMPLAINT_REFERRAL_LETTER`). An unknown token, or
 an active provider with missing/invalid env, is a startup error; its probe runs at startup and a
-failure is fatal; an inactive provider with any of its env vars set logs a warning and is ignored.
-The one module today is `referralLetter/`: an `application/pdf` letter for chief complaint, drafted
+failure is fatal, and the probe's result is handed to the module's `create`; an inactive provider with any of its env vars set logs a warning and is ignored.
+Two modules today. `referralLetter/`: an `application/pdf` letter for chief complaint, drafted
 from `alt` by `draft.ts` (request language) and rendered by AetioReferral over MCP (`mcp.ts`),
-enabled by `CHIEF_COMPLAINT_REFERRAL_LETTER` and requiring `REFERRAL_MCP_URL`. Runtime failures are
+enabled by `CHIEF_COMPLAINT_REFERRAL_LETTER` and requiring `REFERRAL_MCP_URL`. `ecg/`: an
+`image/svg+xml` real 12-lead ECG for procedure results, rendered by AetioECG over gRPC (`grpc.ts`,
+client over the repo-root `proto/aetioecg/v1/ecg.proto` copy), enabled by `PROCEDURE_RESULT_ECG` and
+requiring `ECG_GRPC_ADDRESS`; its probe calls `ListOptions` and the SCP-ECG codes it returns become
+the planner's enum for `input.statements`. Limit it to ECG procedures with the per-procedure
+`modalityProvider` allow-list (`pnpm catalog:providers`). Runtime failures are
 still logged-and-dropped by `renderPlan`; a timeout/circuit breaker is #260 and per-field input
 schemas are #261.
 
@@ -1186,8 +1191,9 @@ language`), so the choice is visible at every call site instead of hidden in the
 | `MAX_CONCURRENT_GENERATIONS`                                          | `4`                     | Bounds in-flight generations identically over REST and NATS (`src/core/concurrency.ts`'s shared limiter). Excess requests queue; a queued job is still cancellable. See Request Context below                           |
 | `SYMPTOM_CACHE_TTL_DAYS`                                              | `30`                    | TTL for cached LLM-generated symptoms (see `adapters/symptoms/repo.ts`)                                                                                                                                                 |
 | `MAX_CONTENT_PART_BYTES`                                              | `5000000`               | Ceiling on one `ContentPart.value`'s decoded byte size; encoding a larger part fails loudly (see `api/contentWire.ts`)                                                                                                  |
-| `MODALITY_PROVIDERS`                                                  | —                       | Comma-separated `<FIELD>_<PROVIDER_ID>` tokens enabling optional modality providers (`CHIEF_COMPLAINT_REFERRAL_LETTER`); unknown token = startup error; see Modality Planning and Rendering                             |
+| `MODALITY_PROVIDERS`                                                  | —                       | Comma-separated `<FIELD>_<PROVIDER_ID>` tokens enabling optional modality providers (`CHIEF_COMPLAINT_REFERRAL_LETTER`, `PROCEDURE_RESULT_ECG`); unknown token = startup error; see Modality Planning and Rendering     |
 | `REFERRAL_MCP_URL`                                                    | —                       | AetioReferral MCP endpoint (e.g. `http://localhost:8000/mcp`); required when `CHIEF_COMPLAINT_REFERRAL_LETTER` is in `MODALITY_PROVIDERS`, ignored (with a warning) otherwise; no longer enables the provider by itself |
+| `ECG_GRPC_ADDRESS`                                                    | —                       | AetioECG gRPC address (`host:port`, e.g. `localhost:50051`); required when `PROCEDURE_RESULT_ECG` is in `MODALITY_PROVIDERS`, ignored (with a warning) otherwise                                                        |
 | `OTEL_SDK_DISABLED`                                                   | unset (enabled)         | Standard OTel var. `"true"` (that literal only) skips constructing the OTel SDK entirely (no dynamic import even happens — see `observability/otel.ts`); its own axis, independent of `FEATURES`                        |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` / `_TRACES_ENDPOINT` / `_LOGS_ENDPOINT` | —                       | Standard OTel vars, read by the OTLP trace/log exporters themselves — no plumbing in this repo; any one set selects the `"otlp"` exporter mode (`selectExporterMode`)                                                   |
 | `OTEL_SERVICE_NAME`                                                   | —                       | Standard OTel var, read via `envDetector` (`observability/otel.ts`)                                                                                                                                                     |

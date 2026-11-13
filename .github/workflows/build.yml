@@ -5,6 +5,7 @@ on:
     paths:
       - "src/**"
       - "contracts/**"
+      - "proto/**"
       - "scripts/exportContracts.ts"
       - ".github/workflows/build.yml"
 

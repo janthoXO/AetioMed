@@ -1,9 +1,9 @@
 # Keeps proto/ in step with the provider repos that own the contracts.
 # Daily: fetch each contract from its repo's main branch; any difference
 # becomes (or updates) one PR on branch chore/sync-contracts.
-# Needs "Allow GitHub Actions to create and approve pull requests" in the
-# repo's Actions settings. A PR opened with GITHUB_TOKEN does not trigger
-# build.yml; close and reopen it (or push to it) to run CI.
+# Pushes and opens the PR as the ContractSync GitHub App (variable
+# CONTRACT_SYNC_APP_ID, secret CONTRACT_SYNC_PRIVATE_KEY), so build.yml runs
+# on it; a GITHUB_TOKEN PR would not trigger CI.
 name: Sync provider contracts
 
 on:
@@ -11,15 +11,21 @@ on:
     - cron: "17 5 * * *"
   workflow_dispatch:
 
-permissions:
-  contents: write
-  pull-requests: write
+permissions: {} # everything goes through the app token
 
 jobs:
   sync:
     runs-on: ubuntu-latest
     steps:
+      - id: app
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ vars.CONTRACT_SYNC_APP_ID }}
+          private-key: ${{ secrets.CONTRACT_SYNC_PRIVATE_KEY }}
+
       - uses: actions/checkout@v6
+        with:
+          token: ${{ steps.app.outputs.token }}
 
       - name: Fetch contracts
         # <local path under proto/> <source repo>, one per line.
@@ -33,15 +39,16 @@ jobs:
 
       - name: Open or update PR
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          BOT: ${{ steps.app.outputs.app-slug }}[bot]
           BRANCH: chore/sync-contracts
         run: |
           if git diff --quiet -- proto; then
             echo "Contracts up to date."
             exit 0
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "$BOT"
+          git config user.email "$(gh api "/users/$BOT" -q .id)+$BOT@users.noreply.github.com"
           git switch -C "$BRANCH"
           git commit -qam "chore(contracts): sync provider protos"
           git push -f origin "$BRANCH"

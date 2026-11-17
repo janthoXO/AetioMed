@@ -26,6 +26,7 @@ export function planAndRenderFrom(generateCase: GenerateCaseFn): GraphFake {
       return {
         diagnosis: opts.diagnosis,
         outlineAccepted: true,
+        recipe: [],
         outlineSegments: [
           ...headings.flatMap((text) => [
             { fixed: false, text: "" },

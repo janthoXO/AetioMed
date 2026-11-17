@@ -22,10 +22,12 @@ import {
   OutlineSegmentsSchema,
   freezeGeneral,
   joinOutline,
+  withSectionBody,
 } from "@/core/graph/shared/outline/segments.js";
 import { RunModeSchema } from "@/core/graph/shared/domain/RunMode.js";
 import { boundLanguage } from "@/core/graph/shared/prompt/prompt.js";
 import { RecipeSchema, roll } from "./recipe.js";
+import { refineOutline } from "./refine.gateway.js";
 
 const OUTLINE_EVALUATION_MAX_ITERATIONS = 2;
 
@@ -59,9 +61,11 @@ function languageOf(state: PlanGraphState, runtime: GraphRuntime) {
 type PlanGraphState = z.infer<typeof PlanGraphStateSchema>;
 
 // `.pick()` off own state schema: write surface = outline and judge verdict only.
+// `recipe` too: kept in the generation context, a refine is judged against it (#272).
 const PlanGraphOutputSchema = PlanGraphStateSchema.pick({
   outlineSegments: true,
   outlineAccepted: true,
+  recipe: true,
 });
 
 function makeGenerateCaseOutline(runtime: GraphRuntime) {
@@ -161,17 +165,20 @@ function makeOutlineRegenerate(runtime: GraphRuntime) {
     state: PlanGraphState,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Command> {
-    const outlineSegments = await generateCaseOutlineGateway(
+    // Section replacement, not a fresh outline (#272): untouched sections stay
+    // byte-identical and no `<fixed>` re-emission can break the skeleton.
+    const revision = await refineOutline(
       runtime,
-      state.diagnosis,
-      state.basisFragments,
-      state.difficulty,
       {
+        plan: state.outlineSegments,
+        diagnosis: state.diagnosis,
+        difficulty: state.difficulty,
         recipe: state.recipe,
-        userInstructions: renderUserInstructions(state.userInstructions),
-        feedback: state.outlineFeedback,
-        previousOutline: state.outlineSegments,
+        target: "the whole outline",
+        request: `The outline was rejected by a reviewer. Revise only what is needed to address:\n${state.outlineFeedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`,
+        levels: ["outline"],
         language: languageOf(state, runtime),
+        call: { role: "generator", temperature: "creative" },
       },
       lgRuntime?.context
     ).catch((error) => {
@@ -180,6 +187,10 @@ function makeOutlineRegenerate(runtime: GraphRuntime) {
       );
       throw error;
     });
+    const outlineSegments = [...revision.sections].reduce(
+      (plan, [index, body]) => withSectionBody(plan, index, body),
+      state.outlineSegments
+    );
 
     runtime.log.info(
       `[PlanGraph] Case outline regenerated:\n\`\`\` ${joinOutline(outlineSegments)}\`\`\``

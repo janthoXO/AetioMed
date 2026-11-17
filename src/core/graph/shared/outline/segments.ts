@@ -324,3 +324,57 @@ export function restoreSkeletonHeadings(
       : segment
   );
 }
+
+/**
+ * Sections of a plan by the index of their fixed heading segment (#272): the
+ * client's key. LLM-facing steps name a section by its heading line
+ * (`## Patient`, `### Allergies`), mapped back here, never by index.
+ */
+export function sectionHeadings(
+  segments: OutlineSegments
+): { index: number; heading: string }[] {
+  return segments.flatMap((s, index) =>
+    s.fixed ? [{ index, heading: fixedHeading(s.text) }] : []
+  );
+}
+
+/** Body of the section headed at `index`: General's frozen body (#221) and the editable segment after. */
+export function sectionBody(segments: OutlineSegments, index: number): string {
+  const head = segments[index]!.text;
+  const frozen = head.includes("\n")
+    ? head.slice(head.indexOf("\n")).trim()
+    : "";
+  return [frozen, segments[index + 1]?.text ?? ""]
+    .filter((text) => text !== "")
+    .join("\n\n");
+}
+
+/**
+ * `segments` with the section headed at `index` rewritten: body into the
+ * editable segment after it, heading alone. Re-freeze General with
+ * {@link freezeGeneral} where it was frozen.
+ */
+export function withSectionBody(
+  segments: OutlineSegments,
+  index: number,
+  body: string
+): OutlineSegments {
+  return segments.map((s, i) =>
+    i === index
+      ? { fixed: true, text: fixedHeading(s.text) }
+      : i === index + 1
+        ? { fixed: false, text: body.trim() }
+        : s
+  );
+}
+
+/** Case field a section's facts feed; `undefined` for General (background only). */
+export function fieldOfSection(
+  heading: string
+): "patient" | "chiefComplaint" | "anamnesis" | "procedures" | undefined {
+  if (heading.startsWith(CATEGORY_PREFIX)) return "anamnesis";
+  const key = (
+    Object.keys(OUTLINE_SECTIONS) as (keyof typeof OUTLINE_SECTIONS)[]
+  ).find((k) => SECTION_PREFIX + OUTLINE_SECTIONS[k] === heading);
+  return key === "general" ? undefined : key;
+}

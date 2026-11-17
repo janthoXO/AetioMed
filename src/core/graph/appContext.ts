@@ -14,6 +14,7 @@ import type {
 } from "./assemble.js";
 
 import type { Rerolls } from "./reroll.js";
+import type { Refiner } from "./refine.js";
 
 export type { PlanCaseInput, PlanResult, RenderCaseInput };
 
@@ -50,6 +51,8 @@ export interface GraphAppContext {
     | undefined;
   /** Unit and part rerolls below a field (#272). */
   rerolls: Rerolls;
+  /** Refine: level pick and outline-section rewrite, judged (#272). */
+  refiner: Refiner;
   /**
    * Compiled plan + case graphs this deployment serves (deployer's flag
    * variant). Consumed by `GET /api/graph` (`structure.ts`) via

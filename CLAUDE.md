@@ -171,7 +171,23 @@ the provider + input `renderPlan` recorded (`ContentPart.source`, kept in the co
 `parts`/`units`, never on the wire) with the client's current `alt`. Entries run concurrently
 under one job slot and answer `done` with `pieces` (new value per path) instead of the case;
 `["outline"]` re-plans from the first call's inputs (new recipe roll) and answers `planned`.
-With `instruction` it is a **refine**.
+With `instruction` it is a **refine** (an `["outline", i]` reroll is a refine asking for "an
+alternative"): one structured judge-role call (`02-outline/refine.gateway.ts`) picks the lowest
+level the request reaches — `outline` (case facts), `plan` (one unit's facts or split), `render`
+(wording) — and at outline level lists the affected sections, then the new bodies of exactly
+those. Sections are named to the model by heading line (`## Patient`, `### Allergies`, an enum
+built from the plan) and mapped back to the client's key, the heading segment's index, in code
+(`sectionHeadings`): an index is arbitrary to a model. `graph/refine.ts`'s `settle` applies the
+sections and runs the outline judge as a safety net (one section-replacement revision when it
+rejects), against the `recipe` kept in the context. Any outline-level entry makes the whole call
+one outline change, nothing rendered: in plan review (`context.fields` empty) the revised plan
+comes back `planned` with `changed` indices, only changed segments translated out; on a case it
+comes back as a `proposal` — sections mapped to fields (`fieldOfSection`): a generated field is
+`changed`, General or a field the case lacks is `background` — with the new sections in
+`context.proposal`. `accept: [fields]` composes the plan (new sections for accepted fields and
+background, old for the rest) and regenerates the accepted fields as pieces. The plan graph's
+judge-driven revision (`outline_regenerate`) uses the same section replacement now, so a
+revision never re-emits `<fixed>` headings; only the first generation is free text.
 
 **`src/core/jobEvents/`** (#139) is the core-owned per-job event channel:
 `createJobEventChannel()` builds one instance, constructed once in `app.ts` and handed to

@@ -11,7 +11,16 @@ import type {
   FirstCallRequest,
   Regenerate,
 } from "@/api/index.js";
-import { InvalidPathError, rerollAll, type CasePiece } from "./regenerate.js";
+import {
+  InvalidPathError,
+  isRefine,
+  refineRequest,
+  rerollAll,
+  type CasePiece,
+  ProposalSchema,
+  type Proposal,
+} from "./regenerate.js";
+import type { GenerationFlag } from "@/core/graph/shared/domain/GenerationFlags.js";
 import { getRequestContext, runWithContext } from "./graph/utils/context.js";
 import { AppError, OutlineNotAcceptedError } from "./graph/errors/AppError.js";
 import {
@@ -19,9 +28,12 @@ import {
   outlineSections,
   withHeading,
   restoreSkeletonHeadings,
+  sectionHeadings,
+  fieldOfSection,
   OutlineSegmentsSchema,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
+import { applySections } from "./graph/refine.js";
 import { localizeHeadings } from "./graph/03-outline-translation/headings.js";
 import type { IcdPort } from "./diagnosis/icd.js";
 import { resolveDiagnosis } from "./diagnosis/resolve.js";
@@ -30,6 +42,7 @@ import {
   encodeContext,
   caseUnits,
   partSources,
+  withSources,
   type GenerationContext,
 } from "./generationContext.js";
 
@@ -45,7 +58,7 @@ export type CaseGenerationResultError = {
  * Outline as positional segment array. Plan-mode plan: request language;
  * normal-mode plan (handed over on the way to the case): English.
  */
-export const PlanPayloadSchema = z.object({
+const PlanBodySchema = z.object({
   jobId: z.string(),
   status: z
     .literal("planned")
@@ -56,6 +69,12 @@ export const PlanPayloadSchema = z.object({
   mode: RunModeSchema,
   language: z.string(),
   plan: OutlineSegmentsSchema,
+  changed: z
+    .array(z.number().int())
+    .optional()
+    .describe(
+      "After a refine in plan review: heading segment indices of the sections that changed."
+    ),
   context: z
     .string()
     .optional()
@@ -66,17 +85,44 @@ export const PlanPayloadSchema = z.object({
     ),
 });
 
+/** Outline-level refine of an existing case (#272): nothing rendered yet. */
+const ProposalBodySchema = z.object({
+  jobId: z.string(),
+  status: z.literal("planned"),
+  language: z.string(),
+  proposal: ProposalSchema,
+  context: z
+    .string()
+    .describe(
+      "Opaque generation context; send it back with `accept` to apply the proposal."
+    ),
+});
+
+/** `event: plan` / `cases.plan.<jobId>`: a plan, or a case's proposal. */
+export const PlanPayloadSchema = z.union([PlanBodySchema, ProposalBodySchema]);
+
 export type PlanPayload = z.infer<typeof PlanPayloadSchema>;
 
 /** Wire payload of a `planned` result: SSE `event: plan`, NATS `cases.plan.<jobId>`. */
 export function planPayloadOf(result: CaseGenerationResult): PlanPayload {
+  const { jobId, language, context } = result;
+  if (result.proposal) {
+    return {
+      jobId,
+      status: "planned",
+      language: language!,
+      proposal: result.proposal,
+      context: context!,
+    };
+  }
   return {
-    jobId: result.jobId,
+    jobId,
     status: "planned",
     mode: "plan",
-    language: result.language!,
+    language: language!,
     plan: result.plan!,
-    context: result.context!,
+    ...(result.changed && { changed: result.changed }),
+    context: context!,
   };
 }
 
@@ -87,6 +133,10 @@ export type CaseGenerationResult = {
   case?: Case;
   /** Regenerated pieces of an existing case, instead of `case` (#272). */
   pieces?: CasePiece[];
+  /** Plan review: heading indices of the sections a refine changed. */
+  changed?: number[];
+  /** Outline-level refine of a case: what `accept` would regenerate. */
+  proposal?: Proposal;
   plan?: OutlineSegments;
   /**
    * Language generation ran in (echoes `req.language`, default `en`).
@@ -113,7 +163,7 @@ export type StartOptions = {
    * Called with a normal-mode job's plan once it exists, mid-generation.
    * Plan-mode plan is the result instead. Must not throw.
    */
-  onPlan?: (plan: PlanPayload) => void;
+  onPlan?: (plan: z.infer<typeof PlanBodySchema>) => void;
 };
 
 /**
@@ -214,7 +264,9 @@ export function createCaseGenerationService(
    */
   async function localizePlan(
     outline: OutlineSegments,
-    language: Language
+    language: Language,
+    /** Earlier context: a segment unchanged since keeps its shown text. */
+    previous?: GenerationContext
   ): Promise<OutlineSegments> {
     const headings = await localizeHeadings(
       graph.runtime,
@@ -223,7 +275,7 @@ export function createCaseGenerationService(
       getRequestContext()
     );
     return sandwich
-      ? translatePlanOut(outline, headings)
+      ? translatePlanOut(outline, headings, previous)
       : outline.map((segment, i) => ({
           fixed: segment.fixed,
           text: headings.has(i)
@@ -234,14 +286,20 @@ export function createCaseGenerationService(
 
   async function translatePlanOut(
     english: OutlineSegments,
-    headings: Map<number, string>
+    headings: Map<number, string>,
+    previous?: GenerationContext
   ): Promise<OutlineSegments> {
+    const kept = (i: number) =>
+      previous?.plan[i]?.text === english[i]!.text
+        ? previous.localized?.[String(i)]
+        : undefined;
     // A localized heading carries its body (frozen General, #221): the
     // dictionary owns the heading line, the translator only the body.
     const bodyOf = (text: string) => text.slice(text.indexOf("\n") + 1).trim();
     const translated = await graph.translateOutline!(
       Object.fromEntries(
         english.flatMap((segment, i) => {
+          if (kept(i) !== undefined) return [];
           if (!headings.has(i)) return [[String(i), segment.text]];
           const body = segment.text.includes("\n") ? bodyOf(segment.text) : "";
           return body ? [[String(i), body]] : [];
@@ -252,11 +310,12 @@ export function createCaseGenerationService(
     return english.map((segment, i) => {
       const heading = headings.get(i);
       const text =
-        heading === undefined
+        kept(i) ??
+        (heading === undefined
           ? (translated[String(i)] ?? segment.text)
           : translated[String(i)]
             ? `${heading}\n\n${translated[String(i)]}`
-            : heading;
+            : heading);
       return { fixed: segment.fixed, text };
     });
   }
@@ -324,6 +383,7 @@ export function createCaseGenerationService(
         if (continuation?.regenerate) {
           return regenerate(context, continuation.regenerate);
         }
+        if (continuation?.accept) return accept(context, continuation.accept);
 
         const plan = continuation?.plan
           ? await workingPlanOf(continuation.plan, context)
@@ -386,6 +446,9 @@ export function createCaseGenerationService(
         ...(req.userInstructions && { userInstructions: req.userInstructions }),
         fields: [],
         plan: planned.outlineSegments,
+        // Plan-mode outline is written in the request language without the sandwich.
+        planLanguage: req.mode === "plan" && !sandwich ? language : "en",
+        recipe: planned.recipe,
         parts: {},
         units: {},
       };
@@ -405,16 +468,18 @@ export function createCaseGenerationService(
 
     /** Plan-mode stop: the plan for review, localized when not English. */
     async function planStop(
-      context: GenerationContext
+      context: GenerationContext,
+      revised?: { previous: GenerationContext; changed: number[] }
     ): Promise<CaseGenerationResult> {
       const shown =
         language === "en"
           ? undefined
-          : await localizePlan(context.plan, language);
+          : await localizePlan(context.plan, language, revised?.previous);
       return {
         jobId,
         status: "planned",
         plan: shown ?? context.plan,
+        ...(revised && { changed: revised.changed }),
         language,
         context: encodeContext({
           ...context,
@@ -434,21 +499,9 @@ export function createCaseGenerationService(
       context: GenerationContext,
       entries: Regenerate[]
     ): Promise<CaseGenerationResult> {
-      // ponytail: refine lands with the refiner; reroll only until then.
-      if (
-        entries.some(
-          (e) =>
-            e.instruction !== undefined ||
-            (e.path.length > 1 && e.path[0] === "outline")
-        )
-      )
-        throw new AppError(
-          "Refining is not implemented yet",
-          "NOT_IMPLEMENTED",
-          501
-        );
-      const outline = entries.filter((e) => e.path[0] === "outline");
-      if (outline.length > 0) {
+      const refines = entries.filter(isRefine);
+      if (refines.length > 0) return refine(context, refines, entries);
+      if (entries.some((e) => e.path[0] === "outline")) {
         if (entries.length > 1)
           throw new InvalidPathError(
             ["outline"],
@@ -462,7 +515,12 @@ export function createCaseGenerationService(
           difficulty: req.difficulty ?? context.difficulty,
           mode: "plan",
         });
-        return planStop({ ...context, plan: planned.outlineSegments });
+        return planStop({
+          ...context,
+          plan: planned.outlineSegments,
+          planLanguage: sandwich ? "en" : language,
+          recipe: planned.recipe,
+        });
       }
       const done = await rerollAll(
         graph,
@@ -477,6 +535,194 @@ export function createCaseGenerationService(
         language,
         context: encodeContext({ ...done.context, localized: undefined }),
       };
+    }
+
+    /**
+     * Refine entries (#272): the refiner picks each one's level. Any at
+     * outline level makes the call one outline change, nothing rendered:
+     * plan review gets the revised plan, a case gets a proposal.
+     */
+    async function refine(
+      context: GenerationContext,
+      refines: Regenerate[],
+      entries: Regenerate[]
+    ): Promise<CaseGenerationResult> {
+      if (refines.length < entries.length)
+        throw new InvalidPathError(
+          refines[0]!.path,
+          "refine entries cannot be mixed with rerolls"
+        );
+      const facts = {
+        plan: context.plan,
+        planLanguage: context.planLanguage,
+        diagnosis: context.diagnosis,
+        difficulty: req.difficulty ?? context.difficulty ?? "medium",
+        recipe: context.recipe,
+      };
+      const refinements = await Promise.all(
+        refines.map((entry) =>
+          graph.refiner.refine(facts, refineRequest(context, entry))
+        )
+      );
+      const outline = refinements.filter((r) => r.level === "outline");
+      if (outline.length === 0) {
+        // ponytail: plan and render levels land with the unit planner.
+        throw new AppError(
+          "Refining below the outline is not implemented yet",
+          "NOT_IMPLEMENTED",
+          501
+        );
+      }
+      const settled = await graph.refiner.settle(
+        facts,
+        new Map(outline.flatMap((r) => [...r.sections]))
+      );
+      const changed = [...settled.sections.keys()].sort((a, b) => a - b);
+      if (context.fields.length === 0) {
+        return planStop(
+          { ...context, plan: settled.plan },
+          { previous: context, changed }
+        );
+      }
+      const proposal = await proposalOf(
+        context,
+        settled.sections,
+        outline.flatMap((r) => r.affected),
+        outline.map((r) => r.why).join(" ")
+      );
+      return {
+        jobId,
+        status: "planned",
+        proposal,
+        language,
+        context: encodeContext({
+          ...context,
+          localized: undefined,
+          proposal: {
+            sections: Object.fromEntries(
+              [...settled.sections].map(([i, body]) => [String(i), body])
+            ),
+          },
+        }),
+      };
+    }
+
+    /**
+     * Apply a pending proposal: new sections for the accepted fields and
+     * the background, old ones for the rest; the accepted fields are
+     * regenerated from the composed plan.
+     */
+    async function accept(
+      context: GenerationContext,
+      fields: GenerationFlag[]
+    ): Promise<CaseGenerationResult> {
+      if (!context.proposal)
+        throw new AppError("No pending proposal to accept", "NO_PROPOSAL", 400);
+      const heading = new Map(
+        sectionHeadings(context.plan).map((h) => [h.index, h.heading])
+      );
+      const taken = new Map(
+        Object.entries(context.proposal.sections)
+          .map(([i, body]) => [Number(i), body] as const)
+          .filter(([i]) => {
+            const field = fieldOfSection(heading.get(i) ?? "");
+            return (
+              !field ||
+              !context.fields.includes(field) ||
+              fields.includes(field)
+            );
+          })
+      );
+      const plan = applySections(context.plan, taken);
+      const c = await graph.renderCase({
+        diagnosis: context.diagnosis,
+        generationFlags: fields,
+        difficulty: req.difficulty ?? context.difficulty,
+        outlineSections: outlineSections(plan),
+      });
+      const pieces: CasePiece[] = fields.flatMap((field) =>
+        c[field] === undefined
+          ? []
+          : [{ path: [field], how: "refined" as const, value: c[field] }]
+      );
+      const next = fields.reduce<GenerationContext>(
+        (ctx, field) =>
+          withSources(ctx, [field], caseUnits({ [field]: c[field] })),
+        {
+          ...context,
+          plan,
+          proposal: undefined,
+          localized: undefined,
+          fields: [...new Set([...context.fields, ...fields])],
+        }
+      );
+      return {
+        jobId,
+        status: "done",
+        pieces,
+        language,
+        context: encodeContext(next),
+      };
+    }
+
+    /** Changed sections mapped to case fields; the rest is background. */
+    async function proposalOf(
+      context: GenerationContext,
+      sections: Map<number, string>,
+      affected: { index: number; why: string }[],
+      fallback: string
+    ): Promise<Proposal> {
+      const heading = new Map(
+        sectionHeadings(context.plan).map((h) => [h.index, h.heading])
+      );
+      const shown =
+        language === "en"
+          ? new Map<number, string>()
+          : await localizeHeadings(
+              graph.runtime,
+              context.plan,
+              language,
+              getRequestContext()
+            );
+      const whys = await outLanguage(
+        Object.fromEntries(
+          [...sections.keys()].map((i) => [
+            String(i),
+            affected.find((a) => a.index === i)?.why ?? fallback,
+          ])
+        )
+      );
+      const changed = new Map<GenerationFlag, string[]>();
+      const background: Proposal["background"] = [];
+      for (const i of sections.keys()) {
+        const field = fieldOfSection(heading.get(i)!);
+        const why = whys[String(i)]!;
+        if (field && context.fields.includes(field)) {
+          changed.set(field, [...(changed.get(field) ?? []), why]);
+        } else {
+          background.push({
+            section: i,
+            heading: (shown.get(i) ?? heading.get(i)!).replace(/^#+\s*/, ""),
+            summary: why,
+          });
+        }
+      }
+      return {
+        changed: [...changed].map(([field, why]) => ({
+          field,
+          why: [...new Set(why)].join(" "),
+        })),
+        background,
+      };
+    }
+
+    /** Refiner text is in the plan's language; the client reads the request's. */
+    async function outLanguage(
+      values: Record<string, string>
+    ): Promise<Record<string, string>> {
+      if (!sandwich || language === "en" || !graph.translateOutline)
+        return values;
+      return { ...values, ...(await graph.translateOutline(values, "out")) };
     }
   }
 

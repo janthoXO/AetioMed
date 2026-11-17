@@ -28,9 +28,7 @@ export async function publishCaseResult(
 export async function publishPlan(plan: PlanPayload): Promise<void> {
   const js = getJetStreamClient();
 
-  console.log(
-    `[NATS] Publishing ${plan.mode}-mode plan for jobId=${plan.jobId}`
-  );
+  console.log(`[NATS] Publishing plan for jobId=${plan.jobId}`);
 
   await js.publish(planSubject(plan.jobId), JSON.stringify(plan), {
     msgID: `plan-${plan.jobId}`,

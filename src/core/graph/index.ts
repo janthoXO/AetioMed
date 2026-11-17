@@ -151,7 +151,7 @@ export function initGraph(opts: {
     }))
   );
 
-  const { graphs, planCase, renderCase, translateOutline, rerolls } =
+  const { graphs, planCase, renderCase, translateOutline, rerolls, refiner } =
     buildCaseGraph(
       runtime,
       bus,
@@ -183,6 +183,7 @@ export function initGraph(opts: {
     renderCase,
     translateOutline,
     rerolls,
+    refiner,
     graphs,
   };
 }

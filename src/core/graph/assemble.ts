@@ -44,6 +44,11 @@ import {
 } from "@/core/graph/shared/domain/RunMode.js";
 import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
 import { makeRerolls } from "./reroll.js";
+import { makeRefiner } from "./refine.js";
+import {
+  RecipeSchema,
+  type Recipe,
+} from "@/core/graph/02-plan/02-outline/recipe.js";
 
 // No `language` field: outer graphs bind ports to language via `AsyncLocalStorage` (`utils/context.ts`), not graph state. Narrower state schema is a runtime-enforced boundary (subgraph state filtered), unlike LangGraph runtime context.
 //
@@ -58,6 +63,7 @@ const PlanStateSchema = CaseGenerationStateSchema.pick({
   /** Plan handed in with request: plan graph only translates request in, skips planning; see {@link planOrSkip}. */
   outlineSegments: OutlineSegmentsSchema.default([]),
   outlineAccepted: z.boolean().default(false),
+  recipe: RecipeSchema.default([]),
 });
 
 // Plan graph hands back everything case graph needs, in working language (English after translate-in).
@@ -65,6 +71,7 @@ const PlanOutputSchema = PlanStateSchema.pick({
   diagnosis: true,
   outlineSegments: true,
   outlineAccepted: true,
+  recipe: true,
 });
 
 const CaseStateSchema = CaseGenerationStateSchema.pick({
@@ -334,6 +341,7 @@ export function buildCaseGraph(
       diagnosis: result.diagnosis,
       outlineSegments: result.outlineSegments,
       outlineAccepted: result.outlineAccepted,
+      recipe: result.recipe,
     };
   }
 
@@ -380,6 +388,7 @@ export function buildCaseGraph(
       modalityRegistries,
       config.TRANSLATION_SANDWICH
     ),
+    refiner: makeRefiner(runtime),
   };
 }
 
@@ -400,6 +409,8 @@ export type PlanResult = {
   outlineSegments: OutlineSegments;
   /** `false` when the judge loop ended on its iteration cap. */
   outlineAccepted: boolean;
+  /** Diagnostic label rolled for the outline (#216); judged against on refine. */
+  recipe: Recipe;
 };
 
 export type RenderCaseInput = {

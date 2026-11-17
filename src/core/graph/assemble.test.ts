@@ -135,7 +135,7 @@ describe("phase-level graphs — output surface", () => {
     expect([...graph.outputChannels].sort()).toEqual(["case"]);
   });
 
-  it("plan_phase (buildPlanningPhaseGraph) writes back the outline and the verdict — never `case`", async () => {
+  it("plan_phase (buildPlanningPhaseGraph) writes back the outline, the verdict and the recipe — never `case`", async () => {
     const deps = buildDeps();
     const graph = buildPlanningPhaseGraph(
       deps.runtime,
@@ -145,6 +145,7 @@ describe("phase-level graphs — output surface", () => {
     expect([...graph.outputChannels].sort()).toEqual([
       "outlineAccepted",
       "outlineSegments",
+      "recipe",
     ]);
   });
 });
@@ -180,6 +181,14 @@ describe("plan graph — outline and judge loop", () => {
     difficulty: "medium" as const,
     basisFragments: [],
   };
+  /** Judge-driven revision: section replacement, General's body rewritten (#272). */
+  const revision = (body: string) =>
+    JSON.stringify({
+      level: "outline",
+      why: "feedback",
+      affected: [{ heading: "## General", why: "feedback" }],
+      sections: [{ heading: "## General", text: body }],
+    });
 
   it("ends with the accepted outline as segments", async () => {
     const runtime = scriptedRuntime(
@@ -206,8 +215,8 @@ describe("plan graph — outline and judge loop", () => {
     const runtime = scriptedRuntime(
       [
         taggedOutlineFixture({ body: "first" }),
-        taggedOutlineFixture({ body: "second" }),
-        taggedOutlineFixture({ body: "third" }),
+        revision("second"),
+        revision("third"),
       ],
       [rejected, rejected, rejected]
     );
@@ -230,8 +239,8 @@ describe("plan graph — outline and judge loop", () => {
     const runtime = scriptedRuntime(
       [
         taggedOutlineFixture({ body: "first" }),
-        taggedOutlineFixture({ body: "second" }),
-        taggedOutlineFixture({ body: "third" }),
+        revision("second"),
+        revision("third"),
       ],
       [
         rejected,
@@ -256,7 +265,7 @@ describe("plan graph — outline and judge loop", () => {
       suggestion: null,
     });
     const runtime = scriptedRuntime(
-      [taggedOutlineFixture(), taggedOutlineFixture()],
+      [taggedOutlineFixture(), revision("revised")],
       [
         rejected,
         JSON.stringify({ accepted: true, reasons: [], suggestion: null }),

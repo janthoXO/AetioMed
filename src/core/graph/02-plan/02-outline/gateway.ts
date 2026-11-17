@@ -19,7 +19,6 @@ import {
   outlineSkeleton,
   parseTaggedOutline,
   tagBareHeadings,
-  renderTaggedOutline,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
 import type { Difficulty } from "@/core/graph/shared/domain/Difficulty.js";
@@ -59,8 +58,6 @@ export async function generateCaseOutline(
     /** Diagnostic label the server rolled (#216); none when unset. */
     recipe?: Recipe | undefined;
     userInstructions?: string | undefined;
-    feedback?: string[] | undefined;
-    previousOutline?: OutlineSegments | undefined;
     /**
      * Unset (English) except plan mode with sandwich off: request
      * language. With sandwich on, `languageOverride` keeps English either way.
@@ -69,7 +66,7 @@ export async function generateCaseOutline(
   } = {},
   context?: RequestContext
 ): Promise<OutlineSegments> {
-  const { userInstructions, feedback, previousOutline } = opts;
+  const { userInstructions } = opts;
   const anamnesisCategories = runtime.catalogs.anamnesis.list();
   // Freeform: one placeholder where the LLM-named category headings go.
   const placeholder = "<intake category name>";
@@ -139,22 +136,7 @@ ${anamnesisCategories.join(", ")}`
         )
       : undefined,
 
-    section("Additional instructions", userInstructions),
-
-    previousOutline
-      ? section(
-          "Previous outline (rejected)",
-          renderTaggedOutline(previousOutline)
-        )
-      : undefined,
-
-    feedback && feedback.length > 0
-      ? section(
-          "Feedback on the previous outline",
-          `The previous outline was rejected for the following reasons. Revise it — keep what was good, and change only what is needed to address the feedback:
-${feedback.map((f, i) => `${i + 1}. ${f}`).join("\n")}`
-        )
-      : undefined
+    section("Additional instructions", userInstructions)
   );
 
   console.debug(

@@ -9,6 +9,12 @@ import type { CaseGenerationRequest } from "@/api/index.js";
 import { encodeText } from "@/core/graph/shared/domain/ContentPart.js";
 import type { OutlineSegments } from "@/core/graph/shared/outline/segments.js";
 import { decodeContext, pathKey } from "./generationContext.js";
+import {
+  applySections,
+  type PlanFacts,
+  type Refinement,
+} from "./graph/refine.js";
+import { outlineSections } from "@/core/graph/shared/outline/segments.js";
 
 const OUTLINE: OutlineSegments = [
   { fixed: false, text: "" },
@@ -57,12 +63,23 @@ function fake() {
     outlineSegments: OUTLINE,
     outlineAccepted: true,
   }));
+  const refinement: { current: Refinement } = {
+    current: { level: "outline", why: "w", affected: [], sections: new Map() },
+  };
+  const refine = vi.fn(async () => refinement.current);
+  const settle = vi.fn(
+    async (facts: PlanFacts, sections: Map<number, string>) => ({
+      plan: applySections(facts.plan, sections),
+      sections,
+    })
+  );
   const graph = {
     config: { TRANSLATION_SANDWICH: true, LANGUAGES: ["en"] },
     runtime: { catalogs: { anamnesis: { list: () => undefined } } },
     planCase,
     renderCase,
     rerolls: { renderParts, replanUnit },
+    refiner: { refine, settle },
     translateOutline: undefined,
   } as unknown as GraphAppContext;
   const service = createCaseGenerationService(
@@ -70,7 +87,15 @@ function fake() {
     new EventBus(),
     createJobEventChannel()
   );
-  return { service, renderCase, renderParts, replanUnit, planCase };
+  return {
+    service,
+    renderCase,
+    renderParts,
+    replanUnit,
+    planCase,
+    refine,
+    refinement,
+  };
 }
 
 async function generated(f: ReturnType<typeof fake>) {
@@ -173,5 +198,117 @@ describe("reroll by path depth", () => {
       })
     );
     expect(result).toMatchObject({ status: "planned", plan: OUTLINE });
+  });
+});
+
+describe("refine at outline level", () => {
+  const childCase = (f: ReturnType<typeof fake>) => {
+    f.refinement.current = {
+      level: "outline",
+      why: "child",
+      affected: [
+        { index: 3, why: "age 58 to 6" },
+        { index: 5, why: "child's cough" },
+      ],
+      sections: new Map([
+        [3, "6, male."],
+        [5, "Cough."],
+      ]),
+    };
+  };
+
+  it("plan review: revised plan with the changed section indices, nothing rendered", async () => {
+    const f = fake();
+    const planned = await f.service.generate({
+      diagnosis: "Influenza",
+      generationFlags: ["patient"],
+      mode: "plan",
+      language: "en",
+    } as CaseGenerationRequest);
+    childCase(f);
+    const result = await f.service.generate(
+      regen(planned.context!, [{ path: ["outline", 3], instruction: "child" }])
+    );
+    expect(f.refine).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        target: 'the section "## Patient"',
+        levels: ["outline"],
+      })
+    );
+    expect(result).toMatchObject({ status: "planned", changed: [3, 5] });
+    expect(result.plan![4]!.text).toBe("6, male.");
+    expect(f.renderCase).not.toHaveBeenCalled();
+  });
+
+  it("case: proposal maps sections to generated fields, the rest to background; accept composes and regenerates", async () => {
+    const f = fake();
+    const context = await generated(f);
+    childCase(f);
+    const proposed = await f.service.generate(
+      regen(context, [
+        {
+          path: ["anamnesis", "Allergien"],
+          instruction: "a child",
+          alts: ["x"],
+        },
+      ])
+    );
+    expect(f.refine).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        target: 'the anamnesis category "Allergies"',
+        levels: ["outline", "plan"],
+      })
+    );
+    expect(proposed).toMatchObject({
+      status: "planned",
+      proposal: {
+        changed: [{ field: "chiefComplaint", why: "child's cough" }],
+        background: [
+          { section: 3, heading: "Patient", summary: "age 58 to 6" },
+        ],
+      },
+    });
+
+    const applied = await f.service.generate({
+      language: "en",
+      context: proposed.context!,
+      accept: ["chiefComplaint"],
+    } as CaseGenerationRequest);
+    const expected = applySections(
+      OUTLINE,
+      new Map([
+        [3, "6, male."],
+        [5, "Cough."],
+      ])
+    );
+    expect(f.renderCase).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        generationFlags: ["chiefComplaint"],
+        outlineSections: outlineSections(expected),
+      })
+    );
+    expect(applied.pieces).toEqual([
+      expect.objectContaining({ path: ["chiefComplaint"], how: "refined" }),
+    ]);
+    expect(decodeContext(applied.context!).proposal).toBeUndefined();
+  });
+
+  it("accept leaves a declined field's section old; background still taken", async () => {
+    const f = fake();
+    const context = await generated(f);
+    childCase(f);
+    const proposed = await f.service.generate(
+      regen(context, [{ path: ["outline"], instruction: "a child" }])
+    );
+    await f.service.generate({
+      language: "en",
+      context: proposed.context!,
+      accept: ["anamnesis"],
+    } as CaseGenerationRequest);
+    const sections = f.renderCase.mock.lastCall![0].outlineSections;
+    expect(sections.patient).toBe("6, male.");
+    expect(sections.chiefComplaint).toBe("Sharp pain.");
   });
 });

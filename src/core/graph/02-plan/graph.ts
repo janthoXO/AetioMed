@@ -57,6 +57,7 @@ const PlanningPhaseStateSchema = PlanGraphStateSchema.extend(
 const PlanningPhaseOutputSchema = PlanningPhaseStateSchema.pick({
   outlineSegments: true,
   outlineAccepted: true,
+  recipe: true,
 });
 
 /** Resolve medical basis, then plan and judge outline. Ends with outline and verdict, no case fields. */

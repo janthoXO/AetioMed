@@ -5,6 +5,7 @@ import { GenerationFlagSchema } from "@/core/graph/shared/domain/GenerationFlags
 import { DifficultySchema } from "@/core/graph/shared/domain/Difficulty.js";
 import { OutlineSegmentsSchema } from "@/core/graph/shared/outline/segments.js";
 import { UserInstructionsSchema } from "@/core/graph/shared/domain/UserInstructions.js";
+import { RecipeSchema } from "@/core/graph/02-plan/02-outline/recipe.js";
 import { AppError } from "./graph/errors/AppError.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
 import type { ContentPart } from "@/core/graph/shared/domain/ContentPart.js";
@@ -28,6 +29,10 @@ export const GenerationContextSchema = z.object({
   fields: z.array(GenerationFlagSchema),
   /** Working-language plan: English, or the request language (plan mode, sandwich off). */
   plan: OutlineSegmentsSchema,
+  /** Language of `plan`'s bodies. */
+  planLanguage: z.string(),
+  /** Diagnostic label of the plan (#216): a refine is judged against it. */
+  recipe: RecipeSchema.default([]),
   /**
    * What a plan-mode reviewer was shown, per segment index. A handed-back
    * segment equal to it is untouched: `plan[i]` used, no translation.
@@ -39,6 +44,8 @@ export const GenerationContextSchema = z.object({
     .default({}),
   /** English plan unit key (category, `refKey`) of every unit, by {@link pathKey}. */
   units: z.record(z.string(), z.string()).default({}),
+  /** Pending outline-level refine: new section bodies by heading index (`accept` applies). */
+  proposal: z.object({ sections: z.record(z.string(), z.string()) }).optional(),
 });
 
 export type GenerationContext = z.infer<typeof GenerationContextSchema>;

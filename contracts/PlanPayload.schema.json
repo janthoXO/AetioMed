@@ -2,57 +2,161 @@
   "title": "PlanPayload",
   "description": "Plan-mode POST /api/cases 200; SSE `event: plan`; NATS cases.plan.<jobId>.",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "type": "object",
-  "properties": {
-    "jobId": {
-      "type": "string"
-    },
-    "status": {
-      "description": "Set on a terminal plan; absent on a normal-mode plan on the way.",
-      "type": "string",
-      "const": "planned"
-    },
-    "mode": {
-      "type": "string",
-      "enum": [
-        "normal",
-        "plan"
-      ]
-    },
-    "language": {
-      "type": "string"
-    },
-    "plan": {
-      "maxItems": 200,
-      "type": "array",
-      "items": {
-        "type": "object",
-        "properties": {
-          "fixed": {
-            "type": "boolean"
-          },
-          "text": {
-            "type": "string",
-            "maxLength": 20000
+  "anyOf": [
+    {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "status": {
+          "description": "Set on a terminal plan; absent on a normal-mode plan on the way.",
+          "type": "string",
+          "const": "planned"
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "normal",
+            "plan"
+          ]
+        },
+        "language": {
+          "type": "string"
+        },
+        "plan": {
+          "maxItems": 200,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "fixed": {
+                "type": "boolean"
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 20000
+              }
+            },
+            "required": [
+              "fixed",
+              "text"
+            ],
+            "additionalProperties": false
           }
         },
-        "required": [
-          "fixed",
-          "text"
-        ],
-        "additionalProperties": false
-      }
+        "changed": {
+          "description": "After a refine in plan review: heading segment indices of the sections that changed.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": -9007199254740991,
+            "maximum": 9007199254740991
+          }
+        },
+        "context": {
+          "description": "Opaque generation context (#272), on a plan-mode stop: send it back, with the possibly edited `plan`, to generate the case. Absent on a normal-mode plan: its case response carries the context.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "jobId",
+        "mode",
+        "language",
+        "plan"
+      ],
+      "additionalProperties": false
     },
-    "context": {
-      "description": "Opaque generation context (#272), on a plan-mode stop: send it back, with the possibly edited `plan`, to generate the case. Absent on a normal-mode plan: its case response carries the context.",
-      "type": "string"
+    {
+      "type": "object",
+      "properties": {
+        "jobId": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "const": "planned"
+        },
+        "language": {
+          "type": "string"
+        },
+        "proposal": {
+          "type": "object",
+          "properties": {
+            "changed": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "field": {
+                    "type": "string",
+                    "enum": [
+                      "patient",
+                      "chiefComplaint",
+                      "anamnesis",
+                      "procedures"
+                    ]
+                  },
+                  "why": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "field",
+                  "why"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Case fields whose outline sections changed: accept to regenerate them."
+            },
+            "background": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "section": {
+                    "type": "integer",
+                    "minimum": -9007199254740991,
+                    "maximum": 9007199254740991,
+                    "description": "Index of the section's heading segment in the plan"
+                  },
+                  "heading": {
+                    "type": "string",
+                    "description": "Section heading, localized, for display"
+                  },
+                  "summary": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "section",
+                  "heading",
+                  "summary"
+                ],
+                "additionalProperties": false
+              },
+              "description": "Changed sections no case field shows: always taken on accept."
+            }
+          },
+          "required": [
+            "changed",
+            "background"
+          ],
+          "additionalProperties": false
+        },
+        "context": {
+          "type": "string",
+          "description": "Opaque generation context; send it back with `accept` to apply the proposal."
+        }
+      },
+      "required": [
+        "jobId",
+        "status",
+        "language",
+        "proposal",
+        "context"
+      ],
+      "additionalProperties": false
     }
-  },
-  "required": [
-    "jobId",
-    "mode",
-    "language",
-    "plan"
-  ],
-  "additionalProperties": false
+  ]
 }

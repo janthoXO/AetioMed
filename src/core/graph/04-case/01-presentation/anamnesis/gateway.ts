@@ -32,12 +32,14 @@ export async function planAnamnesis(
   language: Language | undefined,
   sections: { patient: string; anamnesis: string },
   providers: ModalityProvider<unknown>[],
-  context?: RequestContext
+  context?: RequestContext,
+  /** Plan only these categories (unit reroll, #272); default: the catalogue's. */
+  only?: string[]
 ): Promise<ModalityPlan> {
   // `undefined` = freeform (no category catalogue): planner names unit keys.
   // Do not substitute a default list; clinical content belongs in catalogue.
   const anamnesis = runtime.catalogs.anamnesis;
-  const categories = anamnesis.list();
+  const categories = only ?? anamnesis.list();
   const named = new Set(
     categories?.flatMap((c) => anamnesis.providers(c) ?? [])
   );

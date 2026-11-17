@@ -63,6 +63,44 @@ function sharedFields(config: Config) {
   };
 }
 
+const index = z.number().int().min(0);
+
+/**
+ * What to regenerate (#272), an array built and never parsed (a category
+ * may contain any character). Outline: whole, or one section by the index
+ * of its fixed heading segment in the plan. Field, unit (anamnesis category
+ * as in the case, procedure `order`), part (index in the unit's parts).
+ */
+export const CasePathSchema = z.union([
+  z.tuple([z.literal("outline")]),
+  z.tuple([z.literal("outline"), index]),
+  z.tuple([GenerationFlagSchema]),
+  z.tuple([z.literal("chiefComplaint"), index]),
+  z.tuple([z.literal("anamnesis"), z.string()]),
+  z.tuple([z.literal("anamnesis"), z.string(), index]),
+  z.tuple([z.literal("procedures"), index]),
+  z.tuple([z.literal("procedures"), index, index]),
+]);
+
+export const RegenerateSchema = z.object({
+  path: CasePathSchema,
+  instruction: z
+    .string()
+    .min(1)
+    .max(4_000)
+    .optional()
+    .describe(
+      "Refine: what to change, in the request language. Absent: reroll, same inputs again."
+    ),
+  alts: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "The target unit's current parts' `alt`, from the case. Required at unit and part depth."
+    ),
+});
+export type Regenerate = z.infer<typeof RegenerateSchema>;
+
 /** LLM rules shared by both shapes. */
 function withLlmRules<T extends z.ZodType<{ llmConfig?: unknown }>>(
   schema: T,
@@ -147,6 +185,20 @@ function makeShapes(config: Config, icd: boolean) {
           "Plan-mode review: the plan as returned, possibly edited. Fixed " +
             "segments must be unchanged. Absent: the context's plan is used."
         ),
+      regenerate: z
+        .array(RegenerateSchema)
+        .min(1)
+        .max(20)
+        .optional()
+        .describe(
+          "Regenerate parts of the case or plan; entries run concurrently. " +
+            "Absent (and no `accept`): generate the case from the plan."
+        ),
+      accept: z
+        .array(GenerationFlagSchema)
+        .min(1)
+        .optional()
+        .describe("Fields of the pending proposal to apply."),
     }),
     config
   );

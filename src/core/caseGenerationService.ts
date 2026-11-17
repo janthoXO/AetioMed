@@ -6,7 +6,12 @@ import type { GraphAppContext } from "./graph/appContext.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
 import type { Language } from "@/core/graph/shared/domain/Language.js";
 import { RunModeSchema } from "@/core/graph/shared/domain/RunMode.js";
-import type { CaseGenerationRequest, FirstCallRequest } from "@/api/index.js";
+import type {
+  CaseGenerationRequest,
+  FirstCallRequest,
+  Regenerate,
+} from "@/api/index.js";
+import { InvalidPathError, rerollAll, type CasePiece } from "./regenerate.js";
 import { getRequestContext, runWithContext } from "./graph/utils/context.js";
 import { AppError, OutlineNotAcceptedError } from "./graph/errors/AppError.js";
 import {
@@ -23,6 +28,7 @@ import { resolveDiagnosis } from "./diagnosis/resolve.js";
 import {
   decodeContext,
   encodeContext,
+  caseUnits,
   partSources,
   type GenerationContext,
 } from "./generationContext.js";
@@ -61,6 +67,8 @@ export type CaseGenerationResult = {
   /** `planned`: plan-mode first call stops here. */
   status: "done" | "planned" | "failed";
   case?: Case;
+  /** Regenerated pieces of an existing case, instead of `case` (#272). */
+  pieces?: CasePiece[];
   plan?: OutlineSegments;
   /**
    * Language generation ran in (echoes `req.language`, default `en`).
@@ -295,6 +303,10 @@ export function createCaseGenerationService(
         if ("status" in first) return first;
         const { context } = first;
 
+        if (continuation?.regenerate) {
+          return regenerate(context, continuation.regenerate);
+        }
+
         const plan = continuation?.plan
           ? await workingPlanOf(continuation.plan, context)
           : context.plan;
@@ -315,7 +327,7 @@ export function createCaseGenerationService(
             localized: undefined,
             plan,
             fields: context.generationFlags,
-            ...partSources(generatedCase),
+            ...partSources(caseUnits(generatedCase)),
           }),
         };
       },
@@ -353,37 +365,15 @@ export function createCaseGenerationService(
         diagnosis: planned.diagnosis,
         ...(req.difficulty && { difficulty: req.difficulty }),
         generationFlags: req.generationFlags,
+        ...(req.userInstructions && { userInstructions: req.userInstructions }),
         fields: [],
         plan: planned.outlineSegments,
         parts: {},
         units: {},
       };
 
-      if (req.mode === "plan") {
-        // Shown even if judge never accepted; reviewer judges.
-        if (language === "en") {
-          return {
-            jobId,
-            status: "planned",
-            plan: context.plan,
-            language,
-            context: encodeContext(context),
-          };
-        }
-        const shown = await localizePlan(context.plan, language);
-        return {
-          jobId,
-          status: "planned",
-          plan: shown,
-          language,
-          context: encodeContext({
-            ...context,
-            localized: Object.fromEntries(
-              shown.map((segment, i) => [String(i), segment.text])
-            ),
-          }),
-        };
-      }
+      // Shown even if judge never accepted; reviewer judges.
+      if (req.mode === "plan") return planStop(context);
       // Never render an unaccepted outline.
       if (!planned.outlineAccepted) throw new OutlineNotAcceptedError();
       startOpts.onPlan?.({
@@ -393,6 +383,82 @@ export function createCaseGenerationService(
         plan: context.plan,
       });
       return { context };
+    }
+
+    /** Plan-mode stop: the plan for review, localized when not English. */
+    async function planStop(
+      context: GenerationContext
+    ): Promise<CaseGenerationResult> {
+      const shown =
+        language === "en"
+          ? undefined
+          : await localizePlan(context.plan, language);
+      return {
+        jobId,
+        status: "planned",
+        plan: shown ?? context.plan,
+        language,
+        context: encodeContext({
+          ...context,
+          localized: shown
+            ? Object.fromEntries(shown.map((s, i) => [String(i), s.text]))
+            : undefined,
+        }),
+      };
+    }
+
+    /**
+     * Regenerate entries (#272). Whole-outline reroll: plan again from the
+     * first call's inputs (new recipe roll), back to plan review. Otherwise
+     * every entry rerolls concurrently into a piece.
+     */
+    async function regenerate(
+      context: GenerationContext,
+      entries: Regenerate[]
+    ): Promise<CaseGenerationResult> {
+      // ponytail: refine lands with the refiner; reroll only until then.
+      if (
+        entries.some(
+          (e) =>
+            e.instruction !== undefined ||
+            (e.path.length > 1 && e.path[0] === "outline")
+        )
+      )
+        throw new AppError(
+          "Refining is not implemented yet",
+          "NOT_IMPLEMENTED",
+          501
+        );
+      const outline = entries.filter((e) => e.path[0] === "outline");
+      if (outline.length > 0) {
+        if (entries.length > 1)
+          throw new InvalidPathError(
+            ["outline"],
+            "an outline entry must be the only one"
+          );
+        const planned = await graph.planCase({
+          diagnosis: context.diagnosis,
+          generationFlags: context.generationFlags,
+          userInstructions: context.userInstructions,
+          language,
+          difficulty: req.difficulty ?? context.difficulty,
+          mode: "plan",
+        });
+        return planStop({ ...context, plan: planned.outlineSegments });
+      }
+      const done = await rerollAll(
+        graph,
+        context,
+        entries,
+        req.difficulty ?? context.difficulty
+      );
+      return {
+        jobId,
+        status: "done",
+        pieces: done.pieces,
+        language,
+        context: encodeContext({ ...done.context, localized: undefined }),
+      };
     }
   }
 

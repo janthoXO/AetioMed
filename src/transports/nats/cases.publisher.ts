@@ -1,4 +1,4 @@
-import { encodeCase } from "@/api/contentWire.js";
+import { encodeDone } from "@/api/CaseGenerationResponse.js";
 import type { CaseGenerationResponse } from "@/api/CaseGenerationResponse.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type {
@@ -53,7 +53,7 @@ export async function publishStop(
   }
   if (result.status === "done") {
     await publishCaseResult(result.jobId, {
-      ...encodeCase(result.case!, graph.config.MAX_CONTENT_PART_BYTES),
+      ...encodeDone(result, graph.config.MAX_CONTENT_PART_BYTES),
       language: result.language!,
       context: result.context!,
     });

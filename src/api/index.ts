@@ -4,6 +4,9 @@ export {
   makeCaseGenerationRequestSchema,
   type CaseGenerationRequest,
   type FirstCallRequest,
+  type ContinuationRequest,
+  type Regenerate,
+  CasePathSchema,
 } from "./CaseGenerationRequest.js";
 
 export { CaseGenerationResponseSchema } from "./CaseGenerationResponse.js";

@@ -43,6 +43,7 @@ import {
   type RunMode,
 } from "@/core/graph/shared/domain/RunMode.js";
 import type { ModalityRegistries } from "@/core/graph/shared/modality/registry.js";
+import { makeRerolls } from "./reroll.js";
 
 // No `language` field: outer graphs bind ports to language via `AsyncLocalStorage` (`utils/context.ts`), not graph state. Narrower state schema is a runtime-enforced boundary (subgraph state filtered), unlike LangGraph runtime context.
 //
@@ -374,6 +375,11 @@ export function buildCaseGraph(
     planCase,
     renderCase,
     translateOutline,
+    rerolls: makeRerolls(
+      runtime,
+      modalityRegistries,
+      config.TRANSLATION_SANDWICH
+    ),
   };
 }
 

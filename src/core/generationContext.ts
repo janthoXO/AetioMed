@@ -4,6 +4,7 @@ import { DiagnosisSchema } from "@/core/graph/shared/domain/Diagnosis.js";
 import { GenerationFlagSchema } from "@/core/graph/shared/domain/GenerationFlags.js";
 import { DifficultySchema } from "@/core/graph/shared/domain/Difficulty.js";
 import { OutlineSegmentsSchema } from "@/core/graph/shared/outline/segments.js";
+import { UserInstructionsSchema } from "@/core/graph/shared/domain/UserInstructions.js";
 import { AppError } from "./graph/errors/AppError.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
 import type { ContentPart } from "@/core/graph/shared/domain/ContentPart.js";
@@ -21,6 +22,8 @@ export const GenerationContextSchema = z.object({
   difficulty: DifficultySchema.optional(),
   /** Requested flags of the first call. */
   generationFlags: z.array(GenerationFlagSchema).min(1),
+  /** First call's, raw: a whole-outline reroll plans from the same inputs. */
+  userInstructions: UserInstructionsSchema.optional(),
   /** Fields the case has; empty while only a plan exists. */
   fields: z.array(GenerationFlagSchema),
   /** Working-language plan: English, or the request language (plan mode, sandwich off). */
@@ -46,20 +49,27 @@ export type CasePath = (string | number)[];
 /** Record key of a {@link CasePath}. */
 export const pathKey = (path: CasePath) => JSON.stringify(path);
 
+/** A case's content units with their client paths. */
+export type CaseUnits = [CasePath, ContentPart[]][];
+
 /**
- * Every rendered part's source and every unit's plan key, by path as the
- * client addresses it: `["chiefComplaint", i]`, `["anamnesis", category, i]`
- * (category as in the case), `["procedures", order, i]`.
+ * Content units by path as the client addresses them: `["chiefComplaint"]`,
+ * `["anamnesis", category]` (category as in the case), `["procedures", order]`.
  */
-export function partSources(
-  c: Case
-): Pick<GenerationContext, "parts" | "units"> {
-  const units: [CasePath, ContentPart[]][] = [];
+export function caseUnits(c: Case): CaseUnits {
+  const units: CaseUnits = [];
   if (c.chiefComplaint) units.push([["chiefComplaint"], c.chiefComplaint]);
   for (const a of c.anamnesis ?? [])
     units.push([["anamnesis", a.category], a.answer]);
   for (const { leaf } of c.procedures ? leaves(c.procedures) : [])
     units.push([["procedures", leaf.order], leaf.result]);
+  return units;
+}
+
+/** Every rendered part's source (`[...unitPath, i]`) and every unit's plan key. */
+export function partSources(
+  units: CaseUnits
+): Pick<GenerationContext, "parts" | "units"> {
   const sources: Pick<GenerationContext, "parts" | "units"> = {
     parts: {},
     units: {},
@@ -73,6 +83,30 @@ export function partSources(
     });
   }
   return sources;
+}
+
+/**
+ * `context` with the sources under `path` (a field, a unit) replaced by
+ * those of `units`, rendered anew there.
+ */
+export function withSources(
+  context: GenerationContext,
+  path: CasePath,
+  units: CaseUnits
+): GenerationContext {
+  const prefix = pathKey(path).slice(0, -1);
+  const kept = <T>(record: Record<string, T>) =>
+    Object.fromEntries(
+      Object.entries(record).filter(
+        ([key]) => key !== pathKey(path) && !key.startsWith(prefix + ",")
+      )
+    );
+  const fresh = partSources(units);
+  return {
+    ...context,
+    parts: { ...kept(context.parts), ...fresh.parts },
+    units: { ...kept(context.units), ...fresh.units },
+  };
 }
 
 /** A `context` that does not decode: not ours, truncated, or an old version. */

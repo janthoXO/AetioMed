@@ -48,6 +48,12 @@ export function refKey(ref: ProcedureRef): string {
   return nodeKey([...ref.path, ref.name]);
 }
 
+/** Inverse of {@link refKey}, for a key this process built (a reroll's unit key). */
+export function refOfKey(key: string): ProcedureRef {
+  const segments = z.array(z.string()).min(1).parse(JSON.parse(key));
+  return { path: segments.slice(0, -1), name: segments.at(-1)! };
+}
+
 /** Human/LLM-facing label, e.g. `Cardiology › Resting ECG`. */
 export function refLabel(ref: ProcedureRef): string {
   return [...ref.path, ref.name].join(" › ");

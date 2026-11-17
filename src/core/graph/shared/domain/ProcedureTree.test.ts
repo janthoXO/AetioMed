@@ -12,6 +12,7 @@ import {
   nodePaths,
   procedureTreeSchema,
   refKey,
+  refOfKey,
   refLabel,
   type ProcedureTree,
 } from "./ProcedureTree.js";
@@ -95,6 +96,7 @@ describe("procedure tree helpers", () => {
     const ref = { path: ["Cardiology", "Echo"], name: "Transthoracic" };
     expect(refKey(ref)).toBe(nodeKey(["Cardiology", "Echo", "Transthoracic"]));
     expect(refLabel(ref)).toBe("Cardiology › Echo › Transthoracic");
+    expect(refOfKey(refKey(ref))).toEqual(ref);
   });
 });
 

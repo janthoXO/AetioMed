@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { encodeText } from "@/core/graph/shared/domain/ContentPart.js";
 import { encodeCase } from "@/api/contentWire.js";
-import { partSources, pathKey } from "./generationContext.js";
+import { caseUnits, partSources, pathKey } from "./generationContext.js";
 
 const part = (alt: string, provider?: string) => ({
   type: "text/plain",
@@ -30,7 +30,7 @@ describe("partSources", () => {
   };
 
   it("keys every sourced part by its client path; unsourced parts skipped", () => {
-    const { parts, units } = partSources(c);
+    const { parts, units } = partSources(caseUnits(c));
     expect(units).toEqual({
       [pathKey(["chiefComplaint"])]: "u-b",
       [pathKey(["anamnesis", "Allergien"])]: "u-c",

@@ -1,7 +1,7 @@
 import express from "express";
 import { JobIdSchema, makeCaseGenerationRequestSchema } from "@/api/index.js";
 import { CaseGenerationResponseSchema } from "@/api/index.js";
-import { encodeCase } from "@/api/contentWire.js";
+import { encodeDone } from "@/api/CaseGenerationResponse.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type {
   CaseGenerationResult,
@@ -61,7 +61,7 @@ export default function createCasesRouter(
 
   const successBody = (result: CaseGenerationResult) =>
     CaseGenerationResponseSchema.parse({
-      ...encodeCase(result.case!, graph.config.MAX_CONTENT_PART_BYTES),
+      ...encodeDone(result, graph.config.MAX_CONTENT_PART_BYTES),
       jobId: result.jobId,
       language: result.language,
       context: result.context,

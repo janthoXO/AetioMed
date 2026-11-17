@@ -159,6 +159,20 @@ request (see the NATS Layer section below), and a REST client just resends. Ever
 `llmConfig` (API key included) lives only on that call's `AsyncLocalStorage`-bound context —
 nothing is ever written to disk for it to survive with.
 
+**Regenerate (#272).** A continuation with `regenerate: [{ path, instruction?, alts? }]` changes
+an existing case or plan instead of generating it whole. `path` is an array, built never parsed
+(`CasePathSchema`): `["outline"]`, a field, a unit (`["anamnesis", category as in the case]`,
+`["procedures", order]`) or a part (`[..., i]`; chief complaint is one unit, so
+`["chiefComplaint", i]` is a part). Without `instruction` it is a **reroll** — the target's own
+step again from unchanged inputs (`core/regenerate.ts`): a field runs `renderCase` narrowed to it,
+a unit re-plans only that unit (`graph/reroll.ts`'s `replanUnit`: the field's planner with one
+unit key, then `renderPlan`, `alt` translated out under the sandwich), a part renders again from
+the provider + input `renderPlan` recorded (`ContentPart.source`, kept in the context's
+`parts`/`units`, never on the wire) with the client's current `alt`. Entries run concurrently
+under one job slot and answer `done` with `pieces` (new value per path) instead of the case;
+`["outline"]` re-plans from the first call's inputs (new recipe roll) and answers `planned`.
+With `instruction` it is a **refine**.
+
 **`src/core/jobEvents/`** (#139) is the core-owned per-job event channel:
 `createJobEventChannel()` builds one instance, constructed once in `app.ts` and handed to
 `CaseGenerationService` (which `open()`s it before its first await and `close()`s it with the

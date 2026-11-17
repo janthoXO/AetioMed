@@ -37,6 +37,10 @@
         ],
         "additionalProperties": false
       }
+    },
+    "context": {
+      "description": "Opaque generation context (#272), on a plan-mode stop: send it back, with the possibly edited `plan`, to generate the case. Absent on a normal-mode plan: its case response carries the context.",
+      "type": "string"
     }
   },
   "required": [

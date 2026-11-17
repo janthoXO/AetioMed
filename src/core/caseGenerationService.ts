@@ -5,11 +5,8 @@ import { createLimiter, type Release } from "./concurrency.js";
 import type { GraphAppContext } from "./graph/appContext.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
 import type { Language } from "@/core/graph/shared/domain/Language.js";
-import {
-  RunModeSchema,
-  type RunMode,
-} from "@/core/graph/shared/domain/RunMode.js";
-import type { CaseGenerationRequest } from "@/api/index.js";
+import { RunModeSchema } from "@/core/graph/shared/domain/RunMode.js";
+import type { CaseGenerationRequest, FirstCallRequest } from "@/api/index.js";
 import { getRequestContext, runWithContext } from "./graph/utils/context.js";
 import { AppError, OutlineNotAcceptedError } from "./graph/errors/AppError.js";
 import {
@@ -23,6 +20,11 @@ import {
 import { localizeHeadings } from "./graph/03-outline-translation/headings.js";
 import type { IcdPort } from "./diagnosis/icd.js";
 import { resolveDiagnosis } from "./diagnosis/resolve.js";
+import {
+  decodeContext,
+  encodeContext,
+  type GenerationContext,
+} from "./generationContext.js";
 
 export type CaseGenerationResultError = {
   code: string;
@@ -34,20 +36,28 @@ export type CaseGenerationResultError = {
 
 /**
  * Outline as positional segment array. Plan-mode plan: request language;
- * normal-mode plan: always English. No language tag needed on hand-back.
+ * normal-mode plan (handed over on the way to the case): English.
  */
 export const PlanPayloadSchema = z.object({
   jobId: z.string(),
   mode: RunModeSchema,
   language: z.string(),
   plan: OutlineSegmentsSchema,
+  context: z
+    .string()
+    .optional()
+    .describe(
+      "Opaque generation context (#272), on a plan-mode stop: send it back, " +
+        "with the possibly edited `plan`, to generate the case. Absent on a " +
+        "normal-mode plan: its case response carries the context."
+    ),
 });
 
 export type PlanPayload = z.infer<typeof PlanPayloadSchema>;
 
 export type CaseGenerationResult = {
   jobId: string;
-  /** `planned`: plan-mode request without a plan stops here; nothing kept. */
+  /** `planned`: plan-mode first call stops here. */
   status: "done" | "planned" | "failed";
   case?: Case;
   plan?: OutlineSegments;
@@ -56,6 +66,8 @@ export type CaseGenerationResult = {
    * Set on success and plan stop.
    */
   language?: Language;
+  /** Encoded {@link GenerationContext}; set on `done` and `planned`. */
+  context?: string;
   error?: CaseGenerationResultError;
 };
 
@@ -105,10 +117,6 @@ export interface CaseGenerationService {
 }
 
 export const DEFAULT_MAX_CONCURRENT_GENERATIONS = 4;
-
-/** TTL for translated plan segment → source English. Miss costs one translation. */
-const PLAN_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
-const PLAN_CACHE_MAX_ENTRIES = 10_000;
 
 /** Map a finished job's result onto the channel's terminal marker. */
 function outcomeOf(result: CaseGenerationResult): JobOutcome {
@@ -161,36 +169,16 @@ export function createCaseGenerationService(
     maxConcurrent?: number;
     /** WHO ICD-11 API; absent = no ICD configured (`resolveDiagnosis`). */
     icd?: IcdPort;
-    now?: () => number;
   } = {}
 ): CaseGenerationService {
   const limiter = createLimiter(
     opts.maxConcurrent ?? DEFAULT_MAX_CONCURRENT_GENERATIONS
   );
-  const now = opts.now ?? Date.now;
   const sandwich = graph.config.TRANSLATION_SANDWICH;
   // One per job from submission, so queued jobs are cancellable.
   const controllers = new Map<string, AbortController>();
 
   // ─── the plan's round trip ────────────────────────────────────────────────
-
-  // Translated segment → source English. Written only by plan-out, so an
-  // untouched segment returns as original English; only edited ones cost a call.
-  // ponytail: per-replica and in memory — a restart or another replica just
-  // translates again; share it (e.g. NATS KV) if that ever shows in cost.
-  const planCache = new Map<string, { english: string; expires: number }>();
-  const cacheKey = (language: Language, text: string) =>
-    `${language}\u0000${text}`;
-
-  /** Whether a plan-mode plan is shown in a non-English language. */
-  function localizesPlan(mode: RunMode, language: Language): boolean {
-    return mode === "plan" && language !== "en";
-  }
-
-  /** Whether a plan-mode plan's body crosses the sandwich for this request. */
-  function translatesPlan(mode: RunMode, language: Language): boolean {
-    return sandwich && localizesPlan(mode, language);
-  }
 
   /**
    * Plan for display. Server-owned headings come from the catalogues, never
@@ -208,7 +196,7 @@ export function createCaseGenerationService(
       getRequestContext()
     );
     return sandwich
-      ? translatePlanOut(outline, headings, language)
+      ? translatePlanOut(outline, headings)
       : outline.map((segment, i) => ({
           fixed: segment.fixed,
           text: headings.has(i)
@@ -219,8 +207,7 @@ export function createCaseGenerationService(
 
   async function translatePlanOut(
     english: OutlineSegments,
-    headings: Map<number, string>,
-    language: Language
+    headings: Map<number, string>
   ): Promise<OutlineSegments> {
     // A localized heading carries its body (frozen General, #221): the
     // dictionary owns the heading line, the translator only the body.
@@ -235,7 +222,6 @@ export function createCaseGenerationService(
       ),
       "out"
     );
-    const expires = now() + PLAN_CACHE_TTL_MS;
     return english.map((segment, i) => {
       const heading = headings.get(i);
       const text =
@@ -244,70 +230,49 @@ export function createCaseGenerationService(
           : translated[String(i)]
             ? `${heading}\n\n${translated[String(i)]}`
             : heading;
-      planCache.delete(cacheKey(language, text)); // refresh insertion order
-      planCache.set(cacheKey(language, text), {
-        english: segment.text,
-        expires,
-      });
       return { fixed: segment.fixed, text };
     });
   }
 
-  async function translatePlanIn(
-    plan: OutlineSegments,
-    language: Language
-  ): Promise<OutlineSegments> {
-    const english = plan.map((segment) => {
-      const hit = planCache.get(cacheKey(language, segment.text));
-      return hit && hit.expires > now() ? hit.english : undefined;
-    });
-    const misses = plan.flatMap((segment, i) =>
-      english[i] === undefined && segment.text.trim() !== "" ? [i] : []
-    );
-    if (misses.length > 0) {
-      const translated = await graph.translateOutline!(
-        Object.fromEntries(misses.map((i) => [String(i), plan[i]!.text])),
-        "in"
-      );
-      for (const i of misses) english[i] = translated[String(i)];
-    }
-    return plan.map((segment, i) => ({
-      fixed: segment.fixed,
-      text: english[i] ?? segment.text,
-    }));
-  }
-
-  function evictPlanCache(): void {
-    const at = now();
-    for (const [key, entry] of planCache) {
-      if (entry.expires <= at || planCache.size > PLAN_CACHE_MAX_ENTRIES) {
-        planCache.delete(key);
-      }
-    }
-  }
-
   /**
-   * Handed-in plan in English, or {@link InvalidPlanError}. Shape checked by
-   * request schema; skeleton checked here. Fixed headings are server-owned,
+   * Handed-in plan in the context's working language, or
+   * {@link InvalidPlanError}. A segment equal to what the reviewer was shown
+   * (`context.localized`) is untouched and comes from `context.plan`; only
+   * edited ones are translated in (sandwich). Fixed headings are server-owned,
    * restored by position, not trusted from a translation.
    */
-  async function englishPlanOf(
+  async function workingPlanOf(
     plan: OutlineSegments,
-    mode: RunMode,
-    language: Language
+    context: GenerationContext
   ): Promise<OutlineSegments> {
     const anamnesisCategories = graph.runtime.catalogs.anamnesis.list();
-    const english = localizesPlan(mode, language)
-      ? restoreSkeletonHeadings(
-          translatesPlan(mode, language)
-            ? await translatePlanIn(plan, language)
-            : plan,
-          { anamnesisCategories }
-        )
-      : plan;
-    const skeleton = checkSkeleton(english, { anamnesisCategories });
+    const shown = context.localized;
+    let working = plan;
+    if (shown) {
+      const untouched = (i: number) => plan[i]!.text === shown[String(i)];
+      const misses = plan.flatMap((segment, i) =>
+        !untouched(i) && segment.text.trim() !== "" ? [i] : []
+      );
+      const translated =
+        sandwich && misses.length > 0
+          ? await graph.translateOutline!(
+              Object.fromEntries(misses.map((i) => [String(i), plan[i]!.text])),
+              "in"
+            )
+          : {};
+      working = restoreSkeletonHeadings(
+        plan.map((segment, i) => ({
+          fixed: segment.fixed,
+          text: untouched(i)
+            ? (context.plan[i]?.text ?? segment.text)
+            : (translated[String(i)] ?? segment.text),
+        })),
+        { anamnesisCategories }
+      );
+    }
+    const skeleton = checkSkeleton(working, { anamnesisCategories });
     if (!skeleton.ok) throw new InvalidPlanError(skeleton.message);
-    return english;
+    return working;
   }
 
   // ─── one call ─────────────────────────────────────────────────────────────
@@ -319,73 +284,112 @@ export function createCaseGenerationService(
     signal: AbortSignal
   ): Promise<CaseGenerationResult> {
     const language = req.language;
-    const { generationFlags } = req;
-    const mode = req.mode;
 
     return runWithContext(
       async (): Promise<CaseGenerationResult> => {
-        // Before the graph: English name (+ code with ICD), or a 400/503 (#237).
-        const diagnosis = await resolveDiagnosis(
-          { icd: opts.icd, runtime: graph.runtime },
-          { icd: req.icd, name: req.diagnosis },
-          language
-        );
-        const handedPlan = "plan" in req ? req.plan : undefined;
-        const plan =
-          handedPlan && (await englishPlanOf(handedPlan, mode, language));
+        const continuation = "context" in req && req.context ? req : undefined;
+        const first = continuation
+          ? { context: decodeContext(continuation.context) }
+          : await firstPlan(req as FirstCallRequest, language);
+        if ("status" in first) return first;
+        const { context } = first;
 
-        // With a plan, planning skipped. A plan already absorbed the
-        // instructions (#220): only its first call reads them.
-        const planned = await graph.planCase({
-          diagnosis,
-          generationFlags,
-          userInstructions:
-            !handedPlan && "userInstructions" in req
-              ? req.userInstructions
-              : undefined,
-          language,
-          difficulty: req.difficulty,
-          mode,
-          outline: plan,
-        });
-
-        if (!plan) {
-          if (mode === "plan") {
-            // Shown even if judge never accepted; reviewer judges.
-            return {
-              jobId,
-              status: "planned",
-              plan: localizesPlan(mode, language)
-                ? await localizePlan(planned.outlineSegments, language)
-                : planned.outlineSegments,
-              language,
-            };
-          }
-          // Never render an unaccepted outline.
-          if (!planned.outlineAccepted) throw new OutlineNotAcceptedError();
-          startOpts.onPlan?.({
-            jobId,
-            mode,
-            language,
-            plan: planned.outlineSegments,
-          });
-        }
-
-        const outline = plan ?? planned.outlineSegments;
+        const plan = continuation?.plan
+          ? await workingPlanOf(continuation.plan, context)
+          : context.plan;
         const generatedCase = await graph.renderCase({
-          diagnosis: planned.diagnosis,
-          generationFlags,
-          difficulty: req.difficulty,
+          diagnosis: context.diagnosis,
+          generationFlags: context.generationFlags,
+          difficulty: req.difficulty ?? context.difficulty,
           // Each case node reads only its own sections (#215).
-          outlineSections: outlineSections(outline),
+          outlineSections: outlineSections(plan),
         });
-        return { jobId, status: "done", case: generatedCase, language };
+        return {
+          jobId,
+          status: "done",
+          case: generatedCase,
+          language,
+          context: encodeContext({
+            ...context,
+            localized: undefined,
+            plan,
+            fields: context.generationFlags,
+          }),
+        };
       },
       jobId,
       req.llmConfig,
       language,
       signal
     );
+
+    /**
+     * First call: resolve the diagnosis, plan. Plan mode stops with the
+     * (localized) plan; normal mode hands the plan over and returns the
+     * context to render from.
+     */
+    async function firstPlan(
+      req: FirstCallRequest,
+      language: Language
+    ): Promise<{ context: GenerationContext } | CaseGenerationResult> {
+      // Before the graph: English name (+ code with ICD), or a 400/503 (#237).
+      const diagnosis = await resolveDiagnosis(
+        { icd: opts.icd, runtime: graph.runtime },
+        { icd: req.icd, name: req.diagnosis },
+        language
+      );
+      const planned = await graph.planCase({
+        diagnosis,
+        generationFlags: req.generationFlags,
+        userInstructions: req.userInstructions,
+        language,
+        difficulty: req.difficulty,
+        mode: req.mode,
+      });
+      const context: GenerationContext = {
+        v: 1,
+        diagnosis: planned.diagnosis,
+        ...(req.difficulty && { difficulty: req.difficulty }),
+        generationFlags: req.generationFlags,
+        fields: [],
+        plan: planned.outlineSegments,
+      };
+
+      if (req.mode === "plan") {
+        // Shown even if judge never accepted; reviewer judges.
+        if (language === "en") {
+          return {
+            jobId,
+            status: "planned",
+            plan: context.plan,
+            language,
+            context: encodeContext(context),
+          };
+        }
+        const shown = await localizePlan(context.plan, language);
+        return {
+          jobId,
+          status: "planned",
+          plan: shown,
+          language,
+          context: encodeContext({
+            ...context,
+            localized: Object.fromEntries(
+              shown.map((segment, i) => [String(i), segment.text])
+            ),
+          }),
+        };
+      }
+      // Never render an unaccepted outline.
+      if (!planned.outlineAccepted) throw new OutlineNotAcceptedError();
+      startOpts.onPlan?.({
+        jobId,
+        mode: "normal",
+        language,
+        plan: context.plan,
+      });
+      return { context };
+    }
   }
 
   function errorResult(jobId: string, error: unknown): CaseGenerationResult {
@@ -448,7 +452,6 @@ export function createCaseGenerationService(
 
     const controller = new AbortController();
     controllers.set(jobId, controller);
-    evictPlanCache();
 
     const result = (async (): Promise<CaseGenerationResult> => {
       let release = startOpts.slot;

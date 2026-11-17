@@ -47,6 +47,7 @@ export async function publishStop(
       mode: "plan",
       language: result.language!,
       plan: result.plan!,
+      context: result.context!,
     });
     return;
   }
@@ -54,6 +55,7 @@ export async function publishStop(
     await publishCaseResult(result.jobId, {
       ...encodeCase(result.case!, graph.config.MAX_CONTENT_PART_BYTES),
       language: result.language!,
+      context: result.context!,
     });
     return;
   }

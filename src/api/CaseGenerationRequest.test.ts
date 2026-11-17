@@ -32,34 +32,28 @@ describe("CaseGenerationRequestSchema — first call vs continuation", () => {
     expect(r.mode).toBe("normal");
   });
 
-  it("a plan without mode fails, naming mode, and never parses as a first call", () => {
+  it("a plan without a context never parses as a first call", () => {
     const issues = nestedIssues({ diagnosis: "Influenza", plan });
-    expect(issues.some((i) => i.path[0] === "mode")).toBe(true);
+    expect(issues.some((i) => i.path[0] === "context")).toBe(true);
   });
 
-  it("a plan with userInstructions parses and drops them", () => {
+  it("a continuation drops first-call fields: context carries them (#272)", () => {
     const r = schema.parse({
+      context: "blob",
+      plan,
       diagnosis: "Influenza",
       mode: "plan",
-      plan,
       userInstructions: { general: "x" },
     });
-    expect(r).toMatchObject({ mode: "plan", plan });
-    expect("userInstructions" in r).toBe(false);
-  });
-
-  it("a plan with either explicit mode succeeds", () => {
-    for (const mode of ["plan", "normal"]) {
-      expect(
-        schema.safeParse({ diagnosis: "Influenza", mode, plan }).success
-      ).toBe(true);
+    expect(r).toMatchObject({ context: "blob", plan, language: "en" });
+    for (const key of ["diagnosis", "mode", "userInstructions"]) {
+      expect(key in r).toBe(false);
     }
   });
 
   it("a non-canonical plan fails with the canonical-shape message", () => {
     const issues = nestedIssues({
-      diagnosis: "Influenza",
-      mode: "plan",
+      context: "blob",
       plan: [{ fixed: true, text: "## General" }],
     });
     expect(
@@ -70,15 +64,16 @@ describe("CaseGenerationRequestSchema — first call vs continuation", () => {
     ).toBe(true);
   });
 
-  it("contract: first call forbids plan, continuation requires mode+plan and lists no userInstructions", () => {
+  it("contract: first call forbids context and plan, continuation requires context", () => {
     const json = z.toJSONSchema(schema, { io: "input" }) as {
       anyOf: { properties: Record<string, unknown>; required?: string[] }[];
     };
     expect(json.anyOf).toHaveLength(2);
     const [first, cont] = json.anyOf;
+    expect(first?.properties.context).toMatchObject({ not: {} });
     expect(first?.properties.plan).toMatchObject({ not: {} });
-    expect(cont?.properties).not.toHaveProperty("userInstructions");
-    expect(cont?.required).toEqual(expect.arrayContaining(["mode", "plan"]));
+    expect(cont?.properties).not.toHaveProperty("diagnosis");
+    expect(cont?.required).toEqual(["context"]);
   });
 });
 

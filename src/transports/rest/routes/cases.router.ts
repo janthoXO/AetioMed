@@ -41,6 +41,7 @@ function planBody(result: CaseGenerationResult): PlanPayload {
     mode: "plan",
     language: result.language!,
     plan: result.plan!,
+    context: result.context!,
   };
 }
 
@@ -63,6 +64,7 @@ export default function createCasesRouter(
       ...encodeCase(result.case!, graph.config.MAX_CONTENT_PART_BYTES),
       jobId: result.jobId,
       language: result.language,
+      context: result.context,
     });
 
   /**

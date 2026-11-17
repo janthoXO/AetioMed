@@ -11,36 +11,28 @@ post {
 }
 
 body:json {
-  // Same jobId as "Generate Case (Plan Mode)" — reusing it after a
-  // plan-mode stop is the one case a jobId may be resent for. `plan` is
-  // the outline that call returned, pasted back verbatim or with only its
-  // editable segments changed (fixed segments and the segment count must
-  // stay untouched). This skips planning and generates the case from it.
-  // `mode` is required with `plan`: the mode of the call that handed the
-  // plan out, so the server knows which language the plan is in.
-  // `userInstructions` are dropped here: the plan absorbed them.
+  // Same jobId as "Generate Case (Plan Mode)" is fine (one reuse after a
+  // plan-mode stop), a fresh one too. `context` is the opaque blob that call
+  // returned, sent back unchanged: it carries the diagnosis, flags and the
+  // plan, so none of those are resent (#272). `plan` is optional: the
+  // returned plan, verbatim or with only its editable segments changed
+  // (fixed segments and the segment count must stay untouched); absent, the
+  // context's plan is used. Generates the case from it.
   {
     "jobId": "{{jobId}}",
-    "diagnosis": "diabetes",
     "language": "de",
-    "mode": "plan",
-    "generationFlags": [
-      "patient",
-      "chiefComplaint",
-      "anamnesis",
-      "procedures"
-    ],
+    "context": "{{context}}",
     "plan": [
       { "fixed": false, "text": "" },
-      { "fixed": true, "text": "## General" },
-      { "fixed": false, "text": "…" },
+      { "fixed": true, "text": "## Allgemein\n\n…" },
+      { "fixed": false, "text": "" },
       { "fixed": true, "text": "## Patient" },
       { "fixed": false, "text": "…" },
-      { "fixed": true, "text": "## Chief complaint" },
+      { "fixed": true, "text": "## Hauptbeschwerde" },
       { "fixed": false, "text": "…" },
-      { "fixed": true, "text": "## Anamnesis" },
+      { "fixed": true, "text": "## Anamnese" },
       { "fixed": false, "text": "…" },
-      { "fixed": true, "text": "## Procedures" },
+      { "fixed": true, "text": "## Untersuchungen" },
       { "fixed": false, "text": "" }
     ]
   }

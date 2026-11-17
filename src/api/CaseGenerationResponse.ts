@@ -10,6 +10,11 @@ export const CaseGenerationResponseSchema = z.union([
     // Language generation ran in (echoes the request, default en).
     // Echoed so client can retry with explicit `language`.
     language: z.string(),
+    context: z
+      .string()
+      .describe(
+        "Opaque generation context (#272): store it with this case, send it back unchanged on the next call about this case."
+      ),
   }),
   // NATS `cases.result.<jobId>` failures carry the jobId; REST errors don't.
   ErrorResponseSchema.extend({ jobId: z.string().optional() }),

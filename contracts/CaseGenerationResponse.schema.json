@@ -187,10 +187,15 @@
         },
         "language": {
           "type": "string"
+        },
+        "context": {
+          "type": "string",
+          "description": "Opaque generation context (#272): store it with this case, send it back unchanged on the next call about this case."
         }
       },
       "required": [
-        "language"
+        "language",
+        "context"
       ],
       "additionalProperties": false
     },

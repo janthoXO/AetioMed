@@ -11,36 +11,6 @@
           "pattern": "^[A-Za-z0-9_-]{1,128}$",
           "description": "Client-chosen job id (e.g. a UUID). Reusing the id of a running or recently finished job is rejected."
         },
-        "icd": {
-          "description": "ICD-11 code: a stem code ('CA40.Z') or a post-coordinated cluster ('CA40.Z&XB22'). With ICD configured ('ICD' in /api/features) it alone identifies the diagnosis and wins over 'diagnosis', and a cluster ICD rejects is a 400; without, it rides along unchecked.",
-          "type": "string",
-          "format": "icd",
-          "pattern": "^[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?(&X[0-9A-Z]{3,5}|\\/[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?)*$"
-        },
-        "diagnosis": {
-          "description": "Diagnosis name, in the request language. Required without ICD; with ICD it must match an ICD-11 title or synonym exactly.",
-          "type": "string"
-        },
-        "generationFlags": {
-          "default": [
-            "patient",
-            "chiefComplaint",
-            "anamnesis",
-            "procedures"
-          ],
-          "description": "Generation flags to specify case fields to generate",
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "patient",
-              "chiefComplaint",
-              "anamnesis",
-              "procedures"
-            ]
-          }
-        },
         "language": {
           "default": "en",
           "description": "Language to generate the case in. One of: en, de. Defaults to 'en'.",
@@ -97,6 +67,36 @@
             "provider",
             "model"
           ]
+        },
+        "icd": {
+          "description": "ICD-11 code: a stem code ('CA40.Z') or a post-coordinated cluster ('CA40.Z&XB22'). With ICD configured ('ICD' in /api/features) it alone identifies the diagnosis and wins over 'diagnosis', and a cluster ICD rejects is a 400; without, it rides along unchecked.",
+          "type": "string",
+          "format": "icd",
+          "pattern": "^[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?(&X[0-9A-Z]{3,5}|\\/[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?)*$"
+        },
+        "diagnosis": {
+          "description": "Diagnosis name, in the request language. Required without ICD; with ICD it must match an ICD-11 title or synonym exactly.",
+          "type": "string"
+        },
+        "generationFlags": {
+          "default": [
+            "patient",
+            "chiefComplaint",
+            "anamnesis",
+            "procedures"
+          ],
+          "description": "Generation flags to specify case fields to generate",
+          "minItems": 1,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": [
+              "patient",
+              "chiefComplaint",
+              "anamnesis",
+              "procedures"
+            ]
+          }
         },
         "userInstructions": {
           "description": "Additional context for case generation. Absorbed into the plan.",
@@ -124,15 +124,19 @@
         },
         "mode": {
           "default": "normal",
-          "description": "'normal' generates the case end to end and hands over its (English) plan on the way. 'plan' stops once the plan exists and returns it in the request language; send the same request back with `plan` to generate the case from it. Defaults to 'normal'.",
+          "description": "'normal' generates the case end to end. 'plan' stops once the plan exists and returns it in the request language; send its `context` back (with the possibly edited `plan`) to generate the case from it. Defaults to 'normal'.",
           "type": "string",
           "enum": [
             "normal",
             "plan"
           ]
         },
+        "context": {
+          "description": "Not allowed on a first call: a body with `context` is a continuation.",
+          "not": {}
+        },
         "plan": {
-          "description": "Not allowed on a first call: a body with `plan` is a continuation.",
+          "description": "Only on a continuation, next to its `context`.",
           "not": {}
         }
       }
@@ -145,36 +149,6 @@
           "pattern": "^[A-Za-z0-9_-]{1,128}$",
           "description": "Client-chosen job id (e.g. a UUID). Reusing the id of a running or recently finished job is rejected."
         },
-        "icd": {
-          "description": "ICD-11 code: a stem code ('CA40.Z') or a post-coordinated cluster ('CA40.Z&XB22'). With ICD configured ('ICD' in /api/features) it alone identifies the diagnosis and wins over 'diagnosis', and a cluster ICD rejects is a 400; without, it rides along unchecked.",
-          "type": "string",
-          "format": "icd",
-          "pattern": "^[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?(&X[0-9A-Z]{3,5}|\\/[0-9A-Z][A-Z][0-9][0-9A-Z](\\.[0-9A-Z]{1,2})?)*$"
-        },
-        "diagnosis": {
-          "description": "Diagnosis name, in the request language. Required without ICD; with ICD it must match an ICD-11 title or synonym exactly.",
-          "type": "string"
-        },
-        "generationFlags": {
-          "default": [
-            "patient",
-            "chiefComplaint",
-            "anamnesis",
-            "procedures"
-          ],
-          "description": "Generation flags to specify case fields to generate",
-          "minItems": 1,
-          "type": "array",
-          "items": {
-            "type": "string",
-            "enum": [
-              "patient",
-              "chiefComplaint",
-              "anamnesis",
-              "procedures"
-            ]
-          }
-        },
         "language": {
           "default": "en",
           "description": "Language to generate the case in. One of: en, de. Defaults to 'en'.",
@@ -185,7 +159,7 @@
           ]
         },
         "difficulty": {
-          "description": "How unclear the diagnosis should be to a student working through the case. 'easy' features a clean, classic subset of symptoms with definitive procedure results; 'medium' adds distractor symptoms from other diseases and minor/borderline changes in procedure results; 'hard' presents an atypical case with omitted hallmark symptoms and ambiguous procedure results. Defaults to 'medium'.",
+          "description": "Overrides the difficulty of the first call, kept in `context`.",
           "type": "string",
           "enum": [
             "easy",
@@ -232,15 +206,13 @@
             "model"
           ]
         },
-        "mode": {
+        "context": {
           "type": "string",
-          "enum": [
-            "normal",
-            "plan"
-          ],
-          "description": "Mode of the call that handed the plan out: 'plan' = plan is in the request language, 'normal' = English."
+          "minLength": 1,
+          "description": "Opaque generation context from the previous response, sent back unchanged. Never read or built by a client."
         },
         "plan": {
+          "description": "Plan-mode review: the plan as returned, possibly edited. Fixed segments must be unchanged. Absent: the context's plan is used.",
           "maxItems": 200,
           "type": "array",
           "items": {
@@ -258,13 +230,11 @@
               "fixed",
               "text"
             ]
-          },
-          "description": "A plan from an earlier call with this request, possibly edited: planning is skipped and the case is generated from it, exactly as it was handed out. Fixed segments must be unchanged. `userInstructions` are ignored: the plan already absorbed them."
+          }
         }
       },
       "required": [
-        "mode",
-        "plan"
+        "context"
       ]
     }
   ]

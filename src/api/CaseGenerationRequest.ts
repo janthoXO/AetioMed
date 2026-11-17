@@ -63,86 +63,99 @@ function sharedFields(config: Config) {
   };
 }
 
-/** Cross-field rules shared by both shapes. */
-function withRules<
-  T extends z.ZodType<{
-    icd?: unknown;
-    diagnosis?: unknown;
-    llmConfig?: unknown;
-  }>,
->(schema: T, config: Config, icd: boolean) {
-  return (
-    schema
+/** LLM rules shared by both shapes. */
+function withLlmRules<T extends z.ZodType<{ llmConfig?: unknown }>>(
+  schema: T,
+  config: Config
+) {
+  return schema
+    .refine((data) => !(data.llmConfig && config.llm), {
+      message: "LLM config is not allowed when a global LLM is configured",
+      path: ["llmConfig"],
+    })
+    .refine((data) => data.llmConfig || config.llm, {
+      message: "LLM config is required when no global LLM is configured",
+      path: ["llmConfig"],
+    });
+}
+
+function makeShapes(config: Config, icd: boolean) {
+  const { jobId, language, difficulty, llmConfig, ...firstOnly } =
+    sharedFields(config);
+  const firstCall = withLlmRules(
+    z
+      .object({
+        jobId,
+        language,
+        difficulty,
+        llmConfig,
+        ...firstOnly,
+        userInstructions: UserInstructionsSchema.optional().describe(
+          "Additional context for case generation. Absorbed into the plan."
+        ),
+        mode: RunModeSchema.default("normal").describe(
+          "'normal' generates the case end to end. 'plan' stops once the " +
+            "plan exists and returns it in the request language; send its " +
+            "`context` back (with the possibly edited `plan`) to generate " +
+            "the case from it. Defaults to 'normal'."
+        ),
+        // `never`, not absent: lenient objects drop unknown keys, so without
+        // it a continuation would parse here, lose its context and re-plan.
+        context: z
+          .never()
+          .optional()
+          .describe(
+            "Not allowed on a first call: a body with `context` is a continuation."
+          ),
+        plan: z
+          .never()
+          .optional()
+          .describe("Only on a continuation, next to its `context`."),
+      })
       // ICD configured: a code alone resolves. Without ICD only a name does (#238).
       .refine((data) => (icd && data.icd) || data.diagnosis, {
         message: icd
           ? "Either 'icd' or 'diagnosis' must be provided"
           : "'diagnosis' is required: no ICD API is configured to resolve 'icd'",
         path: icd ? ["icd"] : ["diagnosis"],
-      })
-      .refine((data) => !(data.llmConfig && config.llm), {
-        message: "LLM config is not allowed when a global LLM is configured",
-        path: ["llmConfig"],
-      })
-      .refine((data) => data.llmConfig || config.llm, {
-        message: "LLM config is required when no global LLM is configured",
-        path: ["llmConfig"],
-      })
+      }),
+    config
   );
-}
-
-function makeShapes(config: Config, icd: boolean) {
-  const fields = sharedFields(config);
-  const firstCall = withRules(
+  // Lenient: first-call fields sent with a context are dropped, never read:
+  // the context carries the diagnosis, flags and the plan (#272).
+  const continuation = withLlmRules(
     z.object({
-      ...fields,
-      userInstructions: UserInstructionsSchema.optional().describe(
-        "Additional context for case generation. Absorbed into the plan."
+      jobId,
+      language,
+      difficulty: difficulty.describe(
+        "Overrides the difficulty of the first call, kept in `context`."
       ),
-      mode: RunModeSchema.default("normal").describe(
-        "'normal' generates the case end to end and hands over its (English) " +
-          "plan on the way. 'plan' stops once the plan exists and returns it " +
-          "in the request language; send the same request back with `plan` " +
-          "to generate the case from it. Defaults to 'normal'."
-      ),
-      // `never`, not absent: lenient objects drop unknown keys, so without it
-      // a plan missing `mode` would parse here, lose its plan and re-plan.
-      plan: z
-        .never()
-        .optional()
+      llmConfig,
+      context: z
+        .string()
+        .min(1)
         .describe(
-          "Not allowed on a first call: a body with `plan` is a continuation."
+          "Opaque generation context from the previous response, sent back " +
+            "unchanged. Never read or built by a client."
         ),
-    }),
-    config,
-    icd
-  );
-  // Lenient: `userInstructions` sent with a plan are dropped, never read (#220).
-  const continuation = withRules(
-    z.object({
-      ...fields,
-      mode: RunModeSchema.describe(
-        "Mode of the call that handed the plan out: 'plan' = plan is in the request language, 'normal' = English."
-      ),
       plan: OutlineSegmentsSchema.refine(isCanonicalShape, {
         message:
           "A plan must alternate editable and fixed segments, starting and ending with an editable one",
-      }).describe(
-        "A plan from an earlier call with this request, possibly " +
-          "edited: planning is skipped and the case is generated from it, " +
-          "exactly as it was handed out. Fixed segments must be unchanged. " +
-          "`userInstructions` are ignored: the plan already absorbed them."
-      ),
+      })
+        .optional()
+        .describe(
+          "Plan-mode review: the plan as returned, possibly edited. Fixed " +
+            "segments must be unchanged. Absent: the context's plan is used."
+        ),
     }),
-    config,
-    icd
+    config
   );
   return { firstCall, continuation };
 }
 
 /**
- * First call or continuation. Exclusive by `plan` (`never` on the first call,
- * required on the continuation), so a plain union picks the right one. A body
+ * First call or continuation. Exclusive by `context` (`never` on the first
+ * call, required on the continuation), so a plain union picks the right one. A body
  * matching neither fails with one `invalid_union` issue, both branches' reasons
  * nested in it. Parser for both transports and the exported contract.
  */

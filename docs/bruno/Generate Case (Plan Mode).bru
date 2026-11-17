@@ -13,8 +13,8 @@ post {
 body:json {
   // Stops once the outline exists and hands it back in the request
   // language, instead of generating the case. The generator keeps nothing
-  // of this call — send the outline back with "Generate Case (Continue
-  // Plan)" to generate from it.
+  // of this call: the response's `context` (saved to the `context` var)
+  // carries it, send it back with "Generate Case (Continue Plan)".
   {
     "jobId": "{{jobId}}",
     "diagnosis": "diabetes",
@@ -27,6 +27,10 @@ body:json {
       "procedures"
     ]
   }
+}
+
+vars:post-response {
+  context: res.body.context
 }
 
 settings {

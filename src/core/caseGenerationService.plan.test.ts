@@ -19,6 +19,7 @@ import {
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
 import type { CaseGenerationRequest } from "@/api/index.js";
+import { decodeContext } from "@/core/generationContext.js";
 import { InMemoryOutlineHeadingCatalog } from "@/adapters/catalog/outlineHeadings/index.js";
 
 // Valid English skeleton (five fixed sections); `checkSkeleton` accepts.
@@ -255,6 +256,70 @@ describe("normal mode", () => {
   });
 });
 
+/** Continuation of a `planned` result: its context, optionally a plan. */
+function continuation(
+  planned: { context?: string | undefined },
+  overrides: Partial<CaseGenerationRequest> = {}
+): CaseGenerationRequest {
+  return {
+    language: "de",
+    context: planned.context!,
+    ...overrides,
+  } as CaseGenerationRequest;
+}
+
+describe("generation context (#272)", () => {
+  it("round-trips through encode/decode; garbage is INVALID_CONTEXT, 400", async () => {
+    const fake = fakeGraph();
+    const { service } = build(fake);
+    const planned = await service.generate(request({ jobId: "ctx-1" }));
+    const context = decodeContext(planned.context!);
+    expect(context).toMatchObject({
+      v: 1,
+      diagnosis: { name: "Influenza" },
+      generationFlags: ["patient"],
+      fields: [],
+      plan: OUTLINE,
+    });
+    expect(context.localized!["2"]).toBe(planned.plan![2]!.text);
+
+    const bad = await service.generate(
+      continuation({ context: "bm90IGd6aXA=" }, { jobId: "ctx-2" })
+    );
+    expect(bad.error).toMatchObject({
+      code: "INVALID_CONTEXT",
+      statusCode: 400,
+    });
+  });
+
+  it("context alone generates from the context's plan, no planning, diagnosis not resolved again", async () => {
+    const fake = fakeGraph();
+    const { service } = build(fake);
+    const planned = await service.generate(request({ jobId: "ctx-3" }));
+
+    const result = await service.generate(continuation(planned));
+
+    expect(result.status).toBe("done");
+    expect(fake.planCalls).toHaveLength(1);
+    expect(fake.renderCalls[0]!.outlineSections).toEqual(
+      outlineSections(OUTLINE)
+    );
+    const done = decodeContext(result.context!);
+    expect(done.fields).toEqual(["patient"]);
+    expect(done.localized).toBeUndefined();
+  });
+
+  it("normal mode: done carries a context with the English plan and the generated fields", async () => {
+    const fake = fakeGraph();
+    const { service } = build(fake);
+    const result = await service.generate(request({ mode: "normal" }));
+    expect(decodeContext(result.context!)).toMatchObject({
+      plan: OUTLINE,
+      fields: ["patient"],
+    });
+  });
+});
+
 describe("continuation, plan mode + sandwich on", () => {
   it("an unedited plan comes back as the original English with no translate-in call", async () => {
     const fake = fakeGraph();
@@ -263,20 +328,19 @@ describe("continuation, plan mode + sandwich on", () => {
     expect(planned.status).toBe("planned");
 
     const result = await service.generate(
-      request({ jobId: "cont-1", plan: planned.plan })
+      continuation(planned, { jobId: "cont-1", plan: planned.plan })
     );
 
     expect(result.status).toBe("done");
     expect(
       fake.translateCalls.filter((c) => c.direction === "in")
     ).toHaveLength(0);
-    expect(fake.planCalls[1]!.outline).toEqual(OUTLINE);
     expect(fake.renderCalls[0]!.outlineSections).toEqual(
       outlineSections(OUTLINE)
     );
   });
 
-  it("only the edited editable segment is translated in; a fixed heading is restored to English even if it also misses the cache and the translator mangles it", async () => {
+  it("only the edited segments are translated in; a fixed heading is restored to English even if the translator mangles it", async () => {
     const fake = fakeGraph();
     // Translator mangles fixed headings; restoreSkeletonHeadings must keep
     // that from reaching checkSkeleton.
@@ -301,58 +365,27 @@ describe("continuation, plan mode + sandwich on", () => {
 
     const edited = structuredClone(planned.plan!);
     edited[2]!.text = "DE:edited body";
-    // Fixed heading not matching cached one: cache miss, forces translate-in.
+    // Fixed heading differing from the shown one forces translate-in.
     edited[1]!.text = "DE:## General (retyped)";
 
     const result = await service.generate(
-      request({ jobId: "cont-2", plan: edited })
+      continuation(planned, { plan: edited })
     );
 
     expect(result.status).toBe("done");
     const inCalls = fake.translateCalls.filter((c) => c.direction === "in");
-    // Only the two cache-missing segments translated; rest from cache.
+    // Only the two edited segments translated; rest from the context.
     expect(inCalls).toHaveLength(1);
     expect(inCalls[0]!.values).toEqual({
       "1": "DE:## General (retyped)",
       "2": "DE:edited body",
     });
-    // Mangled heading discarded; English skeleton restored by position.
-    expect(fake.planCalls[1]!.outline![1]!.text).toBe("## General");
     const expectedOutline = structuredClone(OUTLINE);
     expectedOutline[2]!.text = "EN:edited body";
-    expect(fake.planCalls[1]!.outline).toEqual(expectedOutline);
-  });
-
-  it("planCase receives outline = the English plan; renderCase receives its sections", async () => {
-    const fake = fakeGraph();
-    const { service } = build(fake);
-    const planned = await service.generate(request({ jobId: "cont-3" }));
-
-    const result = await service.generate(
-      request({ jobId: "cont-3", plan: planned.plan })
-    );
-
-    expect(result.status).toBe("done");
-    expect(fake.planCalls[1]!.outline).toEqual(OUTLINE);
     expect(fake.renderCalls[0]!.outlineSections).toEqual(
-      outlineSections(OUTLINE)
+      outlineSections(expectedOutline)
     );
-  });
-
-  it("ignores userInstructions sent with a plan: planCase gets none (#220)", async () => {
-    const fake = fakeGraph();
-    const { service } = build(fake);
-    const planned = await service.generate(request({ jobId: "cont-4" }));
-
-    await service.generate(
-      request({
-        jobId: "cont-4",
-        plan: planned.plan,
-        userInstructions: { general: "add a lab finding" },
-      })
-    );
-
-    expect(fake.planCalls[1]!.userInstructions).toBeUndefined();
+    expect(decodeContext(result.context!).plan[1]!.text).toBe("## General");
   });
 
   it("a broken skeleton fails with INVALID_PLAN, 400", async () => {
@@ -365,7 +398,7 @@ describe("continuation, plan mode + sandwich on", () => {
     const broken = planned.plan!.slice(0, 5);
 
     const result = await service.generate(
-      request({ jobId: "cont-4", plan: broken })
+      continuation(planned, { plan: broken })
     );
 
     expect(result.status).toBe("failed");
@@ -377,7 +410,7 @@ describe("continuation, plan mode + sandwich on", () => {
   });
 });
 
-describe("continuation, sandwich off (any mode)", () => {
+describe("continuation, sandwich off", () => {
   it("plan mode: the plan goes in untranslated, headings restored to English", async () => {
     const fake = fakeGraph({ sandwich: false });
     const translateSpy = vi.fn();
@@ -390,37 +423,15 @@ describe("continuation, sandwich off (any mode)", () => {
     edited[2]!.text = "Brustschmerz seit zwei Stunden.";
 
     const result = await service.generate(
-      request({ jobId: planned.jobId, plan: edited })
+      continuation(planned, { plan: edited })
     );
 
     expect(result.status).toBe("done");
     expect(translateSpy).not.toHaveBeenCalled();
     const expected = structuredClone(OUTLINE);
     expected[2]!.text = "Brustschmerz seit zwei Stunden.";
-    expect(fake.planCalls[1]!.outline).toEqual(expected);
-  });
-
-  it("normal mode: a plan handed back goes straight in too", async () => {
-    const fake = fakeGraph();
-    const { service } = build(fake);
-    const onPlan = vi.fn();
-    await service.generate(request({ mode: "normal", jobId: "n1" }), {
-      onPlan,
-    });
-    const englishPlan = onPlan.mock.calls[0]![0].plan as OutlineSegments;
-
-    const edited = structuredClone(englishPlan);
-    edited[2]!.text = "Edited body.";
-    // Fresh jobId: normal mode never frees "n1"; models a client that already
-    // has the English plan, not a continuation.
-    const result = await service.generate(
-      request({ mode: "normal", jobId: "n2", plan: edited })
-    );
-
-    expect(result.status).toBe("done");
-    expect(fake.planCalls[1]!.outline).toEqual(edited);
-    expect(fake.renderCalls[1]!.outlineSections).toEqual(
-      outlineSections(edited)
+    expect(fake.renderCalls[0]!.outlineSections).toEqual(
+      outlineSections(expected)
     );
   });
 });
@@ -433,7 +444,7 @@ describe("jobId reuse across a plan stop", () => {
     expect(planned.status).toBe("planned");
 
     const result = await service.generate(
-      request({ jobId: "reuse-1", plan: planned.plan })
+      continuation(planned, { jobId: "reuse-1" })
     );
 
     expect(result.status).toBe("done");

@@ -137,12 +137,18 @@ reasoning); the outline prompt and judge keep the field sections to facts only. 
 _is_ generated wins over its section (`altOf`).
 
 **The generator is stateless between calls (#159).** A call carries everything it needs — the
-request, and optionally a `plan` — and nothing survives it: no job record, no checkpoint, no
-stored API key. `start(req, opts?)` runs the plan graph and, unless the request already carries
-a `plan`, stops there in plan mode (`status: "planned"`, the outline handed back in the request
-language) or continues straight into the case graph in normal mode (`status: "done"`); a request
-that does carry a `plan` skips planning entirely and generates the case from it — the same
-jobId as the plan's own call is fine, since the channel allows exactly this one reuse (see
+request, and on a continuation the **generation context** (#272) — and nothing survives it: no
+job record, no checkpoint, no stored API key. The context (`core/generationContext.ts`) is every
+generator internal a later call needs (resolved diagnosis, difficulty, requested flags, generated
+`fields`, the working-language plan, and in plan mode the `localized` plan the reviewer was
+shown), handed out as an opaque string on every `done`/`planned` result — versioned JSON → gzip →
+base64, decoded by a Zod schema (`decodeContext`, never cast; garbage is `INVALID_CONTEXT`, 400).
+Clients store it with the case and send it back unread. A first call (no `context`) resolves the
+diagnosis and runs the plan graph, then stops in plan mode (`status: "planned"`, the outline
+handed back in the request language) or continues straight into the case graph in normal mode
+(`status: "done"`); a continuation skips `resolveDiagnosis` and planning and generates the case
+from the context's plan (or the reviewer's `plan`, if sent) — the same jobId as the plan's own
+call is fine, since the channel allows exactly this one reuse (see
 `core/jobEvents/channel.ts`'s `open()` below). `opts.onPlan` is called with a normal-mode job's
 plan (`PlanPayload`) as soon as it exists, while the case is still being generated, so a
 transport can hand it over on the way without waiting for the result; a plan-mode job's plan is
@@ -369,7 +375,7 @@ one into the other in the same call. With `TRANSLATION_SANDWICH` on:
 `userInstructions` value to English — the diagnosis arrives English already (#237), and a
 one-node phase subgraph would only collapse in `GET /api/graph`'s xray. User instructions are read only up to the
 outline (#220): the outline absorbs them, no case-graph node receives them, and a request
-carrying a `plan` has its `userInstructions` dropped by the request schema.
+carrying a `context` has its `userInstructions` dropped by the request schema.
 `05-translate-out/` is three
 nodes, not a chain (issue 12): `translate_defined` and `translate_rest` run in parallel from
 `START`, each writing only its own state channel (`definedTranslations`/`restTranslations`,
@@ -447,17 +453,13 @@ regenerate read, and what each `outlineSections` slice is built from — always 
 handed-back plan can never re-create outline structure that only the server is allowed to own.
 
 **Only in plan mode, and only with the sandwich on, does a plan's body cross the language
-boundary at all** (`translatesPlan` in `caseGenerationService.ts`; its headings are localized in
-any non-English plan mode, `localizesPlan` — see below): a plan-mode call without a plan
-translates its fresh English outline out to the request language before returning it
-(`translatePlanOut`); a plan-mode call carrying a plan translates it back to English
-(`translatePlanIn`) before validating and generating from it. Normal mode never translates a
-plan — it is always English, in and out. **A per-replica cache keyed on `(language, translated
-text)`** (`planCache`, TTL `PLAN_CACHE_TTL_MS` = 24h) is what lets an untouched segment come back
-as its original English rather than being re-translated: `translatePlanOut` records
-`translated → english` for every segment it produces, and `translatePlanIn` only calls the
-translator for the segments that miss. This is process-local, in memory — a restart or another
-replica just translates again (ponytail: share it, e.g. NATS KV, if that ever shows in cost).
+boundary at all** (its headings are localized in any non-English plan mode — see below): a
+plan-mode first call translates its fresh English outline out to the request language before
+returning it (`translatePlanOut`), and records what the reviewer was shown in the context's
+`localized` map (#272). A continuation carrying the reviewer's plan (`workingPlanOf`) takes every
+segment equal to `localized[i]` as untouched — `context.plan[i]`, no translation — and translates
+in only the edited ones. Normal mode never translates a plan. This replaced a per-replica
+in-memory cache (`planCache`), which a restart or another replica lost.
 
 **Headings are dictionary-translated, never free-translated.** Generation always reproduces the
 English skeleton; a non-English plan-mode plan gets its server-owned headings swapped in
@@ -877,9 +879,10 @@ stay silent for minutes, long enough for a proxy to treat the connection as idle
 telemetry are two concerns that happen to coincide, not one mechanism. `jobId` is a **body
 field**, validated against `src/api/JobId.ts`'s `JobIdSchema` since it is also a NATS subject
 token (`cases.result.<jobId>`) even when the request arrives over REST — the `?jobId=` query
-param is gone. **A body with a `plan` generates the case from it**, skipping planning entirely; such a
-body must carry `mode` (a 400 otherwise) and has any `userInstructions` dropped; the request
-schema is one `z.union`, made exclusive by `plan` being `never` on the first call; the same jobId as the plan's own call is fine (#159) — the per-job channel allows exactly this
+param is gone. **A body with a `context` is a continuation** (#272): it carries the plan, the
+diagnosis and the flags, so `diagnosis`/`icd`/`mode`/`generationFlags`/`userInstructions` sent with
+it are dropped; an optional `plan` is the reviewer's edited plan. The request schema is one
+`z.union`, made exclusive by `context` (and `plan`) being `never` on the first call; the same jobId as the plan's own call is fine (#159) — the per-job channel allows exactly this
 one reuse after a `planned` outcome (see `core/jobEvents/channel.ts`'s `open()` above). A
 duplicate jobId otherwise (still running, or finished within the channel's tombstone window) is
 a 409 `JOB_ALREADY_ACTIVE`/`JOB_ALREADY_COMPLETED` on either Accept path, answered before any
@@ -955,7 +958,7 @@ still redelivered quickly, but a merely slow one isn't punished for it.
 calls, so an unacked request _is_ the recovery path: a replica that dies mid-call stops
 heartbeating (`msg.working()`), the short ack wait (`REQUEST_ACK_WAIT_MS`) runs out, and
 JetStream hands the request to another replica — which reruns it from the start, or, for a
-plan-mode continuation carrying its `plan`, reruns only the second half. `consumeCaseGenerateMessage`
+plan-mode continuation carrying its `context`, reruns only the second half. `consumeCaseGenerateMessage`
 (`cases.handler.ts`) calls `service.generate()`, publishes its outcome with `publishStop`, and
 only then calls `msg.ack()` — there is no earlier ack point, since there is no checkpoint to be
 durable at. The consumer's `max_deliver` is `REQUEST_MAX_ATTEMPTS + 1` (`streams.ts`): every
@@ -1083,7 +1086,7 @@ can run yet is never even dequeued into memory, while REST's `POST /api/cases` j
 when the job ends, including when a slot handed in turns out to address a duplicate `jobId` (a 409) that never runs.
 
 `CaseGenerationService` calls `limiter.acquire(signal)` only — there is no priority distinction
-between a fresh call and a plan-mode continuation carrying its `plan`; both queue FIFO like any
+between a fresh call and a plan-mode continuation carrying its `context`; both queue FIFO like any
 other request (#159 removed the priority lanes an earlier, checkpointed design needed to let a
 resumed job jump the queue — there is nothing left to resume).
 

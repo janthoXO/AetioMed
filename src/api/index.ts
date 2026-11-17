@@ -3,6 +3,7 @@
 export {
   makeCaseGenerationRequestSchema,
   type CaseGenerationRequest,
+  type FirstCallRequest,
 } from "./CaseGenerationRequest.js";
 
 export { CaseGenerationResponseSchema } from "./CaseGenerationResponse.js";

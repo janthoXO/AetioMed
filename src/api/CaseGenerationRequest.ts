@@ -64,12 +64,14 @@ function sharedFields(config: Config) {
 }
 
 const index = z.number().int().min(0);
+/** A procedure leaf: its catalogue `code`, or its `order` without one (freeform). */
+const procedure = z.union([z.string(), index]);
 
 /**
  * What to regenerate (#272), an array built and never parsed (a category
  * may contain any character). Outline: whole, or one section by the index
  * of its fixed heading segment in the plan. Field, unit (anamnesis category
- * as in the case, procedure `order`), part (index in the unit's parts).
+ * as in the case, procedure `code` or `order`), part (index in the unit's parts).
  */
 export const CasePathSchema = z.union([
   z.tuple([z.literal("outline")]),
@@ -78,8 +80,8 @@ export const CasePathSchema = z.union([
   z.tuple([z.literal("chiefComplaint"), index]),
   z.tuple([z.literal("anamnesis"), z.string()]),
   z.tuple([z.literal("anamnesis"), z.string(), index]),
-  z.tuple([z.literal("procedures"), index]),
-  z.tuple([z.literal("procedures"), index, index]),
+  z.tuple([z.literal("procedures"), procedure]),
+  z.tuple([z.literal("procedures"), procedure, index]),
 ]);
 
 export const RegenerateSchema = z.object({

@@ -21,6 +21,7 @@ describe("partSources", () => {
       procedures: [
         {
           name: "ECG",
+          code: "ECG-1",
           order: 3,
           relevance: "obligatory" as const,
           result: [part("d"), part("e", "ecg")],
@@ -34,7 +35,7 @@ describe("partSources", () => {
     expect(units).toEqual({
       [pathKey(["chiefComplaint"])]: "u-b",
       [pathKey(["anamnesis", "Allergien"])]: "u-c",
-      [pathKey(["procedures", 3])]: "u-e",
+      [pathKey(["procedures", "ECG-1"])]: "u-e",
     });
     expect(parts).toEqual({
       [pathKey(["chiefComplaint", 0])]: { provider: "text", input: { n: "a" } },
@@ -46,7 +47,10 @@ describe("partSources", () => {
         provider: "text",
         input: { n: "c" },
       },
-      [pathKey(["procedures", 3, 1])]: { provider: "ecg", input: { n: "e" } },
+      [pathKey(["procedures", "ECG-1", 1])]: {
+        provider: "ecg",
+        input: { n: "e" },
+      },
     });
   });
 

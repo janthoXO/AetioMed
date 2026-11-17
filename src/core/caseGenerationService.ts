@@ -47,6 +47,12 @@ export type CaseGenerationResultError = {
  */
 export const PlanPayloadSchema = z.object({
   jobId: z.string(),
+  status: z
+    .literal("planned")
+    .optional()
+    .describe(
+      "Set on a terminal plan; absent on a normal-mode plan on the way."
+    ),
   mode: RunModeSchema,
   language: z.string(),
   plan: OutlineSegmentsSchema,
@@ -61,6 +67,18 @@ export const PlanPayloadSchema = z.object({
 });
 
 export type PlanPayload = z.infer<typeof PlanPayloadSchema>;
+
+/** Wire payload of a `planned` result: SSE `event: plan`, NATS `cases.plan.<jobId>`. */
+export function planPayloadOf(result: CaseGenerationResult): PlanPayload {
+  return {
+    jobId: result.jobId,
+    status: "planned",
+    mode: "plan",
+    language: result.language!,
+    plan: result.plan!,
+    context: result.context!,
+  };
+}
 
 export type CaseGenerationResult = {
   jobId: string;

@@ -14,6 +14,7 @@ import type { CasePiece } from "@/core/regenerate.js";
 export const CaseGenerationResponseSchema = z.union([
   CaseWireSchema.extend({
     jobId: z.string().optional(),
+    status: z.literal("done"),
     // Language generation ran in (echoes the request, default en).
     // Echoed so client can retry with explicit `language`.
     language: z.string(),
@@ -43,6 +44,9 @@ export function encodeDone(
   maxBytes: number
 ) {
   return result.pieces
-    ? { pieces: result.pieces.map((p) => encodePiece(p, maxBytes)) }
-    : encodeCase(result.case!, maxBytes);
+    ? {
+        status: "done" as const,
+        pieces: result.pieces.map((p) => encodePiece(p, maxBytes)),
+      }
+    : { status: "done" as const, ...encodeCase(result.case!, maxBytes) };
 }

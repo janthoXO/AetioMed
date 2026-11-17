@@ -54,7 +54,8 @@ export type CaseUnits = [CasePath, ContentPart[]][];
 
 /**
  * Content units by path as the client addresses them: `["chiefComplaint"]`,
- * `["anamnesis", category]` (category as in the case), `["procedures", order]`.
+ * `["anamnesis", category]` (category as in the case), `["procedures", code]`
+ * (`order` without a code: freeform).
  */
 export function caseUnits(c: Case): CaseUnits {
   const units: CaseUnits = [];
@@ -62,7 +63,7 @@ export function caseUnits(c: Case): CaseUnits {
   for (const a of c.anamnesis ?? [])
     units.push([["anamnesis", a.category], a.answer]);
   for (const { leaf } of c.procedures ? leaves(c.procedures) : [])
-    units.push([["procedures", leaf.order], leaf.result]);
+    units.push([["procedures", leaf.code ?? leaf.order], leaf.result]);
   return units;
 }
 

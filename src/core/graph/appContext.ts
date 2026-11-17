@@ -13,6 +13,8 @@ import type {
   RenderCaseInput,
 } from "./assemble.js";
 
+import type { Rerolls } from "./reroll.js";
+
 export type { PlanCaseInput, PlanResult, RenderCaseInput };
 
 export type GenerateCaseFn = (opts: {
@@ -46,6 +48,8 @@ export interface GraphAppContext {
         direction: "out" | "in"
       ) => Promise<Record<string, string>>)
     | undefined;
+  /** Unit and part rerolls below a field (#272). */
+  rerolls: Rerolls;
   /**
    * Compiled plan + case graphs this deployment serves (deployer's flag
    * variant). Consumed by `GET /api/graph` (`structure.ts`) via

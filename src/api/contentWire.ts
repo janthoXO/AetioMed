@@ -15,6 +15,7 @@ import {
   refLabel,
 } from "@/core/graph/shared/domain/ProcedureTree.js";
 import { CaseSchema, type Case } from "@/core/graph/shared/domain/Case.js";
+import type { CasePiece } from "@/core/regenerate.js";
 
 function isTextMime(type: string): boolean {
   return type.startsWith("text/");
@@ -171,4 +172,42 @@ export function decodeCase(wire: CaseWire): Case {
       }),
     }),
   });
+}
+
+// ─── Regenerated pieces (#272) ──────────────────────────────────────────────
+
+/**
+ * New value at `path`, wire-encoded like the case: a field as in the case
+ * body, a unit as its parts (anamnesis answer, procedure result), a part as
+ * one part. `changedParts`: the unit's parts that changed, when not all.
+ */
+export const CasePieceWireSchema = z.object({
+  path: z.array(z.union([z.string(), z.number().int().min(0)])),
+  how: z.enum(["rerolled", "refined"]),
+  changedParts: z.array(z.number().int().min(0)).optional(),
+  value: z.union([
+    PatientSchema,
+    ContentPartsWireSchema,
+    ContentPartWireSchema,
+    CaseWireSchema.shape.anamnesis.unwrap(),
+    CaseWireSchema.shape.procedures.unwrap(),
+  ]),
+});
+
+export type CasePieceWire = z.infer<typeof CasePieceWireSchema>;
+
+export function encodePiece(piece: CasePiece, maxBytes: number): CasePieceWire {
+  const { path, value } = piece;
+  if (path.length === 1) {
+    const field = path[0] as keyof Case;
+    return {
+      ...piece,
+      value: encodeCase({ [field]: value }, maxBytes)[field]!,
+    };
+  }
+  const parts = (Array.isArray(value) ? value : [value]) as ContentPart[];
+  const wire = parts.map((p) =>
+    encodeContentPart(p, JSON.stringify(path), maxBytes)
+  );
+  return { ...piece, value: Array.isArray(value) ? wire : wire[0]! };
 }

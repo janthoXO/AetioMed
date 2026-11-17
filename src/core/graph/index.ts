@@ -151,14 +151,15 @@ export function initGraph(opts: {
     }))
   );
 
-  const { graphs, planCase, renderCase, translateOutline } = buildCaseGraph(
-    runtime,
-    bus,
-    config,
-    medicalBasisRegistry,
-    modalityRegistries,
-    tracer
-  );
+  const { graphs, planCase, renderCase, translateOutline, rerolls } =
+    buildCaseGraph(
+      runtime,
+      bus,
+      config,
+      medicalBasisRegistry,
+      modalityRegistries,
+      tracer
+    );
 
   if (config.allowedLlms) {
     console.log("[graph] Initialized with dynamic LLMs configuration.");
@@ -181,6 +182,7 @@ export function initGraph(opts: {
     planCase,
     renderCase,
     translateOutline,
+    rerolls,
     graphs,
   };
 }

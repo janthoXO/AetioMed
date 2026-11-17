@@ -1,10 +1,11 @@
-import { encodeCase } from "@/api/contentWire.js";
+import { encodeDone } from "@/api/CaseGenerationResponse.js";
 import type { CaseGenerationResponse } from "@/api/CaseGenerationResponse.js";
 import type { GraphAppContext } from "@/core/graph/appContext.js";
 import type {
   CaseGenerationResult,
   PlanPayload,
 } from "@/core/caseGenerationService.js";
+import { planPayloadOf } from "@/core/caseGenerationService.js";
 import { getJetStreamClient } from "./client.js";
 import { planSubject, resultSubject } from "./subjects.js";
 
@@ -42,18 +43,12 @@ export async function publishStop(
   result: CaseGenerationResult
 ): Promise<void> {
   if (result.status === "planned") {
-    await publishPlan({
-      jobId: result.jobId,
-      mode: "plan",
-      language: result.language!,
-      plan: result.plan!,
-      context: result.context!,
-    });
+    await publishPlan(planPayloadOf(result));
     return;
   }
   if (result.status === "done") {
     await publishCaseResult(result.jobId, {
-      ...encodeCase(result.case!, graph.config.MAX_CONTENT_PART_BYTES),
+      ...encodeDone(result, graph.config.MAX_CONTENT_PART_BYTES),
       language: result.language!,
       context: result.context!,
     });

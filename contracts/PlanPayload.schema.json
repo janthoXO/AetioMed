@@ -7,6 +7,11 @@
     "jobId": {
       "type": "string"
     },
+    "status": {
+      "description": "Set on a terminal plan; absent on a normal-mode plan on the way.",
+      "type": "string",
+      "const": "planned"
+    },
     "mode": {
       "type": "string",
       "enum": [

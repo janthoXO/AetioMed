@@ -18,6 +18,7 @@ import {
 import {
   ProcedureRefSchema,
   buildTree,
+  refKey,
   refLabel,
 } from "@/core/graph/shared/domain/ProcedureTree.js";
 import type { Case } from "@/core/graph/shared/domain/Case.js";
@@ -359,10 +360,12 @@ function makeRenderResults(
     state: ProcedureGraphState,
     lgRuntime?: Runtime<RequestContext>
   ): Promise<Command> {
-    // One `ModalityPlan` for all procedures, keyed by index not name (names
-    // can collide after translation). One `renderPlan` call = one batch, one LLM call.
+    // One `ModalityPlan` for all procedures, keyed by `refKey` (unique: a
+    // procedure is never ordered twice; English, before translate-out). Also
+    // each part's `source.unit`, what a unit reroll re-plans (#272). One
+    // `renderPlan` call = one batch, one LLM call.
     const plan: ModalityPlan = Object.fromEntries(
-      state.plannedProcedures.map((p, i) => [String(i), p.parts])
+      state.plannedProcedures.map((p) => [refKey(p), p.parts])
     );
 
     const rendered = await renderPlan(
@@ -382,7 +385,7 @@ function makeRenderResults(
             ...(code !== undefined && { code }),
             order: i,
             relevance: p.relevance,
-            result: rendered[String(i)]!,
+            result: rendered[refKey(p)]!,
           },
         };
       })

@@ -73,6 +73,11 @@ export async function renderPlan(
             type: provider.mime,
             value: buffers[i]!,
             alt: slot.request.alt,
+            source: {
+              provider: providerId,
+              input: slot.request.input,
+              unit: slot.unitKey,
+            },
           };
         });
       } catch (error) {

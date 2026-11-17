@@ -188,6 +188,13 @@ comes back as a `proposal` — sections mapped to fields (`fieldOfSection`): a g
 background, old for the rest) and regenerates the accepted fields as pieces. The plan graph's
 judge-driven revision (`outline_regenerate`) uses the same section replacement now, so a
 revision never re-emits `<fixed>` headings; only the first generation is free text.
+Below the outline, entries run like rerolls, concurrently into pieces. `plan` level re-plans the
+target unit (every unit of a field path) with the request, the unit's current parts (`alts` +
+recorded sources) and the focused part (`revisionSection` appended to the field's planner); when
+the part count holds, only parts that differ are rendered and returned with `changedParts`
+(`value[k]` replaces part `changedParts[k]`), else the whole unit. `render` level (offered only
+for a text-MIME part) renders that part again with the request as a wording `hint`
+(`renderContent`), `alt` unchanged; `patient` has neither level (no parts).
 
 **`src/core/jobEvents/`** (#139) is the core-owned per-job event channel:
 `createJobEventChannel()` builds one instance, constructed once in `app.ts` and handed to
@@ -675,7 +682,7 @@ interface ModalityProvider<I = unknown> {
   readonly description: string; // shown to the planner
   readonly inputSchema: z.ZodType<I>; // {} (text) | { bodyPart, finding, … }
   render(
-    batch: { input: I; alt: string }[],
+    batch: { input: I; alt: string; hint?: string }[], // hint: render-level refine (#272)
     ctx: RenderContext
   ): Promise<Uint8Array<ArrayBuffer>[]>;
 }

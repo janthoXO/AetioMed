@@ -11,15 +11,32 @@ import type { ModalityPlan } from "@/core/graph/shared/modality/ports.js";
 import {
   boundLanguage,
   requestLanguage,
+  revisionSection,
 } from "@/core/graph/shared/prompt/prompt.js";
+import {
+  CHIEF_COMPLAINT_UNIT_KEY,
+  planChiefComplaint,
+} from "@/core/graph/04-case/01-presentation/chief-complaint/gateway.js";
 import { getRequestContext } from "@/core/graph/utils/context.js";
 import { planAnamnesis } from "@/core/graph/04-case/01-presentation/anamnesis/gateway.js";
 import { planProcedureResults } from "@/core/graph/04-case/02-procedures/results.gateway.js";
 import { translateRestValues } from "@/core/graph/05-translate-out/gateway.js";
 import type { GraphRuntime } from "./runtime.js";
 
-/** One part to render again: recorded provider + input, current `alt`. */
-export type PartSource = { provider: string; input: unknown; alt: string };
+/** One part to render again: recorded provider + input, current `alt`, optional wording `hint`. */
+export type PartSource = {
+  provider: string;
+  input: unknown;
+  alt: string;
+  hint?: string | undefined;
+};
+
+/** A unit refine (#272): the author's request, the unit's current parts, the part pointed at. */
+export type UnitRevision = {
+  instruction: string;
+  current: PartSource[];
+  focus?: number | undefined;
+};
 
 /**
  * Below-field rerolls (#272), outside the compiled graphs: a unit re-plans
@@ -70,47 +87,100 @@ export function makeRerolls(
       return render(field, parts);
     },
 
+    /** Whether `provider` renders text in `field`: only those take a render-level refine. */
+    isText(field: ModalityField, provider: string): boolean {
+      return (
+        registries[field]
+          .find((p) => p.id === provider)
+          ?.mime.startsWith("text/") ?? false
+      );
+    },
+
     /**
-     * Unit reroll: re-plan one anamnesis category or procedure result
-     * (English unit key, `source.unit`) from the outline, render it.
+     * Unit reroll: re-plan one chief complaint, anamnesis category or
+     * procedure result (English unit key, `source.unit`) from the outline,
+     * render it. With a `revision` (plan-level refine) the planner sees the
+     * current parts and the request; when the part count holds, only parts
+     * that differ are rendered, returned with their indices as `changed`.
      */
     async replanUnit(
-      field: "anamnesis" | "procedureResult",
+      field: ModalityField,
       unit: string,
-      opts: { diagnosis: Diagnosis; outlineSections: OutlineSections }
-    ): Promise<ContentPart[]> {
-      const { outlineSections: sections } = opts;
+      opts: {
+        diagnosis: Diagnosis;
+        outlineSections: OutlineSections;
+        revision?: UnitRevision | undefined;
+      }
+    ): Promise<{ parts: ContentPart[]; changed?: number[] }> {
+      const { outlineSections: sections, revision } = opts;
       const context = getRequestContext();
       const language = boundLanguage(generation);
+      const prompt = revision && revisionSection(revision);
       const planned =
-        field === "anamnesis"
+        field === "chiefComplaint"
           ? (
-              await planAnamnesis(
-                generation,
-                language,
-                { patient: sections.patient, anamnesis: sections.anamnesis },
-                registries.anamnesis,
-                context,
-                [unit]
-              )
-            )[unit]!
-          : (
-              await planProcedureResults(
+              await planChiefComplaint(
                 generation,
                 language,
                 {
                   patient: sections.patient,
                   chiefComplaint: sections.chiefComplaint,
-                  anamnesis: sections.anamnesis,
                 },
-                opts.diagnosis,
-                [refOfKey(unit)],
-                registries.procedureResult,
-                sections.procedures,
-                context
+                registries.chiefComplaint,
+                context,
+                prompt
               )
-            )[0]!.parts;
-      return altsOut(await render(field, planned));
+            )[CHIEF_COMPLAINT_UNIT_KEY]!
+          : field === "anamnesis"
+            ? (
+                await planAnamnesis(
+                  generation,
+                  language,
+                  { patient: sections.patient, anamnesis: sections.anamnesis },
+                  registries.anamnesis,
+                  context,
+                  [unit],
+                  prompt
+                )
+              )[unit]!
+            : (
+                await planProcedureResults(
+                  generation,
+                  language,
+                  {
+                    patient: sections.patient,
+                    chiefComplaint: sections.chiefComplaint,
+                    anamnesis: sections.anamnesis,
+                  },
+                  opts.diagnosis,
+                  [refOfKey(unit)],
+                  registries.procedureResult,
+                  sections.procedures,
+                  context,
+                  prompt
+                )
+              )[0]!.parts;
+      const current = revision?.current ?? [];
+      if (current.length === 0 || planned.length !== current.length)
+        return { parts: await altsOut(await render(field, planned)) };
+      const changed = planned.flatMap((p, i) =>
+        p.provider === current[i]!.provider &&
+        p.alt === current[i]!.alt &&
+        JSON.stringify(p.input ?? {}) ===
+          JSON.stringify(current[i]!.input ?? {})
+          ? []
+          : [i]
+      );
+      if (changed.length === 0) return { parts: [], changed };
+      return {
+        parts: await altsOut(
+          await render(
+            field,
+            changed.map((i) => planned[i]!)
+          )
+        ),
+        changed,
+      };
     },
   };
 }

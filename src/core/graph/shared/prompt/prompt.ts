@@ -261,3 +261,27 @@ function renderIssuePath(path: (string | number)[] | undefined): string {
 function truncate(text: string, maxLength: number): string {
   return text.length <= maxLength ? text : `${text.slice(0, maxLength)}…`;
 }
+
+/**
+ * Planner prompt section for a unit refine (#272): the unit's current parts,
+ * the part the author points at, and the request. Unchanged parts must come
+ * back identical so the caller renders only what changed.
+ */
+export function revisionSection(revision: {
+  instruction: string;
+  current: { provider: string; input: unknown; alt: string }[];
+  focus?: number | undefined;
+}): string | undefined {
+  const parts = revision.current
+    .map(
+      (p, i) =>
+        `${i}. provider "${p.provider}", input ${JSON.stringify(p.input ?? {})}\n   alt: ${p.alt}`
+    )
+    .join("\n");
+  return section(
+    "Revision request",
+    `${parts ? `This unit currently has these parts:\n${parts}\n\n` : ""}The case author asks${revision.focus !== undefined ? ` (about part ${revision.focus})` : ""}: ${revision.instruction}
+
+Re-plan this unit to fulfil the request, staying consistent with the outline sections above. A part that needs no change must come back exactly as it is: same position, same provider, same input, and its alt copied word for word even if written in another language. Change a part only where its facts or its split must change; a text part stating a fact you change must change with it.`
+  );
+}

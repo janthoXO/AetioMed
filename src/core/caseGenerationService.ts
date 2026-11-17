@@ -15,7 +15,9 @@ import {
   InvalidPathError,
   isRefine,
   refineRequest,
-  rerollAll,
+  reroll,
+  refineBelow,
+  combine,
   type CasePiece,
   ProposalSchema,
   type Proposal,
@@ -33,7 +35,11 @@ import {
   OutlineSegmentsSchema,
   type OutlineSegments,
 } from "@/core/graph/shared/outline/segments.js";
-import { applySections } from "./graph/refine.js";
+import {
+  applySections,
+  type PlanFacts,
+  type Refinement,
+} from "./graph/refine.js";
 import { localizeHeadings } from "./graph/03-outline-translation/headings.js";
 import type { IcdPort } from "./diagnosis/icd.js";
 import { resolveDiagnosis } from "./diagnosis/resolve.js";
@@ -493,15 +499,17 @@ export function createCaseGenerationService(
     /**
      * Regenerate entries (#272). Whole-outline reroll: plan again from the
      * first call's inputs (new recipe roll), back to plan review. Otherwise
-     * every entry rerolls concurrently into a piece.
+     * the refiner picks each refine's level first: any at outline level
+     * makes the call one outline change (`outlineChange`), nothing rendered.
+     * Else every entry runs concurrently into pieces: rerolls, and refines
+     * at plan or render level.
      */
     async function regenerate(
       context: GenerationContext,
       entries: Regenerate[]
     ): Promise<CaseGenerationResult> {
-      const refines = entries.filter(isRefine);
-      if (refines.length > 0) return refine(context, refines, entries);
-      if (entries.some((e) => e.path[0] === "outline")) {
+      const difficulty = req.difficulty ?? context.difficulty;
+      if (entries.some((e) => !isRefine(e) && e.path[0] === "outline")) {
         if (entries.length > 1)
           throw new InvalidPathError(
             ["outline"],
@@ -512,7 +520,7 @@ export function createCaseGenerationService(
           generationFlags: context.generationFlags,
           userInstructions: context.userInstructions,
           language,
-          difficulty: req.difficulty ?? context.difficulty,
+          difficulty,
           mode: "plan",
         });
         return planStop({
@@ -522,11 +530,45 @@ export function createCaseGenerationService(
           recipe: planned.recipe,
         });
       }
-      const done = await rerollAll(
-        graph,
+
+      const facts = {
+        plan: context.plan,
+        planLanguage: context.planLanguage,
+        diagnosis: context.diagnosis,
+        difficulty: difficulty ?? "medium",
+        recipe: context.recipe,
+      };
+      const refinements = new Map(
+        await Promise.all(
+          entries
+            .filter(isRefine)
+            .map(
+              async (entry) =>
+                [
+                  entry,
+                  await graph.refiner.refine(
+                    facts,
+                    refineRequest(context, entry, graph.rerolls.isText)
+                  ),
+                ] as const
+            )
+        )
+      );
+      const outline = [...refinements.values()].filter(
+        (r) => r.level === "outline"
+      );
+      if (outline.length > 0) return outlineChange(context, facts, outline);
+
+      const done = combine(
         context,
-        entries,
-        req.difficulty ?? context.difficulty
+        await Promise.all(
+          entries.map((entry) => {
+            const level = refinements.get(entry)?.level;
+            return level === "plan" || level === "render"
+              ? refineBelow(graph, context, entry, level)
+              : reroll(graph, context, entry, difficulty);
+          })
+        )
       );
       return {
         jobId,
@@ -538,41 +580,14 @@ export function createCaseGenerationService(
     }
 
     /**
-     * Refine entries (#272): the refiner picks each one's level. Any at
-     * outline level makes the call one outline change, nothing rendered:
-     * plan review gets the revised plan, a case gets a proposal.
+     * Outline-level refine: settled (judged) sections. Plan review gets the
+     * revised plan with `changed`; a case gets a proposal.
      */
-    async function refine(
+    async function outlineChange(
       context: GenerationContext,
-      refines: Regenerate[],
-      entries: Regenerate[]
+      facts: PlanFacts,
+      outline: Refinement[]
     ): Promise<CaseGenerationResult> {
-      if (refines.length < entries.length)
-        throw new InvalidPathError(
-          refines[0]!.path,
-          "refine entries cannot be mixed with rerolls"
-        );
-      const facts = {
-        plan: context.plan,
-        planLanguage: context.planLanguage,
-        diagnosis: context.diagnosis,
-        difficulty: req.difficulty ?? context.difficulty ?? "medium",
-        recipe: context.recipe,
-      };
-      const refinements = await Promise.all(
-        refines.map((entry) =>
-          graph.refiner.refine(facts, refineRequest(context, entry))
-        )
-      );
-      const outline = refinements.filter((r) => r.level === "outline");
-      if (outline.length === 0) {
-        // ponytail: plan and render levels land with the unit planner.
-        throw new AppError(
-          "Refining below the outline is not implemented yet",
-          "NOT_IMPLEMENTED",
-          501
-        );
-      }
       const settled = await graph.refiner.settle(
         facts,
         new Map(outline.flatMap((r) => [...r.sections]))

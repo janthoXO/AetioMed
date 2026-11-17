@@ -15,12 +15,13 @@ import {
 } from "@/core/graph/shared/outline/segments.js";
 import type { GraphAppContext } from "./graph/appContext.js";
 import { AppError } from "./graph/errors/AppError.js";
+import type { ModalityField } from "@/core/graph/shared/modality/registry.js";
+import type { RefineLevel } from "./graph/refine.js";
 import {
   caseUnits,
   pathKey,
   withSources,
   type CasePath,
-  type CaseUnits,
   type GenerationContext,
 } from "./generationContext.js";
 
@@ -53,6 +54,30 @@ const MODALITY_FIELD = {
   procedures: "procedureResult",
 } as const;
 
+export { MODALITY_FIELD };
+
+/** Pieces of one entry, and how the context's sources follow them. */
+type EntryResult = {
+  pieces: CasePiece[];
+  update?: (context: GenerationContext) => GenerationContext;
+};
+
+/** Target part: its recorded source and the client's current alt. */
+function partOf(context: GenerationContext, entry: Regenerate) {
+  const path = entry.path as CasePath;
+  const source = context.parts[pathKey(path)];
+  const alt = entry.alts?.[path.at(-1) as number];
+  if (!source) throw new InvalidPathError(path, "no such part");
+  if (alt === undefined)
+    throw new InvalidPathError(path, "`alts` must carry the part's alt");
+  return { ...source, alt };
+}
+
+/** Chief complaint is one unit: its second path segment is already a part. */
+function isPartPath(path: CasePath): boolean {
+  return path[0] === "chiefComplaint" ? path.length === 2 : path.length === 3;
+}
+
 /**
  * Reroll (#272): rerun the target's own step from unchanged inputs. Field:
  * the case graph narrowed to it. Unit: its planner narrowed to it, then
@@ -63,7 +88,7 @@ export async function reroll(
   context: GenerationContext,
   entry: Regenerate,
   difficulty: Difficulty | undefined
-): Promise<{ piece: CasePiece; sources?: [CasePath, CaseUnits] }> {
+): Promise<EntryResult> {
   const path = entry.path as CasePath;
   const head = path[0] as Exclude<GenerationFlag, "patient">;
   const sections = outlineSections(context.plan);
@@ -79,54 +104,126 @@ export async function reroll(
     if (c[field] === undefined)
       throw new InvalidPathError(path, "not generated");
     return {
-      piece: { path, how: "rerolled", value: c[field] },
-      sources: [path, caseUnits({ [field]: c[field] })],
+      pieces: [{ path, how: "rerolled", value: c[field] }],
+      update: (ctx) => withSources(ctx, path, caseUnits({ [field]: c[field] })),
     };
   }
 
-  // Chief complaint is one unit: its second segment is already a part.
-  const isPart = head === "chiefComplaint" || path.length === 3;
-  if (isPart) {
-    const source = context.parts[pathKey(path)];
-    const alt = entry.alts?.[path.at(-1) as number];
-    if (!source) throw new InvalidPathError(path, "no such part");
-    if (alt === undefined)
-      throw new InvalidPathError(path, "`alts` must carry the part's alt");
+  if (isPartPath(path)) {
     const [part] = await graph.rerolls.renderParts(MODALITY_FIELD[head], [
-      { ...source, alt },
+      partOf(context, entry),
     ]);
-    return { piece: { path, how: "rerolled", value: part! } };
+    return { pieces: [{ path, how: "rerolled", value: part! }] };
   }
 
   const unit = context.units[pathKey(path)];
   if (!unit) throw new InvalidPathError(path, "no such unit");
-  const parts = await graph.rerolls.replanUnit(
-    head === "anamnesis" ? "anamnesis" : "procedureResult",
-    unit,
-    { diagnosis: context.diagnosis, outlineSections: sections }
-  );
+  const { parts } = await graph.rerolls.replanUnit(MODALITY_FIELD[head], unit, {
+    diagnosis: context.diagnosis,
+    outlineSections: sections,
+  });
   return {
-    piece: { path, how: "rerolled", value: parts },
-    sources: [path, [[path, parts]]],
+    pieces: [{ path, how: "rerolled", value: parts }],
+    update: (ctx) => withSources(ctx, path, [[path, parts]]),
   };
 }
 
-/** Every entry concurrently, one job slot; context sources updated after. */
-export async function rerollAll(
+/**
+ * Refine below the outline (#272). `render`: the target text part again,
+ * the instruction as a wording `hint`, same `alt`. `plan`: the target unit
+ * (every unit of a field path) re-planned with the instruction and its
+ * current parts; only changed parts rendered (`changedParts`).
+ */
+export async function refineBelow(
   graph: GraphAppContext,
   context: GenerationContext,
-  entries: Regenerate[],
-  difficulty: Difficulty | undefined
-): Promise<{ pieces: CasePiece[]; context: GenerationContext }> {
+  entry: Regenerate,
+  level: "plan" | "render"
+): Promise<EntryResult> {
+  const path = entry.path as CasePath;
+  const head = path[0] as Exclude<GenerationFlag, "patient">;
+  const field = MODALITY_FIELD[head];
+  const instruction = entry.instruction!;
+
+  if (level === "render") {
+    const [part] = await graph.rerolls.renderParts(field, [
+      { ...partOf(context, entry), hint: instruction },
+    ]);
+    return { pieces: [{ path, how: "refined", value: part! }] };
+  }
+
+  const target: CasePath =
+    head === "chiefComplaint" ? ["chiefComplaint"] : path.slice(0, 2);
+  // A field path re-plans every unit it has; units' keys are our own pathKeys.
+  const unitPaths =
+    path.length === 1 && head !== "chiefComplaint"
+      ? Object.keys(context.units)
+          .map((key) => JSON.parse(key) as CasePath)
+          .filter((p) => p[0] === head)
+      : [target];
   const results = await Promise.all(
-    entries.map((entry) => reroll(graph, context, entry, difficulty))
+    unitPaths.map(async (unitPath): Promise<EntryResult> => {
+      const unit = context.units[pathKey(unitPath)];
+      if (!unit) throw new InvalidPathError(unitPath, "no such unit");
+      const current =
+        path.length > 1
+          ? (entry.alts ?? []).map((alt, i) => ({
+              ...(context.parts[pathKey([...unitPath, i])] ?? {
+                provider: "text",
+                input: {},
+              }),
+              alt,
+            }))
+          : [];
+      const { parts, changed } = await graph.rerolls.replanUnit(field, unit, {
+        diagnosis: context.diagnosis,
+        outlineSections: outlineSections(context.plan),
+        revision: {
+          instruction,
+          current,
+          focus: isPartPath(path) ? (path.at(-1) as number) : undefined,
+        },
+      });
+      return {
+        pieces: [
+          {
+            path: unitPath,
+            how: "refined",
+            value: parts,
+            ...(changed && { changedParts: changed }),
+          },
+        ],
+        update: changed
+          ? (ctx) => ({
+              ...ctx,
+              parts: {
+                ...ctx.parts,
+                ...Object.fromEntries(
+                  changed.map((i, k) => {
+                    const { provider, input } = parts[k]!.source!;
+                    return [pathKey([...unitPath, i]), { provider, input }];
+                  })
+                ),
+              },
+            })
+          : (ctx) => withSources(ctx, unitPath, [[unitPath, parts]]),
+      };
+    })
   );
   return {
-    pieces: results.map((r) => r.piece),
-    context: results.reduce(
-      (ctx, r) => (r.sources ? withSources(ctx, ...r.sources) : ctx),
-      context
-    ),
+    pieces: results.flatMap((r) => r.pieces),
+    update: (ctx) => results.reduce((acc, r) => r.update!(acc), ctx),
+  };
+}
+
+/** Results of concurrent entries combined; context sources updated after. */
+export function combine(
+  context: GenerationContext,
+  results: EntryResult[]
+): { pieces: CasePiece[]; context: GenerationContext } {
+  return {
+    pieces: results.flatMap((r) => r.pieces),
+    context: results.reduce((ctx, r) => r.update?.(ctx) ?? ctx, context),
   };
 }
 
@@ -142,7 +239,11 @@ const ALTERNATIVE =
   "Write an alternative version of the target section with different concrete details; keep every other section consistent with it.";
 
 /** What the refiner is told about an entry, and which levels it may pick. */
-export function refineRequest(context: GenerationContext, entry: Regenerate) {
+export function refineRequest(
+  context: GenerationContext,
+  entry: Regenerate,
+  isText: (field: ModalityField, provider: string) => boolean
+) {
   const path = entry.path as CasePath;
   const instruction = entry.instruction ?? ALTERNATIVE;
   const outlineOnly = (target: string) => ({
@@ -175,12 +276,14 @@ export function refineRequest(context: GenerationContext, entry: Regenerate) {
           : "the chief complaint";
     if (path.length > unitPath.length) target += `, part ${path.at(-1)}`;
   }
-  return {
-    target,
-    alts: entry.alts,
-    instruction,
-    levels: ["outline" as const, "plan" as const],
-  };
+  // Render level: wording of one text part only.
+  const source = isPartPath(path) ? context.parts[pathKey(path)] : undefined;
+  const head = path[0] as keyof typeof MODALITY_FIELD;
+  const levels: RefineLevel[] =
+    source && isText(MODALITY_FIELD[head], source.provider)
+      ? ["outline", "plan", "render"]
+      : ["outline", "plan"];
+  return { target, alts: entry.alts, instruction, levels };
 }
 
 export const ProposalSchema = z.object({

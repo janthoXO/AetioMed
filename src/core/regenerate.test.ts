@@ -54,10 +54,17 @@ function fake() {
   const renderParts = vi.fn(async (_field: string, parts: { alt: string }[]) =>
     parts.map((p) => part(p.alt, "text", "x"))
   );
-  const replanUnit = vi.fn(async () => [
-    part("new a", "text", "Allergies"),
-    part("new b", "image", "Allergies"),
-  ]);
+  const replanned: {
+    current: { parts: ReturnType<typeof part>[]; changed?: number[] };
+  } = {
+    current: {
+      parts: [
+        part("new a", "text", "Allergies"),
+        part("new b", "image", "Allergies"),
+      ],
+    },
+  };
+  const replanUnit = vi.fn(async () => replanned.current);
   const planCase = vi.fn(async () => ({
     diagnosis: { name: "Influenza" },
     outlineSegments: OUTLINE,
@@ -78,7 +85,11 @@ function fake() {
     runtime: { catalogs: { anamnesis: { list: () => undefined } } },
     planCase,
     renderCase,
-    rerolls: { renderParts, replanUnit },
+    rerolls: {
+      renderParts,
+      replanUnit,
+      isText: (_field: string, provider: string) => provider === "text",
+    },
     refiner: { refine, settle },
     translateOutline: undefined,
   } as unknown as GraphAppContext;
@@ -95,6 +106,7 @@ function fake() {
     planCase,
     refine,
     refinement,
+    replanned,
   };
 }
 
@@ -310,5 +322,81 @@ describe("refine at outline level", () => {
     const sections = f.renderCase.mock.lastCall![0].outlineSections;
     expect(sections.patient).toBe("6, male.");
     expect(sections.chiefComplaint).toBe("Sharp pain.");
+  });
+});
+
+describe("refine below the outline", () => {
+  it("plan level on a part: unit re-planned with request, current parts and focus; only changed parts come back", async () => {
+    const f = fake();
+    const context = await generated(f);
+    f.refinement.current = {
+      level: "plan",
+      why: "codes",
+      affected: [],
+      sections: new Map(),
+    };
+    f.replanned.current = {
+      parts: [part("Anterior STEMI.", "text", "Allergies")],
+      changed: [0],
+    };
+    const result = await f.service.generate(
+      regen(context, [
+        {
+          path: ["anamnesis", "Allergien", 0],
+          instruction: "anterior STEMI",
+          alts: ["a1"],
+        },
+      ])
+    );
+    expect(f.refine).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ levels: ["outline", "plan", "render"] })
+    );
+    expect(f.replanUnit).toHaveBeenCalledWith(
+      "anamnesis",
+      "Allergies",
+      expect.objectContaining({
+        revision: {
+          instruction: "anterior STEMI",
+          current: [{ provider: "text", input: { alt: "a1" }, alt: "a1" }],
+          focus: 0,
+        },
+      })
+    );
+    expect(result.pieces).toEqual([
+      expect.objectContaining({
+        path: ["anamnesis", "Allergien"],
+        how: "refined",
+        changedParts: [0],
+      }),
+    ]);
+    expect(
+      decodeContext(result.context!).parts[
+        pathKey(["anamnesis", "Allergien", 0])
+      ]
+    ).toEqual({ provider: "text", input: { alt: "Anterior STEMI." } });
+  });
+
+  it("render level: the text part rendered again with the instruction as hint, alt kept", async () => {
+    const f = fake();
+    const context = await generated(f);
+    f.refinement.current = {
+      level: "render",
+      why: "wording",
+      affected: [],
+      sections: new Map(),
+    };
+    const result = await f.service.generate(
+      regen(context, [
+        { path: ["chiefComplaint", 0], instruction: "shorter", alts: ["cc1"] },
+      ])
+    );
+    expect(f.renderParts).toHaveBeenCalledWith("chiefComplaint", [
+      { provider: "text", input: { alt: "cc1" }, alt: "cc1", hint: "shorter" },
+    ]);
+    expect(result.pieces![0]).toMatchObject({
+      path: ["chiefComplaint", 0],
+      how: "refined",
+    });
   });
 });

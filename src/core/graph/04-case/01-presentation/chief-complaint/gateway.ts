@@ -34,7 +34,9 @@ export async function planChiefComplaint(
   language: Language | undefined,
   sections: { patient: string; chiefComplaint: string },
   providers: ModalityProvider<unknown>[],
-  context?: RequestContext
+  context?: RequestContext,
+  /** Refine (#272): current parts and the author's request (`revisionSection`). */
+  revision?: string
 ): Promise<ModalityPlan> {
   const schema = buildCompositionSchema(providers, [CHIEF_COMPLAINT_UNIT_KEY]);
 
@@ -70,7 +72,9 @@ ${renderSchemaForPrompt(schema)}`
   const userPrompt = buildPrompt(
     section("Patient", sections.patient),
 
-    section("Chief complaint", sections.chiefComplaint)
+    section("Chief complaint", sections.chiefComplaint),
+
+    revision
   );
 
   console.debug(

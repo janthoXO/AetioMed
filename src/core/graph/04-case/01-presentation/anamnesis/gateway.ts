@@ -34,7 +34,9 @@ export async function planAnamnesis(
   providers: ModalityProvider<unknown>[],
   context?: RequestContext,
   /** Plan only these categories (unit reroll, #272); default: the catalogue's. */
-  only?: string[]
+  only?: string[],
+  /** Refine (#272): current parts and the author's request (`revisionSection`). */
+  revision?: string
 ): Promise<ModalityPlan> {
   // `undefined` = freeform (no category catalogue): planner names unit keys.
   // Do not substitute a default list; clinical content belongs in catalogue.
@@ -90,7 +92,9 @@ ${renderSchemaForPrompt(schema)}`
   const userPrompt = buildPrompt(
     section("Patient", sections.patient),
 
-    section("Anamnesis", sections.anamnesis)
+    section("Anamnesis", sections.anamnesis),
+
+    revision
   );
 
   console.debug(

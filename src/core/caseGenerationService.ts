@@ -23,6 +23,7 @@ import { resolveDiagnosis } from "./diagnosis/resolve.js";
 import {
   decodeContext,
   encodeContext,
+  partSources,
   type GenerationContext,
 } from "./generationContext.js";
 
@@ -314,6 +315,7 @@ export function createCaseGenerationService(
             localized: undefined,
             plan,
             fields: context.generationFlags,
+            ...partSources(generatedCase),
           }),
         };
       },
@@ -353,6 +355,8 @@ export function createCaseGenerationService(
         generationFlags: req.generationFlags,
         fields: [],
         plan: planned.outlineSegments,
+        parts: {},
+        units: {},
       };
 
       if (req.mode === "plan") {

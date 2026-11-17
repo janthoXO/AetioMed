@@ -19,6 +19,14 @@ export const ContentPartSchema = z.object({
   value: z.instanceof(Uint8Array),
   /** Plain text: self-contained content of this part, in the working language. */
   alt: z.string(),
+  /**
+   * Provider and input that rendered `value`, and the plan unit key it
+   * belongs to (English: category, `refKey`), set by `renderPlan`; a reroll
+   * renders or re-plans from it (#272). Domain only: never on the wire.
+   */
+  source: z
+    .object({ provider: z.string(), input: z.unknown(), unit: z.string() })
+    .optional(),
 });
 
 export type ContentPart = z.infer<typeof ContentPartSchema>;

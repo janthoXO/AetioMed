@@ -55,6 +55,11 @@ describe("renderPlan — batching", () => {
     expect(
       new TextDecoder().decode(result["Current Symptoms"]![0]!.value)
     ).toBe("Fever.");
+    expect(result["Current Symptoms"]![0]!.source).toEqual({
+      provider: "text",
+      input: { instruction: "fever" },
+      unit: "Current Symptoms",
+    });
     expect(new TextDecoder().decode(result["Past Illnesses"]![0]!.value)).toBe(
       "None."
     );

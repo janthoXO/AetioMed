@@ -5,6 +5,9 @@ import { GenerationFlagSchema } from "@/core/graph/shared/domain/GenerationFlags
 import { DifficultySchema } from "@/core/graph/shared/domain/Difficulty.js";
 import { OutlineSegmentsSchema } from "@/core/graph/shared/outline/segments.js";
 import { AppError } from "./graph/errors/AppError.js";
+import type { Case } from "@/core/graph/shared/domain/Case.js";
+import type { ContentPart } from "@/core/graph/shared/domain/ContentPart.js";
+import { leaves } from "@/core/graph/shared/domain/ProcedureTree.js";
 
 /**
  * Generation context (#272): every generator internal a later call needs,
@@ -27,9 +30,50 @@ export const GenerationContextSchema = z.object({
    * segment equal to it is untouched: `plan[i]` used, no translation.
    */
   localized: z.record(z.string(), z.string()).optional(),
+  /** Provider and input of every rendered part, by {@link pathKey}. */
+  parts: z
+    .record(z.string(), z.object({ provider: z.string(), input: z.unknown() }))
+    .default({}),
+  /** English plan unit key (category, `refKey`) of every unit, by {@link pathKey}. */
+  units: z.record(z.string(), z.string()).default({}),
 });
 
 export type GenerationContext = z.infer<typeof GenerationContextSchema>;
+
+/** Path of a case node (`["procedures", 3, 0]`): built, never parsed. */
+export type CasePath = (string | number)[];
+
+/** Record key of a {@link CasePath}. */
+export const pathKey = (path: CasePath) => JSON.stringify(path);
+
+/**
+ * Every rendered part's source and every unit's plan key, by path as the
+ * client addresses it: `["chiefComplaint", i]`, `["anamnesis", category, i]`
+ * (category as in the case), `["procedures", order, i]`.
+ */
+export function partSources(
+  c: Case
+): Pick<GenerationContext, "parts" | "units"> {
+  const units: [CasePath, ContentPart[]][] = [];
+  if (c.chiefComplaint) units.push([["chiefComplaint"], c.chiefComplaint]);
+  for (const a of c.anamnesis ?? [])
+    units.push([["anamnesis", a.category], a.answer]);
+  for (const { leaf } of c.procedures ? leaves(c.procedures) : [])
+    units.push([["procedures", leaf.order], leaf.result]);
+  const sources: Pick<GenerationContext, "parts" | "units"> = {
+    parts: {},
+    units: {},
+  };
+  for (const [path, parts] of units) {
+    parts.forEach((part, i) => {
+      if (!part.source) return;
+      const { provider, input, unit } = part.source;
+      sources.parts[pathKey([...path, i])] = { provider, input };
+      sources.units[pathKey(path)] = unit;
+    });
+  }
+  return sources;
+}
 
 /** A `context` that does not decode: not ours, truncated, or an old version. */
 export class InvalidContextError extends AppError {

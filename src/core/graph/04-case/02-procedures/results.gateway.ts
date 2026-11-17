@@ -97,7 +97,9 @@ export async function planProcedureResults(
   procedureSteps: ProcedureRef[],
   providers: ModalityProvider<unknown>[],
   proceduresStrategy?: string, // the outline's `## Procedures` section
-  context?: RequestContext
+  context?: RequestContext,
+  /** Refine (#272): current parts and the author's request (`revisionSection`). */
+  revision?: string
 ): Promise<PlannedProcedure[]> {
   const procedureLabels = procedureSteps.map(refLabel);
   const schema = buildProcedureResultPlanSchema(
@@ -170,6 +172,8 @@ ${proceduresStrategy}`
         })
         .join("\n")
     ),
+
+    revision,
 
     `Plan clinically realistic results for these procedures.`
   );

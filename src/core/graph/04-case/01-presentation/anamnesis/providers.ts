@@ -1,6 +1,9 @@
 import { requestLanguage } from "@/core/graph/shared/prompt/prompt.js";
 import z from "zod";
-import { encodeText } from "@/core/graph/shared/domain/ContentPart.js";
+import {
+  encodeText,
+  renderContent,
+} from "@/core/graph/shared/domain/ContentPart.js";
 import {
   defineModalityProvider,
   type ModalityProvider,
@@ -26,7 +29,7 @@ export function createAnamnesisProviders(
         const texts = await renderAnamnesisTexts(
           runtime,
           requestLanguage(),
-          batch.map((item) => item.alt),
+          batch.map(renderContent),
           context
         );
         return texts.map(encodeText);

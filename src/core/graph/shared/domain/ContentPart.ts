@@ -44,6 +44,19 @@ export function encodeText(s: string): Uint8Array<ArrayBuffer> {
  * MIME. Prompt builders take `string`, never `ContentPart[]`; bytes never reach
  * a prompt.
  */
+/**
+ * Text renderer content: the part's `alt`, plus a render-level refine's
+ * wording request (#272) when given. Facts stay `alt`'s.
+ */
+export function renderContent(item: {
+  alt: string;
+  hint?: string | undefined;
+}): string {
+  return item.hint
+    ? `${item.alt}\n\n(Wording request from the case author; change wording only, never facts: ${item.hint})`
+    : item.alt;
+}
+
 export function altOf(parts: { alt: string }[]): string {
   return parts.map((part) => part.alt).join("\n\n");
 }

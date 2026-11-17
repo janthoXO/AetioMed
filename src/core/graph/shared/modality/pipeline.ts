@@ -65,6 +65,7 @@ export async function renderPlan(
             // Absent only for an empty-input provider (composition.ts).
             input: slot.request.input ?? {},
             alt: slot.request.alt,
+            ...(slot.request.hint && { hint: slot.request.hint }),
           })),
           ctx ?? {}
         );

@@ -14,6 +14,8 @@ export const PlannedPartSchema = z.object({
   provider: z.string(),
   input: z.unknown(),
   alt: z.string().min(1),
+  /** Render-level refine (#272): a wording request; facts stay `alt`'s. Never planner-written. */
+  hint: z.string().optional(),
 });
 export type PlannedPart = z.infer<typeof PlannedPartSchema>;
 
@@ -34,8 +36,9 @@ export interface ModalityProvider<I = unknown> {
   readonly mime: string;
   readonly description: string;
   readonly inputSchema: z.ZodType<I>;
+  /** `hint`: optional wording request (#272); a provider that cannot use it ignores it. */
   render(
-    batch: { input: I; alt: string }[],
+    batch: { input: I; alt: string; hint?: string | undefined }[],
     ctx: RenderContext
   ): Promise<Uint8Array<ArrayBuffer>[]>;
 }
@@ -56,7 +59,7 @@ export function defineModalityProvider<I>(
     render: (batch, ctx) => {
       const inputs = spec.inputSchema.array().parse(batch.map((b) => b.input));
       return spec.render(
-        batch.map((b, i) => ({ input: inputs[i]!, alt: b.alt })),
+        batch.map((b, i) => ({ input: inputs[i]!, alt: b.alt, hint: b.hint })),
         ctx
       );
     },
